@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "513996752248",
+    "project_id": "clearrent-app",
+    "storage_bucket": "clearrent-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:513996752248:android:8e6119b428d28530dd348d",
+        "android_client_info": {
+          "package_name": "com.example.clearrent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0R1JqTg_Em4LNmY528sneUFk4VicAYcY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,81 @@
+name: clearrent
+description: "ClearRent: Rent Without Regret"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.9.0
+  firebase_auth: ^5.5.0
+  cloud_firestore: ^5.6.0
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # Navigation
+  go_router: ^14.8.1
+
+  # UI
+  flutter_svg: ^2.0.17
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  flutter_spinkit: ^5.2.1
+
+  # Forms & Validation
+  flutter_form_builder: ^9.5.1
+  form_builder_validators: ^11.1.0
+
+  # Utils
+  intl: 0.19.0
+  uuid: ^4.5.1
+  url_launcher: ^6.3.1
+
+  # Image handling (Cloudinary free tier)
+  cloudinary_public: ^0.23.1
+  image_picker: ^1.1.2
+
+  # Local Storage
+  shared_preferences: ^2.3.5
+  share_plus: ^7.2.1
+
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/images/app_icon.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/app_icon.png
+    - assets/icons/
+
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Outfit-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Outfit-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Outfit-Bold.ttf
+          weight: 700
