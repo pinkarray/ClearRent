@@ -2,24 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
-import '../../../../shared/models/conversation_model.dart';
+import '../../../../services/conversation_service.dart';
 
-class MessagesTab extends StatelessWidget {
-  final List<ConversationModel> conversations;
-  final String currentUserId;
+class MessagesTabReal extends StatefulWidget {
   final String emptyTitle;
   final String emptySubtitle;
 
-  const MessagesTab({
+  const MessagesTabReal({
     super.key,
-    required this.conversations,
-    required this.currentUserId,
     this.emptyTitle = 'No messages yet',
     this.emptySubtitle = 'Your conversations will appear here',
   });
 
   @override
+  State<MessagesTabReal> createState() => _MessagesTabRealState();
+}
+
+class _MessagesTabRealState extends State<MessagesTabReal> {
+  final ConversationService _conversationService = ConversationService();
+
+  @override
   Widget build(BuildContext context) {
+    final currentUserId = _conversationService.currentUserId ?? '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -31,9 +36,49 @@ class MessagesTab extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: conversations.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
+          child: StreamBuilder<List<ConversationData>>(
+            stream: _conversationService.getConversationsStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Failed to load messages',
+                        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => setState(() {}),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final conversations = snapshot.data ?? [];
+
+              if (conversations.isEmpty) {
+                return _buildEmptyState();
+              }
+
+              return RefreshIndicator(
+                onRefresh: () async {
+                  // Force rebuild by triggering setState
+                  setState(() {});
+                },
+                color: AppColors.primary,
+                child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   itemCount: conversations.length,
                   itemBuilder: (context, index) {
@@ -45,14 +90,18 @@ class MessagesTab extends StatelessWidget {
                         context.push(
                           '/chat',
                           extra: {
-                            'conversation': conversation,
-                            'currentUserId': currentUserId,
+                            'conversationId': conversation.id,
+                            'propertyTitle': conversation.propertyTitle,
+                            'propertyImage': conversation.propertyImage,
                           },
                         );
                       },
                     );
                   },
                 ),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -78,7 +127,7 @@ class MessagesTab extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            emptyTitle,
+            widget.emptyTitle,
             style: AppTextStyles.h4.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -87,7 +136,7 @@ class MessagesTab extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              emptySubtitle,
+              widget.emptySubtitle,
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textHint,
               ),
@@ -101,7 +150,7 @@ class MessagesTab extends StatelessWidget {
 }
 
 class _ConversationTile extends StatelessWidget {
-  final ConversationModel conversation;
+  final ConversationData conversation;
   final String currentUserId;
   final VoidCallback onTap;
 
@@ -115,8 +164,8 @@ class _ConversationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final otherPersonName = conversation.getOtherPersonName(currentUserId);
     final otherPersonInitials = conversation.getOtherPersonInitials(currentUserId);
-    final isUnread = conversation.unreadCount > 0 &&
-        conversation.lastMessageSenderId != currentUserId;
+    final unreadCount = conversation.getUnreadCount(currentUserId);
+    final isUnread = unreadCount > 0;
 
     return GestureDetector(
       onTap: onTap,
@@ -197,12 +246,17 @@ class _ConversationTile extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          conversation.lastMessage,
+                          conversation.lastMessage.isEmpty
+                              ? 'No messages yet'
+                              : conversation.lastMessage,
                           style: AppTextStyles.bodySmall.copyWith(
                             color: isUnread
                                 ? AppColors.textPrimary
                                 : AppColors.textSecondary,
                             fontWeight: isUnread ? FontWeight.w500 : FontWeight.normal,
+                            fontStyle: conversation.lastMessage.isEmpty
+                                ? FontStyle.italic
+                                : FontStyle.normal,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -220,7 +274,7 @@ class _ConversationTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            '${conversation.unreadCount}',
+                            '$unreadCount',
                             style: AppTextStyles.labelSmall.copyWith(
                               color: Colors.white,
                               fontSize: 11,

@@ -82,10 +82,9 @@ class PropertyService {
     double? longitude,
     required double rent,
     required String rentFrequency,
-    double agentFee = 0,
-    String agentFeePaidBy = 'tenant',
     List<String> amenities = const [],
     List<String> rules = const [],
+    String inspectionHandler = 'self', // 'self' or 'agent'
   }) async {
     try {
       if (_currentUserId == null) {
@@ -119,14 +118,16 @@ class PropertyService {
         'longitude': longitude,
         'rent': rent,
         'rentFrequency': rentFrequency,
-        'agentFee': agentFee,
-        'agentFeePaidBy': agentFeePaidBy,
         'isAvailable': true,
         'isVerified': isVerified, // Based on landlord verification status
         'amenities': amenities,
         'rules': rules,
         'landlordName': landlordName,
         'landlordPhone': landlordPhone,
+        'inspectionHandler': inspectionHandler,
+        'assignedAgentId': null,
+        'assignedAgentName': null,
+        'assignedAgentPhone': null,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -186,19 +187,63 @@ class PropertyService {
   /// Get properties by landlord ID (for landlord dashboard)
   Future<List<PropertyModel>> getLandlordProperties() async {
     try {
-      if (_currentUserId == null) return [];
+      if (_currentUserId == null) {
+        developer.log('❌ User not authenticated for getLandlordProperties', name: 'PropertyService');
+        return [];
+      }
 
-      final snapshot =
-          await _propertiesRef
-              .where('landlordId', isEqualTo: _currentUserId)
-              .orderBy('createdAt', descending: true)
-              .get();
+      developer.log('🔍 Fetching properties for landlord: $_currentUserId', name: 'PropertyService');
 
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return PropertyModel.fromJson(_convertTimestamps(data));
-      }).toList();
+      // Try the compound query first
+      try {
+        final snapshot = await _propertiesRef
+            .where('landlordId', isEqualTo: _currentUserId)
+            .orderBy('createdAt', descending: true)
+            .get();
+
+        developer.log('✅ Found ${snapshot.docs.length} properties (with orderBy)', name: 'PropertyService');
+
+        return snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          data['id'] = doc.id;
+          return PropertyModel.fromJson(_convertTimestamps(data));
+        }).toList();
+      } catch (e) {
+        // If compound query fails (missing index), fall back to simple query
+        developer.log(
+          '⚠️ Compound query failed, trying simple query. Error: $e',
+          name: 'PropertyService',
+        );
+        
+        // Check if it's an index error
+        if (e.toString().contains('index') || e.toString().contains('FAILED_PRECONDITION')) {
+          developer.log(
+            '🔧 MISSING INDEX! Create a composite index in Firebase Console:\n'
+            '   Collection: properties\n'
+            '   Fields: landlordId (Ascending), createdAt (Descending)\n'
+            '   Or click the link in the error message above.',
+            name: 'PropertyService',
+          );
+        }
+
+        // Fallback: simple query without orderBy, then sort client-side
+        final snapshot = await _propertiesRef
+            .where('landlordId', isEqualTo: _currentUserId)
+            .get();
+
+        developer.log('✅ Found ${snapshot.docs.length} properties (simple query)', name: 'PropertyService');
+
+        final properties = snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          data['id'] = doc.id;
+          return PropertyModel.fromJson(_convertTimestamps(data));
+        }).toList();
+
+        // Sort client-side
+        properties.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+        return properties;
+      }
     } catch (e) {
       developer.log(
         '❌ Failed to get landlord properties: $e',
@@ -326,6 +371,84 @@ class PropertyService {
     }
   }
 
+  /// Assign an agent to a property
+  Future<bool> assignAgent({
+    required String propertyId,
+    required String agentId,
+    required String agentName,
+    required String agentPhone,
+  }) async {
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'assignedAgentId': agentId,
+        'assignedAgentName': agentName,
+        'assignedAgentPhone': agentPhone,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Agent assigned to property', name: 'PropertyService');
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Failed to assign agent: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return false;
+    }
+  }
+
+  /// Remove agent from a property
+  Future<bool> removeAgent(String propertyId) async {
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'assignedAgentId': null,
+        'assignedAgentName': null,
+        'assignedAgentPhone': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Agent removed from property', name: 'PropertyService');
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Failed to remove agent: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return false;
+    }
+  }
+
+  /// Change inspection handler (self <-> agent)
+  Future<bool> updateInspectionHandler(String propertyId, String handler) async {
+    try {
+      final updates = <String, dynamic>{
+        'inspectionHandler': handler,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // If switching to self, clear agent assignment
+      if (handler == 'self') {
+        updates['assignedAgentId'] = null;
+        updates['assignedAgentName'] = null;
+        updates['assignedAgentPhone'] = null;
+      }
+
+      await _propertiesRef.doc(propertyId).update(updates);
+      developer.log('✅ Inspection handler updated to: $handler', name: 'PropertyService');
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Failed to update inspection handler: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return false;
+    }
+  }
+
   // ============ DELETE ============
 
   /// Delete a property
@@ -424,16 +547,20 @@ class PropertyService {
       return Stream.value([]);
     }
 
+    // Use simple query to avoid index issues, sort client-side
     return _propertiesRef
         .where('landlordId', isEqualTo: _currentUserId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
+          final properties = snapshot.docs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
             data['id'] = doc.id;
             return PropertyModel.fromJson(_convertTimestamps(data));
           }).toList();
+          
+          // Sort client-side
+          properties.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return properties;
         });
   }
 }

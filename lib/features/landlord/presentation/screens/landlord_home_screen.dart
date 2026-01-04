@@ -3,14 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
-import '../../../../shared/data/mock_conversations.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/activity_model.dart';
-import '../../../messaging/presentation/widgets/messages_tab.dart';
+import '../../../messaging/presentation/widgets/messages_tab_real.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/activity_service.dart';
+import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
@@ -29,6 +29,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   late final VerificationService _verificationService;
   late final PropertyService _propertyService;
   late final ActivityService _activityService;
+  late final ConversationService _conversationService;
   
   // User data
   String _userName = '';
@@ -43,6 +44,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   // Activities - now from Firestore
   List<ActivityModel> _recentActivities = [];
   bool _isLoadingActivities = true;
+
+  // Unread message count
+  int _unreadCount = 0;
 
   // Stats (will be real later)
   int get _totalViews => _recentActivities
@@ -60,10 +64,12 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _verificationService = VerificationService();
     _propertyService = PropertyService();
     _activityService = ActivityService();
+    _conversationService = ConversationService();
     _loadUserProfile();
     _loadVerificationStatus();
     _loadProperties();
     _loadActivities();
+    _loadUnreadCount();
   }
 
   Future<void> _loadUserProfile() async {
@@ -132,10 +138,22 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     }
   }
 
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await _conversationService.getTotalUnreadCount();
+      if (mounted) {
+        setState(() => _unreadCount = count);
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading unread count: $e');
+    }
+  }
+
   Future<void> _refreshData() async {
     await Future.wait([
       _loadProperties(),
       _loadActivities(),
+      _loadUnreadCount(),
     ]);
   }
 
@@ -623,11 +641,10 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     ]));
   }
 
+  /// UPDATED: Now uses real Firestore messages
   Widget _buildMessagesTab() {
-    return MessagesTab(
-      conversations: getLandlordConversations(), 
-      currentUserId: _authService.currentUser?.uid ?? mockLandlordId, 
-      emptyTitle: 'No messages yet', 
+    return const MessagesTabReal(
+      emptyTitle: 'No messages yet',
       emptySubtitle: 'Tenant inquiries will appear here',
     );
   }
@@ -647,7 +664,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Text('Profile', style: AppTextStyles.h3.copyWith(color: Colors.white)),
                   GestureDetector(
-                    onTap: () => context.push('/landlord/settings'),
+                    onTap: () => context.push('/settings'),
                     child: Container(
                       width: 40,
                       height: 40,
@@ -694,7 +711,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _ProfileSection(title: 'Account', items: [
-              _ProfileMenuItem(icon: Icons.person_outline, title: 'Edit Profile', subtitle: 'Update your personal information', onTap: () => context.push('/landlord/edit-profile'),),
+              _ProfileMenuItem(icon: Icons.person_outline, title: 'Edit Profile', subtitle: 'Update your personal information', onTap: () => context.push('/edit-profile')),
               _ProfileMenuItem(
                 icon: Icons.account_balance_outlined,
                 title: 'Bank Details',
@@ -713,13 +730,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 icon: Icons.help_outline,
                 title: 'Help & Support',
                 subtitle: 'FAQs and contact us',
-                onTap: () => context.push('/landlord/help-support'),
+                onTap: () => context.push('/help-support'),
               ),
               _ProfileMenuItem(
                 icon: Icons.info_outline,
                 title: 'About ClearRent',
                 subtitle: 'Version 1.0.0',
-                onTap: () => context.push('/landlord/about'),
+                onTap: () => context.push('/about'),
               ),
             ]),
             // Only show Admin section for your account
@@ -756,7 +773,19 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
             _NavItem(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: 'Dashboard', isActive: _currentNavIndex == 0, onTap: () => setState(() => _currentNavIndex = 0)),
             _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Properties', isActive: _currentNavIndex == 1, onTap: () => setState(() => _currentNavIndex = 1)),
-            _NavItem(icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble, label: 'Messages', isActive: _currentNavIndex == 2, onTap: () => setState(() => _currentNavIndex = 2)),
+            _NavItem(
+              icon: Icons.chat_bubble_outline, 
+              activeIcon: Icons.chat_bubble, 
+              label: 'Messages', 
+              isActive: _currentNavIndex == 2, 
+              onTap: () {
+                setState(() {
+                  _currentNavIndex = 2;
+                  _loadUnreadCount();
+                });
+              },
+              badge: _unreadCount > 0 ? '$_unreadCount' : null,
+            ),
             _NavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile', isActive: _currentNavIndex == 3, onTap: () => setState(() => _currentNavIndex = 3)),
           ]),
         ),
@@ -954,7 +983,8 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool isActive;
   final VoidCallback onTap;
-  const _NavItem({required this.icon, required this.activeIcon, required this.label, required this.isActive, required this.onTap});
+  final String? badge;
+  const _NavItem({required this.icon, required this.activeIcon, required this.label, required this.isActive, required this.onTap, this.badge});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -963,7 +993,22 @@ class _NavItem extends StatelessWidget {
       child: SizedBox(
         width: 64,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(isActive ? activeIcon : icon, color: isActive ? AppColors.primary : AppColors.textHint, size: 24),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(isActive ? activeIcon : icon, color: isActive ? AppColors.primary : AppColors.textHint, size: 24),
+              if (badge != null)
+                Positioned(
+                  right: -8,
+                  top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(10)),
+                    child: Text(badge!, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(label, style: AppTextStyles.labelSmall.copyWith(color: isActive ? AppColors.primary : AppColors.textHint, fontWeight: isActive ? FontWeight.w600 : FontWeight.w400)),
         ]),

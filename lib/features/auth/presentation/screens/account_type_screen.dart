@@ -94,6 +94,17 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
                 onTap: () => _selectType('tenant'),
               ),
 
+              const SizedBox(height: 16),
+
+              // Agent option
+              _AccountTypeCard(
+                icon: Icons.support_agent_rounded,
+                title: 'Agent',
+                description: 'Help landlords manage property inspections',
+                isSelected: _selectedType == 'agent',
+                onTap: () => _selectType('agent'),
+              ),
+
               const Spacer(),
 
               // Continue button

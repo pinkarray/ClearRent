@@ -18,9 +18,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  
+
   late final AuthService _authService;
-  
+
   bool _isLoading = false;
   bool _isSignUp = true;
   bool _obscurePassword = true;
@@ -62,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     setState(() => _errorMessage = null);
-    
+
     if (!_formKey.currentState!.validate()) return;
 
     FocusScope.of(context).unfocus();
@@ -74,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text;
 
     AuthResult result;
-    
+
     try {
       if (_isSignUp) {
         result = await _authService.signUp(email: email, password: password);
@@ -99,11 +99,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       try {
         final profile = await _authService.getUserProfile();
-        
+
         if (!mounted) return;
-        
+
         setState(() => _isLoading = false);
-        
+
         if (profile == null || profile['profileCompleted'] != true) {
           if (profile != null && profile['accountType'] != null) {
             context.go('/profile-setup', extra: profile['accountType']);
@@ -111,16 +111,23 @@ class _LoginScreenState extends State<LoginScreen> {
             context.go('/account-type');
           }
         } else {
-         final accountType = profile['accountType'] ?? 'tenant';
-          if (accountType == 'landlord') {
-            context.go('/landlord/home');
-          } else {
-            context.go('/tenant/home');
+          final accountType =
+              (profile['accountType'] ?? 'tenant').toString().toLowerCase();
+          debugPrint('Routing after sign-in for accountType=$accountType');
+          switch (accountType) {
+            case 'landlord':
+              context.go('/landlord/home');
+              break;
+            case 'agent':
+              context.go('/agent/home');
+              break;
+            default:
+              context.go('/tenant/home');
           }
         }
       } catch (e) {
         debugPrint('❌ Profile check error: $e');
-        if (!mounted) return; 
+        if (!mounted) return;
         setState(() => _isLoading = false);
         context.go('/account-type');
       }
@@ -134,21 +141,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
-    
+
     if (email.isEmpty) {
       setState(() => _errorMessage = 'Please enter your email first');
       return;
     }
 
     setState(() => _isLoading = true);
-    
+
     bool success = false;
     try {
       success = await _authService.sendPasswordResetEmail(email);
     } catch (e) {
       debugPrint('❌ Forgot password error: $e');
     }
-    
+
     setState(() => _isLoading = false);
 
     if (!mounted) return;
@@ -161,7 +168,11 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } else {
-      setState(() => _errorMessage = 'Failed to send reset email. Please check your email address.');
+      setState(
+        () =>
+            _errorMessage =
+                'Failed to send reset email. Please check your email address.',
+      );
     }
   }
 
@@ -223,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _isSignUp 
+                  _isSignUp
                       ? 'Sign up to get started with ClearRent'
                       : 'Sign in to continue to ClearRent',
                   style: AppTextStyles.bodyMedium.copyWith(
@@ -244,7 +255,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                        Icon(
+                          Icons.error_outline,
+                          color: AppColors.error,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -270,7 +285,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   validator: _validateEmail,
                   prefixIcon: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(Icons.email_outlined, color: AppColors.textHint),
+                    child: Icon(
+                      Icons.email_outlined,
+                      color: AppColors.textHint,
+                    ),
                   ),
                 ),
 
@@ -279,7 +297,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Password input
                 AppTextField(
                   label: 'Password',
-                  hint: _isSignUp ? 'At least 6 characters' : 'Enter your password',
+                  hint:
+                      _isSignUp
+                          ? 'At least 6 characters'
+                          : 'Enter your password',
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   textInputAction: TextInputAction.done,
@@ -291,7 +312,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: AppColors.textHint,
                     ),
                     onPressed: () {
@@ -334,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        _isSignUp 
+                        _isSignUp
                             ? 'Already have an account? '
                             : "Don't have an account? ",
                         style: AppTextStyles.bodyMedium.copyWith(

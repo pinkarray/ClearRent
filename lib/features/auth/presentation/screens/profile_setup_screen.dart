@@ -22,6 +22,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _nameController = TextEditingController();
   final _bvnController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _customAreaController = TextEditingController();
 
   late final AuthService _authService;
   bool _isLoading = false;
@@ -29,7 +30,43 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String? _errorMessage;
   String? _userEmail;
 
+  // Agent-specific fields
+  String? _selectedBaseLocation;
+  final List<String> _selectedServiceAreas = [];
+  bool _showCustomAreaInput = false;
+
+  // Lagos LGAs for location selection
+  static const List<String> _lagosAreas = [
+    'Agege',
+    'Ajeromi-Ifelodun',
+    'Alimosho',
+    'Amuwo-Odofin',
+    'Apapa',
+    'Badagry',
+    'Epe',
+    'Eti-Osa',
+    'Ibeju-Lekki',
+    'Ifako-Ijaiye',
+    'Ikeja',
+    'Ikorodu',
+    'Kosofe',
+    'Lagos Island',
+    'Lagos Mainland',
+    'Mushin',
+    'Ojo',
+    'Oshodi-Isolo',
+    'Shomolu',
+    'Surulere',
+    'Lekki',
+    'Victoria Island',
+    'Yaba',
+    'Ajah',
+    'Ikoyi',
+    'Other',
+  ];
+
   bool get _isLandlord => widget.accountType == 'landlord';
+  bool get _isAgent => widget.accountType == 'agent';
 
   @override
   void initState() {
@@ -52,6 +89,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     _nameController.dispose();
     _bvnController.dispose();
     _phoneController.dispose();
+    _customAreaController.dispose();
     super.dispose();
   }
 
@@ -85,8 +123,51 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     return null;
   }
 
+  void _toggleServiceArea(String area) {
+    setState(() {
+      if (area == 'Other') {
+        _showCustomAreaInput = !_showCustomAreaInput;
+        if (!_showCustomAreaInput) {
+          _customAreaController.clear();
+        }
+      } else {
+        if (_selectedServiceAreas.contains(area)) {
+          _selectedServiceAreas.remove(area);
+        } else {
+          _selectedServiceAreas.add(area);
+        }
+      }
+    });
+  }
+
+  void _addCustomArea() {
+    final customArea = _customAreaController.text.trim();
+    if (customArea.isNotEmpty && !_selectedServiceAreas.contains(customArea)) {
+      setState(() {
+        _selectedServiceAreas.add(customArea);
+        _customAreaController.clear();
+      });
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Agent-specific validation
+    if (_isAgent) {
+      if (_selectedBaseLocation == null) {
+        setState(() {
+          _errorMessage = 'Please select your base location';
+        });
+        return;
+      }
+      if (_selectedServiceAreas.isEmpty) {
+        setState(() {
+          _errorMessage = 'Please select at least one service area';
+        });
+        return;
+      }
+    }
 
     FocusScope.of(context).unfocus();
     await Future.delayed(const Duration(milliseconds: 300));
@@ -102,7 +183,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         email: _authService.currentUser?.email ?? '',
         accountType: widget.accountType,
         bvn: _bvnController.text.trim(),
-        phone: _isLandlord ? _phoneController.text.trim() : null,
+        phone: (_isLandlord || _isAgent) ? _phoneController.text.trim() : null,
+        // Agent-specific fields
+        baseLocation: _isAgent ? _selectedBaseLocation : null,
+        serviceAreas: _isAgent ? _selectedServiceAreas : null,
       );
 
       if (!success) {
@@ -126,6 +210,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     if (mounted) {
       if (widget.accountType == 'landlord') {
         context.go('/landlord/home');
+      } else if (widget.accountType == 'agent') {
+        context.go('/agent/home');
       } else {
         context.go('/tenant/home');
       }
@@ -158,9 +244,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _isLandlord 
-                      ? 'Tell us about yourself so tenants can reach you'
-                      : 'Tell us a bit about yourself',
+                  _getSubtitle(),
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -179,8 +263,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                           color: AppColors.primaryLight.withAlpha(51),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.person,
+                        child: Icon(
+                          _isAgent ? Icons.support_agent : Icons.person,
                           size: 50,
                           color: AppColors.primary,
                         ),
@@ -294,8 +378,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                 const SizedBox(height: 20),
 
-                // Phone number (for landlords only)
-                if (_isLandlord) ...[
+                // Phone number (for landlords and agents)
+                if (_isLandlord || _isAgent) ...[
                   AppTextField(
                     label: 'Phone Number',
                     hint: '08012345678',
@@ -311,7 +395,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Tenants will use this number to contact you',
+                    _isAgent
+                        ? 'Landlords and tenants will use this number to contact you'
+                        : 'Tenants will use this number to contact you',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -319,9 +405,17 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   const SizedBox(height: 20),
                 ],
 
+                // Agent-specific: Base Location
+                if (_isAgent) ...[
+                  _buildBaseLocationSelector(),
+                  const SizedBox(height: 20),
+                  _buildServiceAreasSelector(),
+                  const SizedBox(height: 20),
+                ],
+
                 // BVN/NIN
                 AppTextField(
-                  label: _isLandlord ? 'NIN (National Identification Number)' : AppStrings.bvn,
+                  label: (_isLandlord || _isAgent) ? 'NIN (National Identification Number)' : AppStrings.bvn,
                   hint: AppStrings.bvnHint,
                   controller: _bvnController,
                   keyboardType: TextInputType.number,
@@ -350,7 +444,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _isLandlord ? 'Why do we need your NIN?' : AppStrings.whyBvn,
+                        (_isLandlord || _isAgent) ? 'Why do we need your NIN?' : AppStrings.whyBvn,
                         style: AppTextStyles.labelMedium.copyWith(
                           color: AppColors.primary,
                         ),
@@ -379,9 +473,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _isLandlord 
-                                ? 'Your NIN helps us verify your identity and build trust with tenants. This information is securely stored and only used for verification purposes.'
-                                : AppStrings.bvnExplanation,
+                            _getNinExplanation(),
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.info,
                             ),
@@ -400,11 +492,212 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   onPressed: _submit,
                   isLoading: _isLoading,
                 ),
+
+                const SizedBox(height: 24),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  String _getSubtitle() {
+    if (_isLandlord) {
+      return 'Tell us about yourself so tenants can reach you';
+    } else if (_isAgent) {
+      return 'Tell us about yourself and where you operate';
+    } else {
+      return 'Tell us a bit about yourself';
+    }
+  }
+
+  String _getNinExplanation() {
+    if (_isAgent) {
+      return 'Your NIN helps us verify your identity and build trust with landlords and tenants. Verified agents get a badge and more assignment opportunities.';
+    } else if (_isLandlord) {
+      return 'Your NIN helps us verify your identity and build trust with tenants. This information is securely stored and only used for verification purposes.';
+    } else {
+      return AppStrings.bvnExplanation;
+    }
+  }
+
+  Widget _buildBaseLocationSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Base Location',
+          style: AppTextStyles.labelMedium.copyWith(
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Where are you based? This helps us calculate inspection distances.',
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedBaseLocation,
+              hint: Text(
+                'Select your area',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+              items: _lagosAreas.where((area) => area != 'Other').map((area) {
+                return DropdownMenuItem(
+                  value: area,
+                  child: Text(area, style: AppTextStyles.bodyMedium),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedBaseLocation = value;
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServiceAreasSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Service Areas',
+          style: AppTextStyles.labelMedium.copyWith(
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Which areas can you cover for inspections? Select all that apply.',
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Selected areas chips
+        if (_selectedServiceAreas.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _selectedServiceAreas.map((area) {
+              return Chip(
+                label: Text(
+                  area,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
+                backgroundColor: AppColors.primary.withAlpha(26),
+                deleteIcon: const Icon(Icons.close, size: 18),
+                deleteIconColor: AppColors.primary,
+                onDeleted: () => _toggleServiceArea(area),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Area selection grid
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tap to select areas:',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _lagosAreas.map((area) {
+                  final isSelected = _selectedServiceAreas.contains(area) || 
+                                     (area == 'Other' && _showCustomAreaInput);
+                  return GestureDetector(
+                    onTap: () => _toggleServiceArea(area),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        area,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: isSelected ? Colors.white : AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+
+        // Custom area input
+        if (_showCustomAreaInput) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: AppTextField(
+                  label: 'Other Area',
+                  hint: 'Enter area name',
+                  controller: _customAreaController,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _addCustomArea(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: IconButton(
+                  onPressed: _addCustomArea,
+                  icon: const Icon(Icons.add_circle, color: AppColors.primary, size: 32),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

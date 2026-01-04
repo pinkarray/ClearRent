@@ -8,7 +8,6 @@ class AuthService {
   FirebaseFirestore? _firestore;
   bool _isInitialized = false;
 
-  // Initialize Firebase services lazily
   Future<bool> _ensureInitialized() async {
     if (_isInitialized) {
       return true;
@@ -210,6 +209,9 @@ class AuthService {
     required String accountType,
     String? bvn,
     String? phone,
+    // Agent-specific fields
+    String? baseLocation,
+    List<String>? serviceAreas,
   }) async {
     try {
       final initialized = await _ensureInitialized();
@@ -217,7 +219,7 @@ class AuthService {
         return false;
       }
 
-      final data = {
+      final data = <String, dynamic>{
         'uid': currentUser!.uid,
         'fullName': fullName,
         'email': email,
@@ -229,9 +231,24 @@ class AuthService {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Add phone for landlords
+      // Add phone for landlords and agents
       if (phone != null && phone.isNotEmpty) {
         data['phone'] = phone;
+      }
+
+      // Add agent-specific fields
+      if (accountType == 'agent') {
+        if (baseLocation != null && baseLocation.isNotEmpty) {
+          data['baseLocation'] = baseLocation;
+        }
+        if (serviceAreas != null && serviceAreas.isNotEmpty) {
+          data['serviceAreas'] = serviceAreas;
+        }
+        // Agent starts unverified - admin will verify later
+        data['isVerified'] = false;
+        data['rating'] = 0.0;
+        data['totalInspections'] = 0;
+        data['totalRatings'] = 0;
       }
 
       await _firestore!
