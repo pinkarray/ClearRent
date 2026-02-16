@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/auth_service.dart';
+import '../../services/biometric_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,48 +16,190 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final AuthService _authService = AuthService();
+  final BiometricService _biometricService = BiometricService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   bool _isSendingReset = false;
   String? _userEmail;
+  String? _accountType;
+  
+  // Biometric state
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+  String _biometricTypeName = 'Biometric';
+  bool _isLoadingBiometric = true;
+  
+  // Call permission state (for landlords only)
+  bool _allowsCalls = false;
+  bool _isUpdatingCallPermission = false;
 
   @override
   void initState() {
     super.initState();
     _userEmail = FirebaseAuth.instance.currentUser?.email;
+    _loadBiometricStatus();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId == null) return;
+
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        if (mounted) {
+          setState(() {
+            _accountType = userData?['accountType'];
+            _allowsCalls = userData?['allowsCalls'] ?? false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading user profile: $e');
+    }
+  }
+
+  Future<void> _loadBiometricStatus() async {
+    final available = await _biometricService.isBiometricAvailable();
+    final enabled = await _biometricService.isBiometricEnabled();
+    final typeName = await _biometricService.getBiometricTypeName();
+    
+    if (mounted) {
+      setState(() {
+        _biometricAvailable = available;
+        _biometricEnabled = enabled;
+        _biometricTypeName = typeName;
+        _isLoadingBiometric = false;
+      });
+    }
+  }
+
+  Future<void> _toggleBiometric(bool enable) async {
+    if (enable) {
+      // Verify biometric before enabling
+      final authenticated = await _biometricService.authenticate(
+        reason: 'Verify to enable $_biometricTypeName login',
+      );
+      
+      if (authenticated) {
+        await _biometricService.setBiometricEnabled(true);
+        // Also save current email for biometric login
+        if (_userEmail != null) {
+          await _biometricService.setLastUserEmail(_userEmail!);
+        }
+        if (mounted) {
+          setState(() => _biometricEnabled = true);
+          _showSuccess('$_biometricTypeName login enabled');
+        }
+      }
+    } else {
+      await _biometricService.setBiometricEnabled(false);
+      if (mounted) {
+        setState(() => _biometricEnabled = false);
+        _showSuccess('$_biometricTypeName login disabled');
+      }
+    }
+  }
+
+  Future<void> _toggleCallPermission(bool value) async {
+    setState(() => _isUpdatingCallPermission = true);
+
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId == null) return;
+
+      await _firestore.collection('users').doc(userId).update({
+        'allowsCalls': value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _allowsCalls = value;
+        _isUpdatingCallPermission = false;
+      });
+
+      if (mounted) {
+        _showSuccess(
+          value 
+              ? 'Phone calls enabled. Tenants can now call you directly.'
+              : 'Phone calls disabled. Tenants can only message you.',
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error updating call permission: $e');
+      setState(() => _isUpdatingCallPermission = false);
+      
+      if (mounted) {
+        _showError('Failed to update settings');
+      }
+    }
   }
 
   void _showLogoutConfirmation() {
     showDialog(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Logout'),
-            content: const Text('Are you sure you want to logout?'),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ),
-              TextButton(
-                onPressed: () async {
-                  // Close dialog synchronously, then perform async sign-out
-                  Navigator.pop(ctx);
-                  await _authService.signOut();
-                  // Guard State.context with the State's `mounted` check
-                  if (!mounted) return;
-                  context.go('/login');
-                },
-                child: Text('Logout', style: TextStyle(color: AppColors.error)),
-              ),
-            ],
           ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _performLogout();
+            },
+            child: Text('Logout', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _performLogout() async {
+    // If biometric is enabled, ask if they want to keep it
+    if (_biometricEnabled) {
+      final keepBiometric = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Keep $_biometricTypeName Login?'),
+          content: Text(
+            'Do you want to keep $_biometricTypeName login enabled for faster sign-in next time?',
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false), // Disable
+              child: Text('Disable', style: TextStyle(color: AppColors.error)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true), // Keep
+              child: Text('Keep', style: TextStyle(color: AppColors.primary)),
+            ),
+          ],
+        ),
+      );
+
+      if (keepBiometric == false) {
+        await _biometricService.setBiometricEnabled(false);
+        await _biometricService.clearLastUserEmail();
+      }
+    }
+
+    await _authService.signOut();
+    if (mounted) {
+      context.go('/login');
+    }
   }
 
   Future<void> _sendPasswordReset() async {
@@ -82,117 +226,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showChangePasswordDialog() {
     showDialog(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Change Password'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'We\'ll send a password reset link to:',
-                  style: AppTextStyles.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _userEmail ?? 'Unknown',
-                    style: AppTextStyles.labelLarge.copyWith(
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We\'ll send a password reset link to:',
+              style: AppTextStyles.bodyMedium,
             ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: AppColors.textSecondary),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _userEmail ?? 'Unknown',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: AppColors.primary,
                 ),
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _sendPasswordReset();
-                },
-                child: Text(
-                  'Send Link',
-                  style: TextStyle(color: AppColors.primary),
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _sendPasswordReset();
+            },
+            child: Text(
+              'Send Link',
+              style: TextStyle(color: AppColors.primary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   void _showDeleteAccountDialog() {
     showDialog(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: AppColors.error),
-                const SizedBox(width: 8),
-                const Text('Delete Account'),
-              ],
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.error),
+            const SizedBox(width: 8),
+            const Text('Delete Account'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This action cannot be undone. All your data will be permanently deleted, including:',
+              style: AppTextStyles.bodyMedium,
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'This action cannot be undone. All your data will be permanently deleted, including:',
-                  style: AppTextStyles.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                _buildDeleteItem('Your profile information'),
-                _buildDeleteItem('Your saved properties'),
-                _buildDeleteItem('Your rental history'),
-                _buildDeleteItem('Message history'),
-                const SizedBox(height: 16),
-                Text(
-                  'To delete your account, please contact support.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
+            const SizedBox(height: 12),
+            _buildDeleteItem('Your profile information'),
+            _buildDeleteItem('Your saved properties'),
+            _buildDeleteItem('Your rental history'),
+            _buildDeleteItem('Message history'),
+            const SizedBox(height: 16),
+            Text(
+              'To delete your account, please contact support.',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _contactSupport();
-                },
-                child: Text(
-                  'Contact Support',
-                  style: TextStyle(color: AppColors.error),
-                ),
-              ),
-            ],
+            ),
+          ],
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _contactSupport();
+            },
+            child: Text(
+              'Contact Support',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -261,6 +403,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Check if user is a landlord
+    final isLandlord = _accountType == 'landlord';
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -278,8 +423,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Account Section
-            _buildSectionHeader('Account'),
+            // Security Section
+            _buildSectionHeader('Security'),
             const SizedBox(height: 12),
             _buildSettingsCard([
               _SettingsItem(
@@ -287,9 +432,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Change Password',
                 subtitle: 'Send a password reset link to your email',
                 onTap: _showChangePasswordDialog,
-                trailing:
-                    _isSendingReset
-                        ? const SizedBox(
+                trailing: _isSendingReset
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              // Biometric toggle - only show if available
+              if (_biometricAvailable || _isLoadingBiometric)
+                _SettingsItem(
+                  icon: _biometricTypeName == 'Face ID' 
+                      ? Icons.face 
+                      : Icons.fingerprint,
+                  title: '$_biometricTypeName Login',
+                  subtitle: _isLoadingBiometric 
+                      ? 'Loading...'
+                      : _biometricEnabled 
+                          ? 'Enabled - sign in faster' 
+                          : 'Disabled',
+                  onTap: null,
+                  showChevron: false,
+                  trailing: _isLoadingBiometric
+                      ? const SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -297,9 +466,75 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: AppColors.primary,
                           ),
                         )
-                        : null,
-              ),
+                      : Switch(
+                          value: _biometricEnabled,
+                          onChanged: _toggleBiometric,
+                          activeColor: AppColors.primary,
+                        ),
+                ),
             ]),
+
+            // Communication Section (Landlords only)
+            if (isLandlord) ...[
+              const SizedBox(height: 24),
+              _buildSectionHeader('Communication'),
+              const SizedBox(height: 12),
+              _buildSettingsCard([
+                _SettingsItem(
+                  icon: Icons.phone,
+                  title: 'Allow Phone Calls',
+                  subtitle: _allowsCalls 
+                      ? 'Tenants can call you directly' 
+                      : 'Tenants can only message you',
+                  onTap: null,
+                  showChevron: false,
+                  trailing: _isUpdatingCallPermission
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : Switch(
+                          value: _allowsCalls,
+                          onChanged: _toggleCallPermission,
+                          activeColor: AppColors.primary,
+                        ),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              // Info banner about call permissions
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.info.withAlpha(77)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 20,
+                      color: AppColors.info,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Only verified tenants who have messaged you can see your contact information. You can disable calls at any time.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textPrimary,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 24),
 
@@ -416,7 +651,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingsCard(List<_SettingsItem> items) {
+  Widget _buildSettingsCard(List<Widget> items) {
+    // Filter out any null items (in case biometric is not available)
+    final filteredItems = items.whereType<Widget>().toList();
+    
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -424,18 +662,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        children:
-            items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              return Column(
-                children: [
-                  item,
-                  if (index < items.length - 1)
-                    Divider(height: 1, indent: 56, color: AppColors.border),
-                ],
-              );
-            }).toList(),
+        children: filteredItems.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          return Column(
+            children: [
+              item,
+              if (index < filteredItems.length - 1)
+                Divider(height: 1, indent: 56, color: AppColors.border),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -475,10 +712,9 @@ class _SettingsItem extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color:
-                    isDestructive
-                        ? AppColors.error.withAlpha(26)
-                        : AppColors.background,
+                color: isDestructive
+                    ? AppColors.error.withAlpha(26)
+                    : AppColors.background,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 20),

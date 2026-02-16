@@ -9,6 +9,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/verification_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -59,11 +60,13 @@ class AddPropertyScreen extends StatefulWidget {
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final PageController _pageController = PageController();
   final PropertyService _propertyService = PropertyService();
+  final VerificationService _verificationService = VerificationService();
   final ImagePicker _imagePicker = ImagePicker();
   
   int _currentStep = 0;
   final int _totalSteps = 5;
   bool _isPublishing = false;
+  bool _isCheckingVerification = true;
 
   final List<File> _selectedImageFiles = [];
   final _addressController = TextEditingController();
@@ -86,6 +89,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   // New inspection handling model
   String _inspectionHandler = 'self'; // 'self' or 'agent'
+
+  // Inspection availability
+  final List<String> _availableDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  final List<String> _availableTimeSlots = ['morning', 'afternoon', 'late_afternoon'];
+
+  final List<String> _weekDays = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+  ];
+
+  final List<Map<String, String>> _timeSlotOptions = [
+    {'id': 'morning', 'label': 'Morning', 'time': '9:00 AM - 12:00 PM'},
+    {'id': 'afternoon', 'label': 'Afternoon', 'time': '12:00 PM - 3:00 PM'},
+    {'id': 'late_afternoon', 'label': 'Late Afternoon', 'time': '3:00 PM - 6:00 PM'},
+    {'id': 'evening', 'label': 'Evening', 'time': '6:00 PM - 8:00 PM'},
+  ];
 
   final List<String> _amenitiesList = [
     '24/7 Power Supply',
@@ -118,6 +136,128 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     'Visitors must sign in',
     'No commercial activities',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkVerificationStatus();
+  }
+
+  /// Check if landlord is verified before allowing property listing
+  Future<void> _checkVerificationStatus() async {
+    try {
+      final data = await _verificationService.getVerificationStatus();
+      
+      if (!mounted) return;
+      
+      if (data.status != VerificationStatus.verified) {
+        // Show verification required dialog
+        _showVerificationRequiredDialog(data.status);
+      } else {
+        setState(() => _isCheckingVerification = false);
+      }
+    } catch (e) {
+      debugPrint('❌ Error checking verification: $e');
+      setState(() => _isCheckingVerification = false);
+    }
+  }
+
+  void _showVerificationRequiredDialog(VerificationStatus status) {
+    String title;
+    String message;
+    String buttonText;
+    IconData icon;
+    Color color;
+
+    switch (status) {
+      case VerificationStatus.none:
+        title = 'Verification Required';
+        message = 'You need to verify your identity before listing properties. This helps build trust with tenants and protects everyone on the platform.';
+        buttonText = 'Get Verified';
+        icon = Icons.verified_user_outlined;
+        color = AppColors.primary;
+        break;
+      case VerificationStatus.pending:
+        title = 'Verification Pending';
+        message = 'Your verification is being reviewed. You\'ll be able to list properties once approved. This usually takes 24-48 hours.';
+        buttonText = 'Got it';
+        icon = Icons.schedule;
+        color = AppColors.warning;
+        break;
+      case VerificationStatus.rejected:
+        title = 'Verification Failed';
+        message = 'Your verification was not approved. Please review the feedback and submit again to start listing properties.';
+        buttonText = 'Try Again';
+        icon = Icons.error_outline;
+        color = AppColors.error;
+        break;
+      case VerificationStatus.verified:
+        setState(() => _isCheckingVerification = false);
+        return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: color.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 40, color: color),
+            ),
+            const SizedBox(height: 24),
+            Text(title, style: AppTextStyles.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                text: buttonText,
+                onPressed: () {
+                  Navigator.pop(context);
+                  if (status == VerificationStatus.pending) {
+                    // Just go back to home
+                    context.pop();
+                  } else {
+                    // Go to verification screen
+                    context.pop();
+                    context.push('/landlord/verification');
+                  }
+                },
+              ),
+            ),
+            if (status != VerificationStatus.pending) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  context.pop();
+                },
+                child: Text(
+                  'Maybe later',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+          ],
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -200,6 +340,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         }
         if (_parseRentAmount() <= 0) {
           _showError('Please enter a valid rent amount');
+          return false;
+        }
+        if (_availableDays.isEmpty) {
+          _showError('Please select at least one day for inspections');
+          return false;
+        }
+        if (_availableTimeSlots.isEmpty) {
+          _showError('Please select at least one time slot for inspections');
           return false;
         }
         return true;
@@ -292,6 +440,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       debugPrint('   - City: ${_cityController.text.trim()}');
       debugPrint('   - State: ${_stateController.text.trim()}');
       debugPrint('   - Inspection Handler: $_inspectionHandler');
+      debugPrint('   - Inspection Days: $_availableDays');
+      debugPrint('   - Inspection Time Slots: $_availableTimeSlots');
 
       final propertyId = await _propertyService.createProperty(
         title: _titleController.text.trim(),
@@ -311,6 +461,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         amenities: _selectedAmenities,
         rules: _selectedRules,
         inspectionHandler: _inspectionHandler,
+        inspectionDays: _availableDays,
+        inspectionTimeSlots: _availableTimeSlots,
       );
 
       if (!mounted) return;
@@ -498,102 +650,37 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Future<void> _pickImages() async {
-   final source = await _showImageSourcePicker();
-    if (source == null) return;
-
+  // ============ FIXED: Direct gallery picker ============
+  Future<void> _pickFromGallery() async {
     try {
+      debugPrint('📸 Opening gallery picker...');
+      
       final XFile? image = await _imagePicker.pickImage(
-        source: source,
+        source: ImageSource.gallery,
         maxWidth: 1920,
         maxHeight: 1920,
         imageQuality: 85,
       );
 
       if (image != null) {
+        debugPrint('📸 Image selected: ${image.path}');
         setState(() {
           _selectedImageFiles.add(File(image.path));
         });
+      } else {
+        debugPrint('📸 No image selected');
       }
     } catch (e) {
-      debugPrint('❌ Image picker error: $e');
-      _showError('Failed to pick image');
+      debugPrint('❌ Gallery picker error: $e');
+      _showError('Failed to pick image. Please try again.');
     }
   }
 
-  Future<ImageSource?> _showImageSourcePicker() async {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('Add Photo', style: AppTextStyles.h4),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildSourceOption(
-                    icon: Icons.camera_alt_rounded,
-                    label: 'Camera',
-                    onTap: () => Navigator.pop(context, ImageSource.camera),
-                  ),
-                  _buildSourceOption(
-                    icon: Icons.photo_library_rounded,
-                    label: 'Gallery',
-                    onTap: () => Navigator.pop(context, ImageSource.gallery),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSourceOption({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(26),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: AppColors.primary, size: 32),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: AppTextStyles.labelMedium),
-        ],
-      ),
-    );
-  }
-
+  // ============ FIXED: Direct camera capture ============
   Future<void> _takePhoto() async {
     try {
+      debugPrint('📷 Opening camera...');
+      
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1920,
@@ -602,18 +689,41 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       );
 
       if (image != null) {
+        debugPrint('📷 Photo taken: ${image.path}');
         setState(() {
           _selectedImageFiles.add(File(image.path));
         });
+      } else {
+        debugPrint('📷 Camera cancelled');
       }
     } catch (e) {
       debugPrint('❌ Camera error: $e');
-      _showError('Failed to take photo');
+      _showError('Failed to take photo. Please try again.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Show loading while checking verification
+    if (_isCheckingVerification) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.close, color: AppColors.textPrimary),
+            onPressed: () => context.pop(),
+          ),
+          title: Text('Add Property', style: AppTextStyles.h4),
+          centerTitle: true,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -837,12 +947,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Add photo buttons
+          // Add photo buttons - FIXED: Now directly call gallery/camera
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: _pickImages,
+                  onTap: _pickFromGallery, // Direct call to gallery
                   child: Container(
                     height: 100,
                     decoration: BoxDecoration(
@@ -884,7 +994,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: GestureDetector(
-                  onTap: _takePhoto,
+                  onTap: _takePhoto, // Direct call to camera
                   child: Container(
                     height: 100,
                     decoration: BoxDecoration(
@@ -1283,6 +1393,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
           const SizedBox(height: 24),
 
+          // Inspection availability section
+          _buildInspectionAvailabilitySection(),
+
+          const SizedBox(height: 24),
+
           // Platform fee info
           Container(
             padding: const EdgeInsets.all(16),
@@ -1548,6 +1663,163 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
+  Widget _buildInspectionAvailabilitySection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_month, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Inspection Availability',
+                style: AppTextStyles.labelLarge,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Set when you\'re available for property inspections',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Available days
+          Text('Available Days', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _weekDays.map((day) {
+              final isSelected = _availableDays.contains(day);
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (isSelected) {
+                      _availableDays.remove(day);
+                    } else {
+                      _availableDays.add(day);
+                    }
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.background,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? AppColors.primary : AppColors.border,
+                    ),
+                  ),
+                  child: Text(
+                    day.substring(0, 3), // Mon, Tue, etc.
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Available time slots
+          Text('Preferred Time Slots', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          ...(_timeSlotOptions.map((slot) {
+            final isSelected = _availableTimeSlots.contains(slot['id']);
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (isSelected) {
+                    _availableTimeSlots.remove(slot['id']);
+                  } else {
+                    _availableTimeSlots.add(slot['id']!);
+                  }
+                });
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary.withAlpha(13) : AppColors.background,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected ? AppColors.primary : AppColors.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : AppColors.border,
+                          width: 2,
+                        ),
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, size: 14, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(slot['label']!, style: AppTextStyles.labelMedium),
+                          Text(
+                            slot['time']!,
+                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList()),
+
+          // Tip
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.infoLight.withAlpha(128),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline, size: 16, color: AppColors.info),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tenants will only be able to request inspections during these times',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.info),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPeriodChip(String label, String value) {
     final isSelected = _rentPeriod == value;
     return Expanded(
@@ -1645,6 +1917,39 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           _buildPreviewSection(
             'Inspections',
             _inspectionHandler == 'self' ? 'Handled by you' : 'Assigned agent',
+          ),
+
+          // Inspection availability
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(13),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary.withAlpha(51)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_month, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Text('Inspection Availability', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Days: ${_availableDays.map((d) => d.substring(0, 3)).join(", ")}',
+                  style: AppTextStyles.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Times: ${_availableTimeSlots.map((s) => _timeSlotOptions.firstWhere((t) => t["id"] == s)["label"]).join(", ")}',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+            ),
           ),
 
           if (_selectedAmenities.isNotEmpty) ...[

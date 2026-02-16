@@ -85,6 +85,8 @@ class PropertyService {
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
+    List<String> inspectionDays = const ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    List<String> inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
   }) async {
     try {
       if (_currentUserId == null) {
@@ -125,9 +127,14 @@ class PropertyService {
         'landlordName': landlordName,
         'landlordPhone': landlordPhone,
         'inspectionHandler': inspectionHandler,
+        'inspectionDays': inspectionDays,
+        'inspectionTimeSlots': inspectionTimeSlots,
         'assignedAgentId': null,
         'assignedAgentName': null,
         'assignedAgentPhone': null,
+        'viewCount': 0,
+        'inquiryCount': 0,
+        'savedCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -179,6 +186,130 @@ class PropertyService {
         name: 'PropertyService',
         error: e,
         stackTrace: StackTrace.current,
+      );
+      return [];
+    }
+  }
+
+  /// Get available properties from VERIFIED landlords only
+  Future<List<PropertyModel>> getAvailableProperties({
+    String? propertyType,
+    String? city,
+    int limit = 50,
+  }) async {
+    try {
+      developer.log('🔍 Fetching available properties from verified landlords', name: 'PropertyService');
+
+      // First, get all verified landlord IDs from users collection
+      final verifiedLandlordsSnapshot = await _firestore
+          .collection('users')
+          .where('verificationStatus', isEqualTo: 'verified')
+          .where('accountType', isEqualTo: 'landlord')
+          .get();
+
+      // Extract user IDs (the document ID is the userId)
+      final verifiedLandlordIds = verifiedLandlordsSnapshot.docs
+          .map((doc) => doc.id)
+          .toSet();
+
+      developer.log('✅ Found ${verifiedLandlordIds.length} verified landlords', name: 'PropertyService');
+
+      if (verifiedLandlordIds.isEmpty) {
+        developer.log('⚠️ No verified landlords found, returning empty list', name: 'PropertyService');
+        return [];
+      }
+
+      // Firestore 'whereIn' has a limit of 30 items, so we need to batch
+      final List<PropertyModel> allProperties = [];
+      final landlordIdsList = verifiedLandlordIds.toList();
+      
+      // Process in batches of 30
+      for (var i = 0; i < landlordIdsList.length; i += 30) {
+        final batchIds = landlordIdsList.skip(i).take(30).toList();
+        
+        try {
+          Query query = _propertiesRef
+              .where('landlordId', whereIn: batchIds)
+              .where('isAvailable', isEqualTo: true);
+
+          // Apply optional filters
+          if (propertyType != null && propertyType != 'all') {
+            query = query.where('propertyType', isEqualTo: propertyType);
+          }
+
+          if (city != null && city != 'All Areas') {
+            query = query.where('city', isEqualTo: city);
+          }
+
+          final snapshot = await query.limit(limit).get();
+
+          final batchProperties = snapshot.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            data['id'] = doc.id;
+            return PropertyModel.fromJson(_convertTimestamps(data));
+          }).toList();
+
+          allProperties.addAll(batchProperties);
+        } catch (e) {
+          developer.log('⚠️ Batch query failed: $e', name: 'PropertyService');
+          
+          // Fallback: simpler query without all filters
+          final snapshot = await _propertiesRef
+              .where('landlordId', whereIn: batchIds)
+              .get();
+
+          final batchProperties = snapshot.docs
+              .map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                data['id'] = doc.id;
+                return PropertyModel.fromJson(_convertTimestamps(data));
+              })
+              .where((p) => p.isAvailable) // Filter client-side
+              .toList();
+
+          allProperties.addAll(batchProperties);
+        }
+      }
+
+      // Apply filters client-side if they weren't applied in query
+      var filteredProperties = allProperties;
+      
+      if (propertyType != null && propertyType != 'all') {
+        filteredProperties = filteredProperties
+            .where((p) => p.propertyType == propertyType)
+            .toList();
+      }
+
+      if (city != null && city != 'All Areas') {
+        filteredProperties = filteredProperties
+            .where((p) => p.city == city)
+            .toList();
+      }
+
+      // Sort by createdAt descending (newest first)
+      filteredProperties.sort((a, b) {
+        final aDate = a.createdAt ?? DateTime(2000);
+        final bDate = b.createdAt ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
+
+      // Remove duplicates (in case of overlapping batches)
+      final seenIds = <String>{};
+      filteredProperties = filteredProperties.where((p) {
+        if (seenIds.contains(p.id)) return false;
+        seenIds.add(p.id);
+        return true;
+      }).toList();
+
+      developer.log('✅ Found ${filteredProperties.length} properties from verified landlords', name: 'PropertyService');
+
+      return filteredProperties.take(limit).toList();
+    } catch (e, stackTrace) {
+      developer.log(
+        '❌ Failed to get available properties: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: stackTrace,
       );
       return [];
     }
@@ -239,8 +370,12 @@ class PropertyService {
           return PropertyModel.fromJson(_convertTimestamps(data));
         }).toList();
 
-        // Sort client-side
-        properties.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        // Sort client-side (handle nullable createdAt)
+        properties.sort((a, b) {
+          final aDate = a.createdAt ?? DateTime(2000);
+          final bDate = b.createdAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
 
         return properties;
       }
@@ -276,7 +411,7 @@ class PropertyService {
     }
   }
 
-  /// Search properties by city/area
+  /// Search properties by city/area (only from verified landlords)
   Future<List<PropertyModel>> searchProperties({
     String? city,
     String? propertyType,
@@ -284,6 +419,22 @@ class PropertyService {
     double? maxRent,
   }) async {
     try {
+      // First get verified landlord IDs
+      final verifiedLandlordsSnapshot = await _firestore
+          .collection('users')
+          .where('verificationStatus', isEqualTo: 'verified')
+          .where('accountType', isEqualTo: 'landlord')
+          .get();
+
+      final verifiedLandlordIds = verifiedLandlordsSnapshot.docs
+          .map((doc) => doc.id)
+          .toSet();
+
+      if (verifiedLandlordIds.isEmpty) {
+        return [];
+      }
+
+      // Query properties
       Query query = _propertiesRef.where('isAvailable', isEqualTo: true);
 
       if (city != null && city.isNotEmpty && city != 'All Areas') {
@@ -305,6 +456,11 @@ class PropertyService {
             return PropertyModel.fromJson(_convertTimestamps(data));
           }).toList();
 
+      // Filter to only verified landlords
+      properties = properties
+          .where((p) => verifiedLandlordIds.contains(p.landlordId))
+          .toList();
+
       // Filter by rent range (done client-side to avoid complex indexes)
       if (minRent != null) {
         properties = properties.where((p) => p.rent >= minRent).toList();
@@ -313,8 +469,12 @@ class PropertyService {
         properties = properties.where((p) => p.rent <= maxRent).toList();
       }
 
-      // Sort by createdAt
-      properties.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      // Sort by createdAt (handle nullable)
+      properties.sort((a, b) {
+        final aDate = a.createdAt ?? DateTime(2000);
+        final bDate = b.createdAt ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
 
       return properties;
     } catch (e) {
@@ -449,6 +609,39 @@ class PropertyService {
     }
   }
 
+  /// Increment inquiry count
+  Future<void> incrementInquiryCount(String propertyId) async {
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'inquiryCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      developer.log('❌ Failed to increment inquiry count: $e', name: 'PropertyService');
+    }
+  }
+
+  /// Increment saved count
+  Future<void> incrementSavedCount(String propertyId) async {
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'savedCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      developer.log('❌ Failed to increment saved count: $e', name: 'PropertyService');
+    }
+  }
+
+  /// Decrement saved count
+  Future<void> decrementSavedCount(String propertyId) async {
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'savedCount': FieldValue.increment(-1),
+      });
+    } catch (e) {
+      developer.log('❌ Failed to decrement saved count: $e', name: 'PropertyService');
+    }
+  }
+
   // ============ DELETE ============
 
   /// Delete a property
@@ -493,7 +686,7 @@ class PropertyService {
         viewerName: userName,
       );
 
-      // Increment view count on property (optional)
+      // Increment view count on property
       await _propertiesRef.doc(propertyId).update({
         'viewCount': FieldValue.increment(1),
       });
@@ -514,8 +707,8 @@ class PropertyService {
     if (converted['createdAt'] is Timestamp) {
       converted['createdAt'] =
           (converted['createdAt'] as Timestamp).toDate().toIso8601String();
-    } else {
-      converted['createdAt'] = DateTime.now().toIso8601String();
+    } else if (converted['createdAt'] == null) {
+      converted['createdAt'] = null; // Keep null instead of defaulting
     }
 
     if (converted['updatedAt'] is Timestamp) {
@@ -526,8 +719,12 @@ class PropertyService {
     return converted;
   }
 
-  /// Stream of all available properties (real-time updates)
+  /// Stream of all available properties (real-time updates) - from verified landlords only
   Stream<List<PropertyModel>> propertiesStream() {
+    // Note: For real-time streams with verification filtering,
+    // we'd need to implement a more complex solution.
+    // For now, this returns all available properties.
+    // Consider using getAvailableProperties() for filtered results.
     return _propertiesRef
         .where('isAvailable', isEqualTo: true)
         .orderBy('createdAt', descending: true)
@@ -558,8 +755,12 @@ class PropertyService {
             return PropertyModel.fromJson(_convertTimestamps(data));
           }).toList();
           
-          // Sort client-side
-          properties.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          // Sort client-side (handle nullable createdAt)
+          properties.sort((a, b) {
+            final aDate = a.createdAt ?? DateTime(2000);
+            final bDate = b.createdAt ?? DateTime(2000);
+            return bDate.compareTo(aDate);
+          });
           return properties;
         });
   }

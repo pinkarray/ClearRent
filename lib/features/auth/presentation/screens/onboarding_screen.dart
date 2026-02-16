@@ -4,6 +4,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../services/biometric_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -14,6 +15,7 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
+  final BiometricService _biometricService = BiometricService();
   int _currentPage = 0;
 
   final List<OnboardingItem> _items = [
@@ -40,19 +42,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  void _nextPage() {
+  Future<void> _nextPage() async {
     if (_currentPage < _items.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     } else {
-      context.go('/login');
+      await _completeOnboarding();
     }
   }
 
-  void _skip() {
-    context.go('/login');
+  Future<void> _skip() async {
+    await _completeOnboarding();
+  }
+
+  /// Mark onboarding as completed and navigate to login
+  Future<void> _completeOnboarding() async {
+    await _biometricService.setOnboardingCompleted();
+    if (mounted) {
+      context.go('/login');
+    }
   }
 
   @override

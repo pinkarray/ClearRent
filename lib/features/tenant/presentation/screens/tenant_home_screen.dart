@@ -7,10 +7,19 @@ import '../../../../core/constants/strings.dart';
 import '../../../../shared/data/mock_properties.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../property/presentation/widgets/property_card.dart';
-import '../../../messaging/presentation/widgets/messages_tab_real.dart';
+import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/saved_properties_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../../../../services/property_service.dart';
+import '../../../../shared/models/active_rental_model.dart';
+import '../../../../shared/widgets/connectivity_wrapper.dart';
+import '../../../../services/active_rental_service.dart';
+import '../widgets/tenant_rental_dashboard.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../../../../shared/widgets/user_avatar.dart';
+
 
 class TenantHomeScreen extends StatefulWidget {
   const TenantHomeScreen({super.key});
@@ -26,6 +35,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final AuthService _authService;
   late final SavedPropertiesService _savedService;
   late final ConversationService _conversationService;
+  late final PropertyService _propertyService;
+  late final ActiveRentalService _activeRentalService;
 
   // Saved properties - from Firebase
   Set<String> _savedProperties = {};
@@ -37,24 +48,39 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   int _currentNavIndex = 0;
   String _selectedType = 'all';
   String _selectedArea = 'All Areas';
+  
+  // Properties - combined real + mock
+  List<PropertyModel> _realProperties = [];
+  List<PropertyModel> _allProperties = [];
   List<PropertyModel> _filteredProperties = [];
+  bool _isLoadingProperties = true;
+
+  // Active rental
+  ActiveRental? _activeRental;
+  bool _isLoadingRental = true;
+  
   DateTime? _lastBackPressed;
 
   // User data
   String _userName = '';
-  String _userInitial = '';
+  String? _profileImageUrl;
+  File? _localProfileImage;
+  bool _isUploadingImage = false;
   bool _isLoadingProfile = true;
 
   @override
   void initState() {
     super.initState();
-    _filteredProperties = mockProperties;
     _authService = AuthService();
     _savedService = SavedPropertiesService();
     _conversationService = ConversationService();
+    _propertyService = PropertyService();
+    _activeRentalService = ActiveRentalService();
     _loadUserProfile();
     _loadSavedProperties();
     _loadUnreadCount();
+    _loadProperties();
+    _loadActiveRental();
   }
 
   Future<void> _loadUserProfile() async {
@@ -63,13 +89,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       if (profile != null && mounted) {
         setState(() {
           _userName = profile['fullName'] ?? 'Tenant';
-          _userInitial = _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T';
+          _profileImageUrl = profile['profileImageUrl'];
           _isLoadingProfile = false;
         });
       } else {
         setState(() {
           _userName = 'Tenant';
-          _userInitial = 'T';
           _isLoadingProfile = false;
         });
       }
@@ -77,7 +102,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       debugPrint('❌ Error loading profile: $e');
       setState(() {
         _userName = 'Tenant';
-        _userInitial = 'T';
         _isLoadingProfile = false;
       });
     }
@@ -98,6 +122,122 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     }
   }
 
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Text('Profile Photo', style: AppTextStyles.h4),
+              const SizedBox(height: 24),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                _buildSourceOption(
+                  icon: Icons.camera_alt_rounded, label: 'Camera',
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                _buildSourceOption(
+                  icon: Icons.photo_library_rounded, label: 'Gallery',
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                if (_profileImageUrl != null)
+                  _buildSourceOption(
+                    icon: Icons.delete_outline, label: 'Remove',
+                    onTap: () => Navigator.pop(ctx, null),
+                    color: AppColors.error,
+                  ),
+              ]),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null && _profileImageUrl != null) {
+      setState(() => _isUploadingImage = true);
+      final removed = await _authService.removeProfileImage();
+      if (mounted && removed) {
+        setState(() {
+          _profileImageUrl = null;
+          _localProfileImage = null;
+          _isUploadingImage = false;
+        });
+      } else {
+        setState(() => _isUploadingImage = false);
+      }
+      return;
+    }
+
+    if (source == null) return;
+
+    try {
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final file = File(image.path);
+      setState(() {
+        _localProfileImage = file;
+        _isUploadingImage = true;
+      });
+
+      final url = await _authService.uploadProfileImage(file);
+      if (mounted) {
+        setState(() {
+          if (url != null) {
+            _profileImageUrl = url;
+            _localProfileImage = null;
+          }
+          _isUploadingImage = false;
+        });
+        if (url != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Profile photo updated!'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error picking profile image: $e');
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
+  }
+
+  Widget _buildSourceOption({required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(
+            color: (color ?? AppColors.primary).withAlpha(26),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: color ?? AppColors.primary, size: 32),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: AppTextStyles.labelMedium.copyWith(
+          color: color ?? AppColors.textPrimary)),
+      ]),
+    );
+  }
+
   Future<void> _loadUnreadCount() async {
     try {
       final count = await _conversationService.getTotalUnreadCount();
@@ -106,6 +246,68 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       }
     } catch (e) {
       debugPrint('❌ Error loading unread count: $e');
+    }
+  }
+
+  /// Load properties from verified landlords + mock data
+  Future<void> _loadProperties() async {
+    setState(() => _isLoadingProperties = true);
+    
+    try {
+      // Fetch real properties from verified landlords
+      final realProps = await _propertyService.getAvailableProperties();
+      
+      if (mounted) {
+        setState(() {
+          _realProperties = realProps;
+          
+          // Combine real properties with mock data
+          // Real properties come first, then mock data
+          _allProperties = [
+            ..._realProperties,
+            ...mockProperties,
+          ];
+          
+          // Remove any duplicates by ID (in case mock data overlaps)
+          final seenIds = <String>{};
+          _allProperties = _allProperties.where((p) {
+            if (seenIds.contains(p.id)) {
+              return false;
+            }
+            seenIds.add(p.id);
+            return true;
+          }).toList();
+          
+          _isLoadingProperties = false;
+        });
+        
+        // Apply initial filters
+        _filterProperties();
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading properties: $e');
+      if (mounted) {
+        setState(() {
+          // Fall back to mock data only
+          _allProperties = mockProperties;
+          _isLoadingProperties = false;
+        });
+        _filterProperties();
+      }
+    }
+  }
+  Future<void> _loadActiveRental() async {
+     try {
+       final rental = await _activeRentalService.getTenantActiveRental();
+       if (mounted) {
+         setState(() {
+           _activeRental = rental;
+           _isLoadingRental = false;
+         });
+       }
+     } catch (e) {
+       debugPrint('❌ Error loading active rental: $e');
+       if (mounted) setState(() => _isLoadingRental = false);
     }
   }
 
@@ -146,13 +348,16 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   void _filterProperties() {
     setState(() {
-      _filteredProperties = mockProperties.where((property) {
+      _filteredProperties = _allProperties.where((property) {
+        // Type filter
         if (_selectedType != 'all' && property.propertyType != _selectedType) {
           return false;
         }
+        // Area filter
         if (_selectedArea != 'All Areas' && property.city != _selectedArea) {
           return false;
         }
+        // Search filter
         if (_searchController.text.isNotEmpty) {
           final query = _searchController.text.toLowerCase();
           return property.title.toLowerCase().contains(query) ||
@@ -206,6 +411,15 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     context.push('/property-detail', extra: property);
   }
 
+  Future<void> _refreshData() async {
+    await Future.wait([
+      _loadProperties(),
+      _loadSavedProperties(),
+      _loadUnreadCount(),
+      _loadActiveRental(),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -217,37 +431,66 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           SystemNavigator.pop();
         }
       },
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        body: _currentNavIndex == 0
-            ? SafeArea(child: _buildHomeTab())
-            : _currentNavIndex == 1
-                ? SafeArea(child: _buildSavedTab())
-                : _currentNavIndex == 2
-                    ? SafeArea(child: _buildMessagesTab())
-                    : _buildProfileTab(),
-        bottomNavigationBar: _buildBottomNav(),
+      child: ConnectivityWrapper(
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          body: _currentNavIndex == 0
+              ? SafeArea(child: _buildHomeTab())
+              : _currentNavIndex == 1
+                  ? SafeArea(child: _buildSavedTab())
+                  : _currentNavIndex == 2
+                      ? SafeArea(child: _buildMessagesTab())
+                      : _buildProfileTab(),
+          bottomNavigationBar: _buildBottomNav(),
+        ),
       ),
     );
   }
 
   Widget _buildHomeTab() {
-    return Column(
-      children: [
-        _buildHeader(),
-        _buildSearchBar(),
-        _buildFilters(),
-        Expanded(
-          child: _filteredProperties.isEmpty
-              ? _buildEmptyState()
-              : _buildPropertyList(),
-        ),
-      ],
+   // Show rental dashboard if tenant has active rental
+   if (!_isLoadingRental && _activeRental != null) {
+     return TenantRentalDashboard(
+       rental: _activeRental!,
+       userName: _userName,
+       userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+       isLoadingProfile: _isLoadingProfile,
+       onBrowseProperties: () {
+         // Switch to a "browse mode" — for now just show snackbar
+         // Later you could add a toggle or separate screen
+         setState(() => _activeRental = null); // Temporarily show browse
+        },
+      );
+    }
+
+     // Default: property browsing
+    return RefreshIndicator(
+     onRefresh: _refreshData,
+     color: AppColors.primary,
+     child: Column(
+       children: [
+         _buildHeader(),
+         _buildSearchBar(),
+         _buildFilters(),
+         Expanded(
+           child: _isLoadingProperties
+               ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+               : _filteredProperties.isEmpty
+                   ? _buildEmptyState()
+                   : _buildPropertyList(),
+         ),
+        ],
+      ),
     );
   }
 
   Widget _buildSavedTab() {
-    final savedList = mockProperties.where((p) => _savedProperties.contains(p.id)).toList();
+    // Combine real and mock properties to find saved ones
+    final allPropsMap = {for (var p in _allProperties) p.id: p};
+    final savedList = _savedProperties
+        .where((id) => allPropsMap.containsKey(id))
+        .map((id) => allPropsMap[id]!)
+        .toList();
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,33 +617,13 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     const SizedBox(height: 30),
                     Row(
                       children: [
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [AppColors.primary, AppColors.primaryLight],
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withAlpha(77),
-                                blurRadius: 15,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: _isLoadingProfile
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : Text(_userInitial, style: AppTextStyles.h2.copyWith(color: Colors.white)),
-                          ),
+                        UserAvatar(
+                          name: _userName,
+                          imageUrl: _profileImageUrl,
+                          imageFile: _localProfileImage,
+                          size: 80,
+                          showEditBadge: !_isLoadingProfile && !_isUploadingImage,
+                          onTap: _pickProfileImage,
                         ),
                         const SizedBox(width: 20),
                         Expanded(
@@ -470,7 +693,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 Expanded(
                   child: _TenantStatCard(
                     icon: Icons.home_outlined,
-                    value: '0',
+                    value: _activeRental != null ? '1' : '0',
                     label: 'Rentals',
                     color: AppColors.primary,
                   ),
@@ -495,6 +718,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 _TenantProfileSection(
                   title: 'Activity',
                   items: [
+                    _TenantProfileMenuItem(
+                      icon: Icons.event_note_outlined,
+                      title: 'My Inspections',
+                      subtitle: 'Track your inspection requests',
+                      onTap: () => context.push('/tenant/inspections'),
+                    ),
                     _TenantProfileMenuItem(
                       icon: Icons.favorite_outline,
                       title: 'Saved Properties',
@@ -583,7 +812,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     : Text('Hello, $_firstName 👋',
                         style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
                 const SizedBox(height: 4),
-                Text('Find your perfect space', style: AppTextStyles.h3),
+                Text(
+                  _activeRental != null
+                      ? 'Browse more properties'
+                      : 'Find your perfect space',
+                  style: AppTextStyles.h3,
+                ),
               ],
             ),
           ),
@@ -737,6 +971,21 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           child: Row(
             children: [
               Text('${_filteredProperties.length} properties found', style: AppTextStyles.bodySmall),
+              // Show badge if real properties are available
+              if (_realProperties.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_realProperties.length} verified',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.success),
+                  ),
+                ),
+              ],
               const Spacer(),
               Text('Sort by: ', style: AppTextStyles.bodySmall),
               Text('Newest', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
@@ -755,13 +1004,46 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       itemCount: _filteredProperties.length,
       itemBuilder: (context, index) {
         final property = _filteredProperties[index];
+        final isRealProperty = _realProperties.any((p) => p.id == property.id);
+        
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: PropertyCard(
-            property: property,
-            isSaved: _savedProperties.contains(property.id),
-            onTap: () => _openPropertyDetail(property),
-            onSave: () => _toggleSave(property.id),
+          child: Stack(
+            children: [
+              PropertyCard(
+                property: property,
+                isSaved: _savedProperties.contains(property.id),
+                onTap: () => _openPropertyDetail(property),
+                onSave: () => _toggleSave(property.id),
+              ),
+              // Show "Verified" badge for real properties
+              if (isRealProperty)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.verified, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Verified',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },

@@ -6,6 +6,31 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 enum VerificationStatus { none, pending, verified, rejected }
 
+// Verification fee structure
+class VerificationFees {
+  static const double landlordFee = 15000;
+  static const double tenantFee = 5000;
+  static const double agentFee = 10000;
+
+  static double getFee(String accountType) {
+    switch (accountType) {
+      case 'landlord': return landlordFee;
+      case 'tenant': return tenantFee;
+      case 'agent': return agentFee;
+      default: return 0;
+    }
+  }
+
+  static String getFeeLabel(String accountType) {
+    switch (accountType) {
+      case 'landlord': return '₦15,000';
+      case 'tenant': return '₦5,000';
+      case 'agent': return '₦10,000';
+      default: return '₦0';
+    }
+  }
+}
+
 // Document model for all user types
 class VerificationDocument {
   final String? ninUrl;
@@ -55,6 +80,10 @@ class VerificationData {
   final String? guarantorName;
   final String? guarantorPhone;
   final String? guarantorAddress;
+  // Payment
+  final String? paymentProofUrl;
+  final double? paymentAmount;
+  final String? paymentStatus; // pending_verification, verified, rejected
 
   VerificationData({
     this.status = VerificationStatus.none,
@@ -66,6 +95,9 @@ class VerificationData {
     this.guarantorName,
     this.guarantorPhone,
     this.guarantorAddress,
+    this.paymentProofUrl,
+    this.paymentAmount,
+    this.paymentStatus,
   }) : documents = documents ?? VerificationDocument();
 
   factory VerificationData.fromMap(Map<String, dynamic>? map) {
@@ -80,19 +112,18 @@ class VerificationData {
       guarantorName: map['guarantorName'],
       guarantorPhone: map['guarantorPhone'],
       guarantorAddress: map['guarantorAddress'],
+      paymentProofUrl: map['verificationPaymentProofUrl'],
+      paymentAmount: (map['verificationPaymentAmount'] ?? 0).toDouble(),
+      paymentStatus: map['verificationPaymentStatus'],
     );
   }
 
   static VerificationStatus _parseStatus(String? status) {
     switch (status) {
-      case 'pending':
-        return VerificationStatus.pending;
-      case 'verified':
-        return VerificationStatus.verified;
-      case 'rejected':
-        return VerificationStatus.rejected;
-      default:
-        return VerificationStatus.none;
+      case 'pending': return VerificationStatus.pending;
+      case 'verified': return VerificationStatus.verified;
+      case 'rejected': return VerificationStatus.rejected;
+      default: return VerificationStatus.none;
     }
   }
 
@@ -113,13 +144,17 @@ class PendingVerification {
   final String fullName;
   final String email;
   final String phone;
-  final String userType; // landlord, tenant, agent
+  final String userType;
   final VerificationDocument documents;
   final DateTime? submittedAt;
   // Agent guarantor info
   final String? guarantorName;
   final String? guarantorPhone;
   final String? guarantorAddress;
+  // Payment
+  final String? paymentProofUrl;
+  final double? paymentAmount;
+  final String? paymentStatus;
 
   PendingVerification({
     required this.uid,
@@ -133,6 +168,9 @@ class PendingVerification {
     this.guarantorName,
     this.guarantorPhone,
     this.guarantorAddress,
+    this.paymentProofUrl,
+    this.paymentAmount,
+    this.paymentStatus,
   });
 }
 
@@ -148,31 +186,20 @@ class VerificationService {
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
-  // ============ GET STATUS (backward compatible) ============
+  // ============ GET STATUS ============
   Future<VerificationData> getVerificationStatus() async {
     try {
-      if (_currentUserId == null) {
-        return VerificationData();
-      }
-
+      if (_currentUserId == null) return VerificationData();
       final doc = await _firestore.collection('users').doc(_currentUserId).get();
       return VerificationData.fromMap(doc.data());
     } catch (e) {
-      developer.log(
-        '❌ Error getting verification status: $e',
-        name: 'VerificationService',
-        error: e,
-      );
+      developer.log('❌ Error getting verification status: $e', name: 'VerificationService', error: e);
       return VerificationData();
     }
   }
 
-  // Stream verification status for real-time updates
   Stream<VerificationData> streamVerificationStatus() {
-    if (_currentUserId == null) {
-      return Stream.value(VerificationData());
-    }
-
+    if (_currentUserId == null) return Stream.value(VerificationData());
     return _firestore
         .collection('users')
         .doc(_currentUserId)
@@ -184,7 +211,6 @@ class VerificationService {
   Future<String?> _uploadDocument(File file, String folder) async {
     try {
       developer.log('📤 Uploading to $folder...', name: 'VerificationService');
-
       final response = await _cloudinary.uploadFile(
         CloudinaryFile.fromFile(
           file.path,
@@ -192,7 +218,6 @@ class VerificationService {
           resourceType: CloudinaryResourceType.Image,
         ),
       );
-
       developer.log('✅ Upload successful: ${response.secureUrl}', name: 'VerificationService');
       return response.secureUrl;
     } catch (e) {
@@ -206,22 +231,22 @@ class VerificationService {
     required File ninFile,
     required File propertyDocFile,
     required File utilityBillFile,
+    required File paymentProofFile,
   }) async {
     try {
       if (_currentUserId == null) {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      // Upload documents
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final propertyDocUrl = await _uploadDocument(propertyDocFile, 'property_doc');
       final utilityBillUrl = await _uploadDocument(utilityBillFile, 'utility_bill');
+      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || propertyDocUrl == null || utilityBillUrl == null) {
+      if (ninUrl == null || propertyDocUrl == null || utilityBillUrl == null || paymentProofUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
-      // Update user document
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
@@ -230,10 +255,12 @@ class VerificationService {
           'propertyDoc': propertyDocUrl,
           'utilityBill': utilityBillUrl,
         },
+        'verificationPaymentProofUrl': paymentProofUrl,
+        'verificationPaymentAmount': VerificationFees.landlordFee,
+        'verificationPaymentStatus': 'pending_verification',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Create verification request
       await _firestore.collection('verification_requests').add({
         'userId': _currentUserId,
         'userType': 'landlord',
@@ -241,6 +268,9 @@ class VerificationService {
         'ninUrl': ninUrl,
         'propertyDocUrl': propertyDocUrl,
         'utilityBillUrl': utilityBillUrl,
+        'paymentProofUrl': paymentProofUrl,
+        'paymentAmount': VerificationFees.landlordFee,
+        'paymentStatus': 'pending_verification',
         'submittedAt': FieldValue.serverTimestamp(),
       });
 
@@ -256,6 +286,7 @@ class VerificationService {
   Future<VerificationResult> submitTenantVerification({
     required File ninFile,
     required File proofOfIncomeFile,
+    required File paymentProofFile,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -264,8 +295,9 @@ class VerificationService {
 
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final proofOfIncomeUrl = await _uploadDocument(proofOfIncomeFile, 'proof_of_income');
+      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || proofOfIncomeUrl == null) {
+      if (ninUrl == null || proofOfIncomeUrl == null || paymentProofUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -276,6 +308,9 @@ class VerificationService {
           'nin': ninUrl,
           'proofOfIncome': proofOfIncomeUrl,
         },
+        'verificationPaymentProofUrl': paymentProofUrl,
+        'verificationPaymentAmount': VerificationFees.tenantFee,
+        'verificationPaymentStatus': 'pending_verification',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -285,6 +320,9 @@ class VerificationService {
         'status': 'pending',
         'ninUrl': ninUrl,
         'proofOfIncomeUrl': proofOfIncomeUrl,
+        'paymentProofUrl': paymentProofUrl,
+        'paymentAmount': VerificationFees.tenantFee,
+        'paymentStatus': 'pending_verification',
         'submittedAt': FieldValue.serverTimestamp(),
       });
 
@@ -304,6 +342,7 @@ class VerificationService {
     required String guarantorName,
     required String guarantorPhone,
     required String guarantorAddress,
+    required File paymentProofFile,
     File? experienceProofFile,
   }) async {
     try {
@@ -314,8 +353,9 @@ class VerificationService {
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final proofOfAddressUrl = await _uploadDocument(proofOfAddressFile, 'proof_of_address');
       final guarantorIdUrl = await _uploadDocument(guarantorIdFile, 'guarantor_id');
+      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || proofOfAddressUrl == null || guarantorIdUrl == null) {
+      if (ninUrl == null || proofOfAddressUrl == null || guarantorIdUrl == null || paymentProofUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -340,6 +380,9 @@ class VerificationService {
         'guarantorName': guarantorName,
         'guarantorPhone': guarantorPhone,
         'guarantorAddress': guarantorAddress,
+        'verificationPaymentProofUrl': paymentProofUrl,
+        'verificationPaymentAmount': VerificationFees.agentFee,
+        'verificationPaymentStatus': 'pending_verification',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -353,6 +396,9 @@ class VerificationService {
         'guarantorName': guarantorName,
         'guarantorPhone': guarantorPhone,
         'guarantorAddress': guarantorAddress,
+        'paymentProofUrl': paymentProofUrl,
+        'paymentAmount': VerificationFees.agentFee,
+        'paymentStatus': 'pending_verification',
         'submittedAt': FieldValue.serverTimestamp(),
       };
       if (experienceProofUrl != null) {
@@ -369,22 +415,19 @@ class VerificationService {
     }
   }
 
-  // ============ LEGACY METHOD (backward compatibility) ============
+  // ============ LEGACY METHOD ============
   Future<VerificationResult> submitVerification({
     required File ninFile,
     required File propertyDocFile,
     required File utilityBillFile,
   }) async {
-    return submitLandlordVerification(
-      ninFile: ninFile,
-      propertyDocFile: propertyDocFile,
-      utilityBillFile: utilityBillFile,
-    );
+    // Legacy callers won't have payment proof — this will fail gracefully
+    developer.log('⚠️ Legacy submitVerification called — payment proof required now', name: 'VerificationService');
+    return VerificationResult(success: false, error: 'Payment proof is now required for verification');
   }
 
   // ============ ADMIN METHODS ============
 
-  /// Get all pending verifications for admin review
   Future<List<PendingVerification>> getPendingVerifications() async {
     try {
       final snapshot = await _firestore
@@ -397,13 +440,7 @@ class VerificationService {
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        
-        // Get user info
-        final userDoc = await _firestore
-            .collection('users')
-            .doc(data['userId'])
-            .get();
-        
+        final userDoc = await _firestore.collection('users').doc(data['userId']).get();
         final userData = userDoc.data() ?? {};
         final userType = data['userType'] ?? 'landlord';
 
@@ -427,19 +464,19 @@ class VerificationService {
           guarantorName: data['guarantorName'],
           guarantorPhone: data['guarantorPhone'],
           guarantorAddress: data['guarantorAddress'],
+          paymentProofUrl: data['paymentProofUrl'],
+          paymentAmount: (data['paymentAmount'] ?? 0).toDouble(),
+          paymentStatus: data['paymentStatus'],
         ));
       }
 
       return verifications;
     } catch (e) {
       developer.log('❌ Error getting pending verifications: $e', name: 'VerificationService', error: e);
-      
-      // Fallback to old method if verification_requests collection doesn't exist
       return _getPendingVerificationsLegacy();
     }
   }
 
-  /// Legacy method - query users directly (for backward compatibility)
   Future<List<PendingVerification>> _getPendingVerificationsLegacy() async {
     try {
       final snapshot = await _firestore
@@ -461,6 +498,9 @@ class VerificationService {
           guarantorName: data['guarantorName'],
           guarantorPhone: data['guarantorPhone'],
           guarantorAddress: data['guarantorAddress'],
+          paymentProofUrl: data['verificationPaymentProofUrl'],
+          paymentAmount: (data['verificationPaymentAmount'] ?? 0).toDouble(),
+          paymentStatus: data['verificationPaymentStatus'],
         );
       }).toList();
     } catch (e) {
@@ -469,21 +509,20 @@ class VerificationService {
     }
   }
 
-  /// Approve verification
   Future<bool> approveVerification(String uid, {String? requestId}) async {
     try {
-      // Update user document
       await _firestore.collection('users').doc(uid).update({
         'verificationStatus': 'verified',
         'isVerified': true,
         'verificationReviewedAt': FieldValue.serverTimestamp(),
+        'verificationPaymentStatus': 'verified',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Update verification request if exists
       if (requestId != null) {
         await _firestore.collection('verification_requests').doc(requestId).update({
           'status': 'approved',
+          'paymentStatus': 'verified',
           'reviewedAt': FieldValue.serverTimestamp(),
         });
       }
@@ -496,7 +535,6 @@ class VerificationService {
     }
   }
 
-  /// Reject verification
   Future<bool> rejectVerification(String uid, String reason, {String? requestId}) async {
     try {
       await _firestore.collection('users').doc(uid).update({
@@ -504,6 +542,7 @@ class VerificationService {
         'isVerified': false,
         'rejectionReason': reason,
         'verificationReviewedAt': FieldValue.serverTimestamp(),
+        'verificationPaymentStatus': 'rejected',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -511,6 +550,7 @@ class VerificationService {
         await _firestore.collection('verification_requests').doc(requestId).update({
           'status': 'rejected',
           'rejectionReason': reason,
+          'paymentStatus': 'rejected',
           'reviewedAt': FieldValue.serverTimestamp(),
         });
       }

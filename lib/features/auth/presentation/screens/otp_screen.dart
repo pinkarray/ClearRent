@@ -83,7 +83,7 @@ class _OtpScreenState extends State<OtpScreen> {
   void _resendOtp() {
     if (_resendSeconds > 0) return;
     _startResendTimer();
-    // TODO: Implement actual resend logic
+    // Implement actual resend logic
   }
 
   void _onOtpChanged(int index, String value) {

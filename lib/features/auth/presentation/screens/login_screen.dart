@@ -6,6 +6,7 @@ import '../../../../core/constants/strings.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../services/biometric_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,16 +21,64 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late final AuthService _authService;
+  late final BiometricService _biometricService;
 
   bool _isLoading = false;
-  bool _isSignUp = true;
+  bool _isSignUp = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+  
+  // Biometric state
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+  String _biometricTypeName = 'Biometric';
+  String? _lastUserEmail;
+  bool _showBiometricOption = false;
 
   @override
   void initState() {
     super.initState();
     _authService = AuthService();
+    _biometricService = BiometricService();
+    _initializeBiometric();
+  }
+
+  Future<void> _initializeBiometric() async {
+    debugPrint('🔐 Initializing biometric...');
+    
+    // Check biometric availability
+    _biometricAvailable = await _biometricService.isBiometricAvailable();
+    _biometricEnabled = await _biometricService.isBiometricEnabled();
+    _biometricTypeName = await _biometricService.getBiometricTypeName();
+    _lastUserEmail = await _biometricService.getLastUserEmail();
+    
+    // Check if we have stored credentials
+    final hasCredentials = await _biometricService.hasStoredCredentials();
+    
+    debugPrint('🔐 Biometric init: available=$_biometricAvailable, enabled=$_biometricEnabled, hasCredentials=$hasCredentials, lastEmail=$_lastUserEmail');
+    
+    if (mounted) {
+      setState(() {
+        // Show biometric option if available, enabled, AND we have stored credentials
+        _showBiometricOption = _biometricAvailable && _biometricEnabled && hasCredentials && _lastUserEmail != null;
+        
+        // Pre-fill email if we have it
+        if (_lastUserEmail != null && _emailController.text.isEmpty) {
+          _emailController.text = _lastUserEmail!;
+        }
+      });
+      
+      debugPrint('🔐 Show biometric option: $_showBiometricOption');
+      
+      // Auto-trigger biometric if available (with slight delay for UI to render)
+      if (_showBiometricOption) {
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted && !_isLoading) {
+            _authenticateWithBiometric();
+          }
+        });
+      }
+    }
   }
 
   @override
@@ -58,6 +107,122 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Password must be at least 6 characters';
     }
     return null;
+  }
+
+  Future<void> _authenticateWithBiometric() async {
+    debugPrint('🔐 Starting biometric authentication flow...');
+    
+    if (!_biometricAvailable || !_biometricEnabled) {
+      debugPrint('❌ Biometric not available or not enabled');
+      return;
+    }
+
+    // First, do the biometric check (fingerprint/face)
+    final authenticated = await _biometricService.authenticate(
+      reason: 'Use $_biometricTypeName to sign in to ClearRent',
+    );
+
+    if (!authenticated) {
+      debugPrint('❌ Biometric authentication failed or cancelled');
+      return;
+    }
+
+    debugPrint('✅ Biometric passed, getting stored credentials...');
+
+    // Biometric passed - now get stored credentials and sign in
+    setState(() => _isLoading = true);
+
+    try {
+      final credentials = await _biometricService.getStoredCredentials();
+      
+      if (credentials == null) {
+        debugPrint('❌ No stored credentials found');
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Please sign in with your password'),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+        return;
+      }
+
+      debugPrint('✅ Got credentials, signing in...');
+
+      // Sign in with stored credentials
+      final result = await _authService.signIn(
+        email: credentials['email']!,
+        password: credentials['password']!,
+      );
+
+      if (!mounted) return;
+
+      if (result.success) {
+        debugPrint('✅ Sign in successful, navigating...');
+        await _navigateAfterAuth();
+      } else {
+        debugPrint('❌ Sign in failed: ${result.error}');
+        setState(() {
+          _isLoading = false;
+          _errorMessage = result.error ?? 'Sign in failed. Please try with password.';
+        });
+        // Clear stored credentials if they're invalid (e.g., password changed)
+        await _biometricService.clearStoredCredentials();
+        await _biometricService.setBiometricEnabled(false);
+        setState(() {
+          _showBiometricOption = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Biometric sign in error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Sign in failed. Please try with password.';
+        });
+      }
+    }
+  }
+
+  Future<void> _navigateAfterAuth() async {
+    try {
+      final profile = await _authService.getUserProfile();
+
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      if (profile == null || profile['profileCompleted'] != true) {
+        if (profile != null && profile['accountType'] != null) {
+          context.go('/profile-setup', extra: profile['accountType']);
+        } else {
+          context.go('/account-type');
+        }
+      } else {
+        final accountType = (profile['accountType'] ?? 'tenant').toString().toLowerCase();
+        debugPrint('🏠 Routing to home for: $accountType');
+        
+        switch (accountType) {
+          case 'landlord':
+            context.go('/landlord/home');
+            break;
+          case 'agent':
+            context.go('/agent/home');
+            break;
+          default:
+            context.go('/tenant/home');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Profile check error: $e');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      context.go('/account-type');
+    }
   }
 
   Future<void> _submit() async {
@@ -91,52 +256,73 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (result.success) {
+      // Save email for display
+      await _biometricService.setLastUserEmail(email);
+      
+      // Mark onboarding as completed (user has now logged in)
+      await _biometricService.setOnboardingCompleted();
+      
+      // Handle biometric setup
+      if (_biometricAvailable) {
+        if (!_biometricEnabled) {
+          // Offer to enable biometric if not already enabled
+          final shouldEnable = await _showBiometricEnableDialog();
+          if (shouldEnable) {
+            // Store credentials securely for biometric login
+            await _biometricService.storeCredentials(email, password);
+            await _biometricService.setBiometricEnabled(true);
+            debugPrint('✅ Biometric enabled and credentials stored');
+          }
+        } else {
+          // Biometric already enabled - update stored credentials (in case password changed)
+          await _biometricService.storeCredentials(email, password);
+          debugPrint('✅ Updated stored credentials');
+        }
+      }
+
       if (_isSignUp) {
         setState(() => _isLoading = false);
         context.go('/account-type');
         return;
       }
 
-      try {
-        final profile = await _authService.getUserProfile();
-
-        if (!mounted) return;
-
-        setState(() => _isLoading = false);
-
-        if (profile == null || profile['profileCompleted'] != true) {
-          if (profile != null && profile['accountType'] != null) {
-            context.go('/profile-setup', extra: profile['accountType']);
-          } else {
-            context.go('/account-type');
-          }
-        } else {
-          final accountType =
-              (profile['accountType'] ?? 'tenant').toString().toLowerCase();
-          debugPrint('Routing after sign-in for accountType=$accountType');
-          switch (accountType) {
-            case 'landlord':
-              context.go('/landlord/home');
-              break;
-            case 'agent':
-              context.go('/agent/home');
-              break;
-            default:
-              context.go('/tenant/home');
-          }
-        }
-      } catch (e) {
-        debugPrint('❌ Profile check error: $e');
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        context.go('/account-type');
-      }
+      await _navigateAfterAuth();
     } else {
       setState(() {
         _isLoading = false;
         _errorMessage = result.error;
       });
     }
+  }
+
+  Future<bool> _showBiometricEnableDialog() async {
+    final biometricName = await _biometricService.getBiometricTypeName();
+    
+    if (!mounted) return false;
+
+    final enable = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Enable $biometricName Login?'),
+        content: Text(
+          'Would you like to use $biometricName for faster sign-in next time?',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Not Now', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Enable', style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+
+    return enable ?? false;
   }
 
   Future<void> _forgotPassword() async {
@@ -165,13 +351,13 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(
           content: Text('Password reset email sent to $email'),
           backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     } else {
       setState(
-        () =>
-            _errorMessage =
-                'Failed to send reset email. Please check your email address.',
+        () => _errorMessage = 'Failed to send reset email. Please check your email address.',
       );
     }
   }
@@ -275,6 +461,73 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                 ],
 
+                // Biometric quick login button (for returning users)
+                if (_showBiometricOption && !_isSignUp) ...[
+                  GestureDetector(
+                    onTap: _isLoading ? null : _authenticateWithBiometric,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withAlpha(13),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primary.withAlpha(51)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _biometricTypeName == 'Face ID' 
+                                ? Icons.face 
+                                : Icons.fingerprint,
+                            color: AppColors.primary,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Sign in with $_biometricTypeName',
+                                style: AppTextStyles.labelLarge.copyWith(
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              Text(
+                                _lastUserEmail ?? '',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Divider
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'or use password',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 24),
+                ],
+
                 // Email input
                 AppTextField(
                   label: 'Email Address',
@@ -297,10 +550,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Password input
                 AppTextField(
                   label: 'Password',
-                  hint:
-                      _isSignUp
-                          ? 'At least 6 characters'
-                          : 'Enter your password',
+                  hint: _isSignUp ? 'At least 6 characters' : 'Enter your password',
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   textInputAction: TextInputAction.done,
@@ -312,9 +562,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
                       color: AppColors.textHint,
                     ),
                     onPressed: () {

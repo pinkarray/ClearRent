@@ -1,32 +1,59 @@
 import 'package:go_router/go_router.dart';
+import '../features/auth/presentation/screens/splash_screen.dart';
 import '../features/auth/presentation/screens/onboarding_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/account_type_screen.dart';
 import '../features/auth/presentation/screens/profile_setup_screen.dart';
 import '../features/tenant/presentation/screens/tenant_home_screen.dart';
+import '../features/tenant/presentation/screens/tenant_inspections_screen.dart';
 import '../features/landlord/presentation/screens/landlord_home_screen.dart';
 import '../features/landlord/presentation/screens/add_property_screen.dart';
 import '../features/landlord/presentation/screens/verification_center_screen.dart';
 import '../features/landlord/presentation/screens/admin_verification_screen.dart';
 import '../features/property/presentation/screens/property_detail_screen.dart';
-import '../features/messaging/presentation/screens/chat_screen_real.dart';
+import '../features/chat/presentation/screens/chat_screen.dart';
 import '../shared/models/property_model.dart';
+import '../shared/models/rental_interest_model.dart';
+import '../shared/models/inspection_request_model.dart';
+import '../shared/models/active_rental_model.dart';
 import '../features/landlord/presentation/screens/recent_activities_screen.dart';
 import '../shared/screens/edit_profile_screen.dart';
+import '../features/landlord/presentation/screens/edit_property_screen.dart';
 import '../shared/screens/settings_screen.dart';
 import '../features/landlord/presentation/screens/bank_details_screen.dart';
 import '../features/landlord/presentation/screens/earnings_screen.dart';
+import '../../features/landlord/presentation/screens/landlord_rentals_screen.dart';
 import '../shared/screens/help_support_screen.dart';
 import '../shared/screens/about_screen.dart';
+import '../features/tenant/presentation/screens/rental_payment_screen.dart';
 import '../features/tenant/presentation/screens/my_rentals_screen.dart';
 import '../features/tenant/presentation/screens/payment_history_screen.dart';
 import '../features/tenant/presentation/screens/documents_screen.dart';
+import '../features/tenant/presentation/screens/inspection_payment_screen.dart';
+import '../features/tenant/presentation/screens/lease_details_screen.dart';
+import '../features/tenant/presentation/screens/report_issue_screen.dart';
 import '../features/agent/presentation/screens/agent_home_screen.dart';
+import '../features/agent/presentation/screens/agent_availability_screen.dart';
+import '../features/agent/presentation/screens/agent_service_areas_screen.dart';
+import '../features/agent/presentation/screens/agent_property_detail_screen.dart';
+import '../features/agent/presentation/screens/agent_inspections_screen.dart';
+import '../features/landlord/presentation/screens/landlord_inspections_screen.dart';
+import '../features/landlord/presentation/screens/landlord_issues_screen.dart';
+import '../features/landlord/presentation/screens/landlord_agreements_screen.dart';
 import '../features/landlord/presentation/screens/select_agent_screen.dart';
+import '../core/utils/inspection_pricing.dart';
+import '../features/admin/presentation/screens/admin_payment_verification_screen.dart';
+import '../features/admin/presentation/screens/admin_rental_verification_screen.dart';
 
 final appRouter = GoRouter(
-  initialLocation: '/onboarding',
+  initialLocation: '/',
   routes: [
+    // ============ SPLASH / AUTH CHECK ============
+    GoRoute(
+      path: '/',
+      builder: (context, state) => const SplashScreen(),
+    ),
+    
     // ============ AUTH ROUTES ============
     GoRoute(
       path: '/onboarding',
@@ -65,7 +92,6 @@ final appRouter = GoRouter(
       path: '/about',
       builder: (context, state) => const AboutScreen(),
     ),
-    // Shared verification route - works for all user types
     GoRoute(
       path: '/verification',
       builder: (context, state) => const VerificationCenterScreen(),
@@ -88,12 +114,52 @@ final appRouter = GoRouter(
       path: '/tenant/documents',
       builder: (context, state) => const DocumentsScreen(),
     ),
-    // Tenant verification (alias to shared route)
+    GoRoute(
+      path: '/tenant/lease-details',
+      builder: (context, state) {
+        final rental = state.extra as ActiveRental;
+        return LeaseDetailsScreen(rental: rental);
+      },
+    ),
+    GoRoute(
+      path: '/tenant/report-issue',
+      builder: (context, state) {
+        final rental = state.extra as ActiveRental;
+        return ReportIssueScreen(rental: rental);
+      },
+    ),
     GoRoute(
       path: '/tenant/verification',
       builder: (context, state) => const VerificationCenterScreen(),
     ),
-
+    GoRoute(
+      path: '/tenant/inspections',
+      builder: (context, state) => const TenantInspectionsScreen(),
+    ),
+    GoRoute(
+      path: '/tenant/inspection-payment',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        return InspectionPaymentScreen(
+          property: extra['property'] as PropertyModel,
+          selectedDate: extra['selectedDate'] as DateTime,
+          selectedTimeSlot: extra['selectedTimeSlot'] as String,
+          notes: extra['notes'] as String?,
+          feeBreakdown: extra['feeBreakdown'] as InspectionFeeBreakdown?,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/tenant/rental-payment',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        return RentalPaymentScreen(
+          rentalInterest: extra['rentalInterest'] as RentalInterest,
+          inspectionRequest: extra['inspectionRequest'] as InspectionRequest,
+        );
+      },
+    ),
+    
     // ============ LANDLORD ROUTES ============
     GoRoute(
       path: '/landlord/home',
@@ -102,6 +168,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/landlord/add-property',
       builder: (context, state) => const AddPropertyScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/edit-property',
+      builder: (context, state) {
+        final property = state.extra as PropertyModel;
+        return EditPropertyScreen(property: property);
+      },
     ),
     GoRoute(
       path: '/landlord/verification',
@@ -131,6 +204,22 @@ final appRouter = GoRouter(
         );
       },
     ),
+    GoRoute(
+      path: '/landlord/rentals',
+      builder: (context, state) => const LandlordRentalsScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/inspections',
+      builder: (context, state) => const LandlordInspectionsScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/issues',
+      builder: (context, state) => const LandlordIssuesScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/agreements',
+      builder: (context, state) => const LandlordAgreementsScreen(),
+    ),
 
     // ============ AGENT ROUTES ============
     GoRoute(
@@ -145,11 +234,38 @@ final appRouter = GoRouter(
       path: '/agent/bank-details',
       builder: (context, state) => const BankDetailsScreen(),
     ),
+    GoRoute(
+      path: '/agent/availability',
+      builder: (context, state) => const AgentAvailabilityScreen(),
+    ),
+    GoRoute(
+      path: '/agent/service-areas',
+      builder: (context, state) => const AgentServiceAreasScreen(),
+    ),
+    GoRoute(
+      path: '/agent/property/:id',
+      builder: (context, state) {
+        final propertyId = state.pathParameters['id'] ?? '';
+        return AgentPropertyDetailScreen(propertyId: propertyId);
+      },
+    ),
+    GoRoute(
+      path: '/agent/inspections',
+      builder: (context, state) => const AgentInspectionsScreen(),
+    ),
 
     // ============ ADMIN ROUTES ============
     GoRoute(
       path: '/admin/verifications',
       builder: (context, state) => const AdminVerificationScreen(),
+    ),
+    GoRoute(
+      path: '/admin/payment-verification',
+      builder: (context, state) => const AdminPaymentVerificationScreen(),
+    ),
+    GoRoute(
+      path: '/admin/rental-verification',
+      builder: (context, state) => const AdminRentalVerificationScreen(),
     ),
 
     // ============ PROPERTY & CHAT ============
@@ -160,7 +276,7 @@ final appRouter = GoRouter(
         return PropertyDetailScreen(property: property);
       },
     ),
-        GoRoute(
+    GoRoute(
       path: '/chat',
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>;

@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/conversation_service.dart';
-import '../../../messaging/presentation/widgets/messages_tab_real.dart';
+import '../../../../services/inspection_service.dart';
+import '../../../../shared/models/inspection_request_model.dart';
+import '../../../chat/presentation/widgets/messages_tab.dart';
+import '../widgets/agent_assigned_properties_tab.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../../../../shared/widgets/user_avatar.dart';
 
 class AgentHomeScreen extends StatefulWidget {
   const AgentHomeScreen({super.key});
@@ -19,6 +27,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   final AuthService _authService = AuthService();
   final VerificationService _verificationService = VerificationService();
   final ConversationService _conversationService = ConversationService();
+  final InspectionService _inspectionService = InspectionService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Map<String, dynamic>? _userProfile;
   bool _isLoading = true;
@@ -29,8 +40,15 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   int _currentNavIndex = 0;
   DateTime? _lastBackPressed;
 
+  String? _profileImageUrl;
+  File? _localProfileImage;
+  bool _isUploadingImage = false;
+
   // Unread count
   int _unreadCount = 0;
+  
+  // Assigned properties count
+  int _assignedPropertiesCount = 0;
 
   @override
   void initState() {
@@ -43,10 +61,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     if (mounted) {
       setState(() {
         _userProfile = profile;
+        _profileImageUrl = profile?['profileImageUrl'];
         _isLoading = false;
       });
       _loadVerificationData();
       _loadUnreadCount();
+      _loadAssignedPropertiesCount();
     }
   }
 
@@ -72,13 +92,149 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     }
   }
 
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Text('Profile Photo', style: AppTextStyles.h4),
+              const SizedBox(height: 24),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                _buildImageSourceOption(
+                  icon: Icons.camera_alt_rounded, label: 'Camera',
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                _buildImageSourceOption(
+                  icon: Icons.photo_library_rounded, label: 'Gallery',
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                if (_profileImageUrl != null)
+                  _buildImageSourceOption(
+                    icon: Icons.delete_outline, label: 'Remove',
+                    onTap: () => Navigator.pop(ctx, null),
+                    color: AppColors.error,
+                  ),
+              ]),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null && _profileImageUrl != null) {
+      setState(() => _isUploadingImage = true);
+      final removed = await _authService.removeProfileImage();
+      if (mounted && removed) {
+        setState(() {
+          _profileImageUrl = null;
+          _localProfileImage = null;
+          _isUploadingImage = false;
+        });
+      } else {
+        setState(() => _isUploadingImage = false);
+      }
+      return;
+    }
+
+    if (source == null) return;
+
+    try {
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final file = File(image.path);
+      setState(() {
+        _localProfileImage = file;
+        _isUploadingImage = true;
+      });
+
+      final url = await _authService.uploadProfileImage(file);
+      if (mounted) {
+        setState(() {
+          if (url != null) {
+            _profileImageUrl = url;
+            _localProfileImage = null;
+          }
+          _isUploadingImage = false;
+        });
+        if (url != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Profile photo updated!'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error picking profile image: $e');
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
+  }
+
+  // Named differently to avoid conflict with existing _buildActionButton
+  Widget _buildImageSourceOption({required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(
+            color: (color ?? AppColors.primary).withAlpha(26),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: color ?? AppColors.primary, size: 32),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: AppTextStyles.labelMedium.copyWith(
+          color: color ?? AppColors.textPrimary)),
+      ]),
+    );
+  }
+
+  Future<void> _loadAssignedPropertiesCount() async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    
+    try {
+      final snapshot = await _firestore
+          .collection('properties')
+          .where('assignedAgentId', isEqualTo: userId)
+          .count()
+          .get();
+      
+      if (mounted) {
+        setState(() {
+          _assignedPropertiesCount = snapshot.count ?? 0;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading assigned properties count: $e');
+    }
+  }
+
   bool get _isVerified =>
       (_verificationData?.status == VerificationStatus.verified) ||
       (_userProfile?['isVerified'] == true);
   String get _accountType => _userProfile?['accountType'] ?? 'agent';
   String get _userName => _userProfile?['fullName'] ?? 'Agent';
-  String get _userInitial =>
-      _userName.isNotEmpty ? _userName[0].toUpperCase() : 'A';
   String get _baseLocation => _userProfile?['baseLocation'] ?? 'Not set';
   List<String> get _serviceAreas =>
       List<String>.from(_userProfile?['serviceAreas'] ?? []);
@@ -156,7 +312,10 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         ),
         SliverToBoxAdapter(child: _buildAssignedPropertiesSection()),
         SliverToBoxAdapter(
-          child: _buildSectionHeader('Inspection Requests', onSeeAll: () {}),
+          child: _buildSectionHeader(
+            'Inspection Requests', 
+            onSeeAll: () => context.push('/agent/inspections'),
+          ),
         ),
         SliverToBoxAdapter(child: _buildInspectionRequestsSection()),
         const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -169,19 +328,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
       padding: const EdgeInsets.all(20),
       child: Row(
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(26),
-              shape: BoxShape.circle,
+          UserAvatar(
+              name: _userName,
+              imageUrl: _profileImageUrl,
+              imageFile: _localProfileImage,
+              size: 50,
             ),
-            child: const Icon(
-              Icons.support_agent,
-              color: AppColors.primary,
-              size: 28,
-            ),
-          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -470,7 +622,15 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             child: _buildActionButton(
               icon: Icons.map_outlined,
               label: 'Service Areas',
-              onTap: () => _showServiceAreas(),
+              onTap: () => context.push('/agent/service-areas'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.schedule_outlined,
+              label: 'Availability',
+              onTap: () => context.push('/agent/availability'),
             ),
           ),
           const SizedBox(width: 12),
@@ -486,7 +646,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             child: _buildActionButton(
               icon: Icons.history,
               label: 'History',
-              onTap: () {},
+              onTap: () => context.push('/agent/inspections'),
             ),
           ),
         ],
@@ -556,14 +716,158 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             'Complete verification to start receiving property assignments from landlords.',
       );
     }
-    return _buildEmptyState(
-      icon: Icons.home_work_outlined,
-      title: 'No Assigned Properties',
-      subtitle:
-          'When landlords assign you to their properties, they\'ll appear here.',
+    
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) {
+      return _buildEmptyState(
+        icon: Icons.home_work_outlined,
+        title: 'No Assigned Properties',
+        subtitle: 'When landlords assign you to their properties, they\'ll appear here.',
+      );
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('properties')
+          .where('assignedAgentId', isEqualTo: userId)
+          .limit(3)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          debugPrint('❌ Error loading assigned properties: ${snapshot.error}');
+          return _buildEmptyState(
+            icon: Icons.error_outline,
+            title: 'Error Loading Properties',
+            subtitle: 'Please try again later.',
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        
+        if (docs.isEmpty) {
+          return _buildEmptyState(
+            icon: Icons.home_work_outlined,
+            title: 'No Assigned Properties',
+            subtitle: 'When landlords assign you to their properties, they\'ll appear here.',
+          );
+        }
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: docs.asMap().entries.map((entry) {
+              final index = entry.key;
+              final doc = entry.value;
+              final data = doc.data() as Map<String, dynamic>;
+              
+              return Column(
+                children: [
+                  _buildPropertyPreviewItem(data, doc.id),
+                  if (index < docs.length - 1)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              );
+            }).toList(),
+          ),
+        );
+      },
     );
   }
 
+  Widget _buildPropertyPreviewItem(Map<String, dynamic> data, String propertyId) {
+    final title = data['title'] ?? 'Untitled Property';
+    final address = '${data['address'] ?? ''}, ${data['city'] ?? ''}';
+    final landlordName = data['landlordName'] ?? 'Landlord';
+    final images = List<String>.from(data['images'] ?? []);
+    
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/agent/property/$propertyId'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Property image
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: images.isNotEmpty
+                    ? Image.network(
+                        images.first,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 60,
+                          height: 60,
+                          color: AppColors.background,
+                          child: const Icon(Icons.home, color: AppColors.textHint),
+                        ),
+                      )
+                    : Container(
+                        width: 60,
+                        height: 60,
+                        color: AppColors.background,
+                        child: const Icon(Icons.home, color: AppColors.textHint),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              // Property info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      address,
+                      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'By $landlordName',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ FIXED: Now queries Firestore for actual inspection requests
   Widget _buildInspectionRequestsSection() {
     if (!_isVerified) {
       return _buildEmptyState(
@@ -572,10 +876,197 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         subtitle: 'Complete verification to receive inspection requests.',
       );
     }
-    return _buildEmptyState(
-      icon: Icons.event_note_outlined,
-      title: 'No Pending Requests',
-      subtitle: 'When tenants request inspections, they\'ll appear here.',
+
+    return StreamBuilder<List<InspectionRequest>>(
+      stream: _inspectionService.getAgentPendingRequests(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          debugPrint('❌ Error loading inspection requests: ${snapshot.error}');
+          return _buildEmptyState(
+            icon: Icons.error_outline,
+            title: 'Error Loading Requests',
+            subtitle: 'Please try again later.',
+          );
+        }
+
+        final requests = snapshot.data ?? [];
+
+        if (requests.isEmpty) {
+          return _buildEmptyState(
+            icon: Icons.event_note_outlined,
+            title: 'No Pending Requests',
+            subtitle: 'When tenants request inspections, they\'ll appear here.',
+          );
+        }
+
+        // Show max 3 requests on home screen
+        final displayRequests = requests.take(3).toList();
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: displayRequests.asMap().entries.map((entry) {
+              final index = entry.key;
+              final request = entry.value;
+              
+              return Column(
+                children: [
+                  _buildInspectionRequestItem(request),
+                  if (index < displayRequests.length - 1)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInspectionRequestItem(InspectionRequest request) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => context.push('/agent/inspections'),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Property image
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: request.propertyImage.isNotEmpty
+                    ? Image.network(
+                        request.propertyImage,
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 60,
+                          height: 60,
+                          color: AppColors.background,
+                          child: const Icon(Icons.home, color: AppColors.textHint),
+                        ),
+                      )
+                    : Container(
+                        width: 60,
+                        height: 60,
+                        color: AppColors.background,
+                        child: const Icon(Icons.home, color: AppColors.textHint),
+                      ),
+              ),
+              const SizedBox(width: 12),
+              // Request info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Property title with pending badge
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            request.propertyTitle,
+                            style: AppTextStyles.labelMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withAlpha(26),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Pending',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.warning,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Tenant name
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            request.tenantName,
+                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    // Date on one line
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            request.formattedDate,
+                            style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    // Time on separate line
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            request.requestedTimeDisplay,
+                            style: AppTextStyles.caption.copyWith(color: AppColors.primary, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -617,90 +1108,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
 
   // ============ PROPERTIES TAB ============
   Widget _buildPropertiesTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text('Assigned Properties', style: AppTextStyles.h2),
-        ),
-        Expanded(
-          child:
-              !_isVerified
-                  ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withAlpha(26),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.lock_outline,
-                            size: 50,
-                            color: AppColors.warning,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text('Verification Required', style: AppTextStyles.h4),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Complete verification to view\nassigned properties',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: () => context.push('/agent/verification'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                          ),
-                          child: const Text(
-                            'Get Verified',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                  : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 100,
-                          height: 100,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryLight.withAlpha(26),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.home_work_outlined,
-                            size: 50,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        Text('No Properties Yet', style: AppTextStyles.h4),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Properties assigned to you by\nlandlords will appear here',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-        ),
-      ],
-    );
+    return AgentAssignedPropertiesTab(isVerified: _isVerified);
   }
 
   // ============ MESSAGES TAB ============
@@ -764,30 +1172,14 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withAlpha(26),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          _userInitial,
-                          style: AppTextStyles.h2.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                    UserAvatarProfile(
+                      name: _userName,
+                      imageUrl: _profileImageUrl,
+                      imageFile: _localProfileImage,
+                      size: 90,
+                      showEditBadge: true,
+                      isLoading: _isLoading || _isUploadingImage,
+                      onTap: _pickProfileImage,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -904,7 +1296,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       icon: Icons.map_outlined,
                       title: 'Service Areas',
                       subtitle: '${_serviceAreas.length} areas selected',
-                      onTap: () => _showServiceAreas(),
+                      onTap: () => context.push('/agent/service-areas'),
                     ),
                     _ProfileMenuItem(
                       icon: Icons.account_balance_outlined,
@@ -932,6 +1324,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 color: AppColors.textHint,
                                 size: 20,
                               ),
+                    ),
+                    _ProfileMenuItem(
+                      icon: Icons.event_note_outlined,
+                      title: 'My Inspections',
+                      subtitle: 'View and manage inspections',
+                      onTap: () => context.push('/agent/inspections'),
                     ),
                   ],
                 ),
@@ -1013,7 +1411,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 onPressed: () async {
                   Navigator.pop(context);
                   await _authService.signOut();
-                  if (context.mounted) {
+                  if (mounted) {
                     context.go('/login');
                   }
                 },
@@ -1023,58 +1421,6 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 ),
               ),
             ],
-          ),
-    );
-  }
-
-  void _showServiceAreas() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder:
-          (context) => Container(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Your Service Areas', style: AppTextStyles.h4),
-                const SizedBox(height: 16),
-                if (_serviceAreas.isEmpty)
-                  Text(
-                    'No service areas set',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  )
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        _serviceAreas.map((area) {
-                          return Chip(
-                            label: Text(area),
-                            backgroundColor: AppColors.primary.withAlpha(26),
-                            labelStyle: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.primary,
-                            ),
-                            side: BorderSide.none,
-                          );
-                        }).toList(),
-                  ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ),
-              ],
-            ),
           ),
     );
   }
@@ -1111,6 +1457,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 label: 'Properties',
                 isActive: _currentNavIndex == 1,
                 onTap: () => setState(() => _currentNavIndex = 1),
+                badge: _assignedPropertiesCount > 0 ? '$_assignedPropertiesCount' : null,
               ),
               _NavItem(
                 icon: Icons.chat_outlined,
