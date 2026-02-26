@@ -129,6 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     debugPrint('✅ Biometric passed, getting stored credentials...');
 
+    if (!mounted) return;
     // Biometric passed - now get stored credentials and sign in
     setState(() => _isLoading = true);
 
@@ -137,17 +138,16 @@ class _LoginScreenState extends State<LoginScreen> {
       
       if (credentials == null) {
         debugPrint('❌ No stored credentials found');
+        if (!mounted) return;
         setState(() => _isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Please sign in with your password'),
-              backgroundColor: AppColors.warning,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Please sign in with your password'),
+            backgroundColor: AppColors.warning,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
         return;
       }
 
@@ -173,6 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Clear stored credentials if they're invalid (e.g., password changed)
         await _biometricService.clearStoredCredentials();
         await _biometricService.setBiometricEnabled(false);
+        if (!mounted) return;
         setState(() {
           _showBiometricOption = false;
         });
@@ -230,7 +231,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!_formKey.currentState!.validate()) return;
 
-    FocusScope.of(context).unfocus();
+    final focusScope = FocusScope.of(context);
+    focusScope.unfocus();
     await Future.delayed(const Duration(milliseconds: 300));
 
     setState(() => _isLoading = true);
@@ -282,10 +284,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (_isSignUp) {
         setState(() => _isLoading = false);
+        if (!mounted) return;
         context.go('/account-type');
         return;
       }
 
+      if (!mounted) return;
       await _navigateAfterAuth();
     } else {
       setState(() {

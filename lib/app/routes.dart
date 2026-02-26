@@ -32,6 +32,7 @@ import '../features/tenant/presentation/screens/documents_screen.dart';
 import '../features/tenant/presentation/screens/inspection_payment_screen.dart';
 import '../features/tenant/presentation/screens/lease_details_screen.dart';
 import '../features/tenant/presentation/screens/report_issue_screen.dart';
+import '../features/tenant/presentation/screens/tenant_issue_history_screen.dart';
 import '../features/agent/presentation/screens/agent_home_screen.dart';
 import '../features/agent/presentation/screens/agent_availability_screen.dart';
 import '../features/agent/presentation/screens/agent_service_areas_screen.dart';
@@ -40,10 +41,15 @@ import '../features/agent/presentation/screens/agent_inspections_screen.dart';
 import '../features/landlord/presentation/screens/landlord_inspections_screen.dart';
 import '../features/landlord/presentation/screens/landlord_issues_screen.dart';
 import '../features/landlord/presentation/screens/landlord_agreements_screen.dart';
+import '../features/landlord/presentation/screens/property_health_screen.dart';
 import '../features/landlord/presentation/screens/select_agent_screen.dart';
 import '../core/utils/inspection_pricing.dart';
 import '../features/admin/presentation/screens/admin_payment_verification_screen.dart';
 import '../features/admin/presentation/screens/admin_rental_verification_screen.dart';
+import '../features/admin/presentation/screens/admin_property_docs_screen.dart';
+import '../features/admin/presentation/screens/admin_users_screen.dart';
+import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
+import '../features/admin/presentation/screens/admin_agent_payouts_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -124,9 +130,20 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/report-issue',
       builder: (context, state) {
-        final rental = state.extra as ActiveRental;
-        return ReportIssueScreen(rental: rental);
+        final extra = state.extra as Map<String, dynamic>;
+        return ReportIssueScreen(
+          propertyId: extra['propertyId'] as String,
+          propertyTitle: extra['propertyTitle'] as String,
+          tenantId: extra['tenantId'] as String,
+          tenantName: extra['tenantName'] as String,
+          landlordId: extra['landlordId'] as String,
+          landlordName: extra['landlordName'] as String,
+        );
       },
+    ),
+    GoRoute(
+      path: '/tenant/issue-history',
+      builder: (context, state) => const TenantIssueHistoryScreen(),
     ),
     GoRoute(
       path: '/tenant/verification',
@@ -135,6 +152,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/inspections',
       builder: (context, state) => const TenantInspectionsScreen(),
+    ),
+    GoRoute(
+      path: '/tenant/tenancy-requests',
+      builder: (context, state) => const TenancyRequestsScreen(),
     ),
     GoRoute(
       path: '/tenant/inspection-payment',
@@ -217,6 +238,13 @@ final appRouter = GoRouter(
       builder: (context, state) => const LandlordIssuesScreen(),
     ),
     GoRoute(
+      path: '/landlord/property-health',
+      builder: (context, state) {
+        final property = state.extra as PropertyModel;
+        return PropertyHealthScreen(property: property);
+      },
+    ),
+    GoRoute(
       path: '/landlord/agreements',
       builder: (context, state) => const LandlordAgreementsScreen(),
     ),
@@ -253,6 +281,15 @@ final appRouter = GoRouter(
       path: '/agent/inspections',
       builder: (context, state) => const AgentInspectionsScreen(),
     ),
+    GoRoute(
+      path: '/agent/inspections',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return AgentInspectionsScreen(
+          initialTab: extra?['initialTab'] ?? 0,
+        );
+      },
+    ),
 
     // ============ ADMIN ROUTES ============
     GoRoute(
@@ -266,6 +303,18 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/admin/rental-verification',
       builder: (context, state) => const AdminRentalVerificationScreen(),
+    ),
+    GoRoute(
+      path: '/admin/agent-payouts',
+      builder: (context, state) => const AdminAgentPayoutsScreen(),
+    ),
+    GoRoute(
+      path: '/admin/property-docs',
+      builder: (context, state) => const AdminPropertyDocsScreen(),
+    ),
+    GoRoute(
+      path: '/admin/users',
+      builder: (context, state) => const AdminUsersScreen(),
     ),
 
     // ============ PROPERTY & CHAT ============

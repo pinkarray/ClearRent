@@ -10,20 +10,26 @@ import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 
 class AgentInspectionsScreen extends StatefulWidget {
-  const AgentInspectionsScreen({super.key});
+  final int initialTab;
+  const AgentInspectionsScreen({super.key, this.initialTab = 0});
 
   @override
   State<AgentInspectionsScreen> createState() => _AgentInspectionsScreenState();
 }
 
-class _AgentInspectionsScreenState extends State<AgentInspectionsScreen> with SingleTickerProviderStateMixin {
+class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final InspectionService _inspectionService = InspectionService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+      length: 3, 
+      vsync: this, 
+      initialIndex: widget.initialTab,
+    );
   }
 
   @override
@@ -83,7 +89,9 @@ class _AgentPendingTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
 
         final allRequests = snapshot.data ?? [];
@@ -93,7 +101,8 @@ class _AgentPendingTab extends StatelessWidget {
           return const _EmptyState(
             icon: Icons.inbox_outlined,
             title: 'No pending requests',
-            subtitle: 'Inspection requests for your assigned properties will appear here',
+            subtitle:
+                'Inspection requests for your assigned properties will appear here',
           );
         }
 
@@ -130,19 +139,25 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
 
   Future<void> _acceptRequest() async {
     setState(() => _isLoading = true);
-    
-    final success = await widget.inspectionService.approveRequest(widget.request.id);
-    
+
+    final success = await widget.inspectionService.approveRequest(
+      widget.request.id,
+    );
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Inspection scheduled! Don\'t forget to show up 😊'),
+          content: const Text(
+            'Inspection scheduled! Don\'t forget to show up 😊',
+          ),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     } else {
@@ -151,7 +166,9 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
           content: const Text('Failed to accept request'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -162,22 +179,26 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
     if (reason == null) return;
 
     setState(() => _isLoading = true);
-    
+
     final success = await widget.inspectionService.agentDeclineRequest(
       widget.request.id,
       reason: reason.isEmpty ? null : reason,
     );
-    
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Request declined. Landlord has 12 hours to override.'),
+          content: const Text(
+            'Request declined. Landlord has 12 hours to override.',
+          ),
           backgroundColor: AppColors.textSecondary,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -185,55 +206,68 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
 
   Future<String?> _showDeclineDialog() async {
     final controller = TextEditingController();
-    
+
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Decline Request'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'The landlord will have 12 hours to approve this inspection themselves.',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Decline Request'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'The landlord will have 12 hours to approve this inspection themselves.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Reason (optional but helpful)',
+                    hintStyle: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Reason (optional but helpful)',
-                hintStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
-                filled: true,
-                fillColor: AppColors.background,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppColors.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
-            ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+              TextButton(
+                onPressed: () => Navigator.pop(context, controller.text),
+                child: Text(
+                  'Decline',
+                  style: TextStyle(color: AppColors.error),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text('Decline', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final request = widget.request;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -256,35 +290,57 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: request.propertyImage.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: request.propertyImage,
-                        width: 60,
-                        height: 60,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
-                        width: 60,
-                        height: 60,
-                        color: AppColors.background,
-                        child: const Icon(Icons.home, color: AppColors.textHint),
-                      ),
+                child:
+                    request.propertyImage.isNotEmpty
+                        ? CachedNetworkImage(
+                          imageUrl: request.propertyImage,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                        )
+                        : Container(
+                          width: 60,
+                          height: 60,
+                          color: AppColors.background,
+                          child: const Icon(
+                            Icons.home,
+                            color: AppColors.textHint,
+                          ),
+                        ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(request.propertyTitle, style: AppTextStyles.labelLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      request.propertyTitle,
+                      style: AppTextStyles.labelLarge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: 2),
-                    Text(request.propertyAddress, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      request.propertyAddress,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 12, color: AppColors.textHint),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 12,
+                          color: AppColors.textHint,
+                        ),
                         const SizedBox(width: 2),
                         Text(
                           '${request.distanceKm.toStringAsFixed(1)} km away',
-                          style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textHint,
+                          ),
                         ),
                       ],
                     ),
@@ -293,7 +349,10 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
               ),
               // Earnings indicator
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.success.withAlpha(26),
                   borderRadius: BorderRadius.circular(10),
@@ -302,11 +361,17 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                   children: [
                     Text(
                       'You earn',
-                      style: AppTextStyles.caption.copyWith(color: AppColors.success, fontSize: 10),
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.success,
+                        fontSize: 10,
+                      ),
                     ),
                     Text(
                       InspectionPricing.formatNaira(request.agentEarnings),
-                      style: AppTextStyles.labelMedium.copyWith(color: AppColors.success, fontWeight: FontWeight.w700),
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.success,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -315,7 +380,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
           ),
 
           const SizedBox(height: 16),
-          
+
           // Earnings breakdown
           Container(
             padding: const EdgeInsets.all(12),
@@ -325,11 +390,18 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
             ),
             child: Column(
               children: [
-                _buildFeeRow('Transport (${request.distanceKm.toStringAsFixed(1)} km × 2)', request.transportFee),
+                _buildFeeRow(
+                  'Transport (${request.distanceKm.toStringAsFixed(1)} km × 2)',
+                  request.transportFee,
+                ),
                 const SizedBox(height: 4),
                 _buildFeeRow('Service fee', request.agentServiceFee),
                 const Divider(height: 16),
-                _buildFeeRow('Your earnings', request.agentEarnings, isTotal: true),
+                _buildFeeRow(
+                  'Your earnings',
+                  request.agentEarnings,
+                  isTotal: true,
+                ),
               ],
             ),
           ),
@@ -345,8 +417,12 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                 radius: 20,
                 backgroundColor: AppColors.primary.withAlpha(26),
                 child: Text(
-                  request.tenantName.isNotEmpty ? request.tenantName[0].toUpperCase() : 'T',
-                  style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                  request.tenantName.isNotEmpty
+                      ? request.tenantName[0].toUpperCase()
+                      : 'T',
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -355,7 +431,12 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(request.tenantName, style: AppTextStyles.labelMedium),
-                    Text('Tenant', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                    Text(
+                      'Tenant',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -373,14 +454,28 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.primary),
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(request.formattedDate, style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
-                      Text(request.requestedTimeDisplay, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                      Text(
+                        request.formattedDate,
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        request.requestedTimeDisplay,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -399,10 +494,19 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.note_outlined, size: 16, color: AppColors.textSecondary),
+                  const Icon(
+                    Icons.note_outlined,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(request.notes!, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                    child: Text(
+                      request.notes!,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -420,9 +524,16 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     side: const BorderSide(color: AppColors.border),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: Text('Decline', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+                  child: Text(
+                    'Decline',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -446,15 +557,22 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
       children: [
         Text(
           label,
-          style: isTotal 
-              ? AppTextStyles.labelMedium.copyWith(color: AppColors.success)
-              : AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+          style:
+              isTotal
+                  ? AppTextStyles.labelMedium.copyWith(color: AppColors.success)
+                  : AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
         ),
         Text(
           InspectionPricing.formatNaira(amount),
-          style: isTotal 
-              ? AppTextStyles.labelMedium.copyWith(color: AppColors.success, fontWeight: FontWeight.w700)
-              : AppTextStyles.bodySmall,
+          style:
+              isTotal
+                  ? AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.success,
+                    fontWeight: FontWeight.w700,
+                  )
+                  : AppTextStyles.bodySmall,
         ),
       ],
     );
@@ -473,15 +591,22 @@ class _AgentScheduledTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
 
         final allRequests = snapshot.data ?? [];
         final now = DateTime.now();
-        final scheduledRequests = allRequests
-            .where((r) => r.isApproved && r.requestedDate.isAfter(now))
-            .toList()
-          ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
+        final scheduledRequests =
+            allRequests
+                .where((r) {
+                  final today = DateTime(now.year, now.month, now.day);
+                  final requestDay = DateTime(r.requestedDate.year, r.requestedDate.month, r.requestedDate.day);
+                  return r.isApproved && !requestDay.isBefore(today);
+                })
+                .toList()
+              ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
 
         if (scheduledRequests.isEmpty) {
           return const _EmptyState(
@@ -521,67 +646,146 @@ class _AgentScheduledCard extends StatefulWidget {
 
 class _AgentScheduledCardState extends State<_AgentScheduledCard> {
   bool _isLoading = false;
+  bool _isArrivalLoading = false;
+
+  bool _isToday(DateTime d) {
+    final n = DateTime.now();
+    return d.year == n.year && d.month == n.month && d.day == n.day;
+  }
+
+  Future<void> _markArrived() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Confirm Arrival'),
+            content: const Text(
+              'Are you at the property? This will notify the tenant that you\'re ready for the inspection.',
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Not Yet',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text(
+                  'Yes, I\'m Here',
+                  style: TextStyle(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isArrivalLoading = true);
+    final ok = await widget.inspectionService.markHandlerArrived(
+      widget.request.id,
+    );
+    if (!mounted) return;
+    setState(() => _isArrivalLoading = false);
+
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('You\'ve been marked as arrived! ✓'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
 
   Future<void> _markComplete() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Complete Inspection'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Mark this inspection as completed?'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.success.withAlpha(26),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.account_balance_wallet, color: AppColors.success),
-                  const SizedBox(width: 8),
-                  Text(
-                    'You\'ll earn ${InspectionPricing.formatNaira(widget.request.agentEarnings)}',
-                    style: AppTextStyles.labelMedium.copyWith(color: AppColors.success),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Complete Inspection'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Mark this inspection as completed?'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ],
-              ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.account_balance_wallet,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'You\'ll earn ${InspectionPricing.formatNaira(widget.request.agentEarnings)}',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(
+                  'Complete',
+                  style: TextStyle(color: AppColors.success),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Complete', style: TextStyle(color: AppColors.success)),
-          ),
-        ],
-      ),
     );
 
     if (confirm != true) return;
 
     setState(() => _isLoading = true);
-    
-    final success = await widget.inspectionService.completeInspection(widget.request.id);
-    
+
+    final success = await widget.inspectionService.completeInspection(
+      widget.request.id,
+    );
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Inspection completed! ${InspectionPricing.formatNaira(widget.request.agentEarnings)} earned 🎉'),
+          content: Text(
+            'Inspection completed! ${InspectionPricing.formatNaira(widget.request.agentEarnings)} earned 🎉',
+          ),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -599,7 +803,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
   Widget build(BuildContext context) {
     final request = widget.request;
     final isToday = _isToday(request.requestedDate);
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -627,7 +831,13 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 children: [
                   const Icon(Icons.today, size: 16, color: Colors.white),
                   const SizedBox(width: 6),
-                  Text('TODAY', style: AppTextStyles.labelSmall.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                  Text(
+                    'TODAY',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -642,10 +852,30 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
                 child: Column(
                   children: [
-                    Text('${request.requestedDate.day}', style: AppTextStyles.h4.copyWith(color: AppColors.success)),
                     Text(
-                      ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][request.requestedDate.month - 1],
-                      style: AppTextStyles.caption.copyWith(color: AppColors.success),
+                      '${request.requestedDate.day}',
+                      style: AppTextStyles.h4.copyWith(
+                        color: AppColors.success,
+                      ),
+                    ),
+                    Text(
+                      [
+                        'Jan',
+                        'Feb',
+                        'Mar',
+                        'Apr',
+                        'May',
+                        'Jun',
+                        'Jul',
+                        'Aug',
+                        'Sep',
+                        'Oct',
+                        'Nov',
+                        'Dec',
+                      ][request.requestedDate.month - 1],
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.success,
+                      ),
                     ),
                   ],
                 ),
@@ -655,22 +885,45 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(request.propertyTitle, style: AppTextStyles.labelLarge),
+                    Text(
+                      request.propertyTitle,
+                      style: AppTextStyles.labelLarge,
+                    ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.access_time, size: 14, color: AppColors.textSecondary),
+                        const Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
                         const SizedBox(width: 4),
-                        Text(request.requestedTimeDisplay, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                        Text(
+                          request.requestedTimeDisplay,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
-                          child: Text(request.propertyAddress, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          child: Text(
+                            request.propertyAddress,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
@@ -685,7 +938,10 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
                 child: Text(
                   InspectionPricing.formatNaira(request.agentEarnings),
-                  style: AppTextStyles.labelSmall.copyWith(color: AppColors.success, fontWeight: FontWeight.w600),
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.success,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -702,8 +958,12 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 radius: 18,
                 backgroundColor: AppColors.primary.withAlpha(26),
                 child: Text(
-                  request.tenantName.isNotEmpty ? request.tenantName[0].toUpperCase() : 'T',
-                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+                  request.tenantName.isNotEmpty
+                      ? request.tenantName[0].toUpperCase()
+                      : 'T',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -712,7 +972,12 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(request.tenantName, style: AppTextStyles.labelMedium),
-                    Text('Tenant', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                    Text(
+                      'Tenant',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -725,9 +990,16 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                       color: AppColors.success.withAlpha(26),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.phone, color: AppColors.success, size: 18),
+                    child: const Icon(
+                      Icons.phone,
+                      color: AppColors.success,
+                      size: 18,
+                    ),
                   ),
-                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  constraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 44,
+                  ),
                   padding: EdgeInsets.zero,
                 ),
             ],
@@ -735,23 +1007,125 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
 
           const SizedBox(height: 16),
 
-          // Mark complete button
-          SizedBox(
-            width: double.infinity,
-            child: AppButton(
-              text: 'Mark as Completed',
-              onPressed: _isLoading ? null : _markComplete,
-              isLoading: _isLoading,
+          // Arrival & completion section
+          if (_isToday(request.requestedDate)) ...[
+            if (!request.handlerArrived) ...[
+              // Tenant waiting notification
+              if (request.tenantArrived) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.person_pin_circle,
+                        size: 18,
+                        color: AppColors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${request.tenantName} has arrived and is waiting!',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              // Arrive button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isArrivalLoading ? null : _markArrived,
+                  icon:
+                      _isArrivalLoading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.location_on, size: 18),
+                  label: Text(
+                    _isArrivalLoading
+                        ? 'Confirming...'
+                        : 'I\'ve Arrived at Property',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ] else ...[
+              // Agent arrived — show status + complete
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.success.withAlpha(77)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      size: 18,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        request.tenantArrived
+                            ? 'Both arrived — ready to inspect!'
+                            : 'You\'re here. Waiting for tenant...',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (request.bothArrived)
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'Mark as Completed',
+                    onPressed: _isLoading ? null : _markComplete,
+                    isLoading: _isLoading,
+                  ),
+                ),
+            ],
+          ] else ...[
+            // Not today — keep original button
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                text: 'Mark as Completed',
+                onPressed: _isLoading ? null : _markComplete,
+                isLoading: _isLoading,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
-  }
-
-  bool _isToday(DateTime date) {
-    final now = DateTime.now();
-    return date.year == now.year && date.month == now.month && date.day == now.day;
   }
 }
 
@@ -767,13 +1141,17 @@ class _AgentCompletedTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
 
         final allRequests = snapshot.data ?? [];
-        final completedRequests = allRequests.where((r) => r.isCompleted).toList();
+        final completedRequests =
+            allRequests.where((r) => r.isCompleted).toList();
         final totalEarnings = completedRequests.fold<double>(
-          0, (sum, r) => sum + r.agentEarnings,
+          0,
+          (sum, r) => sum + r.agentEarnings,
         );
 
         if (completedRequests.isEmpty) {
@@ -806,13 +1184,22 @@ class _AgentCompletedTab extends StatelessWidget {
                       color: Colors.white.withAlpha(51),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 28),
+                    child: const Icon(
+                      Icons.account_balance_wallet,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Total Earnings', style: AppTextStyles.bodyMedium.copyWith(color: Colors.white.withAlpha(204))),
+                      Text(
+                        'Total Earnings',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: Colors.white.withAlpha(204),
+                        ),
+                      ),
                       Text(
                         InspectionPricing.formatNaira(totalEarnings),
                         style: AppTextStyles.h3.copyWith(color: Colors.white),
@@ -823,8 +1210,16 @@ class _AgentCompletedTab extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text('Inspections', style: AppTextStyles.caption.copyWith(color: Colors.white.withAlpha(204))),
-                      Text('${completedRequests.length}', style: AppTextStyles.h4.copyWith(color: Colors.white)),
+                      Text(
+                        'Inspections',
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.white.withAlpha(204),
+                        ),
+                      ),
+                      Text(
+                        '${completedRequests.length}',
+                        style: AppTextStyles.h4.copyWith(color: Colors.white),
+                      ),
                     ],
                   ),
                 ],
@@ -853,26 +1248,41 @@ class _AgentCompletedTab extends StatelessWidget {
                             color: AppColors.success.withAlpha(26),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.check_circle, color: AppColors.success),
+                          child: const Icon(
+                            Icons.check_circle,
+                            color: AppColors.success,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(request.propertyTitle, style: AppTextStyles.labelMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(
+                                request.propertyTitle,
+                                style: AppTextStyles.labelMedium,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               Text(
                                 '${request.tenantName} • ${request.formattedDate}',
-                                style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                               if (request.tenantRating != null)
                                 Row(
                                   children: [
-                                    ...List.generate(5, (i) => Icon(
-                                      i < request.tenantRating! ? Icons.star : Icons.star_border,
-                                      size: 12,
-                                      color: AppColors.warning,
-                                    )),
+                                    ...List.generate(
+                                      5,
+                                      (i) => Icon(
+                                        i < request.tenantRating!
+                                            ? Icons.star
+                                            : Icons.star_border,
+                                        size: 12,
+                                        color: AppColors.warning,
+                                      ),
+                                    ),
                                   ],
                                 ),
                             ],
@@ -880,7 +1290,10 @@ class _AgentCompletedTab extends StatelessWidget {
                         ),
                         Text(
                           '+${InspectionPricing.formatNaira(request.agentEarnings)}',
-                          style: AppTextStyles.labelMedium.copyWith(color: AppColors.success, fontWeight: FontWeight.w600),
+                          style: AppTextStyles.labelMedium.copyWith(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
@@ -929,7 +1342,9 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

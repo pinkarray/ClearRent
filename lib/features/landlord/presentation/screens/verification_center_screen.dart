@@ -27,7 +27,6 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   // Document files
   File? _ninFile;
-  File? _propertyDocFile;
   File? _utilityBillFile;
   File? _proofOfIncomeFile;
   File? _proofOfAddressFile;
@@ -97,7 +96,6 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         setState(() {
           switch (type) {
             case 'nin': _ninFile = File(image.path); break;
-            case 'propertyDoc': _propertyDocFile = File(image.path); break;
             case 'utilityBill': _utilityBillFile = File(image.path); break;
             case 'proofOfIncome': _proofOfIncomeFile = File(image.path); break;
             case 'proofOfAddress': _proofOfAddressFile = File(image.path); break;
@@ -176,7 +174,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
     switch (_accountType) {
       case 'landlord':
-        return _ninFile != null && _propertyDocFile != null && _utilityBillFile != null;
+        return _ninFile != null && _utilityBillFile != null;
       case 'tenant':
         return _ninFile != null && _proofOfIncomeFile != null;
       case 'agent':
@@ -205,7 +203,6 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       case 'landlord':
         result = await _verificationService.submitLandlordVerification(
           ninFile: _ninFile!,
-          propertyDocFile: _propertyDocFile!,
           utilityBillFile: _utilityBillFile!,
           paymentProofFile: _paymentProofFile!,
         );
@@ -424,7 +421,6 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     setState(() {
       _verificationData = VerificationData();
       _ninFile = null;
-      _propertyDocFile = null;
       _utilityBillFile = null;
       _proofOfIncomeFile = null;
       _proofOfAddressFile = null;
@@ -683,7 +679,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   String _getVerifiedDescription() {
     switch (_accountType) {
-      case 'landlord': return 'Your identity and property ownership have been confirmed. Tenants can trust that you\'re a legitimate landlord.';
+      case 'landlord': return 'Your identity has been confirmed. Tenants can trust that you\'re a legitimate landlord on ClearRent.';
       case 'tenant': return 'Your identity and income have been verified. Landlords can trust that you\'re a reliable tenant.';
       case 'agent': return 'Your identity has been verified. You can now receive property inspection assignments from landlords.';
       default: return 'Your account has been verified.';
@@ -692,7 +688,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   String _getUploadDescription() {
     switch (_accountType) {
-      case 'landlord': return 'We need these documents to verify your identity and property ownership.';
+      case 'landlord': return 'We need these documents to confirm your identity as a landlord.';
       case 'tenant': return 'We need these documents to verify your identity and ability to pay rent.';
       case 'agent': return 'We need these documents to verify your identity and establish trust with landlords.';
       default: return 'Please upload the required documents.';
@@ -731,9 +727,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       case 'landlord': return [
           _buildDocumentStatus('NIN/Government ID', true),
           const SizedBox(height: 12),
-          _buildDocumentStatus('Property Document', true),
-          const SizedBox(height: 12),
-          _buildDocumentStatus('Utility Bill', true),
+          _buildDocumentStatus('Recent Utility Bill', true),
         ];
       case 'tenant': return [
           _buildDocumentStatus('NIN/Government ID', true),
@@ -773,17 +767,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       ),
       const SizedBox(height: 16),
       _DocumentUploadCard(
-        title: 'Property Ownership Document',
-        subtitle: 'C of O, Deed of Assignment, Tenancy Agreement, or Land Receipt',
-        whatWeNeed: 'Document must show your name as owner/landlord and the property address.',
-        icon: Icons.description_outlined, file: _propertyDocFile,
-        onTap: () => _pickDocument('propertyDoc'), onRemove: () => setState(() => _propertyDocFile = null),
-      ),
-      const SizedBox(height: 16),
-      _DocumentUploadCard(
         title: 'Recent Utility Bill',
         subtitle: 'Electricity (PHCN), Water, or Waste bill from the last 3 months',
-        whatWeNeed: 'Bill must show the property address to confirm you have access to it.',
+        whatWeNeed: 'Bill must show your name and a property address to confirm you\'re a real landlord.',
         icon: Icons.receipt_long_outlined, file: _utilityBillFile,
         onTap: () => _pickDocument('utilityBill'), onRemove: () => setState(() => _utilityBillFile = null),
       ),

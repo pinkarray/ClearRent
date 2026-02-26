@@ -171,7 +171,27 @@ class ConversationService {
           '✅ Found existing conversation: ${existingQuery.docs.first.id}',
           name: 'ConversationService',
         );
-        return ConversationData.fromFirestore(existingQuery.docs.first);
+        final existing = ConversationData.fromFirestore(existingQuery.docs.first);
+        // Self-heal: if names were stored empty/wrong in a previous session, patch them now
+        if ((existing.landlordName.isEmpty && landlordName.isNotEmpty) ||
+            (existing.tenantName.isEmpty && tenantName.isNotEmpty)) {
+          try {
+            final patch = <String, dynamic>{};
+            if (existing.landlordName.isEmpty && landlordName.isNotEmpty) {
+              patch['landlordName'] = landlordName;
+            }
+            if (existing.tenantName.isEmpty && tenantName.isNotEmpty) {
+              patch['tenantName'] = tenantName;
+            }
+            await _firestore
+                .collection('conversations')
+                .doc(existing.id)
+                .update(patch);
+            developer.log('🔧 Patched stale names on conversation ${existing.id}',
+                name: 'ConversationService');
+          } catch (_) {}
+        }
+        return existing;
       }
 
       // Create new conversation
@@ -772,6 +792,103 @@ class ConversationService {
         '❌ Error getting/creating agent pitch conversation: $e',
         name: 'ConversationService',
       );
+      return null;
+    }
+  }
+
+  /// Send a verification reminder notification to an unverified user.
+  Future<bool> sendVerificationReminder({
+    required String adminId,
+    required String userId,
+    required String userName,
+    required String userType,
+  }) async {
+    try {
+      await _firestore.collection('notifications').add({
+        'userId': userId,
+        'type': 'verification_reminder',
+        'title': 'Complete Your Verification',
+        'body': 'Your ClearRent account is not yet verified. Complete verification to unlock messaging, inspections, and listings.',
+        'isRead': false,
+        'sentBy': adminId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Verification reminder sent to $userName ($userId)', name: 'ConversationService');
+      return true;
+    } catch (e) {
+      developer.log('❌ Error sending reminder: $e', name: 'ConversationService');
+      return false;
+    }
+  }
+
+  /// Get or create an admin support conversation with a specific user.
+  /// Bypasses verification check — admin can message anyone.
+  Future<ConversationData?> getOrCreateAdminConversation({
+    required String adminId,
+    required String adminName,
+    required String userId,
+    required String userName,
+  }) async {
+    if (adminId.isEmpty || userId.isEmpty) return null;
+
+    try {
+      // Check for existing admin_support conversation
+      final existing = await _firestore
+          .collection('conversations')
+          .where('landlordId', isEqualTo: adminId)
+          .where('tenantId', isEqualTo: userId)
+          .where('conversationType', isEqualTo: 'admin_support')
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        return ConversationData.fromFirestore(existing.docs.first);
+      }
+
+      // Create new admin support conversation
+      final ref = _firestore.collection('conversations').doc();
+      final now = DateTime.now();
+
+      final data = {
+        'id': ref.id,
+        'propertyId': '',
+        'propertyTitle': 'ClearRent Support',
+        'propertyImage': '',
+        'landlordId': adminId,
+        'landlordName': adminName,
+        'tenantId': userId,
+        'tenantName': userName,
+        'agentId': '',
+        'agentName': '',
+        'participants': [adminId, userId],
+        'lastMessage': '',
+        'lastMessageTime': Timestamp.fromDate(now),
+        'lastMessageSenderId': '',
+        'unreadCounts': {adminId: 0, userId: 0},
+        'conversationType': 'admin_support',
+        'createdAt': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
+      };
+
+      await ref.set(data);
+
+      return ConversationData(
+        id: ref.id,
+        propertyId: '',
+        propertyTitle: 'ClearRent Support',
+        propertyImage: '',
+        landlordId: adminId,
+        landlordName: adminName,
+        tenantId: userId,
+        tenantName: userName,
+        participants: [adminId, userId],
+        lastMessage: '',
+        lastMessageTime: now,
+        lastMessageSenderId: '',
+        unreadCounts: {adminId: 0, userId: 0},
+      );
+    } catch (e) {
+      developer.log('❌ Error creating admin conversation: $e', name: 'ConversationService');
       return null;
     }
   }

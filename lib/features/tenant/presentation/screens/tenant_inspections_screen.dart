@@ -47,7 +47,7 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => context.pop(),
+          onPressed: () => context.go('/tenant/home'),
         ),
         title: Text('My Inspections', style: AppTextStyles.h4),
         centerTitle: true,
@@ -94,7 +94,7 @@ class _TenantPendingTab extends StatelessWidget {
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         if (snapshot.hasError) {
-          developer.log('❌ Error: ${snapshot.error}',
+          developer.log('âŒ Error: ${snapshot.error}',
               name: 'TenantInspections');
           return const _EmptyState(
             icon: Icons.error_outline,
@@ -697,7 +697,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                     style: AppTextStyles.labelMedium),
                 Text(
                     r.isAgentHandled
-                        ? 'Agent • Will show you the property'
+                        ? 'Agent â€¢ Will show you the property'
                         : 'Landlord',
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.textSecondary)),
@@ -774,7 +774,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
 }
 
 // ============================================================
-// HISTORY TAB — MANDATORY RATING + INTEREST FLOW
+// HISTORY TAB â€” MANDATORY RATING + INTEREST FLOW
 // ============================================================
 class _TenantHistoryTab extends StatelessWidget {
   final InspectionService inspectionService;
@@ -847,6 +847,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
   RentalInterest? _rentalInterest;
   bool _isLoadingInterest = false;
   bool _hasCheckedInterest = false;
+  bool _hasPassed = false; // true after tenant taps "I'll Keep Looking"
 
   @override
   void initState() {
@@ -869,7 +870,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         });
       }
     } catch (e) {
-      developer.log('❌ Error loading rental interest: $e',
+      developer.log('âŒ Error loading rental interest: $e',
           name: 'TenantHistory');
       if (mounted) {
         setState(
@@ -927,7 +928,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                 : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // ⚡ ACTION REQUIRED BANNER
+        // âš¡ ACTION REQUIRED BANNER
         if (needsRating) ...[
           Container(
             width: double.infinity,
@@ -1069,7 +1070,8 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         if (r.isCompleted &&
             r.tenantRated &&
             _hasCheckedInterest &&
-            _rentalInterest == null) ...[
+            _rentalInterest == null &&
+            !_hasPassed) ...[
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
@@ -1091,7 +1093,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
               SizedBox(
                   width: double.infinity,
                   child: AppButton(
-                      text: '🏠  I Want to Rent This Property',
+                      text: 'I Want to Rent This Property',
                       onPressed: () => _expressInterest())),
               const SizedBox(height: 10),
               SizedBox(
@@ -1114,6 +1116,28 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textHint, fontSize: 11),
                   textAlign: TextAlign.center),
+            ]),
+          ),
+        ],
+
+        // ============ PASSED CONFIRMATION ============
+        if (_hasPassed) ...[
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(children: [
+              const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(
+                'You passed on this property. Keep browsing to find your perfect home!',
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              )),
             ]),
           ),
         ],
@@ -1198,7 +1222,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
         statusIcon = Icons.celebration;
-        title = '🎉 Rental Confirmed!';
+        title = 'ðŸŽ‰ Rental Confirmed!';
         subtitle =
             'Welcome to your new home! Your dashboard has been updated.';
         action = SizedBox(
@@ -1441,10 +1465,12 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       ),
     );
     if (confirm == true && mounted) {
-      setState(() => _hasCheckedInterest = true);
+      setState(() {
+        _hasCheckedInterest = true;
+        _hasPassed = true;
+      });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text(
-            'No problem! Keep browsing to find your perfect home.'),
+        content: const Text('No problem! Keep browsing to find your perfect home.'),
         backgroundColor: AppColors.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

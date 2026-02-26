@@ -44,14 +44,19 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
   }
 
   Future<void> _onActivityTap(ActivityModel activity) async {
-    // Mark as read
     await _activityService.markAsRead(activity.id);
-
     if (!mounted) return;
 
-    // Navigate based on activity type
+    // Issue activities — go to issues screen so landlord can act
+    if (activity.type == ActivityType.issueReported ||
+        activity.type == ActivityType.issueDisputed ||
+        activity.type == ActivityType.issueConfirmed) {
+      context.push('/landlord/issues');
+      return;
+    }
+
+    // All other types — navigate to the property detail
     if (activity.propertyId != null) {
-      // Fetch the property and navigate to detail
       final property = await _propertyService.getProperty(activity.propertyId!);
       if (property != null && mounted) {
         context.push('/property-detail', extra: property);
@@ -321,27 +326,25 @@ class _ActivityCard extends StatelessWidget {
 
   IconData _getIcon() {
     switch (activity.type) {
-      case ActivityType.propertyAdded:
-        return Icons.home_outlined;
-      case ActivityType.propertyViewed:
-        return Icons.visibility_outlined;
-      case ActivityType.inquiry:
-        return Icons.chat_bubble_outline;
-      case ActivityType.payment:
-        return Icons.payments_outlined;
+      case ActivityType.propertyAdded:   return Icons.home_outlined;
+      case ActivityType.propertyViewed:  return Icons.visibility_outlined;
+      case ActivityType.inquiry:         return Icons.chat_bubble_outline;
+      case ActivityType.payment:         return Icons.payments_outlined;
+      case ActivityType.issueReported:   return Icons.report_problem_outlined;
+      case ActivityType.issueDisputed:   return Icons.warning_amber_outlined;
+      case ActivityType.issueConfirmed:  return Icons.check_circle_outline;
     }
   }
 
   Color _getColor() {
     switch (activity.type) {
-      case ActivityType.propertyAdded:
-        return AppColors.primary;
-      case ActivityType.propertyViewed:
-        return AppColors.info;
-      case ActivityType.inquiry:
-        return AppColors.warning;
-      case ActivityType.payment:
-        return AppColors.success;
+      case ActivityType.propertyAdded:   return AppColors.primary;
+      case ActivityType.propertyViewed:  return AppColors.info;
+      case ActivityType.inquiry:         return AppColors.warning;
+      case ActivityType.payment:         return AppColors.success;
+      case ActivityType.issueReported:   return AppColors.error;
+      case ActivityType.issueDisputed:   return AppColors.error;
+      case ActivityType.issueConfirmed:  return AppColors.success;
     }
   }
 }

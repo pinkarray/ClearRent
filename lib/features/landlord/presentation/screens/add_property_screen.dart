@@ -20,7 +20,7 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
   ) {
     // Remove all non-digits
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
-    
+
     if (digitsOnly.isEmpty) {
       return const TextEditingValue(
         text: '',
@@ -30,7 +30,7 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
 
     // Format with commas
     final formatted = _formatWithCommas(digitsOnly);
-    
+
     return TextEditingValue(
       text: formatted,
       selection: TextSelection.collapsed(offset: formatted.length),
@@ -62,7 +62,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final PropertyService _propertyService = PropertyService();
   final VerificationService _verificationService = VerificationService();
   final ImagePicker _imagePicker = ImagePicker();
-  
+
   int _currentStep = 0;
   final int _totalSteps = 5;
   bool _isPublishing = false;
@@ -76,6 +76,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final _descriptionController = TextEditingController();
   final _rentController = TextEditingController();
 
+  // Controllers for landlord's own location (when they don't live in the property)
+  final _landlordAddressController = TextEditingController();
+  final _landlordCityController = TextEditingController();
+  final _landlordStateController = TextEditingController();
+
   double? _latitude;
   double? _longitude;
 
@@ -83,25 +88,63 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   int _bedrooms = 1;
   int _bathrooms = 1;
   int _toilets = 1;
+  int _maxTenants = 1;
   String _rentPeriod = 'yearly';
   final List<String> _selectedAmenities = [];
   final List<String> _selectedRules = [];
 
   // New inspection handling model
   String _inspectionHandler = 'self'; // 'self' or 'agent'
+  bool _landlordLivesInProperty = false;
+
+  // ── Occupancy info ──
+  final bool _landlordLivesOnPremises = false;
+  int _currentTenantsCount = 0;
+  bool _hasCaretaker = false;
+  bool _caretakerLivesOnPremises = false;
+
+  // Landlord's residence location (if they live elsewhere)
+  double? _landlordBaseLatitude;
+  double? _landlordBaseLongitude;
+  String _landlordBaseLocationName = '';
 
   // Inspection availability
-  final List<String> _availableDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  final List<String> _availableTimeSlots = ['morning', 'afternoon', 'late_afternoon'];
+  final List<String> _availableDays = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
+  final List<String> _availableTimeSlots = [
+    'morning',
+    'afternoon',
+    'late_afternoon',
+  ];
+
+  // Ownership document
+  File? _ownershipDocFile;
+  String? _ownershipDocType; // 'c_of_o' | 'deed' | 'other'
 
   final List<String> _weekDays = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
 
   final List<Map<String, String>> _timeSlotOptions = [
     {'id': 'morning', 'label': 'Morning', 'time': '9:00 AM - 12:00 PM'},
     {'id': 'afternoon', 'label': 'Afternoon', 'time': '12:00 PM - 3:00 PM'},
-    {'id': 'late_afternoon', 'label': 'Late Afternoon', 'time': '3:00 PM - 6:00 PM'},
+    {
+      'id': 'late_afternoon',
+      'label': 'Late Afternoon',
+      'time': '3:00 PM - 6:00 PM',
+    },
     {'id': 'evening', 'label': 'Evening', 'time': '6:00 PM - 8:00 PM'},
   ];
 
@@ -147,9 +190,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Future<void> _checkVerificationStatus() async {
     try {
       final data = await _verificationService.getVerificationStatus();
-      
+
       if (!mounted) return;
-      
+
       if (data.status != VerificationStatus.verified) {
         // Show verification required dialog
         _showVerificationRequiredDialog(data.status);
@@ -172,21 +215,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     switch (status) {
       case VerificationStatus.none:
         title = 'Verification Required';
-        message = 'You need to verify your identity before listing properties. This helps build trust with tenants and protects everyone on the platform.';
+        message =
+            'You need to verify your identity before listing properties. This helps build trust with tenants and protects everyone on the platform.';
         buttonText = 'Get Verified';
         icon = Icons.verified_user_outlined;
         color = AppColors.primary;
         break;
       case VerificationStatus.pending:
         title = 'Verification Pending';
-        message = 'Your verification is being reviewed. You\'ll be able to list properties once approved. This usually takes 24-48 hours.';
+        message =
+            'Your verification is being reviewed. You\'ll be able to list properties once approved. This usually takes 24-48 hours.';
         buttonText = 'Got it';
         icon = Icons.schedule;
         color = AppColors.warning;
         break;
       case VerificationStatus.rejected:
         title = 'Verification Failed';
-        message = 'Your verification was not approved. Please review the feedback and submit again to start listing properties.';
+        message =
+            'Your verification was not approved. Please review the feedback and submit again to start listing properties.';
         buttonText = 'Try Again';
         icon = Icons.error_outline;
         color = AppColors.error;
@@ -199,63 +245,74 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: color.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 40, color: color),
-            ),
-            const SizedBox(height: 24),
-            Text(title, style: AppTextStyles.h3, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                text: buttonText,
-                onPressed: () {
-                  Navigator.pop(context);
-                  if (status == VerificationStatus.pending) {
-                    // Just go back to home
-                    context.pop();
-                  } else {
-                    // Go to verification screen
-                    context.pop();
-                    context.push('/landlord/verification');
-                  }
-                },
-              ),
-            ),
-            if (status != VerificationStatus.pending) ...[
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.pop();
-                },
-                child: Text(
-                  'Maybe later',
-                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 40, color: color),
                 ),
-              ),
-            ],
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
+                const SizedBox(height: 24),
+                Text(
+                  title,
+                  style: AppTextStyles.h3,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  message,
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: buttonText,
+                    onPressed: () {
+                      Navigator.pop(context);
+                      if (status == VerificationStatus.pending) {
+                        // Just go back to home
+                        context.pop();
+                      } else {
+                        // Go to verification screen
+                        context.pop();
+                        context.push('/landlord/verification');
+                      }
+                    },
+                  ),
+                ),
+                if (status != VerificationStatus.pending) ...[
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.pop();
+                    },
+                    child: Text(
+                      'Maybe later',
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
     );
   }
 
@@ -268,6 +325,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _rentController.dispose();
+    _landlordAddressController.dispose();
+    _landlordCityController.dispose();
+    _landlordStateController.dispose();
     super.dispose();
   }
 
@@ -364,9 +424,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -374,32 +432,35 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   void _showExitConfirmation() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Discard listing?'),
-        content: const Text('You\'ll lose all the information you\'ve entered.'),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Keep editing',
-              style: TextStyle(color: AppColors.textSecondary),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Discard listing?'),
+            content: const Text(
+              'You\'ll lose all the information you\'ve entered.',
             ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.pop();
-            },
-            child: Text(
-              'Discard',
-              style: TextStyle(color: AppColors.error),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'Keep editing',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  context.pop();
+                },
+                child: Text(
+                  'Discard',
+                  style: TextStyle(color: AppColors.error),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -411,13 +472,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       debugPrint('📸 Starting image upload...');
       debugPrint('📸 Number of images: ${_selectedImageFiles.length}');
       _showUploadProgress('Uploading images...');
-      
-      final imageUrls = await _propertyService.uploadImages(_selectedImageFiles);
-      
+
+      final imageUrls = await _propertyService.uploadImages(
+        _selectedImageFiles,
+      );
+
       if (!mounted) return;
-      
+
       debugPrint('📸 Uploaded ${imageUrls.length} images');
-      
+
       if (imageUrls.isEmpty) {
         Navigator.pop(context); // Close progress dialog
         _showError('Failed to upload images. Please try again.');
@@ -425,7 +488,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         return;
       }
 
-      // Step 2: Create property in Firestore
+      // Step 2: Upload ownership document if provided
+      String? ownershipDocUrl;
+      if (_ownershipDocFile != null) {
+        _updateUploadProgress('Uploading ownership document...');
+        final docUrls = await _propertyService.uploadImages([_ownershipDocFile!]);
+        if (docUrls.isNotEmpty) ownershipDocUrl = docUrls.first;
+      }
+
+      if (!mounted) return;
+
+      // Step 3: Create property in Firestore
       debugPrint('🏠 Creating property in Firestore...');
       _updateUploadProgress('Saving property...');
 
@@ -463,6 +536,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         inspectionHandler: _inspectionHandler,
         inspectionDays: _availableDays,
         inspectionTimeSlots: _availableTimeSlots,
+        landlordLivesInProperty: _landlordLivesInProperty,
+        landlordBaseLatitude: _landlordBaseLatitude,
+        landlordBaseLongitude: _landlordBaseLongitude,
+        maxTenants: _maxTenants,
+        landlordLivesOnPremises: _landlordLivesOnPremises,
+        currentTenantsCount: _currentTenantsCount,
+        hasCaretaker: _hasCaretaker,
+        caretakerLivesOnPremises: _caretakerLivesOnPremises,
+        ownershipDocUrl: ownershipDocUrl,
+        ownershipDocType: _ownershipDocType,
       );
 
       if (!mounted) return;
@@ -492,7 +575,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       debugPrint('❌ Publish error: $e');
       debugPrint('❌ Stack trace: $stackTrace');
       _showError('Something went wrong: ${e.toString()}');
-      setState(() => _isPublishing = false);
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
     }
   }
 
@@ -500,98 +585,102 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: AppColors.primary),
-            const SizedBox(height: 16),
-            Text(message, style: AppTextStyles.bodyMedium),
-          ],
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppColors.primary),
+                const SizedBox(height: 16),
+                Text(message, style: AppTextStyles.bodyMedium),
+              ],
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
     );
   }
 
   void _updateUploadProgress(String message) {
-    Navigator.pop(context);
-    _showUploadProgress(message);
+    if (mounted) {
+      Navigator.pop(context);
+      _showUploadProgress(message);
+    }
   }
 
   void _showAgentSelectionPrompt(String propertyId) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.support_agent,
-                size: 40,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Property Listed!',
-              style: AppTextStyles.h3,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Now let\'s assign a verified agent to handle property inspections.',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                text: 'Choose Agent',
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.push('/landlord/select-agent', extra: {
-                    'propertyId': propertyId,
-                    'propertyCity': _cityController.text.trim(),
-                  });
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.go('/landlord/home');
-                },
-                child: Text(
-                  'I\'ll do this later',
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.textSecondary,
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.support_agent,
+                    size: 40,
+                    color: AppColors.primary,
                   ),
                 ),
-              ),
+                const SizedBox(height: 24),
+                Text('Property Listed!', style: AppTextStyles.h3),
+                const SizedBox(height: 8),
+                Text(
+                  'Now let\'s assign a verified agent to handle property inspections.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'Choose Agent',
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.push(
+                        '/landlord/select-agent',
+                        extra: {
+                          'propertyId': propertyId,
+                          'propertyCity': _cityController.text.trim(),
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.go('/landlord/home');
+                    },
+                    child: Text(
+                      'I\'ll do this later',
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
     );
   }
 
@@ -599,54 +688,52 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16),
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.successLight,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check,
-                size: 40,
-                color: AppColors.success,
-              ),
+      builder:
+          (context) => AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppColors.successLight,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    size: 40,
+                    color: AppColors.success,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text('Property Listed!', style: AppTextStyles.h3),
+                const SizedBox(height: 8),
+                Text(
+                  'Your property is now live and visible to tenants. You\'ll handle inspections yourself.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'View My Properties',
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.go('/landlord/home');
+                    },
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Property Listed!',
-              style: AppTextStyles.h3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Your property is now live and visible to tenants. You\'ll handle inspections yourself.',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                text: 'View My Properties',
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.go('/landlord/home');
-                },
-              ),
-            ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
+          ),
     );
   }
 
@@ -654,7 +741,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Future<void> _pickFromGallery() async {
     try {
       debugPrint('📸 Opening gallery picker...');
-      
+
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1920,
@@ -680,7 +767,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Future<void> _takePhoto() async {
     try {
       debugPrint('📷 Opening camera...');
-      
+
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.camera,
         maxWidth: 1920,
@@ -739,10 +826,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             icon: const Icon(Icons.close, color: AppColors.textPrimary),
             onPressed: _showExitConfirmation,
           ),
-          title: Text(
-            'Add Property',
-            style: AppTextStyles.h4,
-          ),
+          title: Text('Add Property', style: AppTextStyles.h4),
           centerTitle: true,
         ),
         body: Column(
@@ -781,12 +865,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
               return Expanded(
                 child: Container(
-                  margin: EdgeInsets.only(right: index < _totalSteps - 1 ? 8 : 0),
+                  margin: EdgeInsets.only(
+                    right: index < _totalSteps - 1 ? 8 : 0,
+                  ),
                   height: 4,
                   decoration: BoxDecoration(
-                    color: isCompleted || isCurrent
-                        ? AppColors.primary
-                        : AppColors.border,
+                    color:
+                        isCompleted || isCurrent
+                            ? AppColors.primary
+                            : AppColors.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -835,10 +922,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Add photos of your property',
-            style: AppTextStyles.h4,
-          ),
+          Text('Add photos of your property', style: AppTextStyles.h4),
           const SizedBox(height: 8),
           Text(
             'Add at least 1 photo. Properties with more photos get more inquiries.',
@@ -958,10 +1042,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: AppColors.primary, width: 1.5),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1000,10 +1081,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.border,
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: AppColors.border, width: 1.5),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1055,10 +1133,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Where is your property?',
-            style: AppTextStyles.h4,
-          ),
+          Text('Where is your property?', style: AppTextStyles.h4),
           const SizedBox(height: 8),
           Text(
             'Search for an address or tap the map to adjust the pin.',
@@ -1091,10 +1166,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Property details',
-            style: AppTextStyles.h4,
-          ),
+          Text('Property details', style: AppTextStyles.h4),
           const SizedBox(height: 24),
 
           // Title
@@ -1107,10 +1179,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           const SizedBox(height: 20),
 
           // Property Type
-          Text(
-            'Property Type',
-            style: AppTextStyles.labelMedium,
-          ),
+          Text('Property Type', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -1130,19 +1199,160 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           // Bedrooms, Bathrooms, Toilets
           Row(
             children: [
-              Expanded(child: _buildCounter('Bedrooms', _bedrooms, (v) => setState(() => _bedrooms = v))),
+              Expanded(
+                child: _buildCounter(
+                  'Bedrooms',
+                  _bedrooms,
+                  (v) => setState(() => _bedrooms = v),
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildCounter('Bathrooms', _bathrooms, (v) => setState(() => _bathrooms = v))),
+              Expanded(
+                child: _buildCounter(
+                  'Bathrooms',
+                  _bathrooms,
+                  (v) => setState(() => _bathrooms = v),
+                ),
+              ),
               const SizedBox(width: 12),
-              Expanded(child: _buildCounter('Toilets', _toilets, (v) => setState(() => _toilets = v))),
+              Expanded(
+                child: _buildCounter(
+                  'Toilets',
+                  _toilets,
+                  (v) => setState(() => _toilets = v),
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 20),
+          Text('Maximum Tenants', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'How many tenants can this property accommodate?',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildCounter(
+            'Max Tenants',
+            _maxTenants,
+            (v) => setState(() => _maxTenants = v > 0 ? v : 1),
+          ),
           const SizedBox(height: 24),
+
+          const SizedBox(height: 24),
+
+          // ── Occupancy & Living Situation ──
+          Text('Living Situation', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Help tenants understand who they\'ll be sharing the compound with.',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Current tenants
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.group_outlined, size: 20, color: AppColors.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Current tenants', style: AppTextStyles.labelMedium),
+                      Text(
+                        'How many tenants already live here?',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        if (_currentTenantsCount > 0) {
+                          setState(() => _currentTenantsCount--);
+                        }
+                      },
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Icon(Icons.remove, size: 16),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '$_currentTenantsCount',
+                        style: AppTextStyles.labelLarge,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _currentTenantsCount++),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withAlpha(26),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(Icons.add, size: 16, color: AppColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Has caretaker?
+          _buildYesNoTile(
+            icon: Icons.manage_accounts_outlined,
+            title: 'Do you have a caretaker?',
+            value: _hasCaretaker,
+            onChanged: (v) => setState(() {
+              _hasCaretaker = v;
+              if (!v) _caretakerLivesOnPremises = false;
+            }),
+          ),
+
+          // Caretaker lives on premises (conditional)
+          if (_hasCaretaker) ...[
+            const SizedBox(height: 12),
+            _buildYesNoTile(
+              icon: Icons.home_work_outlined,
+              title: 'Does the caretaker live on the property?',
+              value: _caretakerLivesOnPremises,
+              onChanged: (v) => setState(() => _caretakerLivesOnPremises = v),
+              indent: true,
+            ),
+          ],
 
           // Description
           AppTextField(
             label: 'Description',
-            hint: 'Describe your property, its features, and what makes it special...',
+            hint:
+                'Describe your property, its features, and what makes it special...',
             controller: _descriptionController,
             maxLines: 4,
             textCapitalization: TextCapitalization.sentences,
@@ -1150,85 +1360,152 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           const SizedBox(height: 24),
 
           // Amenities
-          Text(
-            'Amenities',
-            style: AppTextStyles.labelMedium,
-          ),
+          Text('Amenities', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _amenitiesList.map((amenity) {
-              final isSelected = _selectedAmenities.contains(amenity);
-              return FilterChip(
-                label: Text(amenity),
-                selected: isSelected,
-                onSelected: (_) {
-                  setState(() {
-                    if (isSelected) {
-                      _selectedAmenities.remove(amenity);
-                    } else {
-                      _selectedAmenities.add(amenity);
-                    }
-                  });
-                },
-                backgroundColor: AppColors.surface,
-                selectedColor: AppColors.primary.withAlpha(26),
-                checkmarkColor: AppColors.primary,
-                labelStyle: AppTextStyles.labelMedium.copyWith(
-                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: isSelected ? AppColors.primary : AppColors.border,
-                  ),
-                ),
-              );
-            }).toList(),
+            children:
+                _amenitiesList.map((amenity) {
+                  final isSelected = _selectedAmenities.contains(amenity);
+                  return FilterChip(
+                    label: Text(amenity),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedAmenities.remove(amenity);
+                        } else {
+                          _selectedAmenities.add(amenity);
+                        }
+                      });
+                    },
+                    backgroundColor: AppColors.surface,
+                    selectedColor: AppColors.primary.withAlpha(26),
+                    checkmarkColor: AppColors.primary,
+                    labelStyle: AppTextStyles.labelMedium.copyWith(
+                      color:
+                          isSelected
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color:
+                            isSelected ? AppColors.primary : AppColors.border,
+                      ),
+                    ),
+                  );
+                }).toList(),
           ),
           const SizedBox(height: 24),
 
           // House Rules
-          Text(
-            'House Rules (Optional)',
-            style: AppTextStyles.labelMedium,
-          ),
+          Text('House Rules (Optional)', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _rulesList.map((rule) {
-              final isSelected = _selectedRules.contains(rule);
-              return FilterChip(
-                label: Text(rule),
-                selected: isSelected,
-                onSelected: (_) {
-                  setState(() {
-                    if (isSelected) {
-                      _selectedRules.remove(rule);
-                    } else {
-                      _selectedRules.add(rule);
-                    }
-                  });
-                },
-                backgroundColor: AppColors.surface,
-                selectedColor: AppColors.warning.withAlpha(26),
-                checkmarkColor: AppColors.warning,
-                labelStyle: AppTextStyles.labelMedium.copyWith(
-                  color: isSelected ? AppColors.warning : AppColors.textSecondary,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: isSelected ? AppColors.warning : AppColors.border,
-                  ),
-                ),
-              );
-            }).toList(),
+            children:
+                _rulesList.map((rule) {
+                  final isSelected = _selectedRules.contains(rule);
+                  return FilterChip(
+                    label: Text(rule),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedRules.remove(rule);
+                        } else {
+                          _selectedRules.add(rule);
+                        }
+                      });
+                    },
+                    backgroundColor: AppColors.surface,
+                    selectedColor: AppColors.warning.withAlpha(26),
+                    checkmarkColor: AppColors.warning,
+                    labelStyle: AppTextStyles.labelMedium.copyWith(
+                      color:
+                          isSelected
+                              ? AppColors.warning
+                              : AppColors.textSecondary,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color:
+                            isSelected ? AppColors.warning : AppColors.border,
+                      ),
+                    ),
+                  );
+                }).toList(),
           ),
           const SizedBox(height: 40),
         ],
+      ),
+    );
+  }
+
+  Widget _buildYesNoTile({
+    required IconData icon,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    bool indent = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: indent ? AppColors.background : AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: value ? AppColors.primary.withAlpha(80) : AppColors.border,
+        ),
+      ),
+      child: Row(
+        children: [
+          if (indent) const SizedBox(width: 8),
+          Icon(
+            icon,
+            size: 20,
+            color: value ? AppColors.primary : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(title, style: AppTextStyles.labelMedium),
+          ),
+          Row(
+            children: [
+              _buildToggleOption('No', !value, () => onChanged(false)),
+              const SizedBox(width: 6),
+              _buildToggleOption('Yes', value, () => onChanged(true)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleOption(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: selected ? Colors.white : AppColors.textSecondary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }
@@ -1240,7 +1517,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+          color:
+              isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: isSelected ? AppColors.primary : AppColors.border,
@@ -1260,10 +1538,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: AppTextStyles.caption,
-        ),
+        Text(label, style: AppTextStyles.caption),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1289,10 +1564,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   child: const Icon(Icons.remove, size: 18),
                 ),
               ),
-              Text(
-                '$value',
-                style: AppTextStyles.labelLarge,
-              ),
+              Text('$value', style: AppTextStyles.labelLarge),
               GestureDetector(
                 onTap: () => onChanged(value + 1),
                 child: Container(
@@ -1322,10 +1594,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Set your price',
-            style: AppTextStyles.h4,
-          ),
+          Text('Set your price', style: AppTextStyles.h4),
           const SizedBox(height: 8),
           Text(
             'Be transparent with your pricing. Tenants love clarity.',
@@ -1336,10 +1605,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           const SizedBox(height: 24),
 
           // Rent amount with comma formatting
-          Text(
-            'Rent Amount (NGN)',
-            style: AppTextStyles.labelMedium,
-          ),
+          Text('Rent Amount (NGN)', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -1365,19 +1631,22 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     style: AppTextStyles.h4.copyWith(color: AppColors.primary),
                   ),
                 ),
-                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 0,
+                  minHeight: 0,
+                ),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
               ),
             ),
           ),
           const SizedBox(height: 20),
 
           // Rent period
-          Text(
-            'Rent Period',
-            style: AppTextStyles.labelMedium,
-          ),
+          Text('Rent Period', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1387,6 +1656,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ],
           ),
           const SizedBox(height: 32),
+
+          // Landlord residence question
+          _buildLandlordResidenceSection(),
+
+          const SizedBox(height: 24),
 
           // Inspection handling section
           _buildInspectionHandlerSection(),
@@ -1416,7 +1690,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Free to list! ClearRent only charges when rent is paid through the platform.',
+                    'Listing is free.',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.success,
                     ),
@@ -1425,7 +1699,408 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               ],
             ),
           ),
+
+          const SizedBox(height: 32),
+
+          // ── Ownership document ──
+          Text('Proof of Ownership', style: AppTextStyles.h4),
+          const SizedBox(height: 4),
+          Text(
+            'Optional but strongly recommended. Upload a C of O, Deed of Assignment, or any title document. Your listing will show a "Document Verified" badge once reviewed.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          _buildOwnershipDocSection(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOwnershipDocSection() {
+    final hasDoc = _ownershipDocFile != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasDoc ? AppColors.success.withAlpha(80) : AppColors.border,
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Doc type chips
+        Text('Document Type', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          children: [
+            _DocTypeChip(label: 'C of O', value: 'c_of_o', selected: _ownershipDocType == 'c_of_o', onTap: () => setState(() => _ownershipDocType = 'c_of_o')),
+            _DocTypeChip(label: 'Deed of Assignment', value: 'deed', selected: _ownershipDocType == 'deed', onTap: () => setState(() => _ownershipDocType = 'deed')),
+            _DocTypeChip(label: 'Other', value: 'other', selected: _ownershipDocType == 'other', onTap: () => setState(() => _ownershipDocType = 'other')),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        if (hasDoc) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.success.withAlpha(13),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.success.withAlpha(50)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Document selected', style: AppTextStyles.labelMedium.copyWith(color: AppColors.success)),
+                  Text(
+                    _ownershipDocFile!.path.split('/').last,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ]),
+              ),
+              TextButton(
+                onPressed: _pickOwnershipDoc,
+                child: Text('Change', style: AppTextStyles.labelSmall.copyWith(color: AppColors.primary)),
+              ),
+            ]),
+          ),
+        ] else ...[
+          GestureDetector(
+            onTap: _pickOwnershipDoc,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(children: [
+                Icon(Icons.upload_file_outlined, size: 32, color: AppColors.textHint),
+                const SizedBox(height: 8),
+                Text('Tap to upload document or photo', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('Skip for now — you can add this later', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+              ]),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _pickOwnershipDoc() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (image != null) {
+        setState(() => _ownershipDocFile = File(image.path));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Could not pick document'), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Widget _buildLandlordResidenceSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Do you live in this property?',
+            style: AppTextStyles.labelLarge,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'This helps tenants know if the landlord is a co-resident and affects inspection fee calculation.',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _landlordLivesInProperty = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color:
+                          _landlordLivesInProperty
+                              ? AppColors.primary.withAlpha(13)
+                              : AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color:
+                            _landlordLivesInProperty
+                                ? AppColors.primary
+                                : AppColors.border,
+                        width: _landlordLivesInProperty ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.home,
+                          color:
+                              _landlordLivesInProperty
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Yes, I live here',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color:
+                                _landlordLivesInProperty
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _landlordLivesInProperty = false),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color:
+                          !_landlordLivesInProperty
+                              ? AppColors.primary.withAlpha(13)
+                              : AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color:
+                            !_landlordLivesInProperty
+                                ? AppColors.primary
+                                : AppColors.border,
+                        width: !_landlordLivesInProperty ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.other_houses_outlined,
+                          color:
+                              !_landlordLivesInProperty
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'No, I live elsewhere',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color:
+                                !_landlordLivesInProperty
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Show location picker if landlord doesn't live in property
+          if (!_landlordLivesInProperty) ...[
+            const SizedBox(height: 16),
+            Text('Where do you live?', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Text(
+              'We\'ll use this to calculate inspection fees based on distance to your property.',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _showLandlordLocationPicker,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          color:
+                              _landlordBaseLatitude != null
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _landlordBaseLocationName.isEmpty
+                                ? 'Select your location'
+                                : _landlordBaseLocationName,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color:
+                                  _landlordBaseLatitude != null
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLandlordLocationPicker() async {
+    // Clear controllers so the picker starts fresh (preserving last selection if set)
+    if (_landlordBaseLocationName.isEmpty) {
+      _landlordAddressController.clear();
+      _landlordCityController.clear();
+      _landlordStateController.clear();
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(children: [
+            // Handle
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              child: Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border, borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Row(children: [
+                Text('Where do you live?', style: AppTextStyles.h4),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Text(
+                'Your location helps calculate inspection fees based on travel distance.',
+                style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: LocationPickerWidget(
+                  addressController: _landlordAddressController,
+                  cityController: _landlordCityController,
+                  stateController: _landlordStateController,
+                  onLocationSelected: (lat, lng) {
+                    setState(() {
+                      _landlordBaseLatitude = lat;
+                      _landlordBaseLongitude = lng;
+                      // Build a readable name from the address/city fields
+                      final parts = [
+                        _landlordAddressController.text.trim(),
+                        _landlordCityController.text.trim(),
+                      ].where((s) => s.isNotEmpty).toList();
+                      _landlordBaseLocationName = parts.isNotEmpty
+                          ? parts.join(', ')
+                          : 'Location selected';
+                    });
+                  },
+                ),
+              ),
+            ),
+            // Confirm button
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(ctx).padding.bottom + 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _landlordBaseLatitude != null
+                      ? () => Navigator.pop(ctx)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: AppColors.border,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(
+                    _landlordBaseLatitude != null ? 'Confirm Location' : 'Pin your location on the map',
+                    style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }
@@ -1460,14 +2135,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _inspectionHandler == 'self'
-                    ? AppColors.primary.withAlpha(13)
-                    : AppColors.background,
+                color:
+                    _inspectionHandler == 'self'
+                        ? AppColors.primary.withAlpha(13)
+                        : AppColors.background,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: _inspectionHandler == 'self'
-                      ? AppColors.primary
-                      : AppColors.border,
+                  color:
+                      _inspectionHandler == 'self'
+                          ? AppColors.primary
+                          : AppColors.border,
                   width: _inspectionHandler == 'self' ? 2 : 1,
                 ),
               ),
@@ -1477,16 +2154,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: _inspectionHandler == 'self'
-                          ? AppColors.primary.withAlpha(26)
-                          : AppColors.surface,
+                      color:
+                          _inspectionHandler == 'self'
+                              ? AppColors.primary.withAlpha(26)
+                              : AppColors.surface,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       Icons.person,
-                      color: _inspectionHandler == 'self'
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
+                      color:
+                          _inspectionHandler == 'self'
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
                       size: 24,
                     ),
                   ),
@@ -1498,9 +2177,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         Text(
                           'I\'ll handle it myself',
                           style: AppTextStyles.labelLarge.copyWith(
-                            color: _inspectionHandler == 'self'
-                                ? AppColors.primary
-                                : AppColors.textPrimary,
+                            color:
+                                _inspectionHandler == 'self'
+                                    ? AppColors.primary
+                                    : AppColors.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -1514,7 +2194,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.success.withAlpha(26),
                       borderRadius: BorderRadius.circular(12),
@@ -1548,14 +2231,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: _inspectionHandler == 'agent'
-                    ? AppColors.primary.withAlpha(13)
-                    : AppColors.background,
+                color:
+                    _inspectionHandler == 'agent'
+                        ? AppColors.primary.withAlpha(13)
+                        : AppColors.background,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: _inspectionHandler == 'agent'
-                      ? AppColors.primary
-                      : AppColors.border,
+                  color:
+                      _inspectionHandler == 'agent'
+                          ? AppColors.primary
+                          : AppColors.border,
                   width: _inspectionHandler == 'agent' ? 2 : 1,
                 ),
               ),
@@ -1565,16 +2250,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     width: 48,
                     height: 48,
                     decoration: BoxDecoration(
-                      color: _inspectionHandler == 'agent'
-                          ? AppColors.primary.withAlpha(26)
-                          : AppColors.surface,
+                      color:
+                          _inspectionHandler == 'agent'
+                              ? AppColors.primary.withAlpha(26)
+                              : AppColors.surface,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       Icons.support_agent,
-                      color: _inspectionHandler == 'agent'
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
+                      color:
+                          _inspectionHandler == 'agent'
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
                       size: 24,
                     ),
                   ),
@@ -1586,9 +2273,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         Text(
                           'Assign a verified agent',
                           style: AppTextStyles.labelLarge.copyWith(
-                            color: _inspectionHandler == 'agent'
-                                ? AppColors.primary
-                                : AppColors.textPrimary,
+                            color:
+                                _inspectionHandler == 'agent'
+                                    ? AppColors.primary
+                                    : AppColors.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -1602,7 +2290,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.info.withAlpha(26),
                       borderRadius: BorderRadius.circular(12),
@@ -1676,12 +2367,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month, size: 20, color: AppColors.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Inspection Availability',
-                style: AppTextStyles.labelLarge,
+              const Icon(
+                Icons.calendar_month,
+                size: 20,
+                color: AppColors.primary,
               ),
+              const SizedBox(width: 8),
+              Text('Inspection Availability', style: AppTextStyles.labelLarge),
             ],
           ),
           const SizedBox(height: 4),
@@ -1699,36 +2391,47 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _weekDays.map((day) {
-              final isSelected = _availableDays.contains(day);
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (isSelected) {
-                      _availableDays.remove(day);
-                    } else {
-                      _availableDays.add(day);
-                    }
-                  });
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.background,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? AppColors.primary : AppColors.border,
+            children:
+                _weekDays.map((day) {
+                  final isSelected = _availableDays.contains(day);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _availableDays.remove(day);
+                        } else {
+                          _availableDays.add(day);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            isSelected
+                                ? AppColors.primary.withAlpha(26)
+                                : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color:
+                              isSelected ? AppColors.primary : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        day.substring(0, 3), // Mon, Tue, etc.
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color:
+                              isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    day.substring(0, 3), // Mon, Tue, etc.
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: isSelected ? AppColors.primary : AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+                  );
+                }).toList(),
           ),
 
           const SizedBox(height: 20),
@@ -1752,7 +2455,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary.withAlpha(13) : AppColors.background,
+                  color:
+                      isSelected
+                          ? AppColors.primary.withAlpha(13)
+                          : AppColors.background,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: isSelected ? AppColors.primary : AppColors.border,
@@ -1764,26 +2470,38 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                       width: 20,
                       height: 20,
                       decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : Colors.transparent,
+                        color:
+                            isSelected ? AppColors.primary : Colors.transparent,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.border,
+                          color:
+                              isSelected ? AppColors.primary : AppColors.border,
                           width: 2,
                         ),
                       ),
-                      child: isSelected
-                          ? const Icon(Icons.check, size: 14, color: Colors.white)
-                          : null,
+                      child:
+                          isSelected
+                              ? const Icon(
+                                Icons.check,
+                                size: 14,
+                                color: Colors.white,
+                              )
+                              : null,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(slot['label']!, style: AppTextStyles.labelMedium),
+                          Text(
+                            slot['label']!,
+                            style: AppTextStyles.labelMedium,
+                          ),
                           Text(
                             slot['time']!,
-                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -1804,12 +2522,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.lightbulb_outline, size: 16, color: AppColors.info),
+                const Icon(
+                  Icons.lightbulb_outline,
+                  size: 16,
+                  color: AppColors.info,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Tenants will only be able to request inspections during these times',
-                    style: AppTextStyles.caption.copyWith(color: AppColors.info),
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.info,
+                    ),
                   ),
                 ),
               ],
@@ -1828,7 +2552,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+            color:
+                isSelected
+                    ? AppColors.primary.withAlpha(26)
+                    : AppColors.surface,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isSelected ? AppColors.primary : AppColors.border,
@@ -1855,10 +2582,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Preview your listing',
-            style: AppTextStyles.h4,
-          ),
+          Text('Preview your listing', style: AppTextStyles.h4),
           const SizedBox(height: 8),
           Text(
             'Review everything before publishing.',
@@ -1884,7 +2608,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
           // Title and price
           Text(
-            _titleController.text.isNotEmpty ? _titleController.text : 'Property Title',
+            _titleController.text.isNotEmpty
+                ? _titleController.text
+                : 'Property Title',
             style: AppTextStyles.h3,
           ),
           const SizedBox(height: 8),
@@ -1897,12 +2623,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           // Location
           Row(
             children: [
-              const Icon(Icons.location_on, size: 16, color: AppColors.textSecondary),
+              const Icon(
+                Icons.location_on,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   '${_addressController.text}, ${_cityController.text}, ${_stateController.text}',
-                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
             ],
@@ -1933,9 +2665,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.calendar_month, size: 16, color: AppColors.primary),
+                    const Icon(
+                      Icons.calendar_month,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 6),
-                    Text('Inspection Availability', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+                    Text(
+                      'Inspection Availability',
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1959,10 +2700,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _selectedAmenities.map((a) => Chip(
-                label: Text(a, style: AppTextStyles.caption),
-                backgroundColor: AppColors.primaryLight.withAlpha(26),
-              )).toList(),
+              children:
+                  _selectedAmenities
+                      .map(
+                        (a) => Chip(
+                          label: Text(a, style: AppTextStyles.caption),
+                          backgroundColor: AppColors.primaryLight.withAlpha(26),
+                        ),
+                      )
+                      .toList(),
             ),
           ],
 
@@ -1986,10 +2732,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'ClearRent Fee',
-                      style: AppTextStyles.bodyMedium,
-                    ),
+                    Text('ClearRent Fee', style: AppTextStyles.bodyMedium),
                     Text(
                       'Charged when rent is paid',
                       style: AppTextStyles.caption.copyWith(
@@ -2032,7 +2775,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+          Text(
+            label,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
           Text(value, style: AppTextStyles.labelLarge),
         ],
       ),
@@ -2049,9 +2797,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         ),
         Text(
           '₦${_formatAmount(amount)}',
-          style: isTotal
-              ? AppTextStyles.h4.copyWith(color: AppColors.primary)
-              : AppTextStyles.labelLarge,
+          style:
+              isTotal
+                  ? AppTextStyles.h4.copyWith(color: AppColors.primary)
+                  : AppTextStyles.labelLarge,
         ),
       ],
     );
@@ -2116,12 +2865,48 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           Expanded(
             flex: 1,
             child: AppButton(
-              text: _currentStep == _totalSteps - 1 ? 'Publish Property' : 'Continue',
-              onPressed: _currentStep == _totalSteps - 1 ? _publishProperty : _nextStep,
+              text:
+                  _currentStep == _totalSteps - 1
+                      ? 'Publish Property'
+                      : 'Continue',
+              onPressed:
+                  _currentStep == _totalSteps - 1
+                      ? _publishProperty
+                      : _nextStep,
               isLoading: _isPublishing,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DocTypeChip extends StatelessWidget {
+  final String label, value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DocTypeChip({required this.label, required this.value, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? AppColors.primary : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: selected ? AppColors.primary : AppColors.textSecondary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }

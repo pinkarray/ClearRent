@@ -26,7 +26,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -58,6 +58,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
           tabs: const [
             Tab(text: 'Open'),
             Tab(text: 'In Progress'),
+            Tab(text: 'Pending'),
             Tab(text: 'Resolved'),
           ],
         ),
@@ -67,6 +68,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
         children: [
           _IssuesTab(status: 'open', authService: _authService),
           _IssuesTab(status: 'in_progress', authService: _authService),
+          _IssuesTab(status: 'pending_confirmation', authService: _authService),
           _IssuesTab(status: 'resolved', authService: _authService),
         ],
       ),
@@ -118,14 +120,21 @@ class _IssuesTab extends StatelessWidget {
             case 'in_progress':
               subtitle = 'Issues you\'re working on will appear here';
               break;
+            case 'pending_confirmation':
+              subtitle = 'Issues awaiting tenant confirmation will appear here';
+              break;
             default:
               subtitle = 'Resolved issues will appear here';
           }
           return _EmptyState(
             icon: status == 'resolved'
                 ? Icons.check_circle_outline
-                : Icons.report_off_outlined,
-            title: 'No ${status.replaceAll('_', ' ')} issues',
+                : status == 'pending_confirmation'
+                    ? Icons.hourglass_empty_outlined
+                    : Icons.report_off_outlined,
+            title: status == 'pending_confirmation'
+                ? 'No pending confirmations'
+                : 'No ${status.replaceAll('_', ' ')} issues',
             subtitle: subtitle,
           );
         }
@@ -208,28 +217,55 @@ class _IssueCardState extends State<_IssueCard> {
   Future<void> _updateStatus(String newStatus) async {
     setState(() => _isUpdating = true);
     try {
+      final updateData = <String, dynamic>{
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (newStatus == 'pending_confirmation')
+          'pendingConfirmationAt': FieldValue.serverTimestamp(),
+        if (newStatus == 'resolved')
+          'resolvedAt': FieldValue.serverTimestamp(),
+      };
+
       await FirebaseFirestore.instance
           .collection('issues')
           .doc(widget.issueId)
-          .update({
-        'status': newStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-        if (newStatus == 'resolved') 'resolvedAt': FieldValue.serverTimestamp(),
-      });
+          .update(updateData);
 
-      // Notify tenant
+      // Notify tenant with appropriate message
       final tenantId = widget.data['tenantId'];
       if (tenantId != null) {
+        String notifTitle;
+        String notifMessage;
+
+        switch (newStatus) {
+          case 'in_progress':
+            notifTitle = 'Issue Acknowledged';
+            notifMessage =
+                'Your landlord is now working on the $_category issue at $_propertyTitle.';
+            break;
+          case 'pending_confirmation':
+            notifTitle = 'Fix Ready — Please Confirm';
+            notifMessage =
+                'Your landlord says the $_category issue at $_propertyTitle has been fixed. Please confirm or dispute.';
+            break;
+          case 'open':
+            notifTitle = 'Issue Re-opened';
+            notifMessage =
+                'Your landlord has re-opened the $_category issue at $_propertyTitle.';
+            break;
+          default:
+            notifTitle = 'Issue Update';
+            notifMessage =
+                'Your $_category issue at $_propertyTitle has been updated.';
+        }
+
         await FirebaseFirestore.instance.collection('activities').add({
-          'userId': tenantId,
+          'tenantId': tenantId,
           'type': 'issue_updated',
-          'title': newStatus == 'resolved'
-              ? 'Issue Resolved'
-              : 'Issue Update',
-          'message': newStatus == 'resolved'
-              ? 'Your $_category issue at $_propertyTitle has been resolved.'
-              : 'Your $_category issue at $_propertyTitle is now being worked on.',
+          'title': notifTitle,
+          'message': notifMessage,
           'propertyId': widget.data['propertyId'],
+          'issueId': widget.issueId,
           'isRead': false,
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -237,12 +273,17 @@ class _IssueCardState extends State<_IssueCard> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(newStatus == 'resolved'
-              ? 'Issue marked as resolved!'
-              : 'Issue marked as in progress.'),
-          backgroundColor: AppColors.success,
+          content: Text(newStatus == 'pending_confirmation'
+              ? 'Tenant has been asked to confirm the fix.'
+              : newStatus == 'in_progress'
+                  ? 'Issue marked as in progress.'
+                  : 'Issue re-opened.'),
+          backgroundColor: newStatus == 'pending_confirmation'
+              ? AppColors.info
+              : AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
       }
     } catch (e) {
@@ -252,7 +293,8 @@ class _IssueCardState extends State<_IssueCard> {
           content: const Text('Failed to update issue'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
       }
     } finally {
@@ -263,14 +305,41 @@ class _IssueCardState extends State<_IssueCard> {
   Future<void> _messageTenant() async {
     setState(() => _isMessageLoading = true);
     try {
+      final landlordId = widget.data['landlordId'] ?? '';
+      final tenantId = widget.data['tenantId'] ?? '';
+
+      if (landlordId.isEmpty || tenantId.isEmpty) {
+        if (mounted) setState(() => _isMessageLoading = false);
+        return;
+      }
+
+      // Fetch fresh names from Firestore so the conversation always shows
+      // correct names regardless of what was cached in the issue document.
+      String landlordName = widget.data['landlordName'] ?? '';
+      String tenantName = _tenantName;
+      try {
+        final results = await Future.wait([
+          FirebaseFirestore.instance.collection('users').doc(landlordId).get(),
+          FirebaseFirestore.instance.collection('users').doc(tenantId).get(),
+        ]);
+        final landlordDoc = results[0];
+        final tenantDoc = results[1];
+        if (landlordDoc.exists) {
+          landlordName = landlordDoc.data()?['fullName'] ?? landlordName;
+        }
+        if (tenantDoc.exists) {
+          tenantName = tenantDoc.data()?['fullName'] ?? tenantName;
+        }
+      } catch (_) {} // fallback to issue doc values on error
+
       final conv = await _conversationService.getOrCreateConversation(
         propertyId: widget.data['propertyId'] ?? '',
         propertyTitle: _propertyTitle,
         propertyImage: '',
-        landlordId: widget.data['landlordId'] ?? '',
-        landlordName: widget.data['landlordName'] ?? '',
-        tenantId: widget.data['tenantId'] ?? '',
-        tenantName: _tenantName,
+        landlordId: landlordId,
+        landlordName: landlordName,
+        tenantId: tenantId,
+        tenantName: tenantName,
       );
       if (!mounted) return;
       setState(() => _isMessageLoading = false);
@@ -280,6 +349,13 @@ class _IssueCardState extends State<_IssueCard> {
           'propertyTitle': _propertyTitle,
           'propertyImage': null,
         });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Could not open chat. Both parties must be verified.'),
+          backgroundColor: AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
       }
     } catch (e) {
       if (mounted) setState(() => _isMessageLoading = false);
@@ -421,6 +497,61 @@ class _IssueCardState extends State<_IssueCard> {
             ),
           ],
 
+          // Pending confirmation banner
+          if (widget.currentStatus == 'pending_confirmation') ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(13),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.info.withAlpha(60)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.hourglass_top_rounded,
+                    size: 16, color: AppColors.info),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Waiting for tenant to confirm this fix. Once confirmed, the issue will be marked resolved.',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.info, height: 1.4),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+
+          // Dispute reason — shown when tenant disputed and status went back to in_progress
+          if (widget.data['disputeReason'] != null &&
+              widget.currentStatus == 'in_progress') ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.error.withAlpha(13),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.error.withAlpha(60)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.error),
+                  const SizedBox(width: 6),
+                  Text('Tenant Disputed This Fix',
+                      style: AppTextStyles.labelSmall.copyWith(color: AppColors.error)),
+                ]),
+                const SizedBox(height: 4),
+                Text(
+                  '"${widget.data['disputeReason']}"',
+                  style: AppTextStyles.caption.copyWith(
+                      color: AppColors.error, fontStyle: FontStyle.italic, height: 1.4),
+                ),
+              ]),
+            ),
+          ],
+
           const SizedBox(height: 16),
 
           // Action buttons
@@ -447,7 +578,7 @@ class _IssueCardState extends State<_IssueCard> {
             ),
             const SizedBox(width: 8),
 
-            // Status action buttons
+            // open → working on it
             if (widget.currentStatus == 'open')
               Expanded(
                 child: ElevatedButton(
@@ -463,22 +594,22 @@ class _IssueCardState extends State<_IssueCard> {
                   ),
                   child: _isUpdating
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 16, height: 16,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Text('Working On It'),
                 ),
               ),
 
+            // in_progress → mark fixed (sends to pending_confirmation)
             if (widget.currentStatus == 'in_progress')
               Expanded(
                 child: ElevatedButton(
                   onPressed: _isUpdating
                       ? null
-                      : () => _updateStatus('resolved'),
+                      : () => _updateStatus('pending_confirmation'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.success,
+                    backgroundColor: AppColors.info,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(
@@ -486,14 +617,37 @@ class _IssueCardState extends State<_IssueCard> {
                   ),
                   child: _isUpdating
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 16, height: 16,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : const Text('Mark Resolved'),
+                      : const Text('Mark Fixed'),
                 ),
               ),
 
+            // pending_confirmation → re-open (if tenant disputes or landlord recalls)
+            if (widget.currentStatus == 'pending_confirmation')
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isUpdating
+                      ? null
+                      : () => _updateStatus('in_progress'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    side: const BorderSide(color: AppColors.warning),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: _isUpdating
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.warning))
+                      : Text('Still Working',
+                          style: TextStyle(color: AppColors.warning)),
+                ),
+              ),
+
+            // resolved → re-open
             if (widget.currentStatus == 'resolved')
               Expanded(
                 child: OutlinedButton(

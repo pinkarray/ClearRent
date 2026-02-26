@@ -248,7 +248,6 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
       }
 
       if (result != null) {
-        Navigator.pop(context, true);
         _showSuccessDialog();
       } else {
         _showError('Failed to submit request. Please try again.');
@@ -264,6 +263,8 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
   }
 
   void _showSuccessDialog() {
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -342,21 +343,32 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // Close dialog first, then close sheet, then navigate
                   Navigator.pop(dialogContext);
-                  context.go('/tenant/inspections');
+                  rootNavigator.pop(true); // closes the bottom sheet with result=true
+                  rootNavigator.context.go('/tenant/inspections');
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text('View My Inspections', style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+                child: Text(
+                  'View My Inspections',
+                  style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
+                ),
               ),
             ),
             const SizedBox(height: 8),
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('Back to Property', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                rootNavigator.pop(true); // closes the sheet with result=true
+              },
+              child: Text(
+                'Back to Property',
+                style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary),
+              ),
             ),
           ],
         ),

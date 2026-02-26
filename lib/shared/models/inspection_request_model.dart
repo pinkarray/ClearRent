@@ -82,6 +82,24 @@ class InspectionRequest {
   final bool tenantRated;
   final String? tenantReview;
   final DateTime? ratingSubmittedAt;
+  // Who the rating was given to (agent or landlord)
+  final String? ratedUserId;
+  final String? ratedUserType; // 'agent' or 'landlord'
+  final String? ratedUserName;
+
+  // Agent payout
+  final String agentPayoutStatus; // pending, paid
+  final DateTime? agentPaidAt;
+  final String? agentPaidBy;
+
+  final bool agentConfirmedPayment;
+  final DateTime? agentConfirmedAt;
+
+  // Arrival tracking
+  final bool tenantArrived;
+  final DateTime? tenantArrivedAt;
+  final bool handlerArrived;
+  final DateTime? handlerArrivedAt;
   
   // Timestamps
   final DateTime createdAt;
@@ -137,6 +155,18 @@ class InspectionRequest {
     this.tenantRated = false,
     this.tenantReview,
     this.ratingSubmittedAt,
+    this.ratedUserId,
+    this.ratedUserType,
+    this.ratedUserName,
+    this.agentPayoutStatus = 'pending',
+    this.agentPaidAt,
+    this.agentPaidBy,
+    this.agentConfirmedPayment = false,
+    this.agentConfirmedAt,
+    this.tenantArrived = false,
+    this.tenantArrivedAt,
+    this.handlerArrived = false,
+    this.handlerArrivedAt,
     required this.createdAt,
     this.updatedAt,
   });
@@ -159,6 +189,7 @@ class InspectionRequest {
       DateTime.now().isBefore(landlordOverrideDeadline!);
   
   bool get isAgentHandled => agentId != null;
+  bool get bothArrived => tenantArrived && handlerArrived;
 
   // Display status
   String get statusDisplay {
@@ -264,6 +295,18 @@ class InspectionRequest {
     bool? tenantRated,
     String? tenantReview,
     DateTime? ratingSubmittedAt,
+    String? ratedUserId,
+    String? ratedUserType,
+    String? ratedUserName,
+    String? agentPayoutStatus,
+    DateTime? agentPaidAt,
+    String? agentPaidBy,
+    bool? agentConfirmedPayment,
+    DateTime? agentConfirmedAt,
+    bool? tenantArrived,
+    DateTime? tenantArrivedAt,
+    bool? handlerArrived,
+    DateTime? handlerArrivedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -317,6 +360,18 @@ class InspectionRequest {
       tenantRated: tenantRated ?? this.tenantRated,
       tenantReview: tenantReview ?? this.tenantReview,
       ratingSubmittedAt: ratingSubmittedAt ?? this.ratingSubmittedAt,
+      ratedUserId: ratedUserId ?? this.ratedUserId,
+      ratedUserType: ratedUserType ?? this.ratedUserType,
+      ratedUserName: ratedUserName ?? this.ratedUserName,
+      agentPayoutStatus: agentPayoutStatus ?? this.agentPayoutStatus,
+      agentPaidAt: agentPaidAt ?? this.agentPaidAt,
+      agentPaidBy: agentPaidBy ?? this.agentPaidBy,
+      agentConfirmedPayment: agentConfirmedPayment ?? this.agentConfirmedPayment,
+      agentConfirmedAt: agentConfirmedAt ?? this.agentConfirmedAt,
+      tenantArrived: tenantArrived ?? this.tenantArrived,
+      tenantArrivedAt: tenantArrivedAt ?? this.tenantArrivedAt,
+      handlerArrived: handlerArrived ?? this.handlerArrived,
+      handlerArrivedAt: handlerArrivedAt ?? this.handlerArrivedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -375,10 +430,22 @@ class InspectionRequest {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       // *** FIX: Parse tenantRating from Firestore ***
       tenantRating: data['tenantRating'],
-      // *** FIX: Parse tenantRated — true if rating exists OR explicit field ***
+      // *** FIX: Parse tenantRated â€” true if rating exists OR explicit field ***
       tenantRated: data['tenantRated'] ?? (data['tenantRating'] != null),
       tenantReview: data['tenantReview'],
       ratingSubmittedAt: (data['ratingSubmittedAt'] as Timestamp?)?.toDate(),
+      ratedUserId: data['ratedUserId'],
+      ratedUserType: data['ratedUserType'],
+      ratedUserName: data['ratedUserName'],
+      agentPayoutStatus: data['agentPayoutStatus'] ?? 'pending',
+      agentPaidAt: (data['agentPaidAt'] as Timestamp?)?.toDate(),
+      agentPaidBy: data['agentPaidBy'],
+      agentConfirmedPayment: data['agentConfirmedPayment'] ?? false,
+      agentConfirmedAt: (data['agentConfirmedAt'] as Timestamp?)?.toDate(),
+      tenantArrived: data['tenantArrived'] ?? false,
+      tenantArrivedAt: (data['tenantArrivedAt'] as Timestamp?)?.toDate(),
+      handlerArrived: data['handlerArrived'] ?? false,
+      handlerArrivedAt: (data['handlerArrivedAt'] as Timestamp?)?.toDate(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -437,6 +504,18 @@ class InspectionRequest {
       'tenantRated': tenantRated,
       'tenantReview': tenantReview,
       'ratingSubmittedAt': ratingSubmittedAt != null ? Timestamp.fromDate(ratingSubmittedAt!) : null,
+      'ratedUserId': ratedUserId,
+      'ratedUserType': ratedUserType,
+      'ratedUserName': ratedUserName,
+      'agentPayoutStatus': agentPayoutStatus,
+      'agentPaidAt': agentPaidAt != null ? Timestamp.fromDate(agentPaidAt!) : null,
+      'agentPaidBy': agentPaidBy,
+      'agentConfirmedPayment': agentConfirmedPayment,
+      'agentConfirmedAt': agentConfirmedAt != null ? Timestamp.fromDate(agentConfirmedAt!) : null,
+      'tenantArrived': tenantArrived,
+      'tenantArrivedAt': tenantArrivedAt != null ? Timestamp.fromDate(tenantArrivedAt!) : null,
+      'handlerArrived': handlerArrived,
+      'handlerArrivedAt': handlerArrivedAt != null ? Timestamp.fromDate(handlerArrivedAt!) : null,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
     };

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -174,6 +175,9 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             _buildLandlordCard(),
             const SizedBox(height: 16),
 
+            // Pending fix confirmations — shown when landlord says something is fixed
+            _buildPendingConfirmations(),
+
             // Quick actions
             _buildQuickActions(),
             const SizedBox(height: 16),
@@ -200,11 +204,13 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               widget.isLoadingProfile
                   ? Container(
                       width: 120, height: 16,
+                      
                       decoration: BoxDecoration(
                           color: AppColors.border,
                           borderRadius: BorderRadius.circular(4)))
+                          
                   : Text('Welcome home, $_firstName 🏠',
-                      style: AppTextStyles.bodyMedium
+                      style: AppTextStyles.h3
                           .copyWith(color: AppColors.textSecondary)),
               const SizedBox(height: 4),
               Text('My Rental', style: AppTextStyles.h3),
@@ -541,6 +547,53 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     );
   }
 
+  // Streams issues in pending_confirmation state for this tenant's property.
+  // Renders a confirmation card for each — tenant confirms or disputes.
+  Widget _buildPendingConfirmations() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('issues')
+          .where('tenantId', isEqualTo: rental.tenantId)
+          .where('propertyId', isEqualTo: rental.propertyId)
+          .where('status', isEqualTo: 'pending_confirmation')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final docs = snapshot.data!.docs;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section header
+            Row(children: [
+              Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(
+                    color: AppColors.info, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Fix${docs.length > 1 ? 'es' : ''} to Confirm (${docs.length})',
+                style: AppTextStyles.labelLarge,
+              ),
+            ]),
+            const SizedBox(height: 10),
+            ...docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return _PendingConfirmationCard(
+                issueId: doc.id,
+                data: data,
+              );
+            }),
+            const SizedBox(height: 6),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildQuickActions() {
     return Row(
       children: [
@@ -568,8 +621,14 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             icon: Icons.report_problem_outlined,
             label: 'Report Issue',
             color: AppColors.warning,
-            onTap: () =>
-              context.push('/tenant/report-issue' , extra: rental),
+            onTap: () => context.push('/tenant/report-issue', extra: {
+              'propertyId': rental.propertyId,
+              'propertyTitle': rental.propertyTitle,
+              'tenantId': rental.tenantId,
+              'tenantName': rental.tenantName,
+              'landlordId': rental.landlordId,
+              'landlordName': rental.landlordName,
+            }),
           ),
         ),
       ],
@@ -824,6 +883,222 @@ class _QuickActionCard extends StatelessWidget {
               style: AppTextStyles.labelSmall,
               textAlign: TextAlign.center),
         ]),
+      ),
+    );
+  }
+}
+
+/// Card shown on the tenant dashboard when a landlord has marked an issue as fixed
+/// and is awaiting tenant confirmation. Tenant can confirm or dispute.
+class _PendingConfirmationCard extends StatefulWidget {
+  final String issueId;
+  final Map<String, dynamic> data;
+
+  const _PendingConfirmationCard({
+    required this.issueId,
+    required this.data,
+  });
+
+  @override
+  State<_PendingConfirmationCard> createState() =>
+      _PendingConfirmationCardState();
+}
+
+class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
+  bool _isActing = false;
+
+  String get _title => widget.data['title'] ?? 'Issue';
+  String get _category => widget.data['category'] ?? 'other';
+
+  Future<void> _confirm() async {
+    setState(() => _isActing = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('issues')
+          .doc(widget.issueId)
+          .update({
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
+        'tenantConfirmedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify landlord
+      final landlordId = widget.data['landlordId'];
+      if (landlordId != null) {
+        await FirebaseFirestore.instance.collection('activities').add({
+          'userId': landlordId,
+          'type': 'issue_updated',
+          'title': 'Fix Confirmed',
+          'message':
+              '${widget.data['tenantName'] ?? 'Your tenant'} confirmed the $_category issue has been resolved.',
+          'propertyId': widget.data['propertyId'],
+          'issueId': widget.issueId,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Error confirming fix: $e');
+      if (mounted) setState(() => _isActing = false);
+    }
+  }
+
+  Future<void> _dispute() async {
+    // Ask tenant for a reason before disputing
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('What\'s still wrong?'),
+        content: TextField(
+          controller: reasonController,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Describe what hasn\'t been fixed yet...',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(ctx, reasonController.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Submit Dispute',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (reason == null || reason.isEmpty) return;
+
+    setState(() => _isActing = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('issues')
+          .doc(widget.issueId)
+          .update({
+        'status': 'in_progress',
+        'disputeReason': reason,
+        'disputedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify landlord with dispute reason
+      final landlordId = widget.data['landlordId'];
+      if (landlordId != null) {
+        await FirebaseFirestore.instance.collection('activities').add({
+          'landlordId': landlordId,
+          'type': 'issue_disputed',
+          'title': 'Fix Disputed',
+          'message':
+              '${widget.data['tenantName'] ?? 'Your tenant'} says the $_category issue is not fully resolved: "$reason"',
+          'propertyId': widget.data['propertyId'],
+          'issueId': widget.issueId,
+          'actorId': widget.data['tenantId'],
+          'actorName': widget.data['tenantName'],
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Error disputing fix: $e');
+      if (mounted) setState(() => _isActing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.info.withAlpha(8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.info.withAlpha(80)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.build_outlined,
+                  size: 16, color: AppColors.info),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_title,
+                      style: AppTextStyles.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    'Your landlord says this is fixed',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.info),
+                  ),
+                ],
+              ),
+            ),
+          ]),
+
+          const SizedBox(height: 12),
+
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isActing ? null : _dispute,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  side: const BorderSide(color: AppColors.error),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text('Still Broken',
+                    style: TextStyle(
+                        color: AppColors.error, fontSize: 13)),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _isActing ? null : _confirm,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: _isActing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Confirmed Fixed', style: TextStyle(fontSize: 13)),
+              ),
+            ),
+          ]),
+        ],
       ),
     );
   }

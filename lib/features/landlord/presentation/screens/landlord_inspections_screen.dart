@@ -94,30 +94,35 @@ class _LandlordPendingTab extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary));
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
         if (snapshot.hasError) {
           return const _EmptyState(
-              icon: Icons.error_outline,
-              title: 'Error loading',
-              subtitle: 'Please try again later');
+            icon: Icons.error_outline,
+            title: 'Error loading',
+            subtitle: 'Please try again later',
+          );
         }
-        final pending = (snapshot.data ?? [])
-            .where((r) => r.isPending || r.isDeclinedByAgent)
-            .toList();
+        final pending =
+            (snapshot.data ?? [])
+                .where((r) => r.isPending || r.isDeclinedByAgent)
+                .toList();
         if (pending.isEmpty) {
           return const _EmptyState(
-              icon: Icons.inbox_outlined,
-              title: 'No pending requests',
-              subtitle:
-                  'Inspection requests from tenants will appear here');
+            icon: Icons.inbox_outlined,
+            title: 'No pending requests',
+            subtitle: 'Inspection requests from tenants will appear here',
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: pending.length,
-          itemBuilder: (context, i) => _LandlordPendingCard(
-              request: pending[i],
-              inspectionService: inspectionService),
+          itemBuilder:
+              (context, i) => _LandlordPendingCard(
+                request: pending[i],
+                inspectionService: inspectionService,
+              ),
         );
       },
     );
@@ -127,8 +132,10 @@ class _LandlordPendingTab extends StatelessWidget {
 class _LandlordPendingCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _LandlordPendingCard(
-      {required this.request, required this.inspectionService});
+  const _LandlordPendingCard({
+    required this.request,
+    required this.inspectionService,
+  });
 
   @override
   State<_LandlordPendingCard> createState() => _LandlordPendingCardState();
@@ -141,15 +148,13 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
 
   Future<void> _approve() async {
     setState(() => _isLoading = true);
-    final ok =
-        await widget.inspectionService.approveRequest(widget.request.id);
+    final ok = await widget.inspectionService.approveRequest(widget.request.id);
     if (!mounted) return;
     setState(() => _isLoading = false);
     _snack(
-        ok
-            ? 'Inspection approved! Tenant notified.'
-            : 'Failed to approve.',
-        ok ? AppColors.success : AppColors.error);
+      ok ? 'Inspection approved! Tenant notified.' : 'Failed to approve.',
+      ok ? AppColors.success : AppColors.error,
+    );
   }
 
   Future<void> _decline() async {
@@ -157,55 +162,69 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
     if (reason == null) return;
     setState(() => _isLoading = true);
     final ok = await widget.inspectionService.landlordDeclineRequest(
-        widget.request.id,
-        reason: reason.isEmpty ? null : reason);
+      widget.request.id,
+      reason: reason.isEmpty ? null : reason,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
-    if (ok) _snack('Request declined. Tenant notified.', AppColors.textSecondary);
+    if (ok) {
+      _snack('Request declined. Tenant notified.', AppColors.textSecondary);
+    }
   }
 
   Future<String?> _showDeclineDialog() async {
     final c = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Decline Request'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('The tenant will be notified.',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: c,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Reason (optional)',
-                filled: true,
-                fillColor: AppColors.background,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        const BorderSide(color: AppColors.border)),
-              ),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Decline Request'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'The tenant will be notified.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: c,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Reason (optional)',
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, c.text),
-              child: Text('Decline',
-                  style: TextStyle(color: AppColors.error))),
-        ],
-      ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, c.text),
+                child: Text(
+                  'Decline',
+                  style: TextStyle(color: AppColors.error),
+                ),
+              ),
+            ],
+          ),
     );
   }
 
@@ -227,12 +246,15 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
       if (!mounted) return;
       setState(() => _isMessageLoading = false);
       if (conv != null) {
-        context.push('/chat', extra: {
-          'conversationId': conv.id,
-          'propertyTitle': r.propertyTitle,
-          'propertyImage':
-              r.propertyImage.isNotEmpty ? r.propertyImage : null,
-        });
+        context.push(
+          '/chat',
+          extra: {
+            'conversationId': conv.id,
+            'propertyTitle': r.propertyTitle,
+            'propertyImage':
+                r.propertyImage.isNotEmpty ? r.propertyImage : null,
+          },
+        );
       } else {
         _snack('Could not start conversation.', AppColors.error);
       }
@@ -242,14 +264,16 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
     }
   }
 
-  void _snack(String msg, Color c) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor: c,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
-      ));
+  void _snack(String msg, Color c) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(
+    SnackBar(
+      content: Text(msg),
+      backgroundColor: c,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -262,14 +286,16 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: agentDeclined
-            ? Border.all(color: AppColors.warning, width: 2)
-            : null,
+        border:
+            agentDeclined
+                ? Border.all(color: AppColors.warning, width: 2)
+                : null,
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withAlpha(13),
-              blurRadius: 10,
-              offset: const Offset(0, 2)),
+            color: Colors.black.withAlpha(13),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -280,121 +306,156 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: AppColors.warning.withAlpha(26),
-                  borderRadius: BorderRadius.circular(10)),
-              child: Row(children: [
-                const Icon(Icons.warning_amber_rounded,
-                    color: AppColors.warning, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Agent Declined',
-                          style: AppTextStyles.labelMedium
-                              .copyWith(color: AppColors.warning)),
-                      Text(
-                          r.declineReason ??
-                              'You can approve this yourself.',
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textSecondary)),
-                    ],
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppColors.warning,
+                    size: 20,
                   ),
-                ),
-              ]),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Agent Declined',
+                          style: AppTextStyles.labelMedium.copyWith(
+                            color: AppColors.warning,
+                          ),
+                        ),
+                        Text(
+                          r.declineReason ?? 'You can approve this yourself.',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
           ],
 
           // Property row
-          Row(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: r.propertyImage.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: r.propertyImage,
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _placeholderBox(60))
-                  : _placeholderBox(60),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.propertyTitle,
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child:
+                    r.propertyImage.isNotEmpty
+                        ? CachedNetworkImage(
+                          imageUrl: r.propertyImage,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _placeholderBox(60),
+                        )
+                        : _placeholderBox(60),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.propertyTitle,
                       style: AppTextStyles.labelLarge,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(r.propertyAddress,
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      r.propertyAddress,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ],
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 16),
 
           // Tenant row
-          Row(children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: AppColors.primary.withAlpha(26),
-              child: Text(
-                  r.tenantName.isNotEmpty
-                      ? r.tenantName[0].toUpperCase()
-                      : 'T',
-                  style: AppTextStyles.labelLarge
-                      .copyWith(color: AppColors.primary)),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.tenantName, style: AppTextStyles.labelMedium),
-                  Text('Tenant',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary)),
-                ],
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.primary.withAlpha(26),
+                child: Text(
+                  r.tenantName.isNotEmpty ? r.tenantName[0].toUpperCase() : 'T',
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
-            ),
-            _messageButton(
-                loading: _isMessageLoading, onTap: _messageTenant),
-          ]),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.tenantName, style: AppTextStyles.labelMedium),
+                    Text(
+                      'Tenant',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _messageButton(loading: _isMessageLoading, onTap: _messageTenant),
+            ],
+          ),
           const SizedBox(height: 16),
 
           // Date
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(13),
-                borderRadius: BorderRadius.circular(10)),
-            child: Row(children: [
-              const Icon(Icons.calendar_today_outlined,
-                  size: 18, color: AppColors.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(r.formattedDate,
-                        style: AppTextStyles.labelMedium
-                            .copyWith(color: AppColors.primary)),
-                    Text(r.requestedTimeDisplay,
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textSecondary)),
-                  ],
+              color: AppColors.primary.withAlpha(13),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 18,
+                  color: AppColors.primary,
                 ),
-              ),
-            ]),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        r.formattedDate,
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      Text(
+                        r.requestedTimeDisplay,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
 
           // Notes
@@ -403,18 +464,26 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(10)),
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.note_outlined,
-                      size: 16, color: AppColors.textSecondary),
+                  const Icon(
+                    Icons.note_outlined,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                      child: Text(r.notes!,
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.textSecondary))),
+                    child: Text(
+                      r.notes!,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -422,29 +491,36 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
           const SizedBox(height: 16),
 
           // Action buttons
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _decline,
-                style: OutlinedButton.styleFrom(
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : _decline,
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     side: const BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10))),
-                child: Text('Decline',
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: AppColors.textSecondary)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Decline',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AppButton(
-                text: agentDeclined ? 'Approve Anyway' : 'Approve',
-                onPressed: _isLoading ? null : _approve,
-                isLoading: _isLoading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppButton(
+                  text: agentDeclined ? 'Approve Anyway' : 'Approve',
+                  onPressed: _isLoading ? null : _approve,
+                  isLoading: _isLoading,
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ],
       ),
     );
@@ -465,24 +541,28 @@ class _LandlordUpcomingTab extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary));
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
         final all = snapshot.data ?? [];
-        final upcoming = all.where((r) => r.isApproved).toList()
-          ..sort(
-              (a, b) => a.requestedDate.compareTo(b.requestedDate));
+        final upcoming =
+            all.where((r) => r.isApproved).toList()
+              ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
         if (upcoming.isEmpty) {
           return const _EmptyState(
-              icon: Icons.event_available_outlined,
-              title: 'No upcoming inspections',
-              subtitle: 'Approved inspections will appear here');
+            icon: Icons.event_available_outlined,
+            title: 'No upcoming inspections',
+            subtitle: 'Approved inspections will appear here',
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: upcoming.length,
-          itemBuilder: (ctx, i) => _LandlordUpcomingCard(
-              request: upcoming[i],
-              inspectionService: inspectionService),
+          itemBuilder:
+              (ctx, i) => _LandlordUpcomingCard(
+                request: upcoming[i],
+                inspectionService: inspectionService,
+              ),
         );
       },
     );
@@ -492,63 +572,141 @@ class _LandlordUpcomingTab extends StatelessWidget {
 class _LandlordUpcomingCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _LandlordUpcomingCard(
-      {required this.request, required this.inspectionService});
+  const _LandlordUpcomingCard({
+    required this.request,
+    required this.inspectionService,
+  });
 
   @override
-  State<_LandlordUpcomingCard> createState() =>
-      _LandlordUpcomingCardState();
+  State<_LandlordUpcomingCard> createState() => _LandlordUpcomingCardState();
 }
 
 class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
   final ConversationService _conversationService = ConversationService();
   bool _isLoading = false;
   bool _isMessageLoading = false;
+  bool _isArrivalLoading = false;
 
   bool _isToday(DateTime d) {
     final n = DateTime.now();
     return d.year == n.year && d.month == n.month && d.day == n.day;
   }
 
-  String _monthAbbr(int m) => const [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  String _monthAbbr(int m) =>
+      const [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
       ][m - 1];
 
   Future<void> _markComplete() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Complete Inspection'),
-        content: const Text('Mark this inspection as completed?'),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Complete',
-                  style: TextStyle(color: AppColors.success))),
-        ],
-      ),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Complete Inspection'),
+            content: const Text('Mark this inspection as completed?'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(
+                  'Complete',
+                  style: TextStyle(color: AppColors.success),
+                ),
+              ),
+            ],
+          ),
     );
     if (confirm != true) return;
     setState(() => _isLoading = true);
-    final ok = await widget.inspectionService
-        .completeInspection(widget.request.id);
+    final ok = await widget.inspectionService.completeInspection(
+      widget.request.id,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Inspection completed!'),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Inspection completed!'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _markArrived() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Confirm Arrival'),
+            content: const Text(
+              'Are you at the property? This will notify the tenant that you\'re ready.',
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Not Yet',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text(
+                  'Yes, I\'m Here',
+                  style: TextStyle(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _isArrivalLoading = true);
+    final ok = await widget.inspectionService.markHandlerArrived(
+      widget.request.id,
+    );
+    if (!mounted) return;
+    setState(() => _isArrivalLoading = false);
+
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('You\'ve been marked as arrived! âœ“'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
     }
   }
 
@@ -576,12 +734,15 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
       if (!mounted) return;
       setState(() => _isMessageLoading = false);
       if (conv != null) {
-        context.push('/chat', extra: {
-          'conversationId': conv.id,
-          'propertyTitle': r.propertyTitle,
-          'propertyImage':
-              r.propertyImage.isNotEmpty ? r.propertyImage : null,
-        });
+        context.push(
+          '/chat',
+          extra: {
+            'conversationId': conv.id,
+            'propertyTitle': r.propertyTitle,
+            'propertyImage':
+                r.propertyImage.isNotEmpty ? r.propertyImage : null,
+          },
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -602,149 +763,398 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: today
-                ? AppColors.primary
-                : AppColors.success.withAlpha(77),
-            width: today ? 2 : 1),
+          color: today ? AppColors.primary : AppColors.success.withAlpha(77),
+          width: today ? 2 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Badges
-          Row(children: [
-            if (today)
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
+          Row(
+            children: [
+              if (today)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
                     color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(8)),
-                child: Row(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.today,
-                          size: 16, color: Colors.white),
+                      const Icon(Icons.today, size: 16, color: Colors.white),
                       const SizedBox(width: 6),
-                      Text('TODAY',
-                          style: AppTextStyles.labelSmall.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-              ),
-            if (isAgent)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
+                      Text(
+                        'TODAY',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (isAgent)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
                     color: AppColors.success.withAlpha(26),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Row(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.support_agent,
-                          size: 16, color: AppColors.success),
+                      const Icon(
+                        Icons.support_agent,
+                        size: 16,
+                        color: AppColors.success,
+                      ),
                       const SizedBox(width: 6),
-                      Text('Agent Handling',
-                          style: AppTextStyles.labelSmall.copyWith(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-              ),
-          ]),
+                      Text(
+                        'Agent Handling',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
           if (today || isAgent) const SizedBox(height: 12),
 
           // Date + property
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
                   color: AppColors.success.withAlpha(26),
-                  borderRadius: BorderRadius.circular(10)),
-              child: Column(children: [
-                Text('${r.requestedDate.day}',
-                    style: AppTextStyles.h4
-                        .copyWith(color: AppColors.success)),
-                Text(_monthAbbr(r.requestedDate.month),
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.success)),
-              ]),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.propertyTitle, style: AppTextStyles.labelLarge),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    const Icon(Icons.access_time,
-                        size: 14, color: AppColors.textSecondary),
-                    const SizedBox(width: 4),
-                    Text(r.requestedTimeDisplay,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.textSecondary)),
-                  ]),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 14, color: AppColors.textSecondary),
-                    const SizedBox(width: 4),
-                    Expanded(
-                        child: Text(r.propertyAddress,
-                            style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis)),
-                  ]),
-                ],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '${r.requestedDate.day}',
+                      style: AppTextStyles.h4.copyWith(
+                        color: AppColors.success,
+                      ),
+                    ),
+                    Text(
+                      _monthAbbr(r.requestedDate.month),
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ]),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.propertyTitle, style: AppTextStyles.labelLarge),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          r.requestedTimeDisplay,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            r.propertyAddress,
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 12),
 
           // Tenant contact
-          Row(children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppColors.primary.withAlpha(26),
-              child: Text(
-                  r.tenantName.isNotEmpty
-                      ? r.tenantName[0].toUpperCase()
-                      : 'T',
-                  style: AppTextStyles.labelMedium
-                      .copyWith(color: AppColors.primary)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.tenantName, style: AppTextStyles.labelMedium),
-                  Text('Tenant',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary)),
-                ],
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.primary.withAlpha(26),
+                child: Text(
+                  r.tenantName.isNotEmpty ? r.tenantName[0].toUpperCase() : 'T',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
-            ),
-            _messageButton(
-                loading: _isMessageLoading, onTap: _messageTenant),
-            IconButton(
-              onPressed: _callTenant,
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.tenantName, style: AppTextStyles.labelMedium),
+                    Text(
+                      'Tenant',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _messageButton(loading: _isMessageLoading, onTap: _messageTenant),
+              IconButton(
+                onPressed: _callTenant,
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
                     color: AppColors.success.withAlpha(26),
-                    shape: BoxShape.circle),
-                child: const Icon(Icons.phone,
-                    color: AppColors.success, size: 18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.phone,
+                    color: AppColors.success,
+                    size: 18,
+                  ),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
 
           // Complete button (only if landlord handles, not agent)
+          // Arrival & completion section (only if landlord self-handles)
+          if (!isAgent && today) ...[
+            const SizedBox(height: 16),
+
+            // Show arrival status
+            if (!r.handlerArrived) ...[
+              // Landlord hasn't arrived yet â€” show arrival button
+              if (r.tenantArrived) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.person_pin_circle,
+                        size: 18,
+                        color: AppColors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${r.tenantName} has arrived and is waiting!',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isArrivalLoading ? null : _markArrived,
+                  icon:
+                      _isArrivalLoading
+                          ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                          : const Icon(Icons.location_on, size: 18),
+                  label: Text(
+                    _isArrivalLoading
+                        ? 'Confirming...'
+                        : 'I\'ve Arrived at Property',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ] else ...[
+              // Landlord arrived â€” show status + complete button
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.success.withAlpha(77)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      size: 18,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        r.tenantArrived
+                            ? 'Both arrived â€” ready to inspect!'
+                            : 'You\'re here. Waiting for tenant...',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Only show complete when BOTH arrived
+              if (r.bothArrived)
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'Mark as Completed',
+                    onPressed: _isLoading ? null : _markComplete,
+                    isLoading: _isLoading,
+                  ),
+                ),
+            ],
+          ],
+
+          // Agent contact section (when agent is handling)
+          if (isAgent) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.success.withAlpha(26),
+                  child: const Icon(
+                    Icons.support_agent,
+                    size: 18,
+                    color: AppColors.success,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        r.agentName ?? 'Agent',
+                        style: AppTextStyles.labelMedium,
+                      ),
+                      Text(
+                        'Assigned Agent',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (r.agentPhone != null && r.agentPhone!.isNotEmpty)
+                  IconButton(
+                    onPressed: () async {
+                      final uri = Uri.parse('tel:${r.agentPhone}');
+                      if (await canLaunchUrl(uri)) await launchUrl(uri);
+                    },
+                    icon: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withAlpha(26),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.phone,
+                        color: AppColors.success,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            // Fallback complete â€” landlord can always complete as property owner
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _isLoading ? null : _markComplete,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: AppColors.border),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : Text(
+                          'Mark as Completed',
+                          style: AppTextStyles.labelMedium.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+              ),
+            ),
+          ],
+
+          // Self-handled complete button
           if (!isAgent) ...[
             const SizedBox(height: 16),
             SizedBox(
@@ -763,7 +1173,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
 }
 
 // ============================================================
-// HISTORY TAB — WITH RENTAL INTEREST TRACKING
+// HISTORY TAB â€” WITH RENTAL INTEREST TRACKING
 // ============================================================
 class _LandlordHistoryTab extends StatelessWidget {
   final InspectionService inspectionService;
@@ -776,29 +1186,36 @@ class _LandlordHistoryTab extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary));
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
         final all = snapshot.data ?? [];
-        final history = all
-            .where((r) =>
-                r.isCompleted || r.isDeclined || r.isCancelled)
-            .toList()
-          ..sort((a, b) => (b.completedAt ?? b.createdAt)
-              .compareTo(a.completedAt ?? a.createdAt));
+        final history =
+            all
+                .where((r) => r.isCompleted || r.isDeclined || r.isCancelled)
+                .toList()
+              ..sort(
+                (a, b) => (b.completedAt ?? b.createdAt).compareTo(
+                  a.completedAt ?? a.createdAt,
+                ),
+              );
 
         if (history.isEmpty) {
           return const _EmptyState(
-              icon: Icons.history,
-              title: 'No history yet',
-              subtitle: 'Completed inspections will appear here');
+            icon: Icons.history,
+            title: 'No history yet',
+            subtitle: 'Completed inspections will appear here',
+          );
         }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: history.length,
-          itemBuilder: (ctx, i) => _LandlordHistoryCard(
-              request: history[i],
-              inspectionService: inspectionService),
+          itemBuilder:
+              (ctx, i) => _LandlordHistoryCard(
+                request: history[i],
+                inspectionService: inspectionService,
+              ),
         );
       },
     );
@@ -808,17 +1225,17 @@ class _LandlordHistoryTab extends StatelessWidget {
 class _LandlordHistoryCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _LandlordHistoryCard(
-      {required this.request, required this.inspectionService});
+  const _LandlordHistoryCard({
+    required this.request,
+    required this.inspectionService,
+  });
 
   @override
-  State<_LandlordHistoryCard> createState() =>
-      _LandlordHistoryCardState();
+  State<_LandlordHistoryCard> createState() => _LandlordHistoryCardState();
 }
 
 class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
-  final RentalInterestService _rentalInterestService =
-      RentalInterestService();
+  final RentalInterestService _rentalInterestService = RentalInterestService();
   final ActiveRentalService _activeRentalService = ActiveRentalService();
   RentalInterest? _rentalInterest;
   bool _isLoadingInterest = true;
@@ -836,8 +1253,9 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
   Future<void> _loadInterest() async {
     try {
-      final interest = await _rentalInterestService
-          .getInterestForInspection(widget.request.id);
+      final interest = await _rentalInterestService.getInterestForInspection(
+        widget.request.id,
+      );
       if (mounted) {
         setState(() {
           _rentalInterest = interest;
@@ -845,8 +1263,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         });
       }
     } catch (e) {
-      developer.log('❌ Error loading interest: $e',
-          name: 'LandlordHistory');
+      developer.log('âŒ Error loading interest: $e', name: 'LandlordHistory');
       if (mounted) setState(() => _isLoadingInterest = false);
     }
   }
@@ -858,74 +1275,97 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     // Step 1: Confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
-          const Icon(Icons.celebration, color: AppColors.success),
-          const SizedBox(width: 8),
-          const Text('Accept Rental'),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Accept ${interest.tenantName} as your tenant for:',
-                style: AppTextStyles.bodyMedium),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(8)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(interest.propertyTitle,
-                      style: AppTextStyles.labelMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                      'Payment of ₦${_formatAmount(interest.paymentAmount)} verified.',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.success)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: AppColors.success.withAlpha(13),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: AppColors.success.withAlpha(51))),
-              child: Row(children: [
-                const Icon(Icons.info_outline,
-                    size: 18, color: AppColors.success),
+      builder:
+          (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.celebration, color: AppColors.success),
                 const SizedBox(width: 8),
-                Expanded(
-                    child: Text(
-                        'This will mark the property as rented and create an active rental record.',
-                        style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textSecondary))),
-              ]),
+                const Text('Accept Rental'),
+              ],
             ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel',
-                  style: TextStyle(color: AppColors.textSecondary))),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                foregroundColor: Colors.white),
-            child: const Text('Accept Tenant'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Accept ${interest.tenantName} as your tenant for:',
+                  style: AppTextStyles.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        interest.propertyTitle,
+                        style: AppTextStyles.labelMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Payment of â‚¦${_formatAmount(interest.paymentAmount)} verified.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withAlpha(13),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.success.withAlpha(51)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'This will mark the property as rented and create an active rental record.',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Accept Tenant'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirm != true) return;
@@ -940,52 +1380,70 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
     try {
       // Accept the rental interest
-      final accepted = await _rentalInterestService
-          .acceptRentalInterest(interest.id);
-      if (accepted) {
-        // Create the active rental
-        final rental = await _activeRentalService.createActiveRental(
-            rentalInterest: interest,
-            inspectionRequest: widget.request);
-
-        // If landlord uploaded agreement, attach it
-        if (rental != null && agreementUrl != null && agreementUrl.isNotEmpty) {
-          await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
-        }
-
+      final accepted = await _rentalInterestService.acceptRentalInterest(
+        interest.id,
+      );
+      if (!accepted) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(agreementUrl != null
-                ? '🎉 Rental confirmed with agreement attached!'
-                : '🎉 Rental confirmed! You can upload the agreement later.'),
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Failed to accept. Try again.'),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Create the active rental
+      final rental = await _activeRentalService.createActiveRental(
+        rentalInterest: interest,
+        inspectionRequest: widget.request,
+      );
+
+      // If landlord uploaded agreement, attach it
+      if (rental != null && agreementUrl != null && agreementUrl.isNotEmpty) {
+        await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
+      }
+
+      // Reload interest BEFORE showing success â€” await it
+      if (mounted) {
+        await _loadInterest();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              agreementUrl != null
+                  ? 'ðŸŽ‰ Rental confirmed with agreement attached!'
+                  : 'ðŸŽ‰ Rental confirmed! You can upload the agreement later.',
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
-          ));
-          _loadInterest();
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Failed to accept. Try again.'),
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      developer.log('âŒ Accept error: $e', name: 'LandlordHistory');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Something went wrong.'),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
-          ));
-        }
-      }
-    } catch (e) {
-      developer.log('❌ Accept error: $e', name: 'LandlordHistory');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Something went wrong.'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ));
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isAccepting = false);
@@ -1001,120 +1459,167 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     return showDialog<String?>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Row(children: [
-            const Icon(Icons.description_outlined, color: AppColors.info),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('Tenancy Agreement')),
-          ]),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Upload your tenancy agreement for the tenant to review.',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-
-              if (uploadedUrl != null) ...[
-                // Show uploaded confirmation
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withAlpha(26),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.success.withAlpha(77)),
+      builder:
+          (ctx) => StatefulBuilder(
+            builder:
+                (ctx, setDialogState) => AlertDialog(
+                  title: Row(
+                    children: [
+                      const Icon(
+                        Icons.description_outlined,
+                        color: AppColors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('Tenancy Agreement')),
+                    ],
                   ),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle, color: AppColors.success, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('Agreement uploaded!',
-                          style: AppTextStyles.labelMedium
-                              .copyWith(color: AppColors.success)),
-                    ),
-                    GestureDetector(
-                      onTap: () => setDialogState(() => uploadedUrl = null),
-                      child: const Icon(Icons.close, size: 18, color: AppColors.textHint),
-                    ),
-                  ]),
-                ),
-              ] else ...[
-                // Upload button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: isUploading
-                        ? null
-                        : () async {
-                            final picker = ImagePicker();
-                            final image = await picker.pickImage(
-                                source: ImageSource.gallery, maxWidth: 2000);
-                            if (image == null) return;
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Upload your tenancy agreement for the tenant to review.',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
-                            setDialogState(() => isUploading = true);
-                            try {
-                              // Use PropertyService.uploadImage
-                              final url = await propertyService
-                                  .uploadImage(File(image.path));
-                              if (url != null) {
-                                setDialogState(() {
-                                  uploadedUrl = url;
-                                  isUploading = false;
-                                });
-                              } else {
-                                setDialogState(() => isUploading = false);
-                              }
-                            } catch (e) {
-                              setDialogState(() => isUploading = false);
-                            }
-                          },
-                    icon: isUploading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.primary))
-                        : const Icon(Icons.upload_file),
-                    label: Text(isUploading ? 'Uploading...' : 'Upload Agreement'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: AppColors.primary),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
+                      if (uploadedUrl != null) ...[
+                        // Show uploaded confirmation
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withAlpha(26),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: AppColors.success.withAlpha(77),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                color: AppColors.success,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Agreement uploaded!',
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap:
+                                    () => setDialogState(
+                                      () => uploadedUrl = null,
+                                    ),
+                                child: const Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        // Upload button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed:
+                                isUploading
+                                    ? null
+                                    : () async {
+                                      final picker = ImagePicker();
+                                      final image = await picker.pickImage(
+                                        source: ImageSource.gallery,
+                                        maxWidth: 2000,
+                                      );
+                                      if (image == null) return;
+
+                                      setDialogState(() => isUploading = true);
+                                      try {
+                                        // Use PropertyService.uploadImage
+                                        final url = await propertyService
+                                            .uploadImage(File(image.path));
+                                        if (url != null) {
+                                          setDialogState(() {
+                                            uploadedUrl = url;
+                                            isUploading = false;
+                                          });
+                                        } else {
+                                          setDialogState(
+                                            () => isUploading = false,
+                                          );
+                                        }
+                                      } catch (e) {
+                                        setDialogState(
+                                          () => isUploading = false,
+                                        );
+                                      }
+                                    },
+                            icon:
+                                isUploading
+                                    ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.primary,
+                                      ),
+                                    )
+                                    : const Icon(Icons.upload_file),
+                            label: Text(
+                              isUploading ? 'Uploading...' : 'Upload Agreement',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              side: const BorderSide(color: AppColors.primary),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 12),
+                      Text(
+                        'You can also upload this later from your rental management screen.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textHint,
+                        ),
+                      ),
+                    ],
                   ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, null), // Skip
+                      child: Text(
+                        'Skip for now',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                    if (uploadedUrl != null)
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, uploadedUrl),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Continue'),
+                      ),
+                  ],
                 ),
-              ],
-
-              const SizedBox(height: 12),
-              Text(
-                'You can also upload this later from your rental management screen.',
-                style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-              ),
-            ],
           ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null), // Skip
-              child: Text('Skip for now',
-                  style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            if (uploadedUrl != null)
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, uploadedUrl),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white),
-                child: const Text('Continue'),
-              ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1155,8 +1660,8 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       statusText = r.statusDisplay;
     }
 
-    final hasVerified = _rentalInterest?.status ==
-        RentalInterestStatus.paymentVerified;
+    final hasVerified =
+        _rentalInterest?.status == RentalInterestStatus.paymentVerified;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1164,135 +1669,188 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: hasVerified
-            ? Border.all(color: AppColors.success, width: 2)
-            : null,
+        border:
+            hasVerified ? Border.all(color: AppColors.success, width: 2) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🔒 LOCKED IN BANNER
+          // ðŸ”’ LOCKED IN BANNER
           if (hasVerified) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: AppColors.success.withAlpha(26),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: AppColors.success.withAlpha(77))),
-              child: Row(children: [
-                const Icon(Icons.lock,
-                    size: 20, color: AppColors.success),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('PAYMENT CONFIRMED — LOCKED IN',
+                color: AppColors.success.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.success.withAlpha(77)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock, size: 20, color: AppColors.success),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PAYMENT CONFIRMED â€” LOCKED IN',
                           style: AppTextStyles.labelSmall.copyWith(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 2),
-                      Text(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
                           'Tenant has paid. Accept the rental below.',
                           style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textSecondary)),
-                    ],
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
           ],
 
           // Property + status row
-          Row(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: r.propertyImage.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: r.propertyImage,
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          _placeholderBox(50))
-                  : _placeholderBox(50),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.propertyTitle,
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child:
+                    r.propertyImage.isNotEmpty
+                        ? CachedNetworkImage(
+                          imageUrl: r.propertyImage,
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _placeholderBox(50),
+                        )
+                        : _placeholderBox(50),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.propertyTitle,
                       style: AppTextStyles.labelMedium,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(r.formattedDate,
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary)),
-                ],
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      r.formattedDate,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
                   color: statusColor.withAlpha(26),
-                  borderRadius: BorderRadius.circular(8)),
-              child: Row(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(statusIcon, size: 14, color: statusColor),
                     const SizedBox(width: 4),
-                    Text(statusText,
-                        style: AppTextStyles.labelSmall
-                            .copyWith(color: statusColor)),
-                  ]),
-            ),
-          ]),
+                    Text(
+                      statusText,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: statusColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
 
           // Tenant rating display
-          if (r.isCompleted &&
-              r.tenantRated &&
-              r.tenantRating != null) ...[
+          if (r.isCompleted && r.tenantRated && r.tenantRating != null) ...[
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
-            Row(children: [
-              Text('Tenant rating: ',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.textSecondary)),
-              ...List.generate(
+            // Show who the rating was given to
+            if (r.ratedUserType != null) ...[
+              Row(
+                children: [
+                  Icon(
+                    r.ratedUserType == 'agent'
+                        ? Icons.support_agent
+                        : Icons.person_outline,
+                    size: 13,
+                    color: AppColors.textHint,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    r.ratedUserType == 'agent'
+                        ? 'Rating given to agent: ${r.ratedUserName ?? r.agentName ?? 'Agent'}'
+                        : 'Rating given to you',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textHint,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
+            Row(
+              children: [
+                Text(
+                  'Tenant rating: ',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                ...List.generate(
                   5,
                   (i) => Icon(
-                      i < r.tenantRating!
-                          ? Icons.star
-                          : Icons.star_border,
-                      size: 16,
-                      color: AppColors.warning)),
-              if (r.tenantReview != null &&
-                  r.tenantReview!.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                const Icon(Icons.chat_bubble_outline,
-                    size: 14, color: AppColors.textHint),
+                    i < r.tenantRating! ? Icons.star : Icons.star_border,
+                    size: 16,
+                    color: AppColors.warning,
+                  ),
+                ),
+                if (r.tenantReview != null && r.tenantReview!.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chat_bubble_outline,
+                    size: 14,
+                    color: AppColors.textHint,
+                  ),
+                ],
               ],
-            ]),
-            if (r.tenantReview != null &&
-                r.tenantReview!.isNotEmpty) ...[
+            ),
+            if (r.tenantReview != null && r.tenantReview!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text('"${r.tenantReview}"',
-                    style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
-                        fontStyle: FontStyle.italic)),
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '"${r.tenantReview}"',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ),
             ],
           ],
@@ -1302,14 +1860,22 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 12),
-            Row(children: [
-              const Icon(Icons.hourglass_top,
-                  size: 16, color: AppColors.textHint),
-              const SizedBox(width: 8),
-              Text('Waiting for tenant to rate...',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.textHint)),
-            ]),
+            Row(
+              children: [
+                const Icon(
+                  Icons.hourglass_top,
+                  size: 16,
+                  color: AppColors.textHint,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Waiting for tenant to rate...',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ],
+            ),
           ],
 
           // Rental interest status
@@ -1322,11 +1888,15 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
           if (r.isCompleted && _isLoadingInterest) ...[
             const SizedBox(height: 12),
             const Center(
-                child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppColors.primary))),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
           ],
         ],
       ),
@@ -1345,20 +1915,19 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.pendingPayment:
         statusColor = AppColors.warning;
         statusIcon = Icons.payment;
-        title = 'Tenant Interested — Payment Pending';
-        subtitle =
-            '${interest.tenantName} wants to rent. Waiting for payment.';
+        title = 'Tenant Interested â€” Payment Pending';
+        subtitle = '${interest.tenantName} wants to rent. Waiting for payment.';
         break;
       case RentalInterestStatus.paymentUploaded:
         statusColor = AppColors.info;
         statusIcon = Icons.hourglass_top;
-        title = 'Payment Uploaded — Verifying';
+        title = 'Payment Uploaded â€” Verifying';
         subtitle = 'Admin is verifying the tenant\'s payment.';
         break;
       case RentalInterestStatus.paymentVerified:
         statusColor = AppColors.success;
         statusIcon = Icons.lock;
-        title = '🔒 Payment Verified — Accept Rental';
+        title = 'ðŸ”’ Payment Verified â€” Accept Rental';
         subtitle =
             '${interest.tenantName}\'s payment has been confirmed. Accept below.';
         break;
@@ -1366,70 +1935,83 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         statusColor = AppColors.error;
         statusIcon = Icons.error_outline;
         title = 'Payment Rejected';
-        subtitle =
-            'Tenant needs to re-upload payment proof.';
+        subtitle = 'Tenant needs to re-upload payment proof.';
         break;
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
         statusIcon = Icons.celebration;
-        title = '🎉 Rental Active';
-        subtitle =
-            '${interest.tenantName} is now your tenant.';
+        title = 'ðŸŽ‰ Rental Active';
+        subtitle = '${interest.tenantName} is now your tenant.';
         break;
     }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: statusColor.withAlpha(13),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: statusColor.withAlpha(51))),
-      child: Column(children: [
-        Row(children: [
-          Icon(statusIcon, size: 24, color: statusColor),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: statusColor)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textSecondary)),
-              ],
-            ),
+        color: statusColor.withAlpha(13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withAlpha(51)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(statusIcon, size: 24, color: statusColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: statusColor,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ]),
-        // Accept button for paymentVerified status
-        if (interest.status == RentalInterestStatus.paymentVerified) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _isAccepting ? null : _acceptRental,
-              icon: _isAccepting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.check_circle, size: 20),
-              label: Text(_isAccepting
-                  ? 'Processing...'
-                  : 'Accept Rental'),
-              style: ElevatedButton.styleFrom(
+          // Accept button for paymentVerified status
+          if (interest.status == RentalInterestStatus.paymentVerified) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isAccepting ? null : _acceptRental,
+                icon:
+                    _isAccepting
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : const Icon(Icons.check_circle, size: 20),
+                label: Text(_isAccepting ? 'Processing...' : 'Accept Rental'),
+                style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.success,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10))),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ],
-      ]),
+      ),
     );
   }
 }
@@ -1438,38 +2020,51 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 // SHARED HELPERS
 // ============================================================
 Widget _placeholderBox(double size) => Container(
-    width: size,
-    height: size,
-    color: AppColors.background,
-    child: const Icon(Icons.home, color: AppColors.textHint));
+  width: size,
+  height: size,
+  color: AppColors.background,
+  child: const Icon(Icons.home, color: AppColors.textHint),
+);
 
-Widget _messageButton(
-        {required bool loading, required VoidCallback onTap}) =>
+Widget _messageButton({required bool loading, required VoidCallback onTap}) =>
     IconButton(
       onPressed: loading ? null : onTap,
-      icon: loading
-          ? const SizedBox(
-              width: 34,
-              height: 34,
-              child: Padding(
+      icon:
+          loading
+              ? const SizedBox(
+                width: 34,
+                height: 34,
+                child: Padding(
                   padding: EdgeInsets.all(8),
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.primary)))
-          : Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                ),
+              )
+              : Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
                   color: AppColors.primary.withAlpha(26),
-                  shape: BoxShape.circle),
-              child: const Icon(Icons.chat_outlined,
-                  color: AppColors.primary, size: 18)),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.chat_outlined,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+              ),
     );
 
 class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  const _EmptyState(
-      {required this.icon, required this.title, required this.subtitle});
+  const _EmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1480,22 +2075,24 @@ class _EmptyState extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(26),
-                    shape: BoxShape.circle),
-                child:
-                    Icon(icon, size: 40, color: AppColors.primary)),
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 40, color: AppColors.primary),
+            ),
             const SizedBox(height: 24),
-            Text(title,
-                style: AppTextStyles.h4,
-                textAlign: TextAlign.center),
+            Text(title, style: AppTextStyles.h4, textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(subtitle,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center),
+            Text(
+              subtitle,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),

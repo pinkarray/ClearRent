@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
-import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
 
@@ -14,8 +13,22 @@ import '../../../../services/property_service.dart';
 /// Creates a document in 'issues' collection in Firestore.
 /// Landlord can see issues for their properties.
 class ReportIssueScreen extends StatefulWidget {
-  final ActiveRental rental;
-  const ReportIssueScreen({super.key, required this.rental});
+  final String propertyId;
+  final String propertyTitle;
+  final String tenantId;
+  final String tenantName;
+  final String landlordId;
+  final String landlordName;
+
+  const ReportIssueScreen({
+    super.key,
+    required this.propertyId,
+    required this.propertyTitle,
+    required this.tenantId,
+    required this.tenantName,
+    required this.landlordId,
+    required this.landlordName,
+  });
 
   @override
   State<ReportIssueScreen> createState() => _ReportIssueScreenState();
@@ -109,13 +122,13 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
       final currentUserId = _authService.currentUserId;
 
       await FirebaseFirestore.instance.collection('issues').add({
-        'rentalId': widget.rental.id,
-        'propertyId': widget.rental.propertyId,
-        'tenantId': widget.rental.tenantId,
-        'landlordId': widget.rental.landlordId,
-        'propertyTitle': widget.rental.propertyTitle,
-        'tenantName': widget.rental.tenantName,
-        'landlordName': widget.rental.landlordName,
+        'rentalId': '' ,
+        'propertyId': widget.propertyId,
+        'tenantId': widget.tenantId,
+        'landlordId': widget.landlordId,
+        'propertyTitle': widget.propertyTitle,
+        'tenantName': widget.tenantName,
+        'landlordName': widget.landlordName,
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'category': _selectedCategory,
@@ -129,12 +142,14 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
 
       // Notify landlord
       await FirebaseFirestore.instance.collection('activities').add({
-        'userId': widget.rental.landlordId,
+        'landlordId': widget.landlordId,
         'type': 'issue_reported',
         'title': 'New Issue Reported',
         'message':
-            '${widget.rental.tenantName} reported a $_selectedCategory issue at ${widget.rental.propertyTitle}.',
-        'propertyId': widget.rental.propertyId,
+            '${widget.tenantName} reported a $_selectedCategory issue at ${widget.propertyTitle}.',
+        'propertyId': widget.propertyId,
+        'actorId': widget.tenantId,
+        'actorName': widget.tenantName,
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -195,7 +210,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      widget.rental.propertyTitle,
+                      widget.propertyTitle,
                       style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

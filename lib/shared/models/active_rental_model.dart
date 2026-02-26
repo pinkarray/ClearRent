@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'tenancy_link_model.dart';
 
 /// Represents an active rental agreement between tenant and landlord.
 /// Created after payment is verified and landlord accepts the rental interest.
@@ -128,6 +129,37 @@ class ActiveRental {
   String get formattedRent => '₦${formatAmount(rentAmount)}';
   String get rentPeriod => rentFrequency == 'yearly' ? '/year' : '/month';
   
+  /// Creates a lightweight ActiveRental from a TenancyLinkModel.
+  /// Used so lease-details and report-issue screens work for linked tenants.
+  factory ActiveRental.fromLink(TenancyLinkModel link) {
+    final start = link.acceptedAt ?? link.createdAt ?? DateTime.now();
+    final end = start.add(const Duration(days: 365));
+    final nextDue = link.nextDueDate;
+    return ActiveRental(
+      id: link.id,
+      propertyId: link.propertyId,
+      tenantId: link.tenantId,
+      landlordId: link.landlordId,
+      inspectionRequestId: '',
+      rentalInterestId: '',
+      propertyTitle: link.propertyTitle,
+      propertyImage: '',
+      propertyAddress: link.propertyAddress,
+      tenantName: link.tenantName,
+      landlordName: link.landlordName,
+      landlordPhone: link.landlordPhone.isNotEmpty ? link.landlordPhone : null,
+      rentAmount: link.rentAmount,
+      agentFee: 0,
+      totalPaid: 0,
+      rentFrequency: link.rentFrequency,
+      leaseStartDate: start,
+      leaseEndDate: end,
+      nextPaymentDue: nextDue,
+      createdAt: start,
+      updatedAt: start,
+    );
+  }
+
   factory ActiveRental.fromFirestore(Map<String, dynamic> data, String docId) {
     return ActiveRental(
       id: docId,

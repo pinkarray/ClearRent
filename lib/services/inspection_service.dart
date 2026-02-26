@@ -31,48 +31,104 @@ class InspectionService {
   Future<InspectionFeeBreakdown?> calculateInspectionFee({
     required PropertyModel property,
   }) async {
+    // Agent-handled: calculate from agent location
+    if (property.inspectionHandler == 'agent') {
+      if (property.assignedAgentId == null) return null;
+
+      try {
+        final agentDoc =
+            await _firestore
+                .collection('users')
+                .doc(property.assignedAgentId)
+                .get();
+
+        if (!agentDoc.exists) return null;
+
+        final agentData = agentDoc.data()!;
+        final agentLat = agentData['baseLatitude']?.toDouble();
+        final agentLon = agentData['baseLongitude']?.toDouble();
+
+        if (agentLat == null || agentLon == null) {
+          return InspectionPricing.calculateFee(distanceKm: 0);
+        }
+
+        final propertyLat = property.latitude;
+        final propertyLon = property.longitude;
+
+        if (propertyLat != null && propertyLon != null) {
+          return InspectionPricing.calculateFeeFromCoordinates(
+            agentLat: agentLat,
+            agentLon: agentLon,
+            propertyLat: propertyLat,
+            propertyLon: propertyLon,
+          );
+        }
+
+        return InspectionPricing.calculateFee(distanceKm: 0);
+      } catch (e) {
+        developer.log(
+          'âŒ Error calculating agent fee: $e',
+          name: 'InspectionService',
+        );
+        return null;
+      }
+    }
+
+    // Self-handled by landlord
     if (property.inspectionHandler == 'self') {
-      return null;
-    }
-
-    if (property.assignedAgentId == null) {
-      return null;
-    }
-
-    try {
-      final agentDoc = await _firestore
-          .collection('users')
-          .doc(property.assignedAgentId)
-          .get();
-
-      if (!agentDoc.exists) return null;
-
-      final agentData = agentDoc.data()!;
-      final agentLat = agentData['baseLatitude']?.toDouble();
-      final agentLon = agentData['baseLongitude']?.toDouble();
-
-      if (agentLat == null || agentLon == null) {
+      // Landlord lives in property â†’ no transport, ClearRent keeps transport fee
+      if (property.landlordLivesInProperty == true) {
         return InspectionPricing.calculateFee(distanceKm: 0);
       }
 
-      // Use property coordinates if available
-      final propertyLat = property.latitude;
-      final propertyLon = property.longitude;
+      // Landlord lives elsewhere â†’ calculate from landlord location to property
+      try {
+        final landlordDoc =
+            await _firestore.collection('users').doc(property.landlordId).get();
 
-      if (propertyLat != null && propertyLon != null) {
-        return InspectionPricing.calculateFeeFromCoordinates(
-          agentLat: agentLat,
-          agentLon: agentLon,
-          propertyLat: propertyLat,
-          propertyLon: propertyLon,
+        if (!landlordDoc.exists) {
+          // Fallback: use property location if landlord doc not found
+          return InspectionPricing.calculateFee(distanceKm: 0);
+        }
+
+        final landlordData = landlordDoc.data()!;
+        final landlordLat = landlordData['baseLatitude']?.toDouble();
+        final landlordLon = landlordData['baseLongitude']?.toDouble();
+
+        // If landlord hasn't set base location, use property location as fallback
+        // This means no transport distance (0 km), as we can't calculate accurately
+        if (landlordLat == null || landlordLon == null) {
+          developer.log(
+            'âš ï¸ Landlord ${property.landlordId} has no baseLocation set. Using property location as fallback (0 km).',
+            name: 'InspectionService',
+          );
+          return InspectionPricing.calculateFee(distanceKm: 0);
+        }
+
+        final propertyLat = property.latitude;
+        final propertyLon = property.longitude;
+
+        if (propertyLat != null && propertyLon != null) {
+          return InspectionPricing.calculateFeeFromCoordinates(
+            agentLat: landlordLat,
+            agentLon: landlordLon,
+            propertyLat: propertyLat,
+            propertyLon: propertyLon,
+          );
+        }
+
+        // Property location not set, use 0 km
+        return InspectionPricing.calculateFee(distanceKm: 0);
+      } catch (e) {
+        developer.log(
+          'âŒ Error calculating landlord fee: $e',
+          name: 'InspectionService',
         );
+        return InspectionPricing.calculateFee(distanceKm: 0);
       }
-
-      return InspectionPricing.calculateFee(distanceKm: 0);
-    } catch (e) {
-      developer.log('❌ Error calculating fee: $e', name: 'InspectionService');
-      return null;
     }
+
+    return null;
   }
 
   InspectionFeeBreakdown calculateFeeFromCoordinates({
@@ -95,12 +151,15 @@ class InspectionService {
     try {
       final userDoc = await _firestore.collection('users').doc(userId).get();
       if (!userDoc.exists) return false;
-      
+
       final userData = userDoc.data();
       final verificationStatus = userData?['verificationStatus'] ?? 'none';
       return verificationStatus == 'verified';
     } catch (e) {
-      developer.log('❌ Error checking verification: $e', name: 'InspectionService');
+      developer.log(
+        'âŒ Error checking verification: $e',
+        name: 'InspectionService',
+      );
       return false;
     }
   }
@@ -119,41 +178,52 @@ class InspectionService {
   }) async {
     try {
       if (_currentUserId == null) {
-        developer.log('❌ User not authenticated', name: 'InspectionService');
+        developer.log('âŒ User not authenticated', name: 'InspectionService');
         return null;
       }
 
-      final tenantDoc = await _firestore.collection('users').doc(_currentUserId).get();
+      final tenantDoc =
+          await _firestore.collection('users').doc(_currentUserId).get();
       final tenantData = tenantDoc.data();
-      
-      final tenantVerificationStatus = tenantData?['verificationStatus'] ?? 'none';
+
+      final tenantVerificationStatus =
+          tenantData?['verificationStatus'] ?? 'none';
       if (tenantVerificationStatus != 'verified') {
-        developer.log('❌ Tenant not verified', name: 'InspectionService');
+        developer.log('âŒ Tenant not verified', name: 'InspectionService');
         return 'not_verified';
       }
-      
+
       final landlordVerified = await _isUserVerified(property.landlordId);
       if (!landlordVerified) {
-        developer.log('❌ Landlord not verified', name: 'InspectionService');
+        developer.log('âŒ Landlord not verified', name: 'InspectionService');
         return 'landlord_not_verified';
       }
-      
+
       final tenantName = tenantData?['fullName'] ?? 'Tenant';
       final tenantPhone = tenantData?['phone'];
 
-      final existingRequest = await _firestore
-          .collection('inspection_requests')
-          .where('propertyId', isEqualTo: property.id)
-          .where('tenantId', isEqualTo: _currentUserId)
-          .where('status', whereIn: ['pending', 'approved', 'declinedByAgent'])
-          .get();
+      final existingRequest =
+          await _firestore
+              .collection('inspection_requests')
+              .where('propertyId', isEqualTo: property.id)
+              .where('tenantId', isEqualTo: _currentUserId)
+              .where(
+                'status',
+                whereIn: ['pending', 'approved', 'declinedByAgent'],
+              )
+              .get();
 
       if (existingRequest.docs.isNotEmpty) {
-        developer.log('❌ Tenant already has active request', name: 'InspectionService');
+        developer.log(
+          'âŒ Tenant already has active request',
+          name: 'InspectionService',
+        );
         return 'already_pending';
       }
 
-      final isAgentHandled = property.inspectionHandler == 'agent' && property.assignedAgentId != null;
+      final isAgentHandled =
+          property.inspectionHandler == 'agent' &&
+          property.assignedAgentId != null;
 
       String? agentName;
       String? agentPhone;
@@ -163,14 +233,15 @@ class InspectionService {
       if (isAgentHandled) {
         final agentVerified = await _isUserVerified(property.assignedAgentId!);
         if (!agentVerified) {
-          developer.log('❌ Agent not verified', name: 'InspectionService');
+          developer.log('âŒ Agent not verified', name: 'InspectionService');
           return 'agent_not_verified';
         }
-        
-        final agentDoc = await _firestore
-            .collection('users')
-            .doc(property.assignedAgentId)
-            .get();
+
+        final agentDoc =
+            await _firestore
+                .collection('users')
+                .doc(property.assignedAgentId)
+                .get();
 
         if (agentDoc.exists) {
           final agentData = agentDoc.data()!;
@@ -184,7 +255,8 @@ class InspectionService {
       final requestData = {
         'propertyId': property.id,
         'propertyTitle': property.title,
-        'propertyImage': property.images.isNotEmpty ? property.images.first : '',
+        'propertyImage':
+            property.images.isNotEmpty ? property.images.first : '',
         'propertyAddress': '${property.address}, ${property.city}',
         'propertyLatitude': property.latitude,
         'propertyLongitude': property.longitude,
@@ -205,7 +277,8 @@ class InspectionService {
 
         'requestedDate': Timestamp.fromDate(requestedDate),
         'requestedTimeSlot': requestedTimeSlot,
-        'requestedTimeDisplay': timeSlotDisplay[requestedTimeSlot] ?? requestedTimeSlot,
+        'requestedTimeDisplay':
+            timeSlotDisplay[requestedTimeSlot] ?? requestedTimeSlot,
         'notes': notes,
 
         'distanceKm': feeBreakdown?.distanceKm ?? 0,
@@ -215,7 +288,9 @@ class InspectionService {
         'totalFee': feeBreakdown?.totalFee ?? 0,
         'agentEarnings': feeBreakdown?.agentEarnings ?? 0,
 
-        'paymentStatus': paymentStatus ?? (isAgentHandled ? 'pending_verification' : 'not_required'),
+        'paymentStatus':
+            paymentStatus ??
+            (isAgentHandled ? 'pending_verification' : 'not_required'),
         'paymentReference': paymentReference,
         'paymentProofUrl': paymentProofUrl,
         'paidAt': null,
@@ -224,9 +299,12 @@ class InspectionService {
         'refundedAt': null,
         'refundReason': null,
 
-        'status': isAgentHandled
-            ? (paymentProofUrl != null ? 'pendingVerification' : 'pendingPayment')
-            : 'pending',
+        'status':
+            isAgentHandled
+                ? (paymentProofUrl != null
+                    ? 'pendingVerification'
+                    : 'pendingPayment')
+                : 'pending',
         'declinedBy': null,
         'declineReason': null,
         'declinedAt': null,
@@ -240,13 +318,23 @@ class InspectionService {
         'tenantRating': null,
         'tenantReview': null,
 
+        'tenantArrived': false,
+        'tenantArrivedAt': null,
+        'handlerArrived': false,
+        'handlerArrivedAt': null,
+
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      final docRef = await _firestore.collection('inspection_requests').add(requestData);
+      final docRef = await _firestore
+          .collection('inspection_requests')
+          .add(requestData);
 
-      developer.log('✅ Inspection request created: ${docRef.id}', name: 'InspectionService');
+      developer.log(
+        'âœ… Inspection request created: ${docRef.id}',
+        name: 'InspectionService',
+      );
 
       await _firestore.collection('properties').doc(property.id).update({
         'inquiryCount': FieldValue.increment(1),
@@ -266,7 +354,8 @@ class InspectionService {
           userId: property.landlordId,
           type: 'inspection_request_agent',
           title: 'New Inspection Request',
-          message: '$tenantName requested inspection for ${property.title}. $agentName will handle.',
+          message:
+              '$tenantName requested inspection for ${property.title}. $agentName will handle.',
           relatedId: docRef.id,
           propertyId: property.id,
         );
@@ -283,7 +372,10 @@ class InspectionService {
 
       return docRef.id;
     } catch (e) {
-      developer.log('❌ Error creating inspection request: $e', name: 'InspectionService');
+      developer.log(
+        'âŒ Error creating inspection request: $e',
+        name: 'InspectionService',
+      );
       return null;
     }
   }
@@ -299,12 +391,21 @@ class InspectionService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          developer.log('📋 Tenant requests count: ${snapshot.docs.length}', name: 'InspectionService');
+          developer.log(
+            'ðŸ“‹ Tenant requests count: ${snapshot.docs.length}',
+            name: 'InspectionService',
+          );
           return snapshot.docs.map((doc) {
             final data = doc.data();
-            developer.log('  - Raw status: "${data['status']}"', name: 'InspectionService');
+            developer.log(
+              '  - Raw status: "${data['status']}"',
+              name: 'InspectionService',
+            );
             final request = InspectionRequest.fromFirestore(data, doc.id);
-            developer.log('  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}', name: 'InspectionService');
+            developer.log(
+              '  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}',
+              name: 'InspectionService',
+            );
             return request;
           }).toList();
         });
@@ -319,12 +420,21 @@ class InspectionService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          developer.log('📋 Landlord requests count: ${snapshot.docs.length}', name: 'InspectionService');
+          developer.log(
+            'ðŸ“‹ Landlord requests count: ${snapshot.docs.length}',
+            name: 'InspectionService',
+          );
           return snapshot.docs.map((doc) {
             final data = doc.data();
-            developer.log('  - Raw status: "${data['status']}"', name: 'InspectionService');
+            developer.log(
+              '  - Raw status: "${data['status']}"',
+              name: 'InspectionService',
+            );
             final request = InspectionRequest.fromFirestore(data, doc.id);
-            developer.log('  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}', name: 'InspectionService');
+            developer.log(
+              '  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}',
+              name: 'InspectionService',
+            );
             return request;
           }).toList();
         });
@@ -339,9 +449,15 @@ class InspectionService {
         .where('status', whereIn: ['pending', 'declinedByAgent'])
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
-            .toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
   }
 
   Stream<List<InspectionRequest>> getAgentRequests() {
@@ -353,12 +469,21 @@ class InspectionService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          developer.log('📋 Agent requests count: ${snapshot.docs.length}', name: 'InspectionService');
+          developer.log(
+            'ðŸ“‹ Agent requests count: ${snapshot.docs.length}',
+            name: 'InspectionService',
+          );
           return snapshot.docs.map((doc) {
             final data = doc.data();
-            developer.log('  - Raw Firestore status: "${data['status']}"', name: 'InspectionService');
+            developer.log(
+              '  - Raw Firestore status: "${data['status']}"',
+              name: 'InspectionService',
+            );
             final request = InspectionRequest.fromFirestore(data, doc.id);
-            developer.log('  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}', name: 'InspectionService');
+            developer.log(
+              '  - ${request.propertyTitle}: parsed=${request.status.name}, isApproved=${request.isApproved}',
+              name: 'InspectionService',
+            );
             return request;
           }).toList();
         });
@@ -373,9 +498,15 @@ class InspectionService {
         .where('status', isEqualTo: 'pending')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
-            .toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
   }
 
   Stream<List<InspectionRequest>> getPropertyRequests(String propertyId) {
@@ -384,16 +515,28 @@ class InspectionService {
         .where('propertyId', isEqualTo: propertyId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
-            .toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
   }
 
   // ============ APPROVE / DECLINE ============
 
-  Future<bool> approveRequest(String requestId, {bool isLandlordOverride = false}) async {
+  Future<bool> approveRequest(
+    String requestId, {
+    bool isLandlordOverride = false,
+  }) async {
     try {
-      developer.log('🔄 Approving request: $requestId (override: $isLandlordOverride)', name: 'InspectionService');
+      developer.log(
+        'ðŸ”„ Approving request: $requestId (override: $isLandlordOverride)',
+        name: 'InspectionService',
+      );
 
       final updates = <String, dynamic>{
         'status': 'approved',
@@ -405,26 +548,41 @@ class InspectionService {
         updates['overriddenBy'] = _currentUserId;
       }
 
-      await _firestore.collection('inspection_requests').doc(requestId).update(updates);
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update(updates);
 
-      developer.log('✅ Firestore updated with status: approved', name: 'InspectionService');
+      developer.log(
+        'âœ… Firestore updated with status: approved',
+        name: 'InspectionService',
+      );
 
       // Verify the update
-      final verifyDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
-      developer.log('🔍 Verification - status in Firestore: "${verifyDoc.data()?['status']}"', name: 'InspectionService');
+      final verifyDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      developer.log(
+        'ðŸ” Verification - status in Firestore: "${verifyDoc.data()?['status']}"',
+        name: 'InspectionService',
+      );
 
       final requestData = verifyDoc.data();
 
       if (requestData != null) {
-        final approvedBy = isLandlordOverride
-            ? 'Landlord'
-            : (requestData['agentId'] != null ? 'Agent' : 'Landlord');
+        final approvedBy =
+            isLandlordOverride
+                ? 'Landlord'
+                : (requestData['agentId'] != null ? 'Agent' : 'Landlord');
 
         await _createActivity(
           userId: requestData['tenantId'],
           type: 'inspection_approved',
           title: 'Inspection Approved!',
-          message: 'Your inspection for ${requestData['propertyTitle']} has been approved by $approvedBy',
+          message:
+              'Your inspection for ${requestData['propertyTitle']} has been approved by $approvedBy',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
@@ -434,7 +592,8 @@ class InspectionService {
             userId: requestData['agentId'],
             type: 'landlord_override',
             title: 'Landlord Override',
-            message: 'Landlord approved the inspection you declined for ${requestData['propertyTitle']}',
+            message:
+                'Landlord approved the inspection you declined for ${requestData['propertyTitle']}',
             relatedId: requestId,
             propertyId: requestData['propertyId'],
           );
@@ -445,17 +604,35 @@ class InspectionService {
             userId: requestData['landlordId'],
             type: 'agent_approved',
             title: 'Inspection Approved',
-            message: '${requestData['agentName']} approved inspection for ${requestData['propertyTitle']}',
+            message:
+                '${requestData['agentName']} approved inspection for ${requestData['propertyTitle']}',
+            relatedId: requestId,
+            propertyId: requestData['propertyId'],
+          );
+        }
+
+        // Notify agent when landlord approves
+        if (requestData['agentId'] != null &&
+            _currentUserId == requestData['landlordId']) {
+          await _createActivity(
+            userId: requestData['agentId'],
+            type: 'inspection_approved',
+            title: 'Inspection Scheduled',
+            message:
+                'You have an inspection to conduct for ${requestData['propertyTitle']} - ${requestData['requestedTimeDisplay']}',
             relatedId: requestId,
             propertyId: requestData['propertyId'],
           );
         }
       }
 
-      developer.log('✅ Request approved: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Request approved: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error approving request: $e', name: 'InspectionService');
+      developer.log('âŒ Error approving request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -474,7 +651,11 @@ class InspectionService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData != null) {
@@ -482,16 +663,20 @@ class InspectionService {
           userId: requestData['landlordId'],
           type: 'agent_declined',
           title: 'Agent Declined Inspection',
-          message: '${requestData['agentName']} declined inspection for ${requestData['propertyTitle']}. You have 12 hours to approve if you want.',
+          message:
+              '${requestData['agentName']} declined inspection for ${requestData['propertyTitle']}. You have 12 hours to approve if you want.',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
       }
 
-      developer.log('✅ Agent declined request: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Agent declined request: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error declining request: $e', name: 'InspectionService');
+      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -501,12 +686,17 @@ class InspectionService {
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'declined',
         'declinedBy': _currentUserId != null ? 'landlord' : 'system',
-        'declineReason': reason ?? 'Request was not approved within the time window',
+        'declineReason':
+            reason ?? 'Request was not approved within the time window',
         'declinedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData != null) {
@@ -514,7 +704,9 @@ class InspectionService {
           userId: requestData['tenantId'],
           type: 'inspection_declined',
           title: 'Inspection Request Declined',
-          message: reason ?? 'Your inspection for ${requestData['propertyTitle']} was declined. A refund will be processed.',
+          message:
+              reason ??
+              'Your inspection for ${requestData['propertyTitle']} was declined. A refund will be processed.',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
@@ -524,22 +716,33 @@ class InspectionService {
         }
       }
 
-      developer.log('✅ Request finally declined: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Request finally declined: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error declining request: $e', name: 'InspectionService');
+      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
       return false;
     }
   }
 
-  Future<bool> landlordDeclineRequest(String requestId, {String? reason}) async {
+  Future<bool> landlordDeclineRequest(
+    String requestId, {
+    String? reason,
+  }) async {
     try {
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData == null) return false;
 
-      final isOverride = requestData['status'] == 'approved' && requestData['agentId'] != null;
+      final isOverride =
+          requestData['status'] == 'approved' && requestData['agentId'] != null;
 
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'declined',
@@ -555,7 +758,9 @@ class InspectionService {
         userId: requestData['tenantId'],
         type: 'inspection_declined',
         title: 'Inspection Request Declined',
-        message: reason ?? 'Your inspection for ${requestData['propertyTitle']} was declined by the landlord.',
+        message:
+            reason ??
+            'Your inspection for ${requestData['propertyTitle']} was declined by the landlord.',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
@@ -565,7 +770,8 @@ class InspectionService {
           userId: requestData['agentId'],
           type: 'landlord_override',
           title: 'Landlord Override',
-          message: 'Landlord declined the inspection you approved for ${requestData['propertyTitle']}',
+          message:
+              'Landlord declined the inspection you approved for ${requestData['propertyTitle']}',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
@@ -575,10 +781,115 @@ class InspectionService {
         await _processRefund(requestId, requestData);
       }
 
-      developer.log('✅ Landlord declined request: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Landlord declined request: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error declining request: $e', name: 'InspectionService');
+      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
+      return false;
+    }
+  }
+
+  // ============ ARRIVAL CONFIRMATION ============
+
+  /// Mark the tenant as arrived at the inspection location
+  Future<bool> markTenantArrived(String requestId) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'tenantArrived': true,
+        'tenantArrivedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify the handler
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final data = requestDoc.data();
+      if (data != null) {
+        if (data['agentId'] != null) {
+          await _createActivity(
+            userId: data['agentId'],
+            type: 'tenant_arrived',
+            title: 'Tenant Has Arrived',
+            message:
+                '${data['tenantName']} has arrived for the inspection at ${data['propertyTitle']}',
+            relatedId: requestId,
+            propertyId: data['propertyId'],
+          );
+        }
+
+        await _createActivity(
+          userId: data['landlordId'],
+          type: 'tenant_arrived',
+          title: 'Tenant Has Arrived',
+          message:
+              '${data['tenantName']} has arrived for the inspection at ${data['propertyTitle']}',
+          relatedId: requestId,
+          propertyId: data['propertyId'],
+        );
+      }
+
+      developer.log(
+        'âœ… Tenant marked arrived: $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        'âŒ Error marking tenant arrived: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Mark the handler (agent or landlord) as arrived at the inspection location
+  Future<bool> markHandlerArrived(String requestId) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'handlerArrived': true,
+        'handlerArrivedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify the tenant
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final data = requestDoc.data();
+      if (data != null) {
+        final handlerName =
+            data['agentId'] != null
+                ? (data['agentName'] ?? 'Agent')
+                : (data['landlordName'] ?? 'Landlord');
+        await _createActivity(
+          userId: data['tenantId'],
+          type: 'handler_arrived',
+          title: 'Handler Has Arrived',
+          message:
+              '$handlerName has arrived at ${data['propertyTitle']} for your inspection',
+          relatedId: requestId,
+          propertyId: data['propertyId'],
+        );
+      }
+
+      developer.log(
+        'âœ… Handler marked arrived: $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        'âŒ Error marking handler arrived: $e',
+        name: 'InspectionService',
+      );
       return false;
     }
   }
@@ -587,77 +898,158 @@ class InspectionService {
 
   Future<bool> completeInspection(String requestId) async {
     try {
+      // Fetch request data first to determine agent status
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final requestData = requestDoc.data();
+
+      if (requestData == null) return false;
+
+      // Update with payout status
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
+        'agentPayoutStatus': 'pending', // applies to whoever handled it
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
-      final requestData = requestDoc.data();
+      // requestData is guaranteed to be non-null here
+      await _createActivity(
+        userId: requestData['tenantId'],
+        type: 'inspection_completed',
+        title: 'Inspection Completed',
+        message:
+            'Your inspection for ${requestData['propertyTitle']} is complete. Please rate your experience!',
+        relatedId: requestId,
+        propertyId: requestData['propertyId'],
+      );
 
-      if (requestData != null) {
+      if (requestData['agentId'] != null) {
         await _createActivity(
-          userId: requestData['tenantId'],
+          userId: requestData['landlordId'],
           type: 'inspection_completed',
           title: 'Inspection Completed',
-          message: 'Your inspection for ${requestData['propertyTitle']} is complete. Please rate your experience!',
+          message:
+              '${requestData['agentName']} completed inspection for ${requestData['propertyTitle']}',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
 
-        if (requestData['agentId'] != null) {
-          await _createActivity(
-            userId: requestData['landlordId'],
-            type: 'inspection_completed',
-            title: 'Inspection Completed',
-            message: '${requestData['agentName']} completed inspection for ${requestData['propertyTitle']}',
-            relatedId: requestId,
-            propertyId: requestData['propertyId'],
-          );
+        await _creditAgentEarnings(
+          requestData['agentId'],
+          requestData['agentEarnings']?.toDouble() ?? 0,
+        );
+      }
 
-          await _creditAgentEarnings(requestData['agentId'], requestData['agentEarnings']?.toDouble() ?? 0);
+      // Credit landlord earnings if self-handled
+      if (requestData['agentId'] == null) {
+        final landlordEarnings = (requestData['agentEarnings'] ?? 0).toDouble();
+        // landlordEarnings uses the same field because it's the handler's cut
+        if (landlordEarnings > 0) {
+          await _firestore
+              .collection('users')
+              .doc(requestData['landlordId'])
+              .update({
+                'totalEarnings': FieldValue.increment(landlordEarnings),
+                'pendingEarnings': FieldValue.increment(landlordEarnings),
+                'completedInspections': FieldValue.increment(1),
+              });
         }
       }
 
-      developer.log('✅ Inspection completed: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Inspection completed: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error completing inspection: $e', name: 'InspectionService');
+      developer.log(
+        'âŒ Error completing inspection: $e',
+        name: 'InspectionService',
+      );
       return false;
     }
   }
 
-  Future<bool> rateInspection(String requestId, int rating, {String? review}) async {
+  Future<bool> rateInspection(
+    String requestId,
+    int rating, {
+    String? review,
+  }) async {
     try {
       if (rating < 1 || rating > 5) return false;
 
+      // Fetch request data FIRST so we know who to rate before writing
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final requestData = requestDoc.data();
+      if (requestData == null) return false;
+
+      final isAgentHandled = requestData['agentId'] != null;
+      final ratedUserId = isAgentHandled
+          ? requestData['agentId'] as String
+          : requestData['landlordId'] as String;
+      final ratedUserType = isAgentHandled ? 'agent' : 'landlord';
+      final ratedUserName = isAgentHandled
+          ? (requestData['agentName'] ?? 'Agent')
+          : (requestData['landlordName'] ?? 'Landlord');
+
+      // Write rating fields including who received it (for history display)
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'tenantRating': rating,
         'tenantReview': review,
         'tenantRated': true,
         'ratingSubmittedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        'ratedUserId': ratedUserId,
+        'ratedUserType': ratedUserType,
+        'ratedUserName': ratedUserName,
       });
 
-      // Update agent rating if agent-handled
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
-      final requestData = requestDoc.data();
-
-      if (requestData != null && requestData['agentId'] != null) {
-        await _updateAgentRating(requestData['agentId'], rating);
-
+      if (isAgentHandled) {
+        await _updateAgentRating(ratedUserId, rating);
         await _createActivity(
-          userId: requestData['agentId'],
+          userId: ratedUserId,
           type: 'new_rating',
           title: 'New Rating Received',
-          message: '${requestData['tenantName']} rated you $rating stars for ${requestData['propertyTitle']}',
+          message:
+              '${requestData['tenantName']} rated you $rating stars for ${requestData['propertyTitle']}',
+          relatedId: requestId,
+          propertyId: requestData['propertyId'],
+        );
+        // Notify landlord so rating appears in their history with context
+        await _createActivity(
+          userId: requestData['landlordId'],
+          type: 'inspection_rated',
+          title: 'Inspection Rated',
+          message:
+              '${requestData['tenantName']} gave $rating stars to ${requestData['agentName'] ?? 'your agent'} for ${requestData['propertyTitle']}',
+          relatedId: requestId,
+          propertyId: requestData['propertyId'],
+        );
+      } else {
+        await _updateLandlordRating(ratedUserId, rating);
+        await _createActivity(
+          userId: ratedUserId,
+          type: 'new_rating',
+          title: 'New Rating Received',
+          message:
+              '${requestData['tenantName']} rated you $rating stars for ${requestData['propertyTitle']}',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
       }
 
-      developer.log('✅ Inspection rated: $requestId', name: 'InspectionService');
+      developer.log(
+        '✅ Inspection rated: $requestId → $ratedUserType ($ratedUserId) = $rating stars',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
       developer.log('❌ Error rating inspection: $e', name: 'InspectionService');
@@ -665,11 +1057,73 @@ class InspectionService {
     }
   }
 
+  /// Recalculates and corrects a user's rating by scanning all completed
+  /// inspections they handled. Use this to fix agents whose past ratings
+  /// were incorrectly written to the landlord document.
+  Future<void> recalculateUserRating(String userId, String userType) async {
+    try {
+      final field = userType == 'agent' ? 'agentId' : 'landlordId';
+      final snapshot = await _firestore
+          .collection('inspection_requests')
+          .where(field, isEqualTo: userId)
+          .where('tenantRated', isEqualTo: true)
+          .get();
+
+      final relevantDocs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        if (userType == 'agent') {
+          return data['agentId'] == userId;
+        } else {
+          return data['agentId'] == null;
+        }
+      }).toList();
+
+      if (relevantDocs.isEmpty) {
+        await _firestore.collection('users').doc(userId).update({
+          'rating': 0.0,
+          'totalRatings': 0,
+        });
+        developer.log(
+          '⭐ Recalculated $userType $userId: no ratings, reset to 0',
+          name: 'InspectionService',
+        );
+        return;
+      }
+
+      final ratings = relevantDocs
+          .map((doc) => (doc.data()['tenantRating'] ?? 0) as int)
+          .where((r) => r > 0)
+          .toList();
+
+      if (ratings.isEmpty) {
+        await _firestore.collection('users').doc(userId).update({'rating': 0.0, 'totalRatings': 0});
+        return;
+      }
+
+      final average = ratings.reduce((a, b) => a + b) / ratings.length;
+      await _firestore.collection('users').doc(userId).update({
+        'rating': average,
+        'totalRatings': ratings.length,
+      });
+
+      developer.log(
+        '⭐ Recalculated $userType $userId: ${average.toStringAsFixed(2)} from ${ratings.length} ratings',
+        name: 'InspectionService',
+      );
+    } catch (e) {
+      developer.log('❌ Error recalculating rating: $e', name: 'InspectionService');
+    }
+  }
+
   // ============ CANCEL ============
 
   Future<bool> cancelRequest(String requestId) async {
     try {
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData == null) return false;
@@ -685,10 +1139,16 @@ class InspectionService {
         await _processRefund(requestId, requestData);
       }
 
-      developer.log('✅ Request cancelled: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Request cancelled: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error cancelling request: $e', name: 'InspectionService');
+      developer.log(
+        'âŒ Error cancelling request: $e',
+        name: 'InspectionService',
+      );
       return false;
     }
   }
@@ -699,12 +1159,13 @@ class InspectionService {
     if (_currentUserId == null) return 0;
 
     try {
-      final snapshot = await _firestore
-          .collection('inspection_requests')
-          .where('landlordId', isEqualTo: _currentUserId)
-          .where('status', whereIn: ['pending', 'declinedByAgent'])
-          .count()
-          .get();
+      final snapshot =
+          await _firestore
+              .collection('inspection_requests')
+              .where('landlordId', isEqualTo: _currentUserId)
+              .where('status', whereIn: ['pending', 'declinedByAgent'])
+              .count()
+              .get();
 
       return snapshot.count ?? 0;
     } catch (e) {
@@ -716,12 +1177,13 @@ class InspectionService {
     if (_currentUserId == null) return 0;
 
     try {
-      final snapshot = await _firestore
-          .collection('inspection_requests')
-          .where('agentId', isEqualTo: _currentUserId)
-          .where('status', isEqualTo: 'pending')
-          .count()
-          .get();
+      final snapshot =
+          await _firestore
+              .collection('inspection_requests')
+              .where('agentId', isEqualTo: _currentUserId)
+              .where('status', isEqualTo: 'pending')
+              .count()
+              .get();
 
       return snapshot.count ?? 0;
     } catch (e) {
@@ -733,12 +1195,16 @@ class InspectionService {
     if (_currentUserId == null) return false;
 
     try {
-      final snapshot = await _firestore
-          .collection('inspection_requests')
-          .where('propertyId', isEqualTo: propertyId)
-          .where('tenantId', isEqualTo: _currentUserId)
-          .where('status', whereIn: ['pending', 'approved', 'declinedByAgent'])
-          .get();
+      final snapshot =
+          await _firestore
+              .collection('inspection_requests')
+              .where('propertyId', isEqualTo: propertyId)
+              .where('tenantId', isEqualTo: _currentUserId)
+              .where(
+                'status',
+                whereIn: ['pending', 'approved', 'declinedByAgent'],
+              )
+              .get();
 
       return snapshot.docs.isNotEmpty;
     } catch (e) {
@@ -748,28 +1214,45 @@ class InspectionService {
 
   // ============ AVAILABILITY ============
 
-  Future<List<DateTime>> getAvailableDates(PropertyModel property, {int daysAhead = 30}) async {
+  Future<List<DateTime>> getAvailableDates(
+    PropertyModel property, {
+    int daysAhead = 30,
+  }) async {
     final landlordDays = property.inspectionDays;
     List<String> agentDays = [];
     List<Map<String, dynamic>> agentBlockedDates = [];
 
-    if (property.inspectionHandler == 'agent' && property.assignedAgentId != null) {
+    if (property.inspectionHandler == 'agent' &&
+        property.assignedAgentId != null) {
       try {
-        final agentDoc = await _firestore.collection('users').doc(property.assignedAgentId).get();
+        final agentDoc =
+            await _firestore
+                .collection('users')
+                .doc(property.assignedAgentId)
+                .get();
 
         if (agentDoc.exists) {
           final agentData = agentDoc.data()!;
           agentDays = List<String>.from(agentData['availableDays'] ?? []);
-          agentBlockedDates = List<Map<String, dynamic>>.from(agentData['blockedDates'] ?? []);
+          agentBlockedDates = List<Map<String, dynamic>>.from(
+            agentData['blockedDates'] ?? [],
+          );
         }
       } catch (e) {
-        developer.log('⚠️ Could not get agent availability: $e', name: 'InspectionService');
+        developer.log(
+          'âš ï¸ Could not get agent availability: $e',
+          name: 'InspectionService',
+        );
       }
     }
 
     final List<DateTime> dates = [];
     final now = DateTime.now();
-    final startDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final startDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: 1));
 
     for (int i = 0; i < daysAhead; i++) {
       final date = startDate.add(Duration(days: i));
@@ -796,19 +1279,32 @@ class InspectionService {
     return dates;
   }
 
-  Future<List<String>> getAvailableTimeSlots(PropertyModel property, DateTime date) async {
+  Future<List<String>> getAvailableTimeSlots(
+    PropertyModel property,
+    DateTime date,
+  ) async {
     final landlordSlots = property.inspectionTimeSlots;
     List<String> agentSlots = [];
 
-    if (property.inspectionHandler == 'agent' && property.assignedAgentId != null) {
+    if (property.inspectionHandler == 'agent' &&
+        property.assignedAgentId != null) {
       try {
-        final agentDoc = await _firestore.collection('users').doc(property.assignedAgentId).get();
+        final agentDoc =
+            await _firestore
+                .collection('users')
+                .doc(property.assignedAgentId)
+                .get();
 
         if (agentDoc.exists) {
-          agentSlots = List<String>.from(agentDoc.data()!['availableTimeSlots'] ?? []);
+          agentSlots = List<String>.from(
+            agentDoc.data()!['availableTimeSlots'] ?? [],
+          );
         }
       } catch (e) {
-        developer.log('⚠️ Could not get agent time slots: $e', name: 'InspectionService');
+        developer.log(
+          'âš ï¸ Could not get agent time slots: $e',
+          name: 'InspectionService',
+        );
       }
     }
 
@@ -820,7 +1316,15 @@ class InspectionService {
   }
 
   String _getWeekdayName(int weekday) {
-    const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const names = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
     return names[weekday - 1];
   }
 
@@ -846,13 +1350,22 @@ class InspectionService {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      developer.log('⚠️ Failed to create activity: $e', name: 'InspectionService');
+      developer.log(
+        'âš ï¸ Failed to create activity: $e',
+        name: 'InspectionService',
+      );
     }
   }
 
-  Future<void> _processRefund(String requestId, Map<String, dynamic> requestData) async {
+  Future<void> _processRefund(
+    String requestId,
+    Map<String, dynamic> requestData,
+  ) async {
     try {
-      developer.log('💰 Processing refund for request: $requestId', name: 'InspectionService');
+      developer.log(
+        'ðŸ’° Processing refund for request: $requestId',
+        name: 'InspectionService',
+      );
 
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'paymentStatus': 'refunded',
@@ -864,12 +1377,13 @@ class InspectionService {
         userId: requestData['tenantId'],
         type: 'refund_processed',
         title: 'Refund Processed',
-        message: 'Your payment of ₦${requestData['totalFee']?.toStringAsFixed(0) ?? '0'} for ${requestData['propertyTitle']} has been refunded.',
+        message:
+            'Your payment of â‚¦${requestData['totalFee']?.toStringAsFixed(0) ?? '0'} for ${requestData['propertyTitle']} has been refunded.',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
     } catch (e) {
-      developer.log('❌ Error processing refund: $e', name: 'InspectionService');
+      developer.log('âŒ Error processing refund: $e', name: 'InspectionService');
     }
   }
 
@@ -882,9 +1396,12 @@ class InspectionService {
         'completedInspections': FieldValue.increment(1),
       });
 
-      developer.log('💰 Credited ₦$amount to agent: $agentId', name: 'InspectionService');
+      developer.log(
+        'ðŸ’° Credited â‚¦$amount to agent: $agentId',
+        name: 'InspectionService',
+      );
     } catch (e) {
-      developer.log('❌ Error crediting agent: $e', name: 'InspectionService');
+      developer.log('âŒ Error crediting agent: $e', name: 'InspectionService');
     }
   }
 
@@ -897,18 +1414,59 @@ class InspectionService {
       final currentRating = (agentData['rating'] ?? 0).toDouble();
       final totalRatings = (agentData['totalRatings'] ?? 0) + 1;
 
-      final newAverage = totalRatings == 1
-          ? newRating.toDouble()
-          : ((currentRating * (totalRatings - 1)) + newRating) / totalRatings;
+      final newAverage =
+          totalRatings == 1
+              ? newRating.toDouble()
+              : ((currentRating * (totalRatings - 1)) + newRating) /
+                  totalRatings;
 
       await _firestore.collection('users').doc(agentId).update({
         'rating': newAverage,
         'totalRatings': totalRatings,
       });
 
-      developer.log('⭐ Updated agent rating to ${newAverage.toStringAsFixed(2)}', name: 'InspectionService');
+      developer.log(
+        'â­ Updated agent rating to ${newAverage.toStringAsFixed(2)}',
+        name: 'InspectionService',
+      );
     } catch (e) {
-      developer.log('❌ Error updating agent rating: $e', name: 'InspectionService');
+      developer.log(
+        'âŒ Error updating agent rating: $e',
+        name: 'InspectionService',
+      );
+    }
+  }
+
+  Future<void> _updateLandlordRating(String landlordId, int newRating) async {
+    try {
+      final landlordDoc =
+          await _firestore.collection('users').doc(landlordId).get();
+      if (!landlordDoc.exists) return;
+
+      final landlordData = landlordDoc.data()!;
+      final currentRating = (landlordData['rating'] ?? 0).toDouble();
+      final totalRatings = (landlordData['totalRatings'] ?? 0) + 1;
+
+      final newAverage =
+          totalRatings == 1
+              ? newRating.toDouble()
+              : ((currentRating * (totalRatings - 1)) + newRating) /
+                  totalRatings;
+
+      await _firestore.collection('users').doc(landlordId).update({
+        'rating': newAverage,
+        'totalRatings': totalRatings,
+      });
+
+      developer.log(
+        'â­ Updated landlord rating to ${newAverage.toStringAsFixed(2)}',
+        name: 'InspectionService',
+      );
+    } catch (e) {
+      developer.log(
+        'âŒ Error updating landlord rating: $e',
+        name: 'InspectionService',
+      );
     }
   }
 
@@ -916,7 +1474,11 @@ class InspectionService {
 
   Future<bool> verifyPayment(String requestId) async {
     try {
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData == null) return false;
@@ -934,7 +1496,8 @@ class InspectionService {
         userId: requestData['tenantId'],
         type: 'payment_verified',
         title: 'Payment Verified!',
-        message: 'Your payment for ${requestData['propertyTitle']} inspection has been confirmed.',
+        message:
+            'Your payment for ${requestData['propertyTitle']} inspection has been confirmed.',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
@@ -944,7 +1507,8 @@ class InspectionService {
           userId: requestData['agentId'],
           type: 'inspection_request',
           title: 'New Inspection Request',
-          message: '${requestData['tenantName']} wants to inspect ${requestData['propertyTitle']}',
+          message:
+              '${requestData['tenantName']} wants to inspect ${requestData['propertyTitle']}',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
@@ -952,26 +1516,37 @@ class InspectionService {
 
       await _createActivity(
         userId: requestData['landlordId'],
-        type: requestData['agentId'] != null ? 'inspection_request_agent' : 'inspection_request',
+        type:
+            requestData['agentId'] != null
+                ? 'inspection_request_agent'
+                : 'inspection_request',
         title: 'New Inspection Request',
-        message: requestData['agentId'] != null
-            ? '${requestData['tenantName']} requested inspection for ${requestData['propertyTitle']}. ${requestData['agentName']} will handle.'
-            : '${requestData['tenantName']} wants to inspect ${requestData['propertyTitle']}',
+        message:
+            requestData['agentId'] != null
+                ? '${requestData['tenantName']} requested inspection for ${requestData['propertyTitle']}. ${requestData['agentName']} will handle.'
+                : '${requestData['tenantName']} wants to inspect ${requestData['propertyTitle']}',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
 
-      developer.log('✅ Payment verified for request: $requestId', name: 'InspectionService');
+      developer.log(
+        'âœ… Payment verified for request: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error verifying payment: $e', name: 'InspectionService');
+      developer.log('âŒ Error verifying payment: $e', name: 'InspectionService');
       return false;
     }
   }
 
   Future<bool> rejectPayment(String requestId, String reason) async {
     try {
-      final requestDoc = await _firestore.collection('inspection_requests').doc(requestId).get();
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
       final requestData = requestDoc.data();
 
       if (requestData == null) return false;
@@ -987,15 +1562,19 @@ class InspectionService {
         userId: requestData['tenantId'],
         type: 'payment_rejected',
         title: 'Payment Verification Failed',
-        message: 'Your payment for ${requestData['propertyTitle']} could not be verified. Reason: $reason',
+        message:
+            'Your payment for ${requestData['propertyTitle']} could not be verified. Reason: $reason',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
 
-      developer.log('❌ Payment rejected for request: $requestId', name: 'InspectionService');
+      developer.log(
+        'âŒ Payment rejected for request: $requestId',
+        name: 'InspectionService',
+      );
       return true;
     } catch (e) {
-      developer.log('❌ Error rejecting payment: $e', name: 'InspectionService');
+      developer.log('âŒ Error rejecting payment: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -1006,7 +1585,208 @@ class InspectionService {
         .where('status', isEqualTo: 'pendingVerification')
         .orderBy('createdAt', descending: false)
         .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
+  }
+
+  // ============ AGENT PAYOUT (ADMIN) ============
+
+  /// Get all completed inspections where agent hasn't been paid yet
+  /// Get all completed inspections with pending payouts (agent OR landlord)
+  Stream<List<InspectionRequest>> getPendingAgentPayouts() {
+    return _firestore
+        .collection('inspection_requests')
+        .where('status', isEqualTo: 'completed')
+        .where('agentPayoutStatus', isEqualTo: 'pending')
+        .orderBy('completedAt', descending: true)
+        .snapshots()
         .map((snapshot) => snapshot.docs
+            .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Get all completed inspections where agent has been paid
+  Stream<List<InspectionRequest>> getPaidAgentPayouts() {
+    return _firestore
+        .collection('inspection_requests')
+        .where('status', isEqualTo: 'completed')
+        .where('agentPayoutStatus', isEqualTo: 'paid')
+        .orderBy('agentPaidAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
+  }
+
+  /// Get agent's bank details for payout
+  Future<Map<String, dynamic>?> getAgentBankDetails(String agentId) async {
+    try {
+      final doc = await _firestore.collection('users').doc(agentId).get();
+      if (!doc.exists) return null;
+      final data = doc.data()!;
+      return {
+        'agentName': data['fullName'] ?? data['name'] ?? '',
+        'bankName': data['bankName'] ?? '',
+        'accountNumber': data['accountNumber'] ?? '',
+        'accountName': data['accountName'] ?? '',
+        'agentPhone': data['phone'] ?? '',
+        'pendingEarnings': (data['pendingEarnings'] ?? 0).toDouble(),
+      };
+    } catch (e) {
+      developer.log(
+        'âŒ Error getting agent bank details: $e',
+        name: 'InspectionService',
+      );
+      return null;
+    }
+  }
+
+  /// Admin marks agent as paid for a specific inspection
+  Future<bool> markAgentPaid(String requestId) async {
+    try {
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final data = requestDoc.data();
+      if (data == null) return false;
+
+      final agentId = data['agentId'];
+      final landlordId = data['landlordId'];
+      final earnings = (data['agentEarnings'] ?? 0).toDouble();
+      
+      // Determine who the handler is (agent or landlord)
+      final handlerId = agentId ?? landlordId;
+
+      // Update inspection request
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'agentPayoutStatus': 'paid',
+        'agentPaidAt': FieldValue.serverTimestamp(),
+        'agentPaidBy': _currentUserId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Move from pending to paid on handler's user doc
+      if (handlerId != null) {
+        await _firestore.collection('users').doc(handlerId).update({
+          'pendingEarnings': FieldValue.increment(-earnings),
+          'paidEarnings': FieldValue.increment(earnings),
+        });
+
+        await _createActivity(
+          userId: handlerId,
+          type: 'payout_received',
+          title: 'Payment Received',
+          message:
+              'You\'ve been paid â‚¦${earnings.toStringAsFixed(0)} for inspection at ${data['propertyTitle']}',
+          relatedId: requestId,
+          propertyId: data['propertyId'],
+        );
+      }
+
+      developer.log(
+        'âœ… Agent marked as paid for: $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        'âŒ Error marking agent paid: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Agent confirms they received payment
+  Future<bool> confirmPaymentReceived(String requestId) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'agentConfirmedPayment': true,
+        'agentConfirmedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify admin/landlord
+      final requestDoc =
+          await _firestore
+              .collection('inspection_requests')
+              .doc(requestId)
+              .get();
+      final data = requestDoc.data();
+      if (data != null) {
+        await _createActivity(
+          userId: data['landlordId'],
+          type: 'agent_confirmed_payment',
+          title: 'Agent Confirmed Payment',
+          message:
+              '${data['agentName'] ?? "Agent"} confirmed receiving payment for ${data['propertyTitle']}',
+          relatedId: requestId,
+          propertyId: data['propertyId'],
+        );
+      }
+
+      developer.log(
+        'âœ… Agent confirmed payment: $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        'âŒ Error confirming payment: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Get agent's inspections that are paid but not yet confirmed
+  Stream<List<InspectionRequest>> getAgentPendingConfirmations() {
+    if (_currentUserId == null) return Stream.value([]);
+
+    return _firestore
+        .collection('inspection_requests')
+        .where('agentId', isEqualTo: _currentUserId)
+        .where('agentPayoutStatus', isEqualTo: 'paid')
+        .where('agentConfirmedPayment', isEqualTo: false)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs
+                  .map(
+                    (doc) =>
+                        InspectionRequest.fromFirestore(doc.data(), doc.id),
+                  )
+                  .toList(),
+        );
+  }
+
+  /// Get landlord's self-handled inspections that are paid but not yet confirmed
+  Stream<List<InspectionRequest>> getLandlordPendingConfirmations() {
+    if (_currentUserId == null) return Stream.value([]);
+    
+    return _firestore
+        .collection('inspection_requests')
+        .where('landlordId', isEqualTo: _currentUserId)
+        .where('agentPayoutStatus', isEqualTo: 'paid')
+        .where('agentConfirmedPayment', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .where((doc) => doc.data()['agentId'] == null) // Only self-handled
             .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
             .toList());
   }

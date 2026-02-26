@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
-import '../../../../core/utils/fix_zero_rent_amounts.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/activity_model.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
@@ -14,6 +14,8 @@ import '../../../../services/activity_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
+import '../../../../shared/models/tenancy_link_model.dart';
+import '../../../../services/tenancy_link_service.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
@@ -38,6 +40,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   late final ActivityService _activityService;
   late final ConversationService _conversationService;
   late final ActiveRentalService _activeRentalService;
+  late final TenancyLinkService _tenancyLinkService;
   
   // User data
   String _userName = '';
@@ -46,6 +49,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   File? _localProfileImage;   
   bool _isUploadingImage = false;
   VerificationStatus _verificationStatus = VerificationStatus.none;
+  double _landlordRating = 0.0;
+  int _totalRatings = 0;
 
   // Properties - now from Firestore
   List<PropertyModel> _myProperties = [];
@@ -59,6 +64,10 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   int _unreadCount = 0;
   List<ActiveRental> _activeRentals = [];
   bool _isLoadingRentals = true;
+
+  // Linked tenants
+  List<TenancyLinkModel> _linkedTenants = [];
+  bool _isLoadingLinkedTenants = true;
 
   // Stats (will be real later)
   int get _totalViews => _recentActivities
@@ -78,12 +87,14 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _activityService = ActivityService();
     _conversationService = ConversationService();
     _activeRentalService = ActiveRentalService();
+    _tenancyLinkService = TenancyLinkService();
     _loadUserProfile();
     _loadVerificationStatus();
     _loadProperties();
     _loadActivities();
     _loadUnreadCount();
     _loadActiveRentals();
+    _loadLinkedTenants();
   }
 
   Future<void> _loadUserProfile() async {
@@ -93,7 +104,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         setState(() {
           _userName = profile['fullName'] ?? 'Landlord';
           _profileImageUrl = profile['profileImageUrl'];
-         
+          _landlordRating = (profile['rating'] ?? 0.0).toDouble();
+          _totalRatings = (profile['totalRatings'] ?? 0) as int;
           _isLoadingProfile = false;
         });
       } else {
@@ -206,7 +218,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         }
       }
     } catch (e) {
-      debugPrint('❌ Error picking profile image: $e');
+      debugPrint('âŒ Error picking profile image: $e');
       if (mounted) setState(() => _isUploadingImage = false);
     }
   }
@@ -237,7 +249,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         setState(() => _verificationStatus = data.status);
       }
     } catch (e) {
-      debugPrint('❌ Error loading verification: $e');
+      debugPrint('âŒ Error loading verification: $e');
     }
   }
 
@@ -251,7 +263,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         });
       }
     } catch (e) {
-      debugPrint('❌ Error loading properties: $e');
+      debugPrint('âŒ Error loading properties: $e');
       setState(() => _isLoadingProperties = false);
     }
   }
@@ -266,7 +278,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         });
       }
     } catch (e) {
-      debugPrint('❌ Error loading activities: $e');
+      debugPrint('âŒ Error loading activities: $e');
       setState(() => _isLoadingActivities = false);
     }
   }
@@ -278,7 +290,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         setState(() => _unreadCount = count);
       }
     } catch (e) {
-      debugPrint('❌ Error loading unread count: $e');
+      debugPrint('âŒ Error loading unread count: $e');
     }
   }
 
@@ -294,8 +306,28 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         });
       }
     } catch (e) {
-       debugPrint('❌ Error loading rentals: $e');
+       debugPrint('âŒ Error loading rentals: $e');
        if (mounted) setState(() => _isLoadingRentals = false);
+    }
+  }
+
+  Future<void> _loadLinkedTenants() async {
+    try {
+      final uid = _authService.currentUserId;
+      if (uid == null) {
+        if (mounted) setState(() => _isLoadingLinkedTenants = false);
+        return;
+      }
+      final links = await _tenancyLinkService.landlordConfirmedLinksOnce(uid);
+      if (mounted) {
+        setState(() {
+          _linkedTenants = links;
+          _isLoadingLinkedTenants = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading linked tenants: $e');
+      if (mounted) setState(() => _isLoadingLinkedTenants = false);
     }
   }
 
@@ -305,6 +337,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       _loadActivities(),
       _loadUnreadCount(),
       _loadActiveRentals(),
+      _loadLinkedTenants(),
     ]);
   }
 
@@ -388,7 +421,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     children: [
                       _isLoadingProfile
                           ? Container(width: 150, height: 16, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(4)))
-                          : Text('Hello, $_firstName 👋', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                          : Text('Hello, $_firstName ðŸ‘‹', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
                       const SizedBox(height: 4),
                       Text('Dashboard', style: AppTextStyles.h2),
                     ],
@@ -414,39 +447,56 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
             const SizedBox(height: 24),
 
-            // Stats cards
-            Row(children: [
-              Expanded(child: _StatCard(
-                icon: Icons.home_outlined, 
-                label: 'Properties', 
-                value: _isLoadingProperties ? '...' : '${_myProperties.length}', 
-                color: AppColors.primary,
-              )),
-              const SizedBox(width: 12),
-              Expanded(child: _StatCard(
-                icon: Icons.visibility_outlined, 
-                label: 'Total Views', 
-                value: _isLoadingActivities ? '...' : '$_totalViews', 
-                color: AppColors.info,
-              )),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: _StatCard(
-                icon: Icons.chat_bubble_outline, 
-                label: 'Inquiries', 
-                value: _isLoadingActivities ? '...' : '$_totalInquiries', 
-                color: AppColors.warning,
-              )),
-              const SizedBox(width: 12),
-              
-              Expanded(child: _StatCard(
-                icon: Icons.account_balance_wallet_outlined,
-                label: 'Rentals',
-                value: _isLoadingRentals ? '...' : '${_activeRentals.length}',
-                color: AppColors.success,
-              )),
-            ]),
+            // Stats dashboard card
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  Row(children: [
+                    _DashStat(
+                      icon: Icons.home_outlined,
+                      label: 'Properties',
+                      value: _isLoadingProperties ? '...' : '${_myProperties.length}',
+                      color: AppColors.primary,
+                      onTap: () => setState(() => _currentNavIndex = 1),
+                    ),
+                    _VerticalDivider(),
+                    _DashStat(
+                      icon: Icons.visibility_outlined,
+                      label: 'Total Views',
+                      value: _isLoadingActivities ? '...' : '$_totalViews',
+                      color: AppColors.info,
+                      onTap: () => context.push('/landlord/activities'),
+                    ),
+                  ]),
+                  const SizedBox(height: 16),
+                  Divider(height: 1, color: AppColors.border),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    _DashStat(
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Inquiries',
+                      value: _isLoadingActivities ? '...' : '$_totalInquiries',
+                      color: AppColors.warning,
+                      onTap: () => context.push('/landlord/activities'),
+                    ),
+                    _VerticalDivider(),
+                    _DashStat(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Rentals',
+                      value: _isLoadingRentals ? '...' : '${_activeRentals.length}',
+                      color: AppColors.success,
+                      onTap: () => context.push('/landlord/rentals'),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
 
             const SizedBox(height: 32),
 
@@ -468,6 +518,42 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ..._activeRentals.take(2).map((rental) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _buildRentalSummaryCard(rental),
+                  )),
+            ],
+
+            // Linked tenants section — only shown if landlord has confirmed links
+            if (!_isLoadingLinkedTenants && _linkedTenants.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(children: [
+                    Text('Linked Tenants', style: AppTextStyles.h4),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withAlpha(26),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_linkedTenants.length}',
+                        style: AppTextStyles.labelSmall.copyWith(color: AppColors.info),
+                      ),
+                    ),
+                  ]),
+                  TextButton(
+                    onPressed: () => context.push('/landlord/rentals'),
+                    child: Text('See all',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.primary)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ..._linkedTenants.take(2).map((link) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildLinkedTenantCard(link),
                   )),
             ],
 
@@ -570,15 +656,27 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Future<void> _onActivityTap(ActivityModel activity) async {
-    // Mark as read
     await _activityService.markAsRead(activity.id);
-    
-    // Refresh activities to update UI
     _loadActivities();
-
     if (!mounted) return;
 
-    // Navigate to property if available
+    // Issue activities — go straight to the issues screen so landlord can act
+    if (activity.type == ActivityType.issueReported ||
+        activity.type == ActivityType.issueDisputed ||
+        activity.type == ActivityType.issueConfirmed) {
+      context.push('/landlord/issues');
+      return;
+    }
+
+    // For property views and inquiries — show who viewed/inquired
+    if ((activity.type == ActivityType.propertyViewed ||
+            activity.type == ActivityType.inquiry) &&
+        activity.actorId != null) {
+      _showViewerSheet(activity);
+      return;
+    }
+
+    // For other activity types — navigate to the property
     if (activity.propertyId != null) {
       final property = await _propertyService.getProperty(activity.propertyId!);
       if (property != null && mounted) {
@@ -587,29 +685,42 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     }
   }
 
+  void _showViewerSheet(ActivityModel activity) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ViewerSheet(
+        activity: activity,
+        landlordId: _authService.currentUserId ?? '',
+        landlordName: _userName,
+        conversationService: _conversationService,
+        propertyService: _propertyService,
+      ),
+    );
+  }
+
   IconData _getActivityIcon(ActivityType type) {
     switch (type) {
-      case ActivityType.propertyAdded:
-        return Icons.home_outlined;
-      case ActivityType.propertyViewed:
-        return Icons.visibility_outlined;
-      case ActivityType.inquiry:
-        return Icons.chat_bubble_outline;
-      case ActivityType.payment:
-        return Icons.payments_outlined;
+      case ActivityType.propertyAdded:   return Icons.home_outlined;
+      case ActivityType.propertyViewed:  return Icons.visibility_outlined;
+      case ActivityType.inquiry:         return Icons.chat_bubble_outline;
+      case ActivityType.payment:         return Icons.payments_outlined;
+      case ActivityType.issueReported:   return Icons.report_problem_outlined;
+      case ActivityType.issueDisputed:   return Icons.warning_amber_outlined;
+      case ActivityType.issueConfirmed:  return Icons.check_circle_outline;
     }
   }
 
   Color _getActivityColor(ActivityType type) {
     switch (type) {
-      case ActivityType.propertyAdded:
-        return AppColors.primary;
-      case ActivityType.propertyViewed:
-        return AppColors.info;
-      case ActivityType.inquiry:
-        return AppColors.warning;
-      case ActivityType.payment:
-        return AppColors.success;
+      case ActivityType.propertyAdded:   return AppColors.primary;
+      case ActivityType.propertyViewed:  return AppColors.info;
+      case ActivityType.inquiry:         return AppColors.warning;
+      case ActivityType.payment:         return AppColors.success;
+      case ActivityType.issueReported:   return AppColors.error;
+      case ActivityType.issueDisputed:   return AppColors.error;
+      case ActivityType.issueConfirmed:  return AppColors.success;
     }
   }
 
@@ -663,7 +774,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         padding: const EdgeInsets.only(bottom: 12), 
         child: _LandlordPropertyCard(
           property: p, 
-          onTap: () => context.push('/property-detail', extra: p),
+          onTap: () => context.push('/landlord/property-health', extra: p),
         ),
       )).toList(),
     );
@@ -764,6 +875,99 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     );
   }
 
+  Widget _buildLinkedTenantCard(TenancyLinkModel link) {
+    final daysUntilDue = link.daysUntilDue;
+    final isDueSoon = daysUntilDue <= 7;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDueSoon
+              ? AppColors.warning.withAlpha(77)
+              : AppColors.border,
+        ),
+      ),
+      child: Row(children: [
+        // Avatar
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.info.withAlpha(26),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              link.tenantName.isNotEmpty ? link.tenantName[0].toUpperCase() : 'T',
+              style: AppTextStyles.labelLarge.copyWith(color: AppColors.info),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // Info
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                link.tenantName,
+                style: AppTextStyles.labelMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Row(children: [
+                const Icon(Icons.home_outlined, size: 13, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    link.propertyTitle,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ]),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Rent due badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isDueSoon
+                ? AppColors.warning.withAlpha(26)
+                : AppColors.info.withAlpha(26),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                link.formattedRentAmount,
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: isDueSoon ? AppColors.warning : AppColors.info,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                isDueSoon ? 'due in ${daysUntilDue}d' : 'linked',
+                style: AppTextStyles.caption.copyWith(
+                  color: isDueSoon ? AppColors.warning : AppColors.textHint,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildVerificationPrompt() {
     String title, subtitle;
     IconData icon;
@@ -833,7 +1037,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                           padding: const EdgeInsets.only(bottom: 16), 
                           child: _LandlordPropertyCard(
                             property: property, 
-                            onTap: () => context.push('/property-detail', extra: property), 
+                            onTap: () => context.push('/landlord/property-health', extra: property), 
                             showActions: true,
                             onDelete: () => _deleteProperty(property),
                             onToggleStatus: () => _togglePropertyStatus(property),
@@ -973,7 +1177,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 Container(width: 1, height: 40, color: AppColors.border),
                 Expanded(child: _ProfileStat(icon: Icons.visibility_outlined, value: '$_totalViews', label: 'Total Views', color: AppColors.info)),
                 Container(width: 1, height: 40, color: AppColors.border),
-                Expanded(child: _ProfileStat(icon: Icons.star_outline, value: '4.8', label: 'Rating', color: AppColors.warning)),
+                Expanded(child: _ProfileStat(icon: Icons.star_outline, value: _landlordRating > 0 ? _landlordRating.toStringAsFixed(1) : 'N/A', label: 'Rating${_totalRatings > 0 ? ' ($_totalRatings)' : ''}', color: AppColors.warning)),
               ]),
             ),
           ),
@@ -1044,22 +1248,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 _ProfileMenuItem(icon: Icons.pending_actions_outlined, title: 'Payment Verification', subtitle: 'View and manage all users', onTap: () => context.push('/admin/payment-verification')), 
                 _ProfileMenuItem(icon: Icons.pending_actions_outlined, title: 'Rent Verification', subtitle: 'Review Paid Rents', onTap: () => context.push('/admin/rental-verification')),
                 _ProfileMenuItem(
-                    icon: Icons.build_outlined,
-                    title: 'Fix ₦0 Rent Amounts',
-                    subtitle: 'One-time fix for existing records',
-                    onTap: () async {
-                      // Import at top: import '../../../../core/utils/fix_zero_rent_amounts.dart';
-                      await fixZeroRentAmounts();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: const Text('Fix complete! Check debug logs for details.'),
-                          backgroundColor: AppColors.success,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ));
-                      }
-                    },
-                  ),
+                  icon: Icons.payments_outlined, 
+                  title: 'Agent Payouts', 
+                  subtitle: 'Pay agents for completed inspections', 
+                  onTap: () => context.push('/admin/agent-payouts'),
+                ),
               ]),
             ],
             const SizedBox(height: 16),
@@ -1110,23 +1303,321 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 }
 
-class _StatCard extends StatelessWidget {
+// Compact stat cell used inside the unified dashboard card
+class _DashStat extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final Color color;
-  const _StatCard({required this.icon, required this.label, required this.value, required this.color});
+  final VoidCallback? onTap;
+  const _DashStat({required this.icon, required this.label, required this.value, required this.color, this.onTap});
+
   @override
   Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Row(children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: color.withAlpha(26),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value, style: AppTextStyles.h4),
+            Text(label, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+          ]),
+          if (onTap != null) ...[
+            const Spacer(),
+            const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+class _VerticalDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 1, height: 36, color: AppColors.border, margin: const EdgeInsets.symmetric(horizontal: 12));
+  }
+}
+
+// Bottom sheet shown when landlord taps a property-viewed or inquiry activity.
+// Fetches the viewer's profile from Firestore and shows verification status.
+// Message button is only active for verified tenants.
+class _ViewerSheet extends StatefulWidget {
+  final ActivityModel activity;
+  final String landlordId;
+  final String landlordName;
+  final ConversationService conversationService;
+  final PropertyService propertyService;
+
+  const _ViewerSheet({
+    required this.activity,
+    required this.landlordId,
+    required this.landlordName,
+    required this.conversationService,
+    required this.propertyService,
+  });
+
+  @override
+  State<_ViewerSheet> createState() => _ViewerSheetState();
+}
+
+class _ViewerSheetState extends State<_ViewerSheet> {
+  bool _isLoadingProfile = true;
+  bool _isMessaging = false;
+  Map<String, dynamic>? _viewerProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadViewerProfile();
+  }
+
+  Future<void> _loadViewerProfile() async {
+    if (widget.activity.actorId == null) {
+      setState(() => _isLoadingProfile = false);
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.activity.actorId)
+          .get();
+      if (mounted) {
+        setState(() {
+          _viewerProfile = doc.data();
+          _isLoadingProfile = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingProfile = false);
+    }
+  }
+
+  bool get _isVerified =>
+      _viewerProfile?['verificationStatus'] == 'verified';
+
+  Future<void> _startConversation() async {
+    if (widget.activity.propertyId == null) return;
+    setState(() => _isMessaging = true);
+    try {
+      final property = await widget.propertyService
+          .getProperty(widget.activity.propertyId!);
+      if (property == null || !mounted) {
+        setState(() => _isMessaging = false);
+        return;
+      }
+      final conv = await widget.conversationService.getOrCreateConversation(
+        propertyId: property.id,
+        propertyTitle: property.title,
+        propertyImage: property.images.isNotEmpty ? property.images.first : '',
+        landlordId: widget.landlordId,
+        landlordName: widget.landlordName,
+        tenantId: widget.activity.actorId!,
+        tenantName: widget.activity.actorName ?? 'Tenant',
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      if (conv != null) {
+        context.push('/chat', extra: {
+          'conversationId': conv.id,
+          'propertyTitle': property.title,
+          'propertyImage': property.images.isNotEmpty ? property.images.first : null,
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isMessaging = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isViewed = widget.activity.type == ActivityType.propertyViewed;
+    final actorName = widget.activity.actorName ?? 'Unknown Tenant';
+    final initial = actorName.isNotEmpty ? actorName[0].toUpperCase() : 'T';
+
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withAlpha(26), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: color, size: 20)),
-        const SizedBox(height: 12),
-        Text(value, style: AppTextStyles.h3),
-        const SizedBox(height: 4),
-        Text(label, style: AppTextStyles.caption),
-      ]),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Avatar + name + badge row
+          Row(children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: AppColors.info.withAlpha(26),
+              child: Text(initial,
+                  style: AppTextStyles.h3.copyWith(color: AppColors.info)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(actorName, style: AppTextStyles.h4),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.info.withAlpha(20),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('Tenant',
+                        style: AppTextStyles.labelSmall
+                            .copyWith(color: AppColors.info)),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_isLoadingProfile)
+                    Container(
+                      width: 70, height: 20,
+                      decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(10)),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _isVerified
+                            ? AppColors.success.withAlpha(20)
+                            : AppColors.warning.withAlpha(20),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(
+                          _isVerified
+                              ? Icons.verified_outlined
+                              : Icons.warning_amber_outlined,
+                          size: 12,
+                          color: _isVerified
+                              ? AppColors.success
+                              : AppColors.warning,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _isVerified ? 'Verified' : 'Unverified',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: _isVerified
+                                ? AppColors.success
+                                : AppColors.warning,
+                          ),
+                        ),
+                      ]),
+                    ),
+                ]),
+              ]),
+            ),
+          ]),
+          const SizedBox(height: 20),
+
+          // Activity context
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(children: [
+              Icon(
+                isViewed ? Icons.visibility_outlined : Icons.chat_bubble_outline,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isViewed
+                      ? 'Viewed "${widget.activity.propertyTitle ?? 'your property'}"'
+                      : 'Enquired about "${widget.activity.propertyTitle ?? 'your property'}"',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+              Text(
+                widget.activity.timeAgo,
+                style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 20),
+
+          // Message button — disabled with explanation if unverified
+          if (_isLoadingProfile)
+            Container(
+              height: 50,
+              decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(12)),
+            )
+          else if (_isVerified)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isMessaging ? null : _startConversation,
+                icon: _isMessaging
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.chat_outlined, size: 18),
+                label: Text(_isMessaging ? 'Opening chat...' : 'Send a Message'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(13),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.warning.withAlpha(60)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.lock_outline,
+                    size: 18, color: AppColors.warning),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Messaging is only available for verified tenants. This tenant hasn\'t completed verification yet.',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.warning, height: 1.5),
+                  ),
+                ),
+              ]),
+            ),
+        ],
+      ),
     );
   }
 }

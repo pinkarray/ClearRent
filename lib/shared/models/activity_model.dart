@@ -5,6 +5,9 @@ enum ActivityType {
   propertyViewed,
   inquiry,
   payment,
+  issueReported,
+  issueDisputed,
+  issueConfirmed,
 }
 
 class ActivityModel {
@@ -37,28 +40,25 @@ class ActivityModel {
   // Get icon based on type
   String get iconName {
     switch (type) {
-      case ActivityType.propertyAdded:
-        return 'home';
-      case ActivityType.propertyViewed:
-        return 'visibility';
-      case ActivityType.inquiry:
-        return 'chat_bubble';
-      case ActivityType.payment:
-        return 'payments';
+      case ActivityType.propertyAdded:   return 'home';
+      case ActivityType.propertyViewed:  return 'visibility';
+      case ActivityType.inquiry:         return 'chat_bubble';
+      case ActivityType.payment:         return 'payments';
+      case ActivityType.issueReported:   return 'report_problem';
+      case ActivityType.issueDisputed:   return 'warning';
+      case ActivityType.issueConfirmed:  return 'check_circle';
     }
   }
 
-  // Get color name based on type
   String get colorName {
     switch (type) {
-      case ActivityType.propertyAdded:
-        return 'primary';
-      case ActivityType.propertyViewed:
-        return 'info';
-      case ActivityType.inquiry:
-        return 'warning';
-      case ActivityType.payment:
-        return 'success';
+      case ActivityType.propertyAdded:   return 'primary';
+      case ActivityType.propertyViewed:  return 'info';
+      case ActivityType.inquiry:         return 'warning';
+      case ActivityType.payment:         return 'success';
+      case ActivityType.issueReported:   return 'error';
+      case ActivityType.issueDisputed:   return 'error';
+      case ActivityType.issueConfirmed:  return 'success';
     }
   }
 
@@ -119,16 +119,14 @@ class ActivityModel {
 
   static ActivityType _parseType(String? type) {
     switch (type) {
-      case 'propertyAdded':
-        return ActivityType.propertyAdded;
-      case 'propertyViewed':
-        return ActivityType.propertyViewed;
-      case 'inquiry':
-        return ActivityType.inquiry;
-      case 'payment':
-        return ActivityType.payment;
-      default:
-        return ActivityType.propertyViewed;
+      case 'propertyAdded':   return ActivityType.propertyAdded;
+      case 'propertyViewed':  return ActivityType.propertyViewed;
+      case 'inquiry':         return ActivityType.inquiry;
+      case 'payment':         return ActivityType.payment;
+      case 'issue_reported':  return ActivityType.issueReported;
+      case 'issue_disputed':  return ActivityType.issueDisputed;
+      case 'issue_confirmed': return ActivityType.issueConfirmed;
+      default:                return ActivityType.propertyViewed;
     }
   }
 

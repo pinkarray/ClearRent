@@ -7,6 +7,10 @@ import '../../../../core/constants/strings.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/auth_service.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import '../../../../shared/widgets/user_avatar.dart';
+import '../../../../services/property_service.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String accountType;
@@ -34,6 +38,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String? _selectedBaseLocation;
   final List<String> _selectedServiceAreas = [];
   bool _showCustomAreaInput = false;
+
+  File? _profileImageFile;
+  final PropertyService _profileUploadService = PropertyService();
 
   // Lagos LGAs for location selection
   static const List<String> _lagosAreas = [
@@ -150,6 +157,85 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
   }
 
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Text('Profile Photo', style: AppTextStyles.h4),
+              const SizedBox(height: 24),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                _buildImageSourceOption(
+                  icon: Icons.camera_alt_rounded, label: 'Camera',
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                _buildImageSourceOption(
+                  icon: Icons.photo_library_rounded, label: 'Gallery',
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+                if (_profileImageFile != null)
+                  _buildImageSourceOption(
+                    icon: Icons.delete_outline, label: 'Remove',
+                    onTap: () {
+                      Navigator.pop(ctx, null);
+                      setState(() => _profileImageFile = null);
+                    },
+                    color: AppColors.error,
+                  ),
+              ]),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    try {
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      setState(() => _profileImageFile = File(image.path));
+    } catch (e) {
+      debugPrint('❌ Error picking profile image: $e');
+    }
+  }
+
+  Widget _buildImageSourceOption({required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(
+            color: (color ?? AppColors.primary).withAlpha(26),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: color ?? AppColors.primary, size: 32),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: AppTextStyles.labelMedium.copyWith(
+          color: color ?? AppColors.textPrimary)),
+      ]),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -195,6 +281,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           _isLoading = false;
         });
         return;
+      }
+      
+      if (_profileImageFile != null) {
+        try {
+          final imageUrl = await _profileUploadService.uploadImage(_profileImageFile!);
+          if (imageUrl != null && imageUrl.isNotEmpty) {
+            await _authService.updateUserProfile({
+              'profileImageUrl': imageUrl,
+            });
+          }
+        } catch (e) {
+          debugPrint('⚠️ Profile image upload failed (non-blocking): $e');
+        }
       }
     } catch (e) {
       debugPrint('❌ Profile save error: $e');
@@ -254,39 +353,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                 // Profile picture placeholder
                 Center(
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryLight.withAlpha(51),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _isAgent ? Icons.support_agent : Icons.person,
-                          size: 50,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: UserAvatar(
+                    name: _nameController.text.isNotEmpty ? _nameController.text : null,
+                    imageFile: _profileImageFile,
+                    size: 100,
+                    showEditBadge: true,
+                    onTap: _pickProfileImage,
                   ),
                 ),
                 const SizedBox(height: 24),

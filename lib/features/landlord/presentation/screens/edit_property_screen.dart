@@ -76,6 +76,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // Images marked for deletion
   final List<String> _imagesToDelete = [];
 
+  // Ownership document
+  String? _ownershipDocUrl;       // existing Cloudinary URL
+  File? _newOwnershipDocFile;     // newly picked file (image or PDF)
+  String? _ownershipDocType;      // 'c_of_o' | 'deed' | 'other'
+  bool _isUploadingDoc = false;
+
   // Form controllers
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
@@ -179,6 +185,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     // Initialize inspection availability
     _availableDays = List.from(p.inspectionDays);
     _availableTimeSlots = List.from(p.inspectionTimeSlots);
+
+    // Initialize ownership document
+    _ownershipDocUrl = p.ownershipDocUrl;
+    _ownershipDocType = p.ownershipDocType;
 
     // Listen for changes
     _titleController.addListener(_onFieldChanged);
@@ -470,6 +480,19 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         allImageUrls.addAll(newUrls);
       }
 
+      // Upload ownership document if a new one was picked
+      String? finalDocUrl = _ownershipDocUrl;
+      if (_newOwnershipDocFile != null) {
+        setState(() => _isUploadingDoc = true);
+        try {
+          final urls = await _propertyService.uploadImages([_newOwnershipDocFile!]);
+          if (urls.isNotEmpty) finalDocUrl = urls.first;
+        } catch (e) {
+          debugPrint('⚠️ Doc upload failed: $e');
+        }
+        if (mounted) setState(() => _isUploadingDoc = false);
+      }
+
       // Prepare updates
       final updates = <String, dynamic>{
         'title': _titleController.text.trim(),
@@ -490,6 +513,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'inspectionHandler': _inspectionHandler,
         'inspectionDays': _availableDays,
         'inspectionTimeSlots': _availableTimeSlots,
+        if (finalDocUrl != null) 'ownershipDocUrl': finalDocUrl,
+        if (_ownershipDocType != null) 'ownershipDocType': _ownershipDocType,
       };
 
       // Handle agent assignment changes
@@ -633,6 +658,17 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               _buildSectionTitle('Photos'),
               const SizedBox(height: 12),
               _buildPhotosSection(),
+              const SizedBox(height: 24),
+
+              // Ownership document
+              _buildSectionTitle('Ownership Document'),
+              const SizedBox(height: 4),
+              Text(
+                'Upload a Certificate of Occupancy, Deed of Assignment, or other proof of ownership. This gives tenants confidence and earns your listing a verified badge.',
+                style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary, height: 1.5),
+              ),
+              const SizedBox(height: 12),
+              _buildOwnershipDocSection(),
               const SizedBox(height: 24),
 
               // Basic info
@@ -1026,12 +1062,33 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   Widget _buildLocationSection() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppTextField(
           label: 'Address',
           hint: 'Street address',
           controller: _addressController,
           textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 8),
+        // Address note — changing it updates the map pin for tenants
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.info.withAlpha(13),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.info.withAlpha(50)),
+          ),
+          child: Row(children: [
+            const Icon(Icons.info_outline, size: 14, color: AppColors.info),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Changing the address updates the map location shown to tenants. Only do this to correct a typo — not to move the property to a different place.',
+                style: AppTextStyles.caption.copyWith(color: AppColors.info, height: 1.5),
+              ),
+            ),
+          ]),
         ),
         const SizedBox(height: 16),
         Row(
@@ -1060,72 +1117,129 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   Widget _buildPricingSection() {
+    final hasActiveTenants = (widget.property.currentTenantsCount ?? 0) > 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Rent Amount (NGN)', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
+
+        if (hasActiveTenants) ...[
+          // Locked rent display — active tenants present
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(children: [
+              const Icon(Icons.lock_outline, size: 20, color: AppColors.textHint),
+              const SizedBox(width: 12),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  '₦${_rentController.text}',
+                  style: AppTextStyles.h4.copyWith(color: AppColors.textSecondary),
+                ),
+                Text(
+                  _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month',
+                  style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                ),
+              ]),
+            ]),
           ),
-          child: TextField(
-            controller: _rentController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              ThousandsSeparatorInputFormatter(),
-            ],
-            style: AppTextStyles.h4.copyWith(color: AppColors.primary),
-            decoration: InputDecoration(
-              hintText: '0',
-              hintStyle: AppTextStyles.h4.copyWith(color: AppColors.textHint),
-              prefixIcon: Padding(
-                padding: const EdgeInsets.only(left: 16, right: 8),
-                child: Text('₦', style: AppTextStyles.h4.copyWith(color: AppColors.primary)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(13),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.warning.withAlpha(50)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_outlined, size: 14, color: AppColors.warning),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Rent cannot be changed while you have active tenants. To propose a new rent, use the Rent Review feature.',
+                  style: AppTextStyles.caption.copyWith(color: AppColors.warning, height: 1.5),
+                ),
               ),
-              prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            ]),
+          ),
+        ] else ...[
+          // Editable rent field — no active tenants
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: TextField(
+              controller: _rentController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                ThousandsSeparatorInputFormatter(),
+              ],
+              style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+              decoration: InputDecoration(
+                hintText: '0',
+                hintStyle: AppTextStyles.h4.copyWith(color: AppColors.textHint),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 8),
+                  child: Text('₦', style: AppTextStyles.h4.copyWith(color: AppColors.primary)),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
             ),
           ),
-        ),
+        ],
         const SizedBox(height: 16),
 
         Text('Rent Period', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
         Row(
           children: [
-            _buildPeriodChip('Per Year', 'yearly'),
+            _buildPeriodChip('Per Year', 'yearly', locked: hasActiveTenants),
             const SizedBox(width: 12),
-            _buildPeriodChip('Per Month', 'monthly'),
+            _buildPeriodChip('Per Month', 'monthly', locked: hasActiveTenants),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildPeriodChip(String label, String value) {
+  Widget _buildPeriodChip(String label, String value, {bool locked = false}) {
     final isSelected = _rentPeriod == value;
     return Expanded(
       child: GestureDetector(
-        onTap: () {
+        onTap: locked ? null : () {
           setState(() { _rentPeriod = value; _hasChanges = true; });
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+            color: isSelected
+                ? (locked ? AppColors.border.withAlpha(80) : AppColors.primary.withAlpha(26))
+                : AppColors.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+            border: Border.all(
+              color: isSelected
+                  ? (locked ? AppColors.border : AppColors.primary)
+                  : AppColors.border,
+            ),
           ),
           child: Center(
             child: Text(
               label,
               style: AppTextStyles.labelMedium.copyWith(
-                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                color: isSelected
+                    ? (locked ? AppColors.textHint : AppColors.primary)
+                    : AppColors.textSecondary,
               ),
             ),
           ),
@@ -1492,6 +1606,119 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  Widget _buildOwnershipDocSection() {
+    final hasDoc = _ownershipDocUrl != null || _newOwnershipDocFile != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasDoc ? AppColors.success.withAlpha(80) : AppColors.border,
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Doc type selector
+        Text('Document Type', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          children: [
+            _DocTypeChip(label: 'C of O', value: 'c_of_o', selected: _ownershipDocType == 'c_of_o', onTap: () => setState(() { _ownershipDocType = 'c_of_o'; _hasChanges = true; })),
+            _DocTypeChip(label: 'Deed of Assignment', value: 'deed', selected: _ownershipDocType == 'deed', onTap: () => setState(() { _ownershipDocType = 'deed'; _hasChanges = true; })),
+            _DocTypeChip(label: 'Other', value: 'other', selected: _ownershipDocType == 'other', onTap: () => setState(() { _ownershipDocType = 'other'; _hasChanges = true; })),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        if (hasDoc) ...[
+          // Show current doc state
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.success.withAlpha(13),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.success.withAlpha(50)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    _newOwnershipDocFile != null ? 'New document selected' : 'Document on file',
+                    style: AppTextStyles.labelMedium.copyWith(color: AppColors.success),
+                  ),
+                  if (_newOwnershipDocFile != null)
+                    Text(
+                      _newOwnershipDocFile!.path.split('/').last,
+                      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else
+                    Text(
+                      'Tap replace to upload a new version',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                    ),
+                ]),
+              ),
+              TextButton(
+                onPressed: _pickOwnershipDoc,
+                child: Text('Replace', style: AppTextStyles.labelSmall.copyWith(color: AppColors.primary)),
+              ),
+            ]),
+          ),
+        ] else ...[
+          // Upload prompt
+          GestureDetector(
+            onTap: _pickOwnershipDoc,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+              ),
+              child: Column(children: [
+                Icon(Icons.upload_file_outlined, size: 32, color: AppColors.textHint),
+                const SizedBox(height: 8),
+                Text('Upload document or photo', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('JPG, PNG or PDF • Max 10MB', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+              ]),
+            ),
+          ),
+        ],
+
+        if (_isUploadingDoc) ...[
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(color: AppColors.primary),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _pickOwnershipDoc() async {
+    // Use image picker — covers JPG/PNG; landlords can photograph the document
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (image != null) {
+        setState(() {
+          _newOwnershipDocFile = File(image.path);
+          _hasChanges = true;
+        });
+      }
+    } catch (e) {
+      _showError('Could not pick document. Please try again.');
+    }
+  }
+
   Widget _buildAmenitiesSection() {
     return Wrap(
       spacing: 8,
@@ -1577,6 +1804,44 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         text: 'Save Changes',
         onPressed: _hasChanges ? _saveChanges : null,
         isLoading: _isSaving,
+      ),
+    );
+  }
+}
+
+class _DocTypeChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DocTypeChip({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: selected ? AppColors.primary : AppColors.textSecondary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
       ),
     );
   }

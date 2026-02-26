@@ -179,6 +179,7 @@ class AuthService {
       final data = <String, dynamic>{
         'uid': currentUser!.uid,
         'fullName': fullName,
+        'fullNameLower': fullName.toLowerCase(), // for tenant name search
         'email': email,
         'accountType': accountType,
         'bvn': bvn,

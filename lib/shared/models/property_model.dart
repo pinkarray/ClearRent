@@ -38,10 +38,26 @@ class PropertyModel {
   final String inspectionHandler; // 'self' or 'agent'
   final String? assignedAgentId;
   final String? assignedAgentName;
+  final int maxTenants;
 
   // Inspection availability
   final List<String> inspectionDays;
   final List<String> inspectionTimeSlots;
+
+  // Ownership verification document
+  final String? ownershipDocUrl;    // Cloudinary URL of uploaded C of O / deed
+  final String? ownershipDocType;   // 'c_of_o' | 'deed' | 'other'
+  final String ownershipDocStatus;  // 'none' | 'pending' | 'verified' | 'rejected'
+  final String? ownershipDocRejectionReason;
+
+  // Landlord residence (for inspection travel calculation)
+  final bool landlordLivesInProperty;
+
+  // Occupancy info (shown to tenants on property detail)
+  final bool? landlordLivesOnPremises;
+  final int? currentTenantsCount;
+  final bool? hasCaretaker;
+  final bool? caretakerLivesOnPremises;
 
   PropertyModel({
     required this.id,
@@ -77,6 +93,7 @@ class PropertyModel {
     this.inspectionHandler = 'self',
     this.assignedAgentId,
     this.assignedAgentName,
+    this.maxTenants = 1,
     this.inspectionDays = const [
       'Monday',
       'Tuesday',
@@ -86,6 +103,15 @@ class PropertyModel {
       'Saturday',
     ],
     this.inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
+    this.landlordLivesInProperty = false,
+    this.landlordLivesOnPremises,
+    this.currentTenantsCount,
+    this.hasCaretaker,
+    this.caretakerLivesOnPremises,
+    this.ownershipDocUrl,
+    this.ownershipDocType,
+    this.ownershipDocStatus = 'none',
+    this.ownershipDocRejectionReason,
   });
 
   // Format rent display
@@ -149,8 +175,18 @@ class PropertyModel {
     String? inspectionHandler,
     String? assignedAgentId,
     String? assignedAgentName,
+    int? maxTenants,
     List<String>? inspectionDays,
     List<String>? inspectionTimeSlots,
+    bool? landlordLivesInProperty,
+    bool? landlordLivesOnPremises,
+    int? currentTenantsCount,
+    bool? hasCaretaker,
+    bool? caretakerLivesOnPremises,
+    String? ownershipDocUrl,
+    String? ownershipDocType,
+    String? ownershipDocStatus,
+    String? ownershipDocRejectionReason,
   }) {
     return PropertyModel(
       id: id ?? this.id,
@@ -186,12 +222,31 @@ class PropertyModel {
       inspectionHandler: inspectionHandler ?? this.inspectionHandler,
       assignedAgentId: assignedAgentId ?? this.assignedAgentId,
       assignedAgentName: assignedAgentName ?? this.assignedAgentName,
+      maxTenants: maxTenants ?? this.maxTenants,
       inspectionDays: inspectionDays ?? this.inspectionDays,
       inspectionTimeSlots: inspectionTimeSlots ?? this.inspectionTimeSlots,
+      landlordLivesInProperty: landlordLivesInProperty ?? this.landlordLivesInProperty,
+      landlordLivesOnPremises: landlordLivesOnPremises ?? this.landlordLivesOnPremises,
+      currentTenantsCount: currentTenantsCount ?? this.currentTenantsCount,
+      hasCaretaker: hasCaretaker ?? this.hasCaretaker,
+      caretakerLivesOnPremises: caretakerLivesOnPremises ?? this.caretakerLivesOnPremises,
+      ownershipDocUrl: ownershipDocUrl ?? this.ownershipDocUrl,
+      ownershipDocType: ownershipDocType ?? this.ownershipDocType,
+      ownershipDocStatus: ownershipDocStatus ?? this.ownershipDocStatus,
+      ownershipDocRejectionReason: ownershipDocRejectionReason ?? this.ownershipDocRejectionReason,
     );
   }
 
   // From JSON (for API/local storage)
+  /// True when property has open spots (even if marked unavailable by landlord toggle)
+  bool get hasAvailableSpots {
+    final count = currentTenantsCount ?? 0;
+    return count < maxTenants;
+  }
+
+  /// True when property should appear in browse results
+  bool get isListable => isAvailable && hasAvailableSpots;
+
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     return PropertyModel(
       id: json['id'] ?? '',
@@ -228,6 +283,7 @@ class PropertyModel {
       inspectionHandler: json['inspectionHandler'] ?? 'self',
       assignedAgentId: json['assignedAgentId'],
       assignedAgentName: json['assignedAgentName'],
+      maxTenants: json['maxTenants'] ?? 1,
       inspectionDays: List<String>.from(
         json['inspectionDays'] ??
             [
@@ -243,6 +299,15 @@ class PropertyModel {
         json['inspectionTimeSlots'] ??
             ['morning', 'afternoon', 'late_afternoon'],
       ),
+      landlordLivesInProperty: json['landlordLivesInProperty'] ?? false,
+      landlordLivesOnPremises: json['landlordLivesOnPremises'] as bool?,
+      currentTenantsCount: (json['currentTenantsCount'] as num?)?.toInt(),
+      hasCaretaker: json['hasCaretaker'] as bool?,
+      caretakerLivesOnPremises: json['caretakerLivesOnPremises'] as bool?,
+      ownershipDocUrl: json['ownershipDocUrl'] as String?,
+      ownershipDocType: json['ownershipDocType'] as String?,
+      ownershipDocStatus: json['ownershipDocStatus'] as String? ?? 'none',
+      ownershipDocRejectionReason: json['ownershipDocRejectionReason'] as String?,
     );
   }
 
@@ -282,6 +347,7 @@ class PropertyModel {
       inspectionHandler: data['inspectionHandler'] ?? 'self',
       assignedAgentId: data['assignedAgentId'],
       assignedAgentName: data['assignedAgentName'],
+      maxTenants: data['maxTenants'] ?? 1,
       inspectionDays: List<String>.from(
         data['inspectionDays'] ??
             [
@@ -297,6 +363,15 @@ class PropertyModel {
         data['inspectionTimeSlots'] ??
             ['morning', 'afternoon', 'late_afternoon'],
       ),
+      landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
+      landlordLivesOnPremises: data['landlordLivesOnPremises'] as bool?,
+      currentTenantsCount: (data['currentTenantsCount'] as num?)?.toInt(),
+      hasCaretaker: data['hasCaretaker'] as bool?,
+      caretakerLivesOnPremises: data['caretakerLivesOnPremises'] as bool?,
+      ownershipDocUrl: data['ownershipDocUrl'] as String?,
+      ownershipDocType: data['ownershipDocType'] as String?,
+      ownershipDocStatus: data['ownershipDocStatus'] as String? ?? 'none',
+      ownershipDocRejectionReason: data['ownershipDocRejectionReason'] as String?,
     );
   }
 
@@ -336,8 +411,18 @@ class PropertyModel {
       'inspectionHandler': inspectionHandler,
       'assignedAgentId': assignedAgentId,
       'assignedAgentName': assignedAgentName,
+      'maxTenants': maxTenants,
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
+      'landlordLivesInProperty': landlordLivesInProperty,
+      'landlordLivesOnPremises': landlordLivesOnPremises,
+      'currentTenantsCount': currentTenantsCount,
+      'hasCaretaker': hasCaretaker,
+      'caretakerLivesOnPremises': caretakerLivesOnPremises,
+      'ownershipDocUrl': ownershipDocUrl,
+      'ownershipDocType': ownershipDocType,
+      'ownershipDocStatus': ownershipDocStatus,
+      if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
     };
   }
 
@@ -379,8 +464,18 @@ class PropertyModel {
       'inspectionHandler': inspectionHandler,
       'assignedAgentId': assignedAgentId,
       'assignedAgentName': assignedAgentName,
+      'maxTenants': maxTenants,
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
+      'landlordLivesInProperty': landlordLivesInProperty,
+      'landlordLivesOnPremises': landlordLivesOnPremises,
+      'currentTenantsCount': currentTenantsCount,
+      'hasCaretaker': hasCaretaker,
+      'caretakerLivesOnPremises': caretakerLivesOnPremises,
+      if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
+      if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
+      'ownershipDocStatus': ownershipDocStatus,
+      if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
     };
   }
 }

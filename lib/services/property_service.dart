@@ -85,8 +85,29 @@ class PropertyService {
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
-    List<String> inspectionDays = const ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-    List<String> inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
+    List<String> inspectionDays = const [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ],
+    List<String> inspectionTimeSlots = const [
+      'morning',
+      'afternoon',
+      'late_afternoon',
+    ],
+    int maxTenants = 1,
+    bool landlordLivesInProperty = false,
+    bool landlordLivesOnPremises = false,
+    int currentTenantsCount = 0,
+    bool hasCaretaker = false,
+    bool caretakerLivesOnPremises = false,
+    double? landlordBaseLatitude,
+    double? landlordBaseLongitude,
+    String? ownershipDocUrl,
+    String? ownershipDocType,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -101,6 +122,34 @@ class PropertyService {
       final landlordName = userData?['fullName'] ?? 'Landlord';
       final landlordPhone = userData?['phone'] ?? '';
       final isVerified = userData?['verificationStatus'] == 'verified';
+
+      // Update landlord's baseLatitude/baseLongitude if they don't live in property and coordinates are provided
+      if (!landlordLivesInProperty &&
+          landlordBaseLatitude != null &&
+          landlordBaseLongitude != null) {
+        try {
+          // Only update if they don't already have coordinates set
+          final currentLat = userData?['baseLatitude'];
+          final currentLon = userData?['baseLongitude'];
+
+          if (currentLat == null || currentLon == null) {
+            await _firestore.collection('users').doc(_currentUserId).update({
+              'baseLatitude': landlordBaseLatitude,
+              'baseLongitude': landlordBaseLongitude,
+            });
+            developer.log(
+              '✅ Updated landlord baseLatitude/baseLongitude: ($landlordBaseLatitude, $landlordBaseLongitude)',
+              name: 'PropertyService',
+            );
+          }
+        } catch (e) {
+          developer.log(
+            '⚠️ Failed to update landlord location: $e',
+            name: 'PropertyService',
+          );
+          // Don't fail property creation if this fails
+        }
+      }
 
       // Create property document
       final propertyData = {
@@ -132,11 +181,20 @@ class PropertyService {
         'assignedAgentId': null,
         'assignedAgentName': null,
         'assignedAgentPhone': null,
+        'maxTenants': maxTenants,
         'viewCount': 0,
         'inquiryCount': 0,
         'savedCount': 0,
+        'landlordLivesInProperty': landlordLivesInProperty,
+        'landlordLivesOnPremises': landlordLivesOnPremises,
+        'currentTenantsCount': currentTenantsCount,
+        'hasCaretaker': hasCaretaker,
+        'caretakerLivesOnPremises': caretakerLivesOnPremises,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
+        if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
+        'ownershipDocStatus': ownershipDocUrl != null ? 'pending' : 'none',
       };
 
       final docRef = await _propertiesRef.add(propertyData);
@@ -198,35 +256,44 @@ class PropertyService {
     int limit = 50,
   }) async {
     try {
-      developer.log('🔍 Fetching available properties from verified landlords', name: 'PropertyService');
+      developer.log(
+        '🔍 Fetching available properties from verified landlords',
+        name: 'PropertyService',
+      );
 
       // First, get all verified landlord IDs from users collection
-      final verifiedLandlordsSnapshot = await _firestore
-          .collection('users')
-          .where('verificationStatus', isEqualTo: 'verified')
-          .where('accountType', isEqualTo: 'landlord')
-          .get();
+      final verifiedLandlordsSnapshot =
+          await _firestore
+              .collection('users')
+              .where('verificationStatus', isEqualTo: 'verified')
+              .where('accountType', isEqualTo: 'landlord')
+              .get();
 
       // Extract user IDs (the document ID is the userId)
-      final verifiedLandlordIds = verifiedLandlordsSnapshot.docs
-          .map((doc) => doc.id)
-          .toSet();
+      final verifiedLandlordIds =
+          verifiedLandlordsSnapshot.docs.map((doc) => doc.id).toSet();
 
-      developer.log('✅ Found ${verifiedLandlordIds.length} verified landlords', name: 'PropertyService');
+      developer.log(
+        '✅ Found ${verifiedLandlordIds.length} verified landlords',
+        name: 'PropertyService',
+      );
 
       if (verifiedLandlordIds.isEmpty) {
-        developer.log('⚠️ No verified landlords found, returning empty list', name: 'PropertyService');
+        developer.log(
+          '⚠️ No verified landlords found, returning empty list',
+          name: 'PropertyService',
+        );
         return [];
       }
 
       // Firestore 'whereIn' has a limit of 30 items, so we need to batch
       final List<PropertyModel> allProperties = [];
       final landlordIdsList = verifiedLandlordIds.toList();
-      
+
       // Process in batches of 30
       for (var i = 0; i < landlordIdsList.length; i += 30) {
         final batchIds = landlordIdsList.skip(i).take(30).toList();
-        
+
         try {
           Query query = _propertiesRef
               .where('landlordId', whereIn: batchIds)
@@ -243,29 +310,30 @@ class PropertyService {
 
           final snapshot = await query.limit(limit).get();
 
-          final batchProperties = snapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id;
-            return PropertyModel.fromJson(_convertTimestamps(data));
-          }).toList();
+          final batchProperties =
+              snapshot.docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                data['id'] = doc.id;
+                return PropertyModel.fromJson(_convertTimestamps(data));
+              }).toList();
 
           allProperties.addAll(batchProperties);
         } catch (e) {
           developer.log('⚠️ Batch query failed: $e', name: 'PropertyService');
-          
-          // Fallback: simpler query without all filters
-          final snapshot = await _propertiesRef
-              .where('landlordId', whereIn: batchIds)
-              .get();
 
-          final batchProperties = snapshot.docs
-              .map((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                data['id'] = doc.id;
-                return PropertyModel.fromJson(_convertTimestamps(data));
-              })
-              .where((p) => p.isAvailable) // Filter client-side
-              .toList();
+          // Fallback: simpler query without all filters
+          final snapshot =
+              await _propertiesRef.where('landlordId', whereIn: batchIds).get();
+
+          final batchProperties =
+              snapshot.docs
+                  .map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    data['id'] = doc.id;
+                    return PropertyModel.fromJson(_convertTimestamps(data));
+                  })
+                  .where((p) => p.isAvailable) // Filter client-side
+                  .toList();
 
           allProperties.addAll(batchProperties);
         }
@@ -273,17 +341,17 @@ class PropertyService {
 
       // Apply filters client-side if they weren't applied in query
       var filteredProperties = allProperties;
-      
+
       if (propertyType != null && propertyType != 'all') {
-        filteredProperties = filteredProperties
-            .where((p) => p.propertyType == propertyType)
-            .toList();
+        filteredProperties =
+            filteredProperties
+                .where((p) => p.propertyType == propertyType)
+                .toList();
       }
 
       if (city != null && city != 'All Areas') {
-        filteredProperties = filteredProperties
-            .where((p) => p.city == city)
-            .toList();
+        filteredProperties =
+            filteredProperties.where((p) => p.city == city).toList();
       }
 
       // Sort by createdAt descending (newest first)
@@ -295,13 +363,17 @@ class PropertyService {
 
       // Remove duplicates (in case of overlapping batches)
       final seenIds = <String>{};
-      filteredProperties = filteredProperties.where((p) {
-        if (seenIds.contains(p.id)) return false;
-        seenIds.add(p.id);
-        return true;
-      }).toList();
+      filteredProperties =
+          filteredProperties.where((p) {
+            if (seenIds.contains(p.id)) return false;
+            seenIds.add(p.id);
+            return true;
+          }).toList();
 
-      developer.log('✅ Found ${filteredProperties.length} properties from verified landlords', name: 'PropertyService');
+      developer.log(
+        '✅ Found ${filteredProperties.length} properties from verified landlords',
+        name: 'PropertyService',
+      );
 
       return filteredProperties.take(limit).toList();
     } catch (e, stackTrace) {
@@ -319,20 +391,30 @@ class PropertyService {
   Future<List<PropertyModel>> getLandlordProperties() async {
     try {
       if (_currentUserId == null) {
-        developer.log('❌ User not authenticated for getLandlordProperties', name: 'PropertyService');
+        developer.log(
+          '❌ User not authenticated for getLandlordProperties',
+          name: 'PropertyService',
+        );
         return [];
       }
 
-      developer.log('🔍 Fetching properties for landlord: $_currentUserId', name: 'PropertyService');
+      developer.log(
+        '🔍 Fetching properties for landlord: $_currentUserId',
+        name: 'PropertyService',
+      );
 
       // Try the compound query first
       try {
-        final snapshot = await _propertiesRef
-            .where('landlordId', isEqualTo: _currentUserId)
-            .orderBy('createdAt', descending: true)
-            .get();
+        final snapshot =
+            await _propertiesRef
+                .where('landlordId', isEqualTo: _currentUserId)
+                .orderBy('createdAt', descending: true)
+                .get();
 
-        developer.log('✅ Found ${snapshot.docs.length} properties (with orderBy)', name: 'PropertyService');
+        developer.log(
+          '✅ Found ${snapshot.docs.length} properties (with orderBy)',
+          name: 'PropertyService',
+        );
 
         return snapshot.docs.map((doc) {
           final data = doc.data() as Map<String, dynamic>;
@@ -345,9 +427,10 @@ class PropertyService {
           '⚠️ Compound query failed, trying simple query. Error: $e',
           name: 'PropertyService',
         );
-        
+
         // Check if it's an index error
-        if (e.toString().contains('index') || e.toString().contains('FAILED_PRECONDITION')) {
+        if (e.toString().contains('index') ||
+            e.toString().contains('FAILED_PRECONDITION')) {
           developer.log(
             '🔧 MISSING INDEX! Create a composite index in Firebase Console:\n'
             '   Collection: properties\n'
@@ -358,17 +441,22 @@ class PropertyService {
         }
 
         // Fallback: simple query without orderBy, then sort client-side
-        final snapshot = await _propertiesRef
-            .where('landlordId', isEqualTo: _currentUserId)
-            .get();
+        final snapshot =
+            await _propertiesRef
+                .where('landlordId', isEqualTo: _currentUserId)
+                .get();
 
-        developer.log('✅ Found ${snapshot.docs.length} properties (simple query)', name: 'PropertyService');
+        developer.log(
+          '✅ Found ${snapshot.docs.length} properties (simple query)',
+          name: 'PropertyService',
+        );
 
-        final properties = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['id'] = doc.id;
-          return PropertyModel.fromJson(_convertTimestamps(data));
-        }).toList();
+        final properties =
+            snapshot.docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              data['id'] = doc.id;
+              return PropertyModel.fromJson(_convertTimestamps(data));
+            }).toList();
 
         // Sort client-side (handle nullable createdAt)
         properties.sort((a, b) {
@@ -420,15 +508,15 @@ class PropertyService {
   }) async {
     try {
       // First get verified landlord IDs
-      final verifiedLandlordsSnapshot = await _firestore
-          .collection('users')
-          .where('verificationStatus', isEqualTo: 'verified')
-          .where('accountType', isEqualTo: 'landlord')
-          .get();
+      final verifiedLandlordsSnapshot =
+          await _firestore
+              .collection('users')
+              .where('verificationStatus', isEqualTo: 'verified')
+              .where('accountType', isEqualTo: 'landlord')
+              .get();
 
-      final verifiedLandlordIds = verifiedLandlordsSnapshot.docs
-          .map((doc) => doc.id)
-          .toSet();
+      final verifiedLandlordIds =
+          verifiedLandlordsSnapshot.docs.map((doc) => doc.id).toSet();
 
       if (verifiedLandlordIds.isEmpty) {
         return [];
@@ -457,9 +545,10 @@ class PropertyService {
           }).toList();
 
       // Filter to only verified landlords
-      properties = properties
-          .where((p) => verifiedLandlordIds.contains(p.landlordId))
-          .toList();
+      properties =
+          properties
+              .where((p) => verifiedLandlordIds.contains(p.landlordId))
+              .toList();
 
       // Filter by rent range (done client-side to avoid complex indexes)
       if (minRent != null) {
@@ -581,7 +670,10 @@ class PropertyService {
   }
 
   /// Change inspection handler (self <-> agent)
-  Future<bool> updateInspectionHandler(String propertyId, String handler) async {
+  Future<bool> updateInspectionHandler(
+    String propertyId,
+    String handler,
+  ) async {
     try {
       final updates = <String, dynamic>{
         'inspectionHandler': handler,
@@ -596,7 +688,10 @@ class PropertyService {
       }
 
       await _propertiesRef.doc(propertyId).update(updates);
-      developer.log('✅ Inspection handler updated to: $handler', name: 'PropertyService');
+      developer.log(
+        '✅ Inspection handler updated to: $handler',
+        name: 'PropertyService',
+      );
       return true;
     } catch (e) {
       developer.log(
@@ -616,7 +711,10 @@ class PropertyService {
         'inquiryCount': FieldValue.increment(1),
       });
     } catch (e) {
-      developer.log('❌ Failed to increment inquiry count: $e', name: 'PropertyService');
+      developer.log(
+        '❌ Failed to increment inquiry count: $e',
+        name: 'PropertyService',
+      );
     }
   }
 
@@ -627,7 +725,10 @@ class PropertyService {
         'savedCount': FieldValue.increment(1),
       });
     } catch (e) {
-      developer.log('❌ Failed to increment saved count: $e', name: 'PropertyService');
+      developer.log(
+        '❌ Failed to increment saved count: $e',
+        name: 'PropertyService',
+      );
     }
   }
 
@@ -638,7 +739,10 @@ class PropertyService {
         'savedCount': FieldValue.increment(-1),
       });
     } catch (e) {
-      developer.log('❌ Failed to decrement saved count: $e', name: 'PropertyService');
+      developer.log(
+        '❌ Failed to decrement saved count: $e',
+        name: 'PropertyService',
+      );
     }
   }
 
@@ -749,12 +853,13 @@ class PropertyService {
         .where('landlordId', isEqualTo: _currentUserId)
         .snapshots()
         .map((snapshot) {
-          final properties = snapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id;
-            return PropertyModel.fromJson(_convertTimestamps(data));
-          }).toList();
-          
+          final properties =
+              snapshot.docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                data['id'] = doc.id;
+                return PropertyModel.fromJson(_convertTimestamps(data));
+              }).toList();
+
           // Sort client-side (handle nullable createdAt)
           properties.sort((a, b) {
             final aDate = a.createdAt ?? DateTime(2000);

@@ -229,7 +229,6 @@ class VerificationService {
   // ============ LANDLORD VERIFICATION ============
   Future<VerificationResult> submitLandlordVerification({
     required File ninFile,
-    required File propertyDocFile,
     required File utilityBillFile,
     required File paymentProofFile,
   }) async {
@@ -239,11 +238,10 @@ class VerificationService {
       }
 
       final ninUrl = await _uploadDocument(ninFile, 'nin');
-      final propertyDocUrl = await _uploadDocument(propertyDocFile, 'property_doc');
       final utilityBillUrl = await _uploadDocument(utilityBillFile, 'utility_bill');
       final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || propertyDocUrl == null || utilityBillUrl == null || paymentProofUrl == null) {
+      if (ninUrl == null || utilityBillUrl == null || paymentProofUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -252,7 +250,6 @@ class VerificationService {
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
         'verificationDocs': {
           'nin': ninUrl,
-          'propertyDoc': propertyDocUrl,
           'utilityBill': utilityBillUrl,
         },
         'verificationPaymentProofUrl': paymentProofUrl,
@@ -266,7 +263,6 @@ class VerificationService {
         'userType': 'landlord',
         'status': 'pending',
         'ninUrl': ninUrl,
-        'propertyDocUrl': propertyDocUrl,
         'utilityBillUrl': utilityBillUrl,
         'paymentProofUrl': paymentProofUrl,
         'paymentAmount': VerificationFees.landlordFee,
@@ -418,10 +414,8 @@ class VerificationService {
   // ============ LEGACY METHOD ============
   Future<VerificationResult> submitVerification({
     required File ninFile,
-    required File propertyDocFile,
     required File utilityBillFile,
   }) async {
-    // Legacy callers won't have payment proof — this will fail gracefully
     developer.log('⚠️ Legacy submitVerification called — payment proof required now', name: 'VerificationService');
     return VerificationResult(success: false, error: 'Payment proof is now required for verification');
   }
