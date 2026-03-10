@@ -269,7 +269,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
               label: const Text('View Agreement'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                side: const BorderSide(color: AppColors.primary),
+                side: BorderSide(color: AppColors.primary),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
@@ -283,7 +283,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 onPressed: _isDisputing ? null : () => _showDisputeDialog(),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: AppColors.warning),
+                  side: BorderSide(color: AppColors.warning),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 child: Text('Raise Concern',
@@ -342,7 +342,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(children: [
-              const Icon(Icons.hourglass_top, size: 18, color: AppColors.info),
+              Icon(Icons.hourglass_top, size: 18, color: AppColors.info),
               const SizedBox(width: 8),
               Expanded(
                 child: Text('Waiting for your landlord to finalize the agreement.',
@@ -409,7 +409,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 label: const Text('Chat'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
@@ -469,7 +469,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.gavel_outlined, size: 22, color: AppColors.info),
+            Icon(Icons.gavel_outlined, size: 22, color: AppColors.info),
             const SizedBox(width: 10),
             Text('Legal Notice', style: AppTextStyles.labelLarge.copyWith(color: AppColors.info)),
           ]),
@@ -481,7 +481,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           const SizedBox(height: 8),
           Text(
             'Stamp duty for tenancies under 1 year is typically ₦500–₦1,000. For longer tenancies, it\'s a small percentage of the annual rent.',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            style: AppTextStyles.naira(AppTextStyles.bodySmall).copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
@@ -517,7 +517,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 border: Border.all(color: AppColors.warning.withAlpha(51)),
               ),
               child: Row(children: [
-                const Icon(Icons.info_outline, size: 18, color: AppColors.warning),
+                Icon(Icons.info_outline, size: 18, color: AppColors.warning),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('This creates a digital record of your acceptance. For court-admissible proof, get the agreement stamped at LIRS/SIRS.',
@@ -583,7 +583,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 fillColor: AppColors.background,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
               ),
             ),
@@ -642,7 +642,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
         label: const Text('View Agreement'),
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          side: const BorderSide(color: AppColors.primary),
+          side: BorderSide(color: AppColors.primary),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
@@ -717,7 +717,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: AppColors.textHint),
+          Icon(Icons.chevron_right, color: AppColors.textHint),
         ]),
       ),
     );
@@ -782,8 +782,8 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Text(label, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
       Text(value, style: bold
-          ? AppTextStyles.labelLarge.copyWith(fontWeight: FontWeight.bold, color: color)
-          : AppTextStyles.bodySmall.copyWith(color: color)),
+          ? AppTextStyles.naira(AppTextStyles.labelLarge).copyWith(fontWeight: FontWeight.bold, color: color)
+          : AppTextStyles.naira(AppTextStyles.bodySmall).copyWith(color: color)),
     ]);
   }
 
@@ -813,7 +813,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           icon: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), shape: BoxShape.circle),
-            child: const Icon(Icons.chat_outlined, color: AppColors.primary, size: 20),
+            child: Icon(Icons.chat_outlined, color: AppColors.primary, size: 20),
           ),
         ),
       ]),

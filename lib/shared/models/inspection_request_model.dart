@@ -92,6 +92,10 @@ class InspectionRequest {
   final DateTime? agentPaidAt;
   final String? agentPaidBy;
 
+  // Who actually conducted the inspection (may differ from agentId if landlord overrode)
+  final String? completedBy;       // UID of whoever pressed "Mark Complete"
+  final String? completedByType;   // 'agent' or 'landlord'
+
   final bool agentConfirmedPayment;
   final DateTime? agentConfirmedAt;
 
@@ -161,6 +165,8 @@ class InspectionRequest {
     this.agentPayoutStatus = 'pending',
     this.agentPaidAt,
     this.agentPaidBy,
+    this.completedBy,
+    this.completedByType,
     this.agentConfirmedPayment = false,
     this.agentConfirmedAt,
     this.tenantArrived = false,
@@ -188,7 +194,11 @@ class InspectionRequest {
       landlordOverrideDeadline != null && 
       DateTime.now().isBefore(landlordOverrideDeadline!);
   
-  bool get isAgentHandled => agentId != null;
+  // If completedByType is recorded use it — it reflects who actually conducted the inspection.
+  // Fall back to agentId check for older records that predate this field.
+  bool get isAgentHandled => completedByType != null
+      ? completedByType == 'agent'
+      : agentId != null && agentId!.isNotEmpty;
   bool get bothArrived => tenantArrived && handlerArrived;
 
   // Display status
@@ -301,6 +311,8 @@ class InspectionRequest {
     String? agentPayoutStatus,
     DateTime? agentPaidAt,
     String? agentPaidBy,
+    String? completedBy,
+    String? completedByType,
     bool? agentConfirmedPayment,
     DateTime? agentConfirmedAt,
     bool? tenantArrived,
@@ -366,6 +378,8 @@ class InspectionRequest {
       agentPayoutStatus: agentPayoutStatus ?? this.agentPayoutStatus,
       agentPaidAt: agentPaidAt ?? this.agentPaidAt,
       agentPaidBy: agentPaidBy ?? this.agentPaidBy,
+      completedBy: completedBy ?? this.completedBy,
+      completedByType: completedByType ?? this.completedByType,
       agentConfirmedPayment: agentConfirmedPayment ?? this.agentConfirmedPayment,
       agentConfirmedAt: agentConfirmedAt ?? this.agentConfirmedAt,
       tenantArrived: tenantArrived ?? this.tenantArrived,
@@ -440,6 +454,8 @@ class InspectionRequest {
       agentPayoutStatus: data['agentPayoutStatus'] ?? 'pending',
       agentPaidAt: (data['agentPaidAt'] as Timestamp?)?.toDate(),
       agentPaidBy: data['agentPaidBy'],
+      completedBy: data['completedBy'],
+      completedByType: data['completedByType'],
       agentConfirmedPayment: data['agentConfirmedPayment'] ?? false,
       agentConfirmedAt: (data['agentConfirmedAt'] as Timestamp?)?.toDate(),
       tenantArrived: data['tenantArrived'] ?? false,

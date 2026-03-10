@@ -46,7 +46,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('My Inspections', style: AppTextStyles.h4),
@@ -89,7 +89,7 @@ class _AgentPendingTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -235,7 +235,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                     fillColor: AppColors.background,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                   ),
                 ),
@@ -302,7 +302,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: const Icon(
+                          child: Icon(
                             Icons.home,
                             color: AppColors.textHint,
                           ),
@@ -330,7 +330,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                     ),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 12,
                           color: AppColors.textHint,
@@ -454,7 +454,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.calendar_today_outlined,
                   size: 18,
                   color: AppColors.primary,
@@ -494,7 +494,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.note_outlined,
                     size: 16,
                     color: AppColors.textSecondary,
@@ -523,7 +523,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                   onPressed: _isLoading ? null : _declineRequest,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -591,7 +591,7 @@ class _AgentScheduledTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -675,7 +675,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(
+                child: Text(
                   'Yes, I\'m Here',
                   style: TextStyle(color: AppColors.primary),
                 ),
@@ -726,7 +726,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.account_balance_wallet,
                         color: AppColors.success,
                       ),
@@ -892,7 +892,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.access_time,
                           size: 14,
                           color: AppColors.textSecondary,
@@ -909,7 +909,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 14,
                           color: AppColors.textSecondary,
@@ -990,7 +990,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                       color: AppColors.success.withAlpha(26),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.phone,
                       color: AppColors.success,
                       size: 18,
@@ -1021,7 +1021,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.person_pin_circle,
                         size: 18,
                         color: AppColors.info,
@@ -1083,7 +1083,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.check_circle,
                       size: 18,
                       color: AppColors.success,
@@ -1141,7 +1141,7 @@ class _AgentCompletedTab extends StatelessWidget {
       stream: inspectionService.getAgentRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -1248,7 +1248,7 @@ class _AgentCompletedTab extends StatelessWidget {
                             color: AppColors.success.withAlpha(26),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.check_circle,
                             color: AppColors.success,
                           ),

@@ -20,7 +20,7 @@ class TenantIssueHistoryScreen extends StatelessWidget {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Issue History', style: AppTextStyles.h4),
@@ -35,13 +35,13 @@ class TenantIssueHistoryScreen extends StatelessWidget {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
+                  return Center(
                       child: CircularProgressIndicator(color: AppColors.primary));
                 }
                 if (snapshot.hasError) {
                   return Center(
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+                      Icon(Icons.error_outline, color: AppColors.error, size: 48),
                       const SizedBox(height: 12),
                       Text('Failed to load issues',
                           style: AppTextStyles.bodyMedium
@@ -92,7 +92,7 @@ class TenantIssueHistoryScreen extends StatelessWidget {
           decoration: BoxDecoration(
               color: AppColors.success.withAlpha(26), shape: BoxShape.circle),
           child:
-              const Icon(Icons.check_circle_outline, color: AppColors.success, size: 40),
+              Icon(Icons.check_circle_outline, color: AppColors.success, size: 40),
         ),
         const SizedBox(height: 20),
         Text('No Issues Reported',
@@ -146,7 +146,7 @@ class _PropertyIssueGroupState extends State<_PropertyIssueGroup> {
                 decoration: BoxDecoration(
                     color: AppColors.primary.withAlpha(20),
                     borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.home_outlined,
+                child: Icon(Icons.home_outlined,
                     color: AppColors.primary, size: 20),
               ),
               const SizedBox(width: 12),

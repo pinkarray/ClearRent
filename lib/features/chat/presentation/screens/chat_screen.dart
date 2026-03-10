@@ -101,11 +101,21 @@ class _ChatScreenState extends State<ChatScreen> {
         // Current user is tenant, other party is landlord
         otherPartyId = _conversation!.landlordId;
       } else if (_currentUserId == _conversation!.landlordId) {
-        // Current user is landlord, other party is tenant
-        otherPartyId = _conversation!.tenantId;
+        // Landlord's other party: tenant if present, otherwise agent
+        if (_conversation!.tenantId.isNotEmpty) {
+          otherPartyId = _conversation!.tenantId;
+        } else if (_conversation!.agentId != null && _conversation!.agentId!.isNotEmpty) {
+          otherPartyId = _conversation!.agentId;
+        }
       } else if (_currentUserId == _conversation!.agentId) {
-        // Current user is agent, other party is tenant
-        otherPartyId = _conversation!.tenantId;
+        // Agent's other party depends on conversation type:
+        // In agent-tenant-landlord chats, other party is tenant
+        // In agent-landlord only chats (no tenant), other party is landlord
+        if (_conversation!.tenantId.isNotEmpty) {
+          otherPartyId = _conversation!.tenantId;
+        } else if (_conversation!.landlordId.isNotEmpty) {
+          otherPartyId = _conversation!.landlordId;
+        }
       }
 
       if (otherPartyId != null) {
@@ -320,7 +330,7 @@ class _ChatScreenState extends State<ChatScreen> {
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
             onPressed: () => context.pop(),
           ),
           title: const Text('Loading...'),
@@ -350,7 +360,7 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         titleSpacing: 0,
@@ -440,7 +450,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: _makeCall,
           ),
           IconButton(
-            icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
+            icon: Icon(Icons.more_vert, color: AppColors.textPrimary),
             onPressed: () {},
           ),
         ],
@@ -592,14 +602,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       width: 60,
                       height: 60,
                       color: AppColors.background,
-                      child: const Icon(Icons.home, color: AppColors.textHint),
+                      child: Icon(Icons.home, color: AppColors.textHint),
                     ),
                   )
                 : Container(
                     width: 60,
                     height: 60,
                     color: AppColors.background,
-                    child: const Icon(Icons.home, color: AppColors.textHint),
+                    child: Icon(Icons.home, color: AppColors.textHint),
                   ),
           ),
           const SizedBox(width: 12),
@@ -640,7 +650,7 @@ class _ChatScreenState extends State<ChatScreen> {
               color: AppColors.primary.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.chat_bubble_outline,
               size: 40,
               color: AppColors.primary,

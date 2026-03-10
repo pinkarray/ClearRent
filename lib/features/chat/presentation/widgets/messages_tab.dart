@@ -40,7 +40,7 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
             stream: _conversationService.getConversationsStream(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
+                return Center(
                   child: CircularProgressIndicator(color: AppColors.primary),
                 );
               }
@@ -50,7 +50,7 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                      Icon(Icons.error_outline, size: 48, color: AppColors.error),
                       const SizedBox(height: 16),
                       Text(
                         'Failed to load messages',
@@ -119,7 +119,7 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
               color: AppColors.primaryLight.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.chat_bubble_outline,
               size: 50,
               color: AppColors.primary,

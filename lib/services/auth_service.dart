@@ -1,10 +1,17 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'property_service.dart';
 
 class AuthService {
+  // Singleton — ensures _verificationId is shared across all screens
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
+  AuthService._internal();
+
   // Use singleton instances directly - Firebase is already initialized in main.dart
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -23,6 +30,256 @@ class AuthService {
 
   // Auth state changes stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  // ============ PHONE AUTH ============
+
+  // Store verification ID for OTP verification
+  String? _verificationId;
+  int? _resendToken;
+
+  String? get verificationId => _verificationId;
+
+  /// Send OTP to phone number
+  /// Returns a map with 'success' and optionally 'error' or 'verificationId'
+  Future<PhoneAuthResult> sendOtp({
+    required String phoneNumber,
+    int? forceResendingToken,
+  }) async {
+    try {
+      debugPrint('📱 Sending OTP to $phoneNumber');
+
+      // Enable test phone number bypass for debug builds
+      // This tells Firebase to skip app verification (Play Integrity / reCAPTCHA)
+      // which is required for test phone numbers to work on unregistered apps
+      _auth.setSettings(appVerificationDisabledForTesting: true);
+
+      final completer = Completer<PhoneAuthResult>();
+
+      await _auth.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        timeout: const Duration(seconds: 60),
+        forceResendingToken: forceResendingToken ?? _resendToken,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          debugPrint('✅ Phone auto-verified via verificationCompleted callback');
+          if (!completer.isCompleted) {
+            completer.complete(PhoneAuthResult(
+              success: true,
+              autoVerified: true,
+              credential: credential,
+            ));
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('❌ Phone verificationFailed callback: ${e.code} - ${e.message}');
+          if (!completer.isCompleted) {
+            completer.complete(PhoneAuthResult(
+              success: false,
+              error: _getPhoneErrorMessage(e.code),
+            ));
+          }
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          debugPrint('📨 codeSent callback fired. verificationId: $verificationId');
+          _verificationId = verificationId;
+          _resendToken = resendToken;
+          if (!completer.isCompleted) {
+            completer.complete(PhoneAuthResult(
+              success: true,
+              verificationId: verificationId,
+            ));
+          }
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          debugPrint('⏱️ codeAutoRetrievalTimeout callback. verificationId: $verificationId');
+          _verificationId = verificationId;
+          // Don't complete here — codeSent should have already completed
+        },
+      );
+
+      // Add a safety timeout — if no callback fires within 30 seconds, return error
+      final result = await completer.future.timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('⏱️ sendOtp timed out — no Firebase callback received within 30s');
+          return PhoneAuthResult(
+            success: false,
+            error: 'Verification timed out. Please check your connection and try again.',
+          );
+        },
+      );
+
+      return result;
+    } catch (e) {
+      debugPrint('❌ sendOtp error: $e');
+      return PhoneAuthResult(
+        success: false,
+        error: 'Failed to send verification code. Please try again.',
+      );
+    }
+  }
+
+  /// Verify OTP code and sign in
+  Future<AuthResult> verifyOtpAndSignIn(String smsCode) async {
+    try {
+      if (_verificationId == null) {
+        return AuthResult(
+          success: false,
+          error: 'Verification session expired. Please request a new code.',
+        );
+      }
+
+      debugPrint('🔑 Verifying OTP code...');
+
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId!,
+        smsCode: smsCode,
+      );
+
+      final userCredential = await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+      final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
+
+      debugPrint('✅ Phone sign-in successful. uid=${user?.uid}, isNew=$isNew');
+
+      // Check if user has completed profile
+      bool hasProfile = false;
+      if (user != null && !isNew) {
+        hasProfile = await _checkUserProfile(user.uid);
+      }
+
+      return AuthResult(
+        success: true,
+        user: user,
+        isNewUser: isNew,
+        hasCompletedProfile: hasProfile,
+      );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ OTP verification failed: ${e.code} - ${e.message}');
+      return AuthResult(
+        success: false,
+        error: _getPhoneErrorMessage(e.code),
+      );
+    } catch (e) {
+      debugPrint('❌ OTP verification error: $e');
+      return AuthResult(
+        success: false,
+        error: 'Verification failed. Please try again.',
+      );
+    }
+  }
+
+  /// Verify OTP and link phone to current (email/password) account
+  Future<AuthResult> verifyOtpAndLinkPhone(String smsCode) async {
+    try {
+      if (_verificationId == null) {
+        return AuthResult(
+          success: false,
+          error: 'Verification session expired. Please request a new code.',
+        );
+      }
+
+      if (currentUser == null) {
+        return AuthResult(
+          success: false,
+          error: 'No user signed in. Please sign in first.',
+        );
+      }
+
+      debugPrint('🔗 Linking phone to existing account...');
+
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId!,
+        smsCode: smsCode,
+      );
+
+      await currentUser!.linkWithCredential(credential);
+
+      // Update Firestore with phone number
+      final phone = currentUser!.phoneNumber;
+      if (phone != null) {
+        await _firestore.collection('users').doc(currentUser!.uid).update({
+          'phone': phone,
+          'phoneVerified': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      debugPrint('✅ Phone linked successfully');
+
+      return AuthResult(success: true, user: currentUser);
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ Phone link failed: ${e.code} - ${e.message}');
+      
+      // Handle "already linked" case
+      if (e.code == 'credential-already-in-use') {
+        return AuthResult(
+          success: false,
+          error: 'This phone number is already linked to another account.',
+        );
+      }
+      
+      return AuthResult(
+        success: false,
+        error: _getPhoneErrorMessage(e.code),
+      );
+    } catch (e) {
+      debugPrint('❌ Phone link error: $e');
+      return AuthResult(
+        success: false,
+        error: 'Failed to link phone number. Please try again.',
+      );
+    }
+  }
+
+  /// Auto-sign-in with credential (for auto-verified phones)
+  Future<AuthResult> signInWithCredential(PhoneAuthCredential credential) async {
+    try {
+      final userCredential = await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+      final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
+
+      bool hasProfile = false;
+      if (user != null && !isNew) {
+        hasProfile = await _checkUserProfile(user.uid);
+      }
+
+      return AuthResult(
+        success: true,
+        user: user,
+        isNewUser: isNew,
+        hasCompletedProfile: hasProfile,
+      );
+    } catch (e) {
+      debugPrint('❌ Credential sign-in error: $e');
+      return AuthResult(
+        success: false,
+        error: 'Sign in failed. Please try again.',
+      );
+    }
+  }
+
+  String _getPhoneErrorMessage(String code) {
+    switch (code) {
+      case 'invalid-phone-number':
+        return 'Invalid phone number. Please check and try again.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'invalid-verification-code':
+        return 'Invalid verification code. Please check and try again.';
+      case 'session-expired':
+        return 'Verification session expired. Please request a new code.';
+      case 'quota-exceeded':
+        return 'SMS quota exceeded. Please try again later.';
+      case 'credential-already-in-use':
+        return 'This phone number is already linked to another account.';
+      case 'provider-already-linked':
+        return 'A phone number is already linked to this account.';
+      default:
+        return 'Phone verification failed. Please try again.';
+    }
+  }
+
+  // ============ EMAIL/PASSWORD AUTH ============
 
   // Sign up with email and password
   Future<AuthResult> signUp({
@@ -194,6 +451,12 @@ class AuthService {
         data['phone'] = phone;
       }
 
+      // If user signed in with phone, store the phone number
+      if (currentUser!.phoneNumber != null && currentUser!.phoneNumber!.isNotEmpty) {
+        data['phone'] = currentUser!.phoneNumber;
+        data['phoneVerified'] = true;
+      }
+
       // Add agent-specific fields
       if (accountType == 'agent') {
         if (baseLocation != null && baseLocation.isNotEmpty) {
@@ -207,6 +470,12 @@ class AuthService {
         data['rating'] = 0.0;
         data['totalInspections'] = 0;
         data['totalRatings'] = 0;
+      }
+
+      // Rating fields for landlords (agents have them above)
+      if (accountType == 'landlord') {
+        data.putIfAbsent('rating', () => 0.0);
+        data.putIfAbsent('totalRatings', () => 0);
       }
 
       await _firestore
@@ -338,6 +607,8 @@ class AuthService {
   // Sign out
   Future<void> signOut() async {
     try {
+      _verificationId = null;
+      _resendToken = null;
       await _auth.signOut();
       developer.log('✅ Signed out successfully', name: 'AuthService');
     } catch (e) {
@@ -408,5 +679,22 @@ class AuthResult {
     this.error,
     this.isNewUser = false,
     this.hasCompletedProfile = false,
+  });
+}
+
+// Result class for phone auth operations
+class PhoneAuthResult {
+  final bool success;
+  final String? error;
+  final String? verificationId;
+  final bool autoVerified;
+  final PhoneAuthCredential? credential;
+
+  PhoneAuthResult({
+    required this.success,
+    this.error,
+    this.verificationId,
+    this.autoVerified = false,
+    this.credential,
   });
 }

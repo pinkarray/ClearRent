@@ -12,7 +12,16 @@
           "package_name": "com.example.clearrent"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "513996752248-l55cfcb14e9st8tnankkpckffn15o5ob.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.clearrent",
+            "certificate_hash": "c3d5f8d15d678934b53e1fb82f15d7aa702c3763"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyC0R1JqTg_Em4LNmY528sneUFk4VicAYcY"

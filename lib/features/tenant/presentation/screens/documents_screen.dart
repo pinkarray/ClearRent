@@ -82,7 +82,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Documents', style: AppTextStyles.h4),
@@ -127,7 +127,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         ),
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : TabBarView(
               controller: _tabController,
@@ -199,7 +199,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 color: AppColors.info.withAlpha(26),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.description_outlined,
+              child: Icon(Icons.description_outlined,
                   color: AppColors.info, size: 20),
             ),
             const SizedBox(width: 12),
@@ -284,7 +284,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                       style: AppTextStyles.labelSmall
                           .copyWith(color: AppColors.primary)),
                   const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right,
+                  Icon(Icons.chevron_right,
                       size: 16, color: AppColors.primary),
                 ]),
               ),
@@ -297,7 +297,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(children: [
-                const Icon(Icons.info_outline,
+                Icon(Icons.info_outline,
                     size: 14, color: AppColors.warning),
                 const SizedBox(width: 8),
                 Expanded(
@@ -414,7 +414,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 Text('View Receipt',
                     style: AppTextStyles.labelSmall
                         .copyWith(color: AppColors.primary)),
-                const Icon(Icons.chevron_right,
+                Icon(Icons.chevron_right,
                     size: 16, color: AppColors.primary),
               ]),
             ),
@@ -449,7 +449,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             child: CachedNetworkImage(
               imageUrl: url,
               fit: BoxFit.contain,
-              placeholder: (_, __) => const SizedBox(
+              placeholder: (_, __) => SizedBox(
                 height: 300,
                 child: Center(
                     child: CircularProgressIndicator(

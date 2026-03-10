@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +8,6 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
-import '../../../../services/conversation_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
@@ -16,6 +16,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../core/utils/inspection_pricing.dart';
+import '../../../../shared/widgets/announcements_banner.dart';
 
 class AgentHomeScreen extends StatefulWidget {
   const AgentHomeScreen({super.key});
@@ -27,7 +28,6 @@ class AgentHomeScreen extends StatefulWidget {
 class _AgentHomeScreenState extends State<AgentHomeScreen> {
   final AuthService _authService = AuthService();
   final VerificationService _verificationService = VerificationService();
-  final ConversationService _conversationService = ConversationService();
   final InspectionService _inspectionService = InspectionService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -36,6 +36,10 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   bool _isLoading = true;
   VerificationData? _verificationData;
   bool _verifLoading = true;
+
+  // Live stream subscriptions
+  StreamSubscription? _profileSubscription;
+  StreamSubscription? _unreadCountSubscription;
 
   // Bottom nav
   int _currentNavIndex = 0;
@@ -54,34 +58,61 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _startProfileStream();
+    _loadVerificationData();
+    _startUnreadCountStream();
+    _loadAssignedPropertiesCount();
   }
 
-  Future<void> _loadProfile() async {
-    final profile = await _authService.getUserProfile();
-    if (mounted) {
+  void _startProfileStream() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    _profileSubscription = _firestore
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted || !doc.exists) return;
+      final data = doc.data()!;
       setState(() {
-        _userProfile = profile;
-        _profileImageUrl = profile?['profileImageUrl'];
+        _userProfile = data;
+        _profileImageUrl = data['profileImageUrl'];
         _isLoading = false;
       });
-      _loadVerificationData();
-      _loadUnreadCount();
-      _loadAssignedPropertiesCount();
+    }, onError: (e) {
+      debugPrint('❌ Profile stream error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    });
+  }
 
-      // Self-heal: if rating is 0 or missing but agent has completed inspections,
-      // recalculate from Firestore inspection history to fix historical data issues.
-      final currentRating = (profile?['rating'] ?? 0.0) as num;
-      if (currentRating == 0) {
-        final uid = _authService.currentUser?.uid;
-        if (uid != null) {
-          await _inspectionService.recalculateUserRating(uid, 'agent');
-          // Reload profile to reflect corrected rating
-          final updated = await _authService.getUserProfile();
-          if (mounted) setState(() => _userProfile = updated);
-        }
+  void _startUnreadCountStream() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    _unreadCountSubscription = _firestore
+        .collection('conversations')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      int total = 0;
+      for (final doc in snapshot.docs) {
+        final counts = doc.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
+        total += (counts[uid] as num? ?? 0).toInt();
       }
-    }
+      setState(() => _unreadCount = total);
+    }, onError: (e) {
+      debugPrint('❌ Unread count stream error: $e');
+    });
+  }
+
+  @override
+  void dispose() {
+    _profileSubscription?.cancel();
+    _unreadCountSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadVerificationData() async {
@@ -95,16 +126,6 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     }
   }
 
-  Future<void> _loadUnreadCount() async {
-    try {
-      final count = await _conversationService.getTotalUnreadCount();
-      if (mounted) {
-        setState(() => _unreadCount = count);
-      }
-    } catch (e) {
-      debugPrint('âŒ Error loading unread count: $e');
-    }
-  }
 
   Future<void> _pickProfileImage() async {
     final picker = ImagePicker();
@@ -215,7 +236,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         }
       }
     } catch (e) {
-      debugPrint('âŒ Error picking profile image: $e');
+      debugPrint('❌ Error picking profile image: $e');
       if (mounted) setState(() => _isUploadingImage = false);
     }
   }
@@ -270,7 +291,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         });
       }
     } catch (e) {
-      debugPrint('âŒ Error loading assigned properties count: $e');
+      debugPrint('❌ Error loading assigned properties count: $e');
     }
   }
 
@@ -346,6 +367,16 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         SliverToBoxAdapter(child: _buildHeader()),
         if (!_isVerified || _accountType != 'agent')
           SliverToBoxAdapter(child: _buildVerificationBanner()),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+            child: AnnouncementsBanner(
+              userId: _auth.currentUser?.uid ?? '',
+              accountType: 'agent',
+              notificationsRoute: '/agent/activities',
+            ),
+          ),
+        ),
         SliverToBoxAdapter(child: _buildStatsSection()),
         SliverToBoxAdapter(child: _buildTodaysInspectionsSection()),
         SliverToBoxAdapter(child: _buildPaymentConfirmationSection()),
@@ -402,7 +433,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     ),
                     if (_isVerified) ...[
                       const SizedBox(width: 6),
-                      const Icon(
+                      Icon(
                         Icons.verified,
                         color: AppColors.primary,
                         size: 20,
@@ -414,7 +445,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             ),
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: () => context.push('/agent/activities'),
             icon: Stack(
               children: [
                 const Icon(Icons.notifications_outlined),
@@ -425,7 +456,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     child: Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: AppColors.error,
                         shape: BoxShape.circle,
                       ),
@@ -461,7 +492,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 color: AppColors.warning.withAlpha(51),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.person_add_alt_1_outlined,
                 color: AppColors.warning,
                 size: 24,
@@ -582,7 +613,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.warning),
+            Icon(Icons.chevron_right, color: AppColors.warning),
           ],
         ),
       ),
@@ -794,14 +825,14 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
-            child: const Center(
+            child: Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             ),
           );
         }
 
         if (snapshot.hasError) {
-          debugPrint('âŒ Error loading assigned properties: ${snapshot.error}');
+          debugPrint('❌ Error loading assigned properties: ${snapshot.error}');
           return _buildEmptyState(
             icon: Icons.error_outline,
             title: 'Error Loading Properties',
@@ -881,7 +912,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,
-                                child: const Icon(
+                                child: Icon(
                                   Icons.home,
                                   color: AppColors.textHint,
                                 ),
@@ -891,7 +922,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: const Icon(
+                          child: Icon(
                             Icons.home,
                             color: AppColors.textHint,
                           ),
@@ -928,7 +959,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.chevron_right,
                 color: AppColors.textHint,
                 size: 20,
@@ -982,7 +1013,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       color: AppColors.primary.withAlpha(26),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.today,
                       size: 18,
                       color: AppColors.primary,
@@ -1071,7 +1102,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.person_pin_circle,
                                     size: 12,
                                     color: AppColors.warning,
@@ -1101,7 +1132,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.handshake,
                                     size: 12,
                                     color: AppColors.success,
@@ -1138,7 +1169,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                             width: 50,
                                             height: 50,
                                             color: AppColors.background,
-                                            child: const Icon(
+                                            child: Icon(
                                               Icons.home,
                                               color: AppColors.textHint,
                                             ),
@@ -1148,7 +1179,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                       width: 50,
                                       height: 50,
                                       color: AppColors.background,
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.home,
                                         color: AppColors.textHint,
                                       ),
@@ -1168,7 +1199,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 const SizedBox(height: 2),
                                 Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.access_time,
                                       size: 12,
                                       color: AppColors.primary,
@@ -1185,7 +1216,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 const SizedBox(height: 2),
                                 Row(
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.person_outline,
                                       size: 12,
                                       color: AppColors.textSecondary,
@@ -1202,7 +1233,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                               ],
                             ),
                           ),
-                          const Icon(
+                          Icon(
                             Icons.chevron_right,
                             color: AppColors.textHint,
                           ),
@@ -1241,14 +1272,14 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
-            child: const Center(
+            child: Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             ),
           );
         }
 
         if (snapshot.hasError) {
-          debugPrint('âŒ Error loading inspection requests: ${snapshot.error}');
+          debugPrint('❌ Error loading inspection requests: ${snapshot.error}');
           return _buildEmptyState(
             icon: Icons.error_outline,
             title: 'Error Loading Requests',
@@ -1321,7 +1352,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,
-                                child: const Icon(
+                                child: Icon(
                                   Icons.home,
                                   color: AppColors.textHint,
                                 ),
@@ -1331,7 +1362,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: const Icon(
+                          child: Icon(
                             Icons.home,
                             color: AppColors.textHint,
                           ),
@@ -1446,7 +1477,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                   ],
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.chevron_right,
                 color: AppColors.textHint,
                 size: 20,
@@ -1480,7 +1511,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       color: AppColors.success.withAlpha(26),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.payments,
                       size: 18,
                       color: AppColors.success,
@@ -1515,7 +1546,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 inspectionService: _inspectionService,
                 onConfirmed: () {
                   // Optionally refresh profile to update earnings display
-                  _loadProfile();
+                  // Profile stream auto-updates
                 },
               ),
             ),
@@ -1769,12 +1800,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                               .then((_) => _loadVerificationData()),
                       trailing:
                           _isVerified
-                              ? const Icon(
+                              ? Icon(
                                 Icons.check_circle,
                                 color: AppColors.success,
                                 size: 20,
                               )
-                              : const Icon(
+                              : Icon(
                                 Icons.chevron_right,
                                 color: AppColors.textHint,
                                 size: 20,
@@ -1822,7 +1853,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.logout, color: AppColors.error),
+                        Icon(Icons.logout, color: AppColors.error),
                         const SizedBox(width: 8),
                         Text(
                           'Sign Out',
@@ -1925,7 +1956,6 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 onTap: () {
                   setState(() {
                     _currentNavIndex = 2;
-                    _loadUnreadCount();
                   });
                 },
                 badge: _unreadCount > 0 ? '$_unreadCount' : null,
@@ -2140,7 +2170,7 @@ class _ProfileMenuItem extends StatelessWidget {
               ),
             ),
             trailing ??
-                const Icon(
+                Icon(
                   Icons.chevron_right,
                   color: AppColors.textHint,
                   size: 20,
@@ -2253,7 +2283,7 @@ class _PaymentConfirmCardState extends State<_PaymentConfirmCard> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.payments,
                       size: 12,
                       color: AppColors.success,

@@ -192,14 +192,14 @@ class _AgentAvailabilityScreenState extends State<AgentAvailabilityScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('My Availability', style: AppTextStyles.h4),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -440,7 +440,7 @@ class _AgentAvailabilityScreenState extends State<AgentAvailabilityScreen> {
                     color: AppColors.primary.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.add, color: AppColors.primary, size: 20),
+                  child: Icon(Icons.add, color: AppColors.primary, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Text(
@@ -607,7 +607,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
+            colorScheme: ColorScheme.light(
               primary: AppColors.primary,
               onPrimary: Colors.white,
               surface: AppColors.surface,
@@ -639,7 +639,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
+            colorScheme: ColorScheme.light(
               primary: AppColors.primary,
               onPrimary: Colors.white,
               surface: AppColors.surface,
@@ -689,7 +689,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
               color: AppColors.warning.withAlpha(26),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.event_busy, color: AppColors.warning, size: 20),
+            child: Icon(Icons.event_busy, color: AppColors.warning, size: 20),
           ),
           const SizedBox(width: 12),
           const Text('Block Dates'),
@@ -721,7 +721,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
+                    Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -756,7 +756,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
+                      Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -789,15 +789,15 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
                 fillColor: AppColors.background,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: AppColors.primary),
+                  borderSide: BorderSide(color: AppColors.primary),
                 ),
                 contentPadding: const EdgeInsets.all(14),
               ),

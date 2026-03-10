@@ -39,7 +39,7 @@ Download ClearRent to view more: https://clearrent.app''';
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -88,7 +88,7 @@ Download ClearRent to view more: https://clearrent.app''';
                       width: 60,
                       height: 60,
                       color: AppColors.background,
-                      child: const Icon(Icons.home, color: AppColors.textHint),
+                      child: Icon(Icons.home, color: AppColors.textHint),
                     ),
                   ),
                 ),
@@ -247,7 +247,7 @@ class _ShareOption extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right,
               color: AppColors.textHint,
             ),
@@ -278,7 +278,7 @@ class _ConversationPickerSheet extends StatelessWidget {
         maxHeight: MediaQuery.of(context).size.height * 0.6,
       ),
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
+      decoration:  BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -367,7 +367,7 @@ class _ConversationPickerSheet extends StatelessWidget {
                             color: AppColors.primary.withAlpha(26),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.send,
                             size: 16,
                             color: AppColors.primary,

@@ -63,14 +63,14 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Tenancy Agreements', style: AppTextStyles.h4),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _rentals.isEmpty
               ? _buildEmptyState()
               : RefreshIndicator(
@@ -101,7 +101,7 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
                 color: AppColors.primary.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.description_outlined, size: 40, color: AppColors.primary),
+              child: Icon(Icons.description_outlined, size: 40, color: AppColors.primary),
             ),
             const SizedBox(height: 24),
             Text('No Active Rentals', style: AppTextStyles.h4, textAlign: TextAlign.center),
@@ -229,7 +229,7 @@ class _AgreementCardState extends State<_AgreementCard> {
                 border: Border.all(color: AppColors.info.withAlpha(51)),
               ),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(Icons.gavel_outlined, size: 18, color: AppColors.info),
+                Icon(Icons.gavel_outlined, size: 18, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -335,7 +335,7 @@ class _AgreementCardState extends State<_AgreementCard> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 2),
                   Row(children: [
-                    const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
+                    Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
                     const SizedBox(width: 4),
                     Text('Tenant: ${r.tenantName}',
                         style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
@@ -529,7 +529,7 @@ class _AgreementCardState extends State<_AgreementCard> {
             label: const Text('View Agreement'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              side: const BorderSide(color: AppColors.success),
+              side: BorderSide(color: AppColors.success),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               minimumSize: const Size(double.infinity, 44),
             ),
@@ -542,7 +542,7 @@ class _AgreementCardState extends State<_AgreementCard> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(children: [
-              const Icon(Icons.gavel_outlined, size: 16, color: AppColors.info),
+              Icon(Icons.gavel_outlined, size: 16, color: AppColors.info),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -565,12 +565,12 @@ class _AgreementCardState extends State<_AgreementCard> {
   Widget _placeholder() => Container(
         width: 50, height: 50,
         decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(10)),
-        child: const Icon(Icons.home_outlined, color: AppColors.textHint, size: 24),
+        child: Icon(Icons.home_outlined, color: AppColors.textHint, size: 24),
       );
 
   ButtonStyle _outlineStyle() => OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       );
 }

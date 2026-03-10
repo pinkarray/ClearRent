@@ -15,10 +15,18 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+  // Tab controller for Email / Phone tabs
+  late TabController _tabController;
+
+  // Email/password controllers
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final _emailFormKey = GlobalKey<FormState>();
+
+  // Phone controller
+  final _phoneController = TextEditingController();
+  final _phoneFormKey = GlobalKey<FormState>();
 
   late final AuthService _authService;
   late final BiometricService _biometricService;
@@ -27,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isSignUp = false;
   bool _obscurePassword = true;
   String? _errorMessage;
-  
+
   // Biometric state
   bool _biometricAvailable = false;
   bool _biometricEnabled = false;
@@ -38,6 +46,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) return;
+      setState(() => _errorMessage = null);
+    });
     _authService = AuthService();
     _biometricService = BiometricService();
     _initializeBiometric();
@@ -45,31 +58,35 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _initializeBiometric() async {
     debugPrint('🔐 Initializing biometric...');
-    
+
     // Check biometric availability
     _biometricAvailable = await _biometricService.isBiometricAvailable();
     _biometricEnabled = await _biometricService.isBiometricEnabled();
     _biometricTypeName = await _biometricService.getBiometricTypeName();
     _lastUserEmail = await _biometricService.getLastUserEmail();
-    
+
     // Check if we have stored credentials
     final hasCredentials = await _biometricService.hasStoredCredentials();
-    
-    debugPrint('🔐 Biometric init: available=$_biometricAvailable, enabled=$_biometricEnabled, hasCredentials=$hasCredentials, lastEmail=$_lastUserEmail');
-    
+
+    debugPrint(
+        '🔐 Biometric init: available=$_biometricAvailable, enabled=$_biometricEnabled, hasCredentials=$hasCredentials, lastEmail=$_lastUserEmail');
+
     if (mounted) {
       setState(() {
         // Show biometric option if available, enabled, AND we have stored credentials
-        _showBiometricOption = _biometricAvailable && _biometricEnabled && hasCredentials && _lastUserEmail != null;
-        
+        _showBiometricOption = _biometricAvailable &&
+            _biometricEnabled &&
+            hasCredentials &&
+            _lastUserEmail != null;
+
         // Pre-fill email if we have it
         if (_lastUserEmail != null && _emailController.text.isEmpty) {
           _emailController.text = _lastUserEmail!;
         }
       });
-      
+
       debugPrint('🔐 Show biometric option: $_showBiometricOption');
-      
+
       // Auto-trigger biometric if available (with slight delay for UI to render)
       if (_showBiometricOption) {
         Future.delayed(const Duration(milliseconds: 800), () {
@@ -83,10 +100,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
+
+  // ============ VALIDATION ============
 
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) {
@@ -109,9 +130,26 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
+  String? _validatePhone(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please enter your phone number';
+    }
+    // Remove spaces and dashes for validation
+    final cleaned = value.replaceAll(RegExp(r'[\s\-]'), '');
+    if (cleaned.length < 10 || cleaned.length > 11) {
+      return 'Please enter a valid phone number';
+    }
+    if (!RegExp(r'^\d+$').hasMatch(cleaned)) {
+      return 'Phone number should contain only digits';
+    }
+    return null;
+  }
+
+  // ============ BIOMETRIC AUTH ============
+
   Future<void> _authenticateWithBiometric() async {
     debugPrint('🔐 Starting biometric authentication flow...');
-    
+
     if (!_biometricAvailable || !_biometricEnabled) {
       debugPrint('❌ Biometric not available or not enabled');
       return;
@@ -135,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final credentials = await _biometricService.getStoredCredentials();
-      
+
       if (credentials == null) {
         debugPrint('❌ No stored credentials found');
         if (!mounted) return;
@@ -145,7 +183,8 @@ class _LoginScreenState extends State<LoginScreen> {
             content: const Text('Please sign in with your password'),
             backgroundColor: AppColors.warning,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
         return;
@@ -168,7 +207,8 @@ class _LoginScreenState extends State<LoginScreen> {
         debugPrint('❌ Sign in failed: ${result.error}');
         setState(() {
           _isLoading = false;
-          _errorMessage = result.error ?? 'Sign in failed. Please try with password.';
+          _errorMessage =
+              result.error ?? 'Sign in failed. Please try with password.';
         });
         // Clear stored credentials if they're invalid (e.g., password changed)
         await _biometricService.clearStoredCredentials();
@@ -189,6 +229,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ============ NAVIGATION ============
+
   Future<void> _navigateAfterAuth() async {
     try {
       final profile = await _authService.getUserProfile();
@@ -204,9 +246,10 @@ class _LoginScreenState extends State<LoginScreen> {
           context.go('/account-type');
         }
       } else {
-        final accountType = (profile['accountType'] ?? 'tenant').toString().toLowerCase();
+        final accountType =
+            (profile['accountType'] ?? 'tenant').toString().toLowerCase();
         debugPrint('🏠 Routing to home for: $accountType');
-        
+
         switch (accountType) {
           case 'landlord':
             context.go('/landlord/home');
@@ -226,10 +269,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  // ============ EMAIL SUBMIT ============
+
+  Future<void> _submitEmail() async {
     setState(() => _errorMessage = null);
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_emailFormKey.currentState!.validate()) return;
 
     final focusScope = FocusScope.of(context);
     focusScope.unfocus();
@@ -260,10 +305,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result.success) {
       // Save email for display
       await _biometricService.setLastUserEmail(email);
-      
+
       // Mark onboarding as completed (user has now logged in)
       await _biometricService.setOnboardingCompleted();
-      
+
       // Handle biometric setup
       if (_biometricAvailable) {
         if (!_biometricEnabled) {
@@ -299,35 +344,75 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<bool> _showBiometricEnableDialog() async {
-    final biometricName = await _biometricService.getBiometricTypeName();
-    
-    if (!mounted) return false;
+  // ============ PHONE SUBMIT ============
 
-    final enable = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Enable $biometricName Login?'),
-        content: Text(
-          'Would you like to use $biometricName for faster sign-in next time?',
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Not Now', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Enable', style: TextStyle(color: AppColors.primary)),
-          ),
-        ],
-      ),
-    );
+  Future<void> _submitPhone() async {
+    setState(() => _errorMessage = null);
 
-    return enable ?? false;
+    if (!_phoneFormKey.currentState!.validate()) return;
+
+    final focusScope = FocusScope.of(context);
+    focusScope.unfocus();
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    setState(() => _isLoading = true);
+
+    // Format phone number with country code
+    String phone = _phoneController.text.trim().replaceAll(RegExp(r'[\s\-]'), '');
+    // Remove leading 0 if present
+    if (phone.startsWith('0')) {
+      phone = phone.substring(1);
+    }
+    final fullPhone = '+234$phone';
+
+    debugPrint('📱 Sending OTP to: $fullPhone');
+
+    final result = await _authService.sendOtp(phoneNumber: fullPhone);
+
+    if (!mounted) return;
+
+    if (result.success) {
+      if (result.autoVerified && result.credential != null) {
+        // Auto-verified — sign in directly
+        debugPrint('✅ Auto-verified, signing in...');
+        final authResult =
+            await _authService.signInWithCredential(result.credential!);
+
+        if (!mounted) return;
+
+        if (authResult.success) {
+          await _biometricService.setOnboardingCompleted();
+          if (!mounted) return;
+          if (authResult.isNewUser) {
+            setState(() => _isLoading = false);
+            context.go('/account-type');
+          } else {
+            await _navigateAfterAuth();
+          }
+        } else {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = authResult.error;
+          });
+        }
+      } else {
+        // Code sent — navigate to OTP screen
+        setState(() => _isLoading = false);
+        if (!mounted) return;
+        context.push('/otp', extra: {
+          'phoneNumber': fullPhone,
+          'verificationId': result.verificationId,
+        });
+      }
+    } else {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = result.error;
+      });
+    }
   }
+
+  // ============ FORGOT PASSWORD ============
 
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
@@ -356,15 +441,53 @@ class _LoginScreenState extends State<LoginScreen> {
           content: Text('Password reset email sent to $email'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     } else {
       setState(
-        () => _errorMessage = 'Failed to send reset email. Please check your email address.',
+        () => _errorMessage =
+            'Failed to send reset email. Please check your email address.',
       );
     }
   }
+
+  // ============ BIOMETRIC DIALOG ============
+
+  Future<bool> _showBiometricEnableDialog() async {
+    final biometricName = await _biometricService.getBiometricTypeName();
+
+    if (!mounted) return false;
+
+    final enable = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Enable $biometricName Login?'),
+        content: Text(
+          'Would you like to use $biometricName for faster sign-in next time?',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Not Now',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child:
+                Text('Enable', style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+
+    return enable ?? false;
+  }
+
+  // ============ BUILD ============
 
   @override
   Widget build(BuildContext context) {
@@ -373,300 +496,463 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 40),
 
-                // Logo / App name
-                Center(
-                  child: Column(
+              // Logo / App name
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(
+                        Icons.home_rounded,
+                        size: 40,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      AppStrings.appName,
+                      style: AppTextStyles.h2.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      AppStrings.tagline,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 36),
+
+              // Welcome text
+              Text(
+                _isSignUp ? 'Create Account' : 'Welcome Back',
+                style: AppTextStyles.h3,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _isSignUp
+                    ? 'Sign up to get started with ClearRent'
+                    : 'Sign in to continue to ClearRent',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Error message
+              if (_errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withAlpha(26),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.error.withAlpha(77)),
+                  ),
+                  child: Row(
                     children: [
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(
-                          Icons.home_rounded,
-                          size: 40,
-                          color: Colors.white,
-                        ),
+                      Icon(
+                        Icons.error_outline,
+                        color: AppColors.error,
+                        size: 20,
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        AppStrings.appName,
-                        style: AppTextStyles.h2.copyWith(
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        AppStrings.tagline,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.error,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+              ],
 
-                const SizedBox(height: 48),
-
-                // Welcome text
-                Text(
-                  _isSignUp ? 'Create Account' : 'Welcome Back',
-                  style: AppTextStyles.h3,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _isSignUp
-                      ? 'Sign up to get started with ClearRent'
-                      : 'Sign in to continue to ClearRent',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Error message
-                if (_errorMessage != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
+              // Biometric quick login button (for returning users — only on email tab)
+              if (_showBiometricOption && !_isSignUp && _tabController.index == 0) ...[
+                GestureDetector(
+                  onTap: _isLoading ? null : _authenticateWithBiometric,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withAlpha(26),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.error.withAlpha(77)),
+                      color: AppColors.primary.withAlpha(13),
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: AppColors.primary.withAlpha(51)),
                     ),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.error_outline,
-                          color: AppColors.error,
-                          size: 20,
+                          _biometricTypeName == 'Face ID'
+                              ? Icons.face
+                              : Icons.fingerprint,
+                          color: AppColors.primary,
+                          size: 28,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.error,
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Sign in with $_biometricTypeName',
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: AppColors.primary,
+                              ),
                             ),
-                          ),
+                            Text(
+                              _lastUserEmail ?? '',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
+                ),
 
-                // Biometric quick login button (for returning users)
-                if (_showBiometricOption && !_isSignUp) ...[
-                  GestureDetector(
-                    onTap: _isLoading ? null : _authenticateWithBiometric,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withAlpha(13),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.primary.withAlpha(51)),
+                const SizedBox(height: 20),
+
+                // Divider
+                Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'or use password',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textHint,
+                        ),
                       ),
+                    ),
+                    const Expanded(child: Divider()),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+              ],
+
+              // ============ TAB BAR ============
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.shadowLight,
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: AppColors.textPrimary,
+                  unselectedLabelColor: AppColors.textSecondary,
+                  labelStyle: AppTextStyles.labelLarge,
+                  unselectedLabelStyle: AppTextStyles.labelMedium,
+                  tabs: const [
+                    Tab(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            _biometricTypeName == 'Face ID' 
-                                ? Icons.face 
-                                : Icons.fingerprint,
-                            color: AppColors.primary,
-                            size: 28,
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Sign in with $_biometricTypeName',
-                                style: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                              Text(
-                                _lastUserEmail ?? '',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
+                          Icon(Icons.email_outlined, size: 18),
+                          SizedBox(width: 6),
+                          Text('Email'),
                         ],
                       ),
                     ),
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Divider
-                  Row(
-                    children: [
-                      const Expanded(child: Divider()),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'or use password',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textHint,
-                          ),
-                        ),
+                    Tab(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.phone_outlined, size: 18),
+                          SizedBox(width: 6),
+                          Text('Phone'),
+                        ],
                       ),
-                      const Expanded(child: Divider()),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 24),
-                ],
-
-                // Email input
-                AppTextField(
-                  label: 'Email Address',
-                  hint: 'you@example.com',
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  validator: _validateEmail,
-                  prefixIcon: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(
-                      Icons.email_outlined,
-                      color: AppColors.textHint,
                     ),
-                  ),
+                  ],
                 ),
+              ),
 
-                const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
-                // Password input
-                AppTextField(
-                  label: 'Password',
-                  hint: _isSignUp ? 'At least 6 characters' : 'Enter your password',
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.done,
-                  validator: _validatePassword,
-                  onSubmitted: (_) => _submit(),
-                  prefixIcon: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(Icons.lock_outlined, color: AppColors.textHint),
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      color: AppColors.textHint,
+              // ============ TAB CONTENT ============
+              // We use AnimatedBuilder instead of TabBarView to avoid
+              // nested scroll issues inside SingleChildScrollView
+              AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, _) {
+                  if (_tabController.index == 0) {
+                    return _buildEmailTab();
+                  } else {
+                    return _buildPhoneTab();
+                  }
+                },
+              ),
+
+              const SizedBox(height: 24),
+
+              // Toggle sign up / sign in
+              Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isSignUp
+                          ? 'Already have an account? '
+                          : "Don't have an account? ",
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-                    onPressed: () {
-                      setState(() => _obscurePassword = !_obscurePassword);
-                    },
-                  ),
-                ),
-
-                // Forgot password (only for sign in)
-                if (!_isSignUp) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _isLoading ? null : _forgotPassword,
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _isSignUp = !_isSignUp;
+                          _errorMessage = null;
+                        });
+                      },
                       child: Text(
-                        'Forgot Password?',
-                        style: AppTextStyles.labelMedium.copyWith(
+                        _isSignUp ? 'Sign In' : 'Sign Up',
+                        style: AppTextStyles.labelLarge.copyWith(
                           color: AppColors.primary,
                         ),
                       ),
                     ),
-                  ),
-                ],
-
-                const SizedBox(height: 24),
-
-                // Submit button
-                AppButton(
-                  text: _isSignUp ? 'Create Account' : 'Sign In',
-                  onPressed: _submit,
-                  isLoading: _isLoading,
+                  ],
                 ),
+              ),
 
-                const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-                // Toggle sign up / sign in
-                Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+              // Terms text
+              Center(
+                child: Text.rich(
+                  TextSpan(
+                    text: 'By continuing, you agree to our ',
+                    style: AppTextStyles.caption,
                     children: [
-                      Text(
-                        _isSignUp
-                            ? 'Already have an account? '
-                            : "Don't have an account? ",
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
+                      TextSpan(
+                        text: 'Terms of Service',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _isSignUp = !_isSignUp;
-                            _errorMessage = null;
-                          });
-                        },
-                        child: Text(
-                          _isSignUp ? 'Sign In' : 'Sign Up',
-                          style: AppTextStyles.labelLarge.copyWith(
-                            color: AppColors.primary,
-                          ),
+                      const TextSpan(text: ' and '),
+                      TextSpan(
+                        text: 'Privacy Policy',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
+                  textAlign: TextAlign.center,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-                const SizedBox(height: 24),
+  // ============ EMAIL TAB ============
 
-                // Terms text
-                Center(
-                  child: Text.rich(
-                    TextSpan(
-                      text: 'By continuing, you agree to our ',
-                      style: AppTextStyles.caption,
-                      children: [
-                        TextSpan(
-                          text: 'Terms of Service',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const TextSpan(text: ' and '),
-                        TextSpan(
-                          text: 'Privacy Policy',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+  Widget _buildEmailTab() {
+    return Form(
+      key: _emailFormKey,
+      child: Column(
+        children: [
+          // Email input
+          AppTextField(
+            label: 'Email Address',
+            hint: 'you@example.com',
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            validator: _validateEmail,
+            prefixIcon: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(
+                Icons.email_outlined,
+                color: AppColors.textHint,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Password input
+          AppTextField(
+            label: 'Password',
+            hint: _isSignUp ? 'At least 6 characters' : 'Enter your password',
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            validator: _validatePassword,
+            onSubmitted: (_) => _submitEmail(),
+            prefixIcon: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child:
+                  Icon(Icons.lock_outlined, color: AppColors.textHint),
+            ),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_off
+                    : Icons.visibility,
+                color: AppColors.textHint,
+              ),
+              onPressed: () {
+                setState(() => _obscurePassword = !_obscurePassword);
+              },
+            ),
+          ),
+
+          // Forgot password (only for sign in)
+          if (!_isSignUp) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isLoading ? null : _forgotPassword,
+                child: Text(
+                  'Forgot Password?',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // Submit button
+          AppButton(
+            text: _isSignUp ? 'Create Account' : 'Sign In',
+            onPressed: _submitEmail,
+            isLoading: _isLoading,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============ PHONE TAB ============
+
+  Widget _buildPhoneTab() {
+    return Form(
+      key: _phoneFormKey,
+      child: Column(
+        children: [
+          // Phone input with +234 prefix
+          AppTextField(
+            label: 'Phone Number',
+            hint: '8012345678',
+            controller: _phoneController,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.done,
+            validator: _validatePhone,
+            onSubmitted: (_) => _submitPhone(),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '🇳🇬',
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '+234',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
                     ),
-                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 1,
+                    height: 24,
+                    color: AppColors.border,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Info text
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.info.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: AppColors.info, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isSignUp
+                        ? 'We\'ll send a verification code to this number to create your account.'
+                        : 'We\'ll send a verification code to this number to sign you in.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.info,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        ),
+
+          const SizedBox(height: 24),
+
+          // Submit button
+          AppButton(
+            text: _isSignUp ? 'Send Verification Code' : 'Send Code',
+            onPressed: _submitPhone,
+            isLoading: _isLoading,
+          ),
+        ],
       ),
     );
   }

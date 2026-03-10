@@ -131,7 +131,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
@@ -157,7 +157,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.photo_library, color: AppColors.primary),
+                child: Icon(Icons.photo_library, color: AppColors.primary),
               ),
               title: Text('Choose from Gallery', style: AppTextStyles.labelLarge),
               subtitle: Text('Select a screenshot from your photos', style: AppTextStyles.caption),
@@ -175,7 +175,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                   color: AppColors.info.withAlpha(26),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.camera_alt, color: AppColors.info),
+                child: Icon(Icons.camera_alt, color: AppColors.info),
               ),
               title: Text('Take a Photo', style: AppTextStyles.labelLarge),
               subtitle: Text('Capture your payment confirmation', style: AppTextStyles.caption),
@@ -281,7 +281,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                 color: AppColors.success.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check_circle, color: AppColors.success, size: 48),
+              child: Icon(Icons.check_circle, color: AppColors.success, size: 48),
             ),
             const SizedBox(height: 24),
             Text('Request Submitted!', style: AppTextStyles.h3, textAlign: TextAlign.center),
@@ -302,7 +302,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.calendar_today, size: 16, color: AppColors.textSecondary),
+                      Icon(Icons.calendar_today, size: 16, color: AppColors.textSecondary),
                       const SizedBox(width: 8),
                       Text(_formattedDate, style: AppTextStyles.labelMedium),
                     ],
@@ -310,7 +310,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
+                      Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
                       const SizedBox(width: 8),
                       Text(_formattedTime, style: AppTextStyles.labelMedium),
                     ],
@@ -327,7 +327,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 20, color: AppColors.info),
+                  Icon(Icons.info_outline, size: 20, color: AppColors.info),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -399,7 +399,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
     
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -474,7 +474,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.receipt_long, size: 18, color: AppColors.textSecondary),
+            Icon(Icons.receipt_long, size: 18, color: AppColors.textSecondary),
             const SizedBox(width: 8),
             Text('Fee Breakdown', style: AppTextStyles.labelMedium),
           ]),
@@ -534,8 +534,8 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                     onTap: _showImageSourceDialog,
                     child: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 4)]),
-                      child: const Icon(Icons.edit, size: 18, color: AppColors.primary),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: AppColors.shadowMedium, blurRadius: 4)]),
+                      child: Icon(Icons.edit, size: 18, color: AppColors.primary),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -543,8 +543,8 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                     onTap: () => setState(() { _paymentProofFile = null; _uploadedProofUrl = null; }),
                     child: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 4)]),
-                      child: const Icon(Icons.close, size: 18, color: AppColors.error),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: AppColors.shadowMedium, blurRadius: 4)]),
+                      child: Icon(Icons.close, size: 18, color: AppColors.error),
                     ),
                   ),
                 ]),
@@ -578,7 +578,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                 Container(
                   width: 56, height: 56,
                   decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), shape: BoxShape.circle),
-                  child: const Icon(Icons.cloud_upload_outlined, color: AppColors.primary, size: 28),
+                  child: Icon(Icons.cloud_upload_outlined, color: AppColors.primary, size: 28),
                 ),
                 const SizedBox(height: 12),
                 Text('Tap to upload screenshot', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
@@ -603,7 +603,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.lightbulb_outline, size: 18, color: AppColors.warning),
+            Icon(Icons.lightbulb_outline, size: 18, color: AppColors.warning),
             const SizedBox(width: 8),
             Text('Important', style: AppTextStyles.labelMedium.copyWith(color: AppColors.warning)),
           ]),
@@ -621,7 +621,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(margin: const EdgeInsets.only(top: 6), width: 4, height: 4, decoration: const BoxDecoration(color: AppColors.textSecondary, shape: BoxShape.circle)),
+        Container(margin: const EdgeInsets.only(top: 6), width: 4, height: 4, decoration: BoxDecoration(color: AppColors.textSecondary, shape: BoxShape.circle)),
         const SizedBox(width: 8),
         Expanded(child: Text(text, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary))),
       ]),

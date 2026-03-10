@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -260,7 +261,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Verification Center - ${_getUserTypeLabel()}',
@@ -268,7 +269,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _buildContent(),
     );
   }
@@ -293,7 +294,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 120, height: 120,
             decoration: BoxDecoration(color: AppColors.successLight, shape: BoxShape.circle),
-            child: const Icon(Icons.verified, size: 60, color: AppColors.success),
+            child: Icon(Icons.verified, size: 60, color: AppColors.success),
           ),
           const SizedBox(height: 24),
           Text('You\'re a verified ${_getUserTypeLabel()}!', style: AppTextStyles.h2),
@@ -318,7 +319,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 120, height: 120,
             decoration: BoxDecoration(color: AppColors.warningLight, shape: BoxShape.circle),
-            child: const Icon(Icons.schedule, size: 60, color: AppColors.warning),
+            child: Icon(Icons.schedule, size: 60, color: AppColors.warning),
           ),
           const SizedBox(height: 24),
           Text('Verification Pending', style: AppTextStyles.h2),
@@ -363,7 +364,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 120, height: 120,
             decoration: BoxDecoration(color: AppColors.error.withAlpha(26), shape: BoxShape.circle),
-            child: const Icon(Icons.error_outline, size: 60, color: AppColors.error),
+            child: Icon(Icons.error_outline, size: 60, color: AppColors.error),
           ),
           const SizedBox(height: 24),
           Text('Verification Failed', style: AppTextStyles.h2),
@@ -383,7 +384,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, color: AppColors.error, size: 20),
+                  Icon(Icons.info_outline, color: AppColors.error, size: 20),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -478,7 +479,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                     color: AppColors.primary.withAlpha(26),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
+                  child: Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -489,7 +490,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                           style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
                       const SizedBox(height: 4),
                       Text(_verificationFeeLabel,
-                          style: AppTextStyles.h3.copyWith(color: AppColors.primary)),
+                          style: AppTextStyles.h3.copyWith(color: AppColors.primary, fontFamily: 'Roboto')),
                     ],
                   ),
                 ),
@@ -570,7 +571,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 40, height: 40,
             decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), borderRadius: BorderRadius.circular(10)),
-            child: const Icon(Icons.verified_user_outlined, color: AppColors.primary, size: 20),
+            child: Icon(Icons.verified_user_outlined, color: AppColors.primary, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -596,7 +597,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(8)),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline, size: 16, color: AppColors.textHint),
+          Icon(Icons.lock_outline, size: 16, color: AppColors.textHint),
           const SizedBox(width: 8),
           Expanded(
             child: Text('Your documents are securely stored and only used for verification.',
@@ -841,7 +842,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             Container(
               width: 40, height: 40,
               decoration: BoxDecoration(color: AppColors.info.withAlpha(26), borderRadius: BorderRadius.circular(10)),
-              child: const Icon(Icons.people_outline, color: AppColors.info, size: 20),
+              child: Icon(Icons.people_outline, color: AppColors.info, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -862,7 +863,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline, size: 16, color: AppColors.info),
+                Icon(Icons.info_outline, size: 16, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('Your guarantor should be someone with a stable job or business who knows you personally.',
@@ -875,8 +876,17 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           _buildTextField(controller: _guarantorNameController, label: 'Guarantor\'s Full Name',
               hint: 'Enter their full name', icon: Icons.person_outline),
           const SizedBox(height: 12),
-          _buildTextField(controller: _guarantorPhoneController, label: 'Guarantor\'s Phone Number',
-              hint: '08012345678', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
+          _buildTextField(
+            controller: _guarantorPhoneController,
+            label: 'Guarantor\'s Phone Number',
+            hint: '08012345678',
+            icon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(11),
+            ],
+          ),
           const SizedBox(height: 12),
           _buildTextField(controller: _guarantorAddressController, label: 'Guarantor\'s Address',
               hint: 'Enter their home or work address', icon: Icons.location_on_outlined, maxLines: 2),
@@ -897,6 +907,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     required TextEditingController controller, required String label,
     required String hint, required IconData icon,
     TextInputType? keyboardType, int maxLines = 1,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -905,6 +916,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         const SizedBox(height: 8),
         TextField(
           controller: controller, keyboardType: keyboardType, maxLines: maxLines,
+          textCapitalization: keyboardType == TextInputType.phone ? TextCapitalization.none : TextCapitalization.words,
+          inputFormatters: inputFormatters,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
@@ -1011,14 +1024,14 @@ class _DocumentUploadCard extends StatelessWidget {
                   child: Container(
                     width: 32, height: 32,
                     decoration: BoxDecoration(color: AppColors.error.withAlpha(26), borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(Icons.close, size: 18, color: AppColors.error),
+                    child: Icon(Icons.close, size: 18, color: AppColors.error),
                   ),
                 )
               else
                 Container(
                   width: 32, height: 32,
                   decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.add, size: 18, color: AppColors.primary),
+                  child: Icon(Icons.add, size: 18, color: AppColors.primary),
                 ),
             ]),
             if (!hasFile && !compact) ...[
@@ -1031,7 +1044,7 @@ class _DocumentUploadCard extends StatelessWidget {
                   children: [
                     Icon(Icons.lightbulb_outline, size: 14, color: AppColors.info),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(whatWeNeed, style: AppTextStyles.caption.copyWith(color: AppColors.info))),
+                    Expanded(child: Text(whatWeNeed, style: AppTextStyles.caption.copyWith(color: AppColors.info, fontFamily: 'Roboto'))),
                   ],
                 ),
               ),

@@ -200,14 +200,14 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Bank Details', style: AppTextStyles.h4),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -231,7 +231,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                             color: AppColors.primary.withAlpha(26),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.account_balance,
                             color: AppColors.primary,
                             size: 22,

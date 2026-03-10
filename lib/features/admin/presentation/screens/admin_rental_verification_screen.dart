@@ -28,7 +28,7 @@ class _AdminRentalVerificationScreenState
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Rental Payment Verification', style: AppTextStyles.h4),
@@ -38,7 +38,7 @@ class _AdminRentalVerificationScreenState
         stream: _rentalInterestService.getPendingRentalVerifications(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return Center(
                 child: CircularProgressIndicator(color: AppColors.primary));
           }
 
@@ -51,7 +51,7 @@ class _AdminRentalVerificationScreenState
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline,
+                    Icon(Icons.error_outline,
                         size: 48, color: AppColors.error),
                     const SizedBox(height: 16),
                     Text('Error loading verifications',
@@ -82,7 +82,7 @@ class _AdminRentalVerificationScreenState
                       decoration: BoxDecoration(
                           color: AppColors.success.withAlpha(26),
                           shape: BoxShape.circle),
-                      child: const Icon(Icons.check_circle_outline,
+                      child: Icon(Icons.check_circle_outline,
                           size: 40, color: AppColors.success),
                     ),
                     const SizedBox(height: 24),
@@ -156,7 +156,7 @@ class _VerificationCardState extends State<_VerificationCard> {
             // Header
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: AppColors.primary,
                 borderRadius: BorderRadius.vertical(
                     top: Radius.circular(16)),
@@ -189,12 +189,12 @@ class _VerificationCardState extends State<_VerificationCard> {
                 child: CachedNetworkImage(
                   imageUrl: receiptUrl,
                   fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
+                  placeholder: (_, __) => Center(
                       child: Padding(
                           padding: EdgeInsets.all(32),
                           child: CircularProgressIndicator(
                               color: AppColors.primary))),
-                  errorWidget: (_, __, ___) => const Center(
+                  errorWidget: (_, __, ___) => Center(
                       child: Padding(
                           padding: EdgeInsets.all(32),
                           child: Column(
@@ -296,7 +296,7 @@ class _VerificationCardState extends State<_VerificationCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.warning_amber_rounded,
+                  Icon(Icons.warning_amber_rounded,
                       size: 20, color: AppColors.warning),
                   const SizedBox(width: 8),
                   Expanded(
@@ -371,7 +371,7 @@ class _VerificationCardState extends State<_VerificationCard> {
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide:
-                        const BorderSide(color: AppColors.border)),
+                        BorderSide(color: AppColors.border)),
               ),
             ),
           ],
@@ -459,7 +459,7 @@ class _VerificationCardState extends State<_VerificationCard> {
             child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.home_outlined,
+                  Icon(Icons.home_outlined,
                       size: 16, color: AppColors.primary),
                   const SizedBox(width: 6),
                   Text('RENTAL PAYMENT',
@@ -477,7 +477,7 @@ class _VerificationCardState extends State<_VerificationCard> {
               overflow: TextOverflow.ellipsis),
           const SizedBox(height: 4),
           Row(children: [
-            const Icon(Icons.location_on_outlined,
+            Icon(Icons.location_on_outlined,
                 size: 14, color: AppColors.textSecondary),
             const SizedBox(width: 4),
             Expanded(
@@ -548,7 +548,7 @@ class _VerificationCardState extends State<_VerificationCard> {
                     foregroundColor: AppColors.primary,
                     padding: const EdgeInsets.symmetric(
                         vertical: 12),
-                    side: const BorderSide(
+                    side: BorderSide(
                         color: AppColors.primary),
                     shape: RoundedRectangleBorder(
                         borderRadius:
@@ -573,7 +573,7 @@ class _VerificationCardState extends State<_VerificationCard> {
                     foregroundColor: AppColors.error,
                     padding: const EdgeInsets.symmetric(
                         vertical: 12),
-                    side: const BorderSide(
+                    side: BorderSide(
                         color: AppColors.error),
                     shape: RoundedRectangleBorder(
                         borderRadius:

@@ -49,7 +49,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Inspection Requests', style: AppTextStyles.h4),
@@ -93,7 +93,7 @@ class _LandlordPendingTab extends StatelessWidget {
       stream: inspectionService.getLandlordRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -199,7 +199,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
                     fillColor: AppColors.background,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                   ),
                 ),
@@ -311,7 +311,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.warning_amber_rounded,
                     color: AppColors.warning,
                     size: 20,
@@ -429,7 +429,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.calendar_today_outlined,
                   size: 18,
                   color: AppColors.primary,
@@ -470,7 +470,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.note_outlined,
                     size: 16,
                     color: AppColors.textSecondary,
@@ -498,7 +498,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
                   onPressed: _isLoading ? null : _decline,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -540,7 +540,7 @@ class _LandlordUpcomingTab extends StatelessWidget {
       stream: inspectionService.getLandlordRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -679,7 +679,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text(
+                child: Text(
                   'Yes, I\'m Here',
                   style: TextStyle(color: AppColors.primary),
                 ),
@@ -812,7 +812,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.support_agent,
                         size: 16,
                         color: AppColors.success,
@@ -867,7 +867,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.access_time,
                           size: 14,
                           color: AppColors.textSecondary,
@@ -884,7 +884,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.location_on_outlined,
                           size: 14,
                           color: AppColors.textSecondary,
@@ -948,7 +948,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     color: AppColors.success.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.phone,
                     color: AppColors.success,
                     size: 18,
@@ -976,7 +976,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.person_pin_circle,
                         size: 18,
                         color: AppColors.info,
@@ -1037,7 +1037,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.check_circle,
                       size: 18,
                       color: AppColors.success,
@@ -1079,7 +1079,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                 CircleAvatar(
                   radius: 18,
                   backgroundColor: AppColors.success.withAlpha(26),
-                  child: const Icon(
+                  child: Icon(
                     Icons.support_agent,
                     size: 18,
                     color: AppColors.success,
@@ -1115,7 +1115,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                         color: AppColors.success.withAlpha(26),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.phone,
                         color: AppColors.success,
                         size: 18,
@@ -1132,7 +1132,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                 onPressed: _isLoading ? null : _markComplete,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1185,7 +1185,7 @@ class _LandlordHistoryTab extends StatelessWidget {
       stream: inspectionService.getLandlordRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -1263,7 +1263,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         });
       }
     } catch (e) {
-      developer.log('âŒ Error loading interest: $e', name: 'LandlordHistory');
+      developer.log('❌ Error loading interest: $e', name: 'LandlordHistory');
       if (mounted) setState(() => _isLoadingInterest = false);
     }
   }
@@ -1279,7 +1279,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
           (ctx) => AlertDialog(
             title: Row(
               children: [
-                const Icon(Icons.celebration, color: AppColors.success),
+                Icon(Icons.celebration, color: AppColors.success),
                 const SizedBox(width: 8),
                 const Text('Accept Rental'),
               ],
@@ -1308,7 +1308,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Payment of â‚¦${_formatAmount(interest.paymentAmount)} verified.',
+                        'Payment of ₦${_formatAmount(interest.paymentAmount)} verified.',
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.success,
                         ),
@@ -1326,7 +1326,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.info_outline,
                         size: 18,
                         color: AppColors.success,
@@ -1432,7 +1432,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         );
       }
     } catch (e) {
-      developer.log('âŒ Accept error: $e', name: 'LandlordHistory');
+      developer.log('❌ Accept error: $e', name: 'LandlordHistory');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1465,7 +1465,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                 (ctx, setDialogState) => AlertDialog(
                   title: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.description_outlined,
                         color: AppColors.info,
                       ),
@@ -1498,7 +1498,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.check_circle,
                                 color: AppColors.success,
                                 size: 20,
@@ -1517,7 +1517,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                                     () => setDialogState(
                                       () => uploadedUrl = null,
                                     ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.close,
                                   size: 18,
                                   color: AppColors.textHint,
@@ -1565,7 +1565,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                                     },
                             icon:
                                 isUploading
-                                    ? const SizedBox(
+                                    ? SizedBox(
                                       width: 18,
                                       height: 18,
                                       child: CircularProgressIndicator(
@@ -1579,7 +1579,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                             ),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              side: const BorderSide(color: AppColors.primary),
+                              side: BorderSide(color: AppColors.primary),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
@@ -1687,7 +1687,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.lock, size: 20, color: AppColors.success),
+                  Icon(Icons.lock, size: 20, color: AppColors.success),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -1827,7 +1827,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                 ),
                 if (r.tenantReview != null && r.tenantReview!.isNotEmpty) ...[
                   const SizedBox(width: 8),
-                  const Icon(
+                  Icon(
                     Icons.chat_bubble_outline,
                     size: 14,
                     color: AppColors.textHint,
@@ -1862,7 +1862,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.hourglass_top,
                   size: 16,
                   color: AppColors.textHint,
@@ -1887,7 +1887,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
           // Loading indicator
           if (r.isCompleted && _isLoadingInterest) ...[
             const SizedBox(height: 12),
-            const Center(
+            Center(
               child: SizedBox(
                 width: 20,
                 height: 20,
@@ -2023,7 +2023,7 @@ Widget _placeholderBox(double size) => Container(
   width: size,
   height: size,
   color: AppColors.background,
-  child: const Icon(Icons.home, color: AppColors.textHint),
+  child: Icon(Icons.home, color: AppColors.textHint),
 );
 
 Widget _messageButton({required bool loading, required VoidCallback onTap}) =>
@@ -2031,7 +2031,7 @@ Widget _messageButton({required bool loading, required VoidCallback onTap}) =>
       onPressed: loading ? null : onTap,
       icon:
           loading
-              ? const SizedBox(
+              ? SizedBox(
                 width: 34,
                 height: 34,
                 child: Padding(
@@ -2048,7 +2048,7 @@ Widget _messageButton({required bool loading, required VoidCallback onTap}) =>
                   color: AppColors.primary.withAlpha(26),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.chat_outlined,
                   color: AppColors.primary,
                   size: 18,

@@ -25,7 +25,7 @@ class _AdminPaymentVerificationScreenState extends State<AdminPaymentVerificatio
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text(
@@ -38,7 +38,7 @@ class _AdminPaymentVerificationScreenState extends State<AdminPaymentVerificatio
         stream: _inspectionService.getPendingVerificationRequests(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             );
           }
@@ -104,7 +104,7 @@ class _AdminPaymentVerificationScreenState extends State<AdminPaymentVerificatio
               color: AppColors.success.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.check_circle_outline,
               size: 50,
               color: AppColors.success,
@@ -336,7 +336,7 @@ class _AdminPaymentVerificationScreenState extends State<AdminPaymentVerificatio
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.receipt_long, color: AppColors.primary),
+                  Icon(Icons.receipt_long, color: AppColors.primary),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('Payment Proof', style: AppTextStyles.labelLarge),
@@ -362,7 +362,7 @@ class _AdminPaymentVerificationScreenState extends State<AdminPaymentVerificatio
                 child: CachedNetworkImage(
                   imageUrl: request.paymentProofUrl!,
                   fit: BoxFit.contain,
-                  placeholder: (context, url) => const Padding(
+                  placeholder: (context, url) => Padding(
                     padding: EdgeInsets.all(40),
                     child: CircularProgressIndicator(color: AppColors.primary),
                   ),
@@ -478,20 +478,20 @@ class _PaymentVerificationCard extends StatelessWidget {
                             width: 60,
                             height: 60,
                             color: AppColors.background,
-                            child: const Icon(Icons.home, color: AppColors.textHint),
+                            child: Icon(Icons.home, color: AppColors.textHint),
                           ),
                           errorWidget: (context, url, error) => Container(
                             width: 60,
                             height: 60,
                             color: AppColors.background,
-                            child: const Icon(Icons.home, color: AppColors.textHint),
+                            child: Icon(Icons.home, color: AppColors.textHint),
                           ),
                         )
                       : Container(
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: const Icon(Icons.home, color: AppColors.textHint),
+                          child: Icon(Icons.home, color: AppColors.textHint),
                         ),
                 ),
                 const SizedBox(width: 12),
@@ -647,7 +647,7 @@ class _PaymentVerificationCard extends StatelessWidget {
                     label: const Text('View Proof'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary),
+                      side: BorderSide(color: AppColors.primary),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -665,7 +665,7 @@ class _PaymentVerificationCard extends StatelessWidget {
                     label: const Text('Reject'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
+                      side: BorderSide(color: AppColors.error),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),

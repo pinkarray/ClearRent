@@ -115,7 +115,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
         elevation: 0,
         title: Text('Tenancy Requests', style: AppTextStyles.h4),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -123,7 +123,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
         stream: _linkService.tenantPendingLinksStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
+            return Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             );
           }
@@ -141,7 +141,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
                       color: AppColors.surface,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.inbox_outlined,
                       size: 48,
                       color: AppColors.textHint,
@@ -250,7 +250,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.home_outlined,
+                Icon(Icons.home_outlined,
                     size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(
@@ -275,7 +275,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline,
+                Icon(Icons.info_outline,
                     size: 14, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(

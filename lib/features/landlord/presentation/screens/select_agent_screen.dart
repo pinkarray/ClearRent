@@ -30,6 +30,9 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
   AgentModel? _selectedAgent;
   bool _isAssigning = false;
 
+  // Track whether we fell back to all agents (no local agents found)
+  bool _isShowingAllAgents = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,9 +47,13 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         agents = await _agentService.getAgentsByArea(widget.propertyCity!);
         if (agents.isEmpty) {
           agents = await _agentService.getVerifiedAgents();
+          _isShowingAllAgents = true;
+        } else {
+          _isShowingAllAgents = false;
         }
       } else {
         agents = await _agentService.getVerifiedAgents();
+        _isShowingAllAgents = true;
       }
       setState(() {
         _agents = agents;
@@ -109,7 +116,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                 color: AppColors.successLight,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check, size: 40, color: AppColors.success),
+              child: Icon(Icons.check, size: 40, color: AppColors.success),
             ),
             const SizedBox(height: 24),
             Text('Agent Assigned!', style: AppTextStyles.h3),
@@ -145,7 +152,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Select Agent', style: AppTextStyles.h4),
@@ -193,6 +200,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
   Widget _buildAgentList() {
     return Column(
       children: [
+        // Info banner
         Container(
           padding: const EdgeInsets.all(16),
           color: AppColors.surface,
@@ -202,9 +210,11 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  widget.propertyCity != null
-                      ? 'Showing agents available in ${widget.propertyCity}'
-                      : 'Showing all verified agents',
+                  _isShowingAllAgents
+                      ? widget.propertyCity != null
+                          ? 'No agents in ${widget.propertyCity} — showing all verified agents'
+                          : 'Showing all verified agents'
+                      : 'Showing agents available in ${widget.propertyCity}',
                   style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
                 ),
               ),
@@ -224,6 +234,17 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
 
   Widget _buildAgentCard(AgentModel agent) {
     final isSelected = _selectedAgentId == agent.id;
+
+    // Determine if this agent covers the property's city
+    final bool coversArea = widget.propertyCity != null &&
+        widget.propertyCity!.isNotEmpty &&
+        agent.serviceAreas.contains(widget.propertyCity);
+
+    // Only show the out-of-area badge when we have a city to compare against
+    final bool showOutOfAreaBadge = widget.propertyCity != null &&
+        widget.propertyCity!.isNotEmpty &&
+        !coversArea;
+
     final estimatedFee = _agentService.calculateInspectionFee(
       agentBaseLocation: agent.baseLocation,
       propertyCity: widget.propertyCity ?? '',
@@ -244,6 +265,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         ),
         child: Column(
           children: [
+            // Agent header row
             Row(
               children: [
                 Container(
@@ -253,7 +275,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                     color: AppColors.primary.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.support_agent, color: AppColors.primary, size: 28),
+                  child: Icon(Icons.support_agent, color: AppColors.primary, size: 28),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -272,7 +294,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          const Icon(Icons.verified, color: AppColors.primary, size: 18),
+                          Icon(Icons.verified, color: AppColors.primary, size: 18),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -280,7 +302,10 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                         children: [
                           Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
-                          Text(agent.baseLocation, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                          Text(
+                            agent.baseLocation,
+                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                          ),
                         ],
                       ),
                     ],
@@ -292,13 +317,20 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.star, size: 16, color: agent.totalRatings > 0 ? AppColors.warning : AppColors.textHint),
+                        Icon(
+                          Icons.star,
+                          size: 16,
+                          color: agent.totalRatings > 0 ? AppColors.warning : AppColors.textHint,
+                        ),
                         const SizedBox(width: 4),
                         Text(agent.ratingDisplay, style: AppTextStyles.labelMedium),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text('${agent.totalInspections} inspections', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                    Text(
+                      '${agent.totalInspections} inspections',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                    ),
                   ],
                 ),
                 if (isSelected) ...[
@@ -306,34 +338,79 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                   Container(
                     width: 24,
                     height: 24,
-                    decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
                     child: const Icon(Icons.check, color: Colors.white, size: 16),
                   ),
                 ],
               ],
             ),
+
             const SizedBox(height: 12),
+
+            // Service areas line
             Row(
               children: [
                 Text('Covers: ', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
                 Expanded(
                   child: Text(
-                    agent.serviceAreas.take(3).join(', ') + (agent.serviceAreas.length > 3 ? ' +${agent.serviceAreas.length - 3} more' : ''),
+                    agent.serviceAreas.take(3).join(', ') +
+                        (agent.serviceAreas.length > 3 ? ' +${agent.serviceAreas.length - 3} more' : ''),
                     style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
             ),
+
+            // Out-of-area warning badge
+            if (showOutOfAreaBadge) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(26),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withAlpha(77)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: AppColors.warning),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Doesn\'t cover ${widget.propertyCity} — may charge a higher fee',
+                        style: AppTextStyles.caption.copyWith(color: AppColors.warning),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 12),
+
+            // Estimated fee row
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: AppColors.infoLight, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(
+                color: AppColors.infoLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Estimated inspection fee', style: AppTextStyles.caption.copyWith(color: AppColors.info)),
-                  Text('₦${_formatAmount(estimatedFee)}', style: AppTextStyles.labelMedium.copyWith(color: AppColors.info, fontWeight: FontWeight.w600)),
+                  Text(
+                    'Estimated inspection fee',
+                    style: AppTextStyles.naira(AppTextStyles.caption.copyWith(color: AppColors.info)),
+                  ),
+                  Text(
+                    '₦${_formatAmount(estimatedFee)}',
+                    style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(
+                      color: AppColors.info,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -344,45 +421,98 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
   }
 
   Widget _buildBottomBar() {
+    // Check if the selected agent covers the property city
+    final bool selectedCoversArea = widget.propertyCity == null ||
+        widget.propertyCity!.isEmpty ||
+        (_selectedAgent?.serviceAreas.contains(widget.propertyCity) ?? false);
+
     return Container(
       padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        boxShadow: [BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 10, offset: const Offset(0, -5))],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 10, offset: const Offset(0, -5)),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Out-of-area confirmation notice in bottom bar
+          if (!selectedCoversArea) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.warning.withAlpha(77)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This agent is outside ${widget.propertyCity}. They may charge an additional travel fee.',
+                      style: AppTextStyles.caption.copyWith(color: AppColors.warning),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Selected agent summary
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: AppColors.primary.withAlpha(13), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Row(
               children: [
                 Container(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), shape: BoxShape.circle),
-                  child: const Icon(Icons.support_agent, color: AppColors.primary, size: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.support_agent, color: AppColors.primary, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_selectedAgent!.fullName, style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
-                      Text('Based in ${_selectedAgent!.baseLocation}', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                      Text(
+                        _selectedAgent!.fullName,
+                        style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+                      ),
+                      Text(
+                        'Based in ${_selectedAgent!.baseLocation}',
+                        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                      ),
                     ],
                   ),
                 ),
                 TextButton(
-                  onPressed: () => setState(() { _selectedAgentId = null; _selectedAgent = null; }),
+                  onPressed: () => setState(() {
+                    _selectedAgentId = null;
+                    _selectedAgent = null;
+                  }),
                   child: const Text('Change'),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          AppButton(text: 'Assign Agent', onPressed: _assignAgent, isLoading: _isAssigning),
+          AppButton(
+            text: 'Assign Agent',
+            onPressed: _assignAgent,
+            isLoading: _isAssigning,
+          ),
         ],
       ),
     );

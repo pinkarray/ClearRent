@@ -40,7 +40,7 @@ class _AdminAgentPayoutsScreenState extends State<AdminAgentPayoutsScreen>
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('Handler Payouts', style: AppTextStyles.h4),
+        title: Text('Handler Payouts', style: AppTextStyles.h4),
         bottom: TabBar(
           controller: _tabController,
           labelColor: AppColors.primary,
@@ -77,7 +77,7 @@ class _PendingPayoutsTab extends StatelessWidget {
       stream: inspectionService.getPendingAgentPayouts(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -151,7 +151,7 @@ class _PaidPayoutsTab extends StatelessWidget {
       stream: inspectionService.getPaidAgentPayouts(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -162,9 +162,9 @@ class _PaidPayoutsTab extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.history, size: 64, color: AppColors.textHint),
+                Icon(Icons.history, size: 64, color: AppColors.textHint),
                 const SizedBox(height: 16),
-                const Text('No Payment History', style: AppTextStyles.h4),
+                Text('No Payment History', style: AppTextStyles.h4),
                 const SizedBox(height: 8),
                 Text(
                   'Completed payouts will appear here.',
@@ -289,7 +289,7 @@ class _PayoutCardState extends State<_PayoutCard> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 16, color: AppColors.info),
+                  Icon(Icons.info_outline, size: 16, color: AppColors.info),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -485,7 +485,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                     color: AppColors.success.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.phone,
+                  child: Icon(Icons.phone,
                       color: AppColors.success, size: 16),
                 ),
                 tooltip: 'Call ${_isAgentHandled ? "agent" : "landlord"}',
@@ -499,7 +499,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                     color: AppColors.primary.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.sms,
+                  child: Icon(Icons.sms,
                       color: AppColors.primary, size: 16),
                 ),
                 tooltip: 'Text ${_isAgentHandled ? "agent" : "landlord"}',
@@ -516,7 +516,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SizedBox(
@@ -543,7 +543,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.account_balance,
+                      Icon(Icons.account_balance,
                           size: 16, color: AppColors.primary),
                       const SizedBox(width: 8),
                       Text('Bank Details',
@@ -597,7 +597,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                               ),
                             ),
                           ),
-                          const Icon(Icons.copy,
+                          Icon(Icons.copy,
                               size: 14, color: AppColors.primary),
                         ],
                       ),
@@ -612,7 +612,7 @@ class _PayoutCardState extends State<_PayoutCard> {
                               .isEmpty))
                     Row(
                       children: [
-                        const Icon(Icons.warning_amber,
+                        Icon(Icons.warning_amber,
                             size: 16, color: AppColors.warning),
                         const SizedBox(width: 8),
                         Expanded(
@@ -639,7 +639,7 @@ class _PayoutCardState extends State<_PayoutCard> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber,
+                  Icon(Icons.warning_amber,
                       size: 16, color: AppColors.warning),
                   const SizedBox(width: 8),
                   Expanded(
@@ -695,7 +695,7 @@ class _PayoutCardState extends State<_PayoutCard> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.check_circle,
+              Icon(Icons.check_circle,
                   size: 14, color: AppColors.success),
               const SizedBox(width: 6),
               Text(
@@ -766,7 +766,7 @@ class _PayoutCardState extends State<_PayoutCard> {
           color: AppColors.background,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.home, color: AppColors.textHint, size: 24),
+        child: Icon(Icons.home, color: AppColors.textHint, size: 24),
       );
 
   String _formatDate(DateTime? date) {
@@ -868,7 +868,7 @@ class _PaidCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  confirmed ? 'Confirmed received ✓' : awaitingText,
+                  confirmed ? 'Confirmed received âœ“' : awaitingText,
                   style: AppTextStyles.caption.copyWith(
                     color: confirmed ? AppColors.success : AppColors.warning,
                     fontWeight: FontWeight.w600,

@@ -55,7 +55,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen>
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('Users Directory', style: AppTextStyles.h4),
+        title: Text('Users Directory', style: AppTextStyles.h4),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(96),
           child: Column(children: [
@@ -146,7 +146,7 @@ class _UsersTab extends StatelessWidget {
       stream: _query.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+          return Center(child: CircularProgressIndicator(color: AppColors.primary));
         }
 
         if (snapshot.hasError) {
@@ -274,7 +274,7 @@ class _UserCardState extends State<_UserCard> {
   Future<void> _openWhatsApp() async {
     if (_phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No phone number on file'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
+        SnackBar(content: Text('No phone number on file'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
       );
       return;
     }
@@ -291,7 +291,7 @@ class _UserCardState extends State<_UserCard> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open WhatsApp'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
+          SnackBar(content: Text('Could not open WhatsApp'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
         );
       }
     }
@@ -334,7 +334,7 @@ class _UserCardState extends State<_UserCard> {
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open chat. Please try again.'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
+        SnackBar(content: Text('Could not open chat. Please try again.'), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -434,11 +434,11 @@ class _UserCardState extends State<_UserCard> {
           GestureDetector(
             onTap: _copyPhone,
             child: Row(children: [
-              const Icon(Icons.phone_outlined, size: 13, color: AppColors.textSecondary),
+              Icon(Icons.phone_outlined, size: 13, color: AppColors.textSecondary),
               const SizedBox(width: 6),
               Text(_phone, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
               const SizedBox(width: 6),
-              const Icon(Icons.copy_outlined, size: 11, color: AppColors.textHint),
+              Icon(Icons.copy_outlined, size: 11, color: AppColors.textHint),
             ]),
           ),
         ],
@@ -459,7 +459,7 @@ class _UserCardState extends State<_UserCard> {
                   label: const Text('WhatsApp'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 9),
-                    side: const BorderSide(color: AppColors.success),
+                    side: BorderSide(color: AppColors.success),
                     foregroundColor: AppColors.success,
                     textStyle: AppTextStyles.labelSmall,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -496,7 +496,7 @@ class _UserCardState extends State<_UserCard> {
               border: Border.all(color: AppColors.warning.withAlpha(50)),
             ),
             child: Row(children: [
-              const Icon(Icons.info_outline, size: 14, color: AppColors.warning),
+              Icon(Icons.info_outline, size: 14, color: AppColors.warning),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -520,7 +520,7 @@ class _UserCardState extends State<_UserCard> {
                   label: const Text('WhatsApp'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 9),
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     foregroundColor: AppColors.textSecondary,
                     textStyle: AppTextStyles.labelSmall,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -607,7 +607,7 @@ class _EmptyState extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.people_outline, size: 48, color: AppColors.textHint),
+          Icon(Icons.people_outline, size: 48, color: AppColors.textHint),
           const SizedBox(height: 16),
           Text(message, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
         ]),

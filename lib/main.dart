@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'services/connectivity_service.dart';
 import 'app/app.dart';
 
@@ -14,6 +15,9 @@ void main() async {
   // Initialize Firebase with error handling
   try {
     await Firebase.initializeApp();
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.debug,
+    );
     firebaseInitialized = true;
     debugPrint('✅ Firebase initialized successfully');
   } catch (e) {
@@ -27,15 +31,9 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Set system UI overlay style
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.white,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ),
-  );
+  // NOTE: System UI overlay style is now set reactively inside ClearRentApp
+  // based on the active theme, so we no longer hardcode it here.
+
   await ConnectivityService().initialize();
 
   runApp(const ProviderScope(child: ClearRentApp()));

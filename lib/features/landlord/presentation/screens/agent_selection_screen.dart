@@ -214,7 +214,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Select Agent', style: AppTextStyles.h4),
@@ -224,7 +224,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
             TextButton(
               onPressed: _isAssigning ? null : _assignAgent,
               child: _isAssigning
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
@@ -237,7 +237,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : Column(
               children: [
                 // Filters
@@ -257,7 +257,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.location_on, color: AppColors.primary, size: 20),
+                              Icon(Icons.location_on, color: AppColors.primary, size: 20),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -426,7 +426,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                 color: AppColors.textHint.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.person_search, size: 40, color: AppColors.textHint),
+              child: Icon(Icons.person_search, size: 40, color: AppColors.textHint),
             ),
             const SizedBox(height: 24),
             Text('No Agents Found', style: AppTextStyles.h4),
@@ -607,7 +607,7 @@ class _AgentCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+                          Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Text(
                             agent.baseLocation,
@@ -677,7 +677,7 @@ class _AgentCard extends StatelessWidget {
                         Container(
                           width: 6,
                           height: 6,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             color: AppColors.success,
                             shape: BoxShape.circle,
                           ),

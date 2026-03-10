@@ -185,7 +185,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Report Issue', style: AppTextStyles.h4),
@@ -206,7 +206,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(children: [
-                  const Icon(Icons.home_outlined, size: 20, color: AppColors.primary),
+                  Icon(Icons.home_outlined, size: 20, color: AppColors.primary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -271,11 +271,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                   fillColor: AppColors.surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                 ),
                 validator: (v) =>
@@ -297,11 +297,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                   fillColor: AppColors.surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.border),
+                    borderSide: BorderSide(color: AppColors.border),
                   ),
                 ),
                 validator: (v) =>
@@ -400,7 +400,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                             onTap: () => setState(() => _imageUrls.removeAt(entry.key)),
                             child: Container(
                               padding: const EdgeInsets.all(2),
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 color: AppColors.error,
                                 shape: BoxShape.circle,
                               ),
@@ -424,7 +424,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                               color: AppColors.border, style: BorderStyle.solid),
                         ),
                         child: _isUploadingImage
-                            ? const Center(
+                            ? Center(
                                 child: SizedBox(
                                   width: 24,
                                   height: 24,
@@ -432,7 +432,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                                       strokeWidth: 2, color: AppColors.primary),
                                 ),
                               )
-                            : const Column(
+                            : Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Icon(Icons.add_photo_alternate_outlined,

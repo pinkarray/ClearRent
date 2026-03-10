@@ -175,7 +175,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                     color: AppColors.warning.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.info_outline,
                     color: AppColors.warning,
                     size: 48,
@@ -197,7 +197,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.check_circle,
                         color: AppColors.success,
                         size: 20,
@@ -206,7 +206,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                       Expanded(
                         child: Text(
                           'Payment (₦${NumberFormat('#,###').format(_fee.totalFee)}) was successful',
-                          style: AppTextStyles.caption.copyWith(
+                          style: AppTextStyles.naira(AppTextStyles.caption).copyWith(
                             color: AppColors.success,
                           ),
                         ),
@@ -319,7 +319,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                     color: AppColors.success.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.check_circle,
                     color: AppColors.success,
                     size: 48,
@@ -350,7 +350,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.calendar_today,
                             size: 16,
                             color: AppColors.textSecondary,
@@ -365,7 +365,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.access_time,
                             size: 16,
                             color: AppColors.textSecondary,
@@ -447,7 +447,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: _isProcessing ? null : () => context.pop(),
         ),
         title: Text('Confirm & Pay', style: AppTextStyles.h4),
@@ -533,7 +533,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                             width: 80,
                             height: 80,
                             color: AppColors.background,
-                            child: const Icon(
+                            child: Icon(
                               Icons.home,
                               color: AppColors.textHint,
                             ),
@@ -543,7 +543,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                       width: 80,
                       height: 80,
                       color: AppColors.background,
-                      child: const Icon(Icons.home, color: AppColors.textHint),
+                      child: Icon(Icons.home, color: AppColors.textHint),
                     ),
           ),
           const SizedBox(width: 16),
@@ -615,7 +615,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.calendar_today,
                   color: AppColors.primary,
                 ),
@@ -647,7 +647,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                   color: AppColors.info.withAlpha(26),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.access_time, color: AppColors.info),
+                child: Icon(Icons.access_time, color: AppColors.info),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -678,7 +678,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                     color: AppColors.warning.withAlpha(26),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.note, color: AppColors.warning),
+                  child: Icon(Icons.note, color: AppColors.warning),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -720,7 +720,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
               color: AppColors.info.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.support_agent,
               color: AppColors.info,
               size: 28,
@@ -753,7 +753,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.verified,
                             size: 10,
                             color: AppColors.success,
@@ -822,10 +822,10 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Total', style: AppTextStyles.h4),
+              Text('Total', style: AppTextStyles.naira(AppTextStyles.h4)),
               Text(
                 '₦${NumberFormat('#,###').format(_fee.totalFee)}',
-                style: AppTextStyles.h3.copyWith(color: AppColors.primary),
+                style: AppTextStyles.naira(AppTextStyles.h3).copyWith(color: AppColors.primary),
               ),
             ],
           ),
@@ -853,7 +853,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         ),
         Text(
           '₦${NumberFormat('#,###').format(amount)}',
-          style: AppTextStyles.labelMedium,
+          style: AppTextStyles.naira(AppTextStyles.labelMedium),
         ),
       ],
     );

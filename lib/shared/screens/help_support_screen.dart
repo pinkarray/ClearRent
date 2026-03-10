@@ -205,7 +205,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Help & Support', style: AppTextStyles.h4),
@@ -229,7 +229,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
                       color: AppColors.primary.withAlpha(26),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.support_agent,
                       color: AppColors.primary,
                       size: 30,

@@ -126,6 +126,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   issues: issues,
                   categories: _coreCategories,
                   onLogMaintenance: _showMaintenanceLogSheet,
+                  onViewIssues: _navigateToIssues,
                 ),
                 _IssueHistoryTab(issues: issues),
               ],
@@ -149,12 +150,12 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       backgroundColor: AppColors.surface,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+        icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
         onPressed: () => context.pop(),
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+          icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
           tooltip: 'Edit Property',
           onPressed: () =>
               context.push('/landlord/edit-property', extra: widget.property),
@@ -193,7 +194,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 56, 20, 16),
+          padding: const EdgeInsets.fromLTRB(20, 56, 20, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -206,7 +207,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
               ),
               const SizedBox(height: 4),
               Row(children: [
-                const Icon(Icons.location_on_outlined,
+                Icon(Icons.location_on_outlined,
                     size: 14, color: AppColors.textSecondary),
                 const SizedBox(width: 4),
                 Expanded(
@@ -266,7 +267,8 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   color: AppColors.success,
                 ),
               ]),
-              const SizedBox(height: 12),
+              // Extra spacing before the tab bar
+              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -276,8 +278,6 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
 
   // ── HEALTH SCORE ─────────────────────────────────────────────────────────
 
-  /// Score: 100 − (open issues × 15) − (in_progress × 8) − (pending × 5)
-  /// Clamped to [0, 100].
   int _computeHealthScore(List<_IssueData> issues) {
     if (issues.isEmpty) return 100;
     final penalty = issues.fold(0, (acc, i) {
@@ -307,6 +307,36 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
     return Icons.error_outline;
   }
 
+  // ── SMART NAVIGATION ─────────────────────────────────────────────────────
+
+  /// Navigate to the landlord issues screen, filtered to this property + category,
+  /// pre-selecting the right tab based on the issue state.
+  void _navigateToIssues(String category, _CategoryIssueState issueState) {
+    // Map issue state to the tab index in LandlordIssuesScreen:
+    // 0 = Open, 1 = In Progress, 2 = Pending, 3 = Resolved
+    int tab;
+    switch (issueState) {
+      case _CategoryIssueState.open:
+        tab = 0;
+        break;
+      case _CategoryIssueState.inProgress:
+        tab = 1;
+        break;
+      case _CategoryIssueState.pending:
+        tab = 2;
+        break;
+      default:
+        tab = 0;
+    }
+
+    context.push('/landlord/issues', extra: {
+      'propertyId': widget.property.id,
+      'category': category,
+      'initialTab': tab,
+      'propertyTitle': widget.property.title,
+    });
+  }
+
   // ── MAINTENANCE LOG SHEET ─────────────────────────────────────────────────
 
   void _showMaintenanceLogSheet(String category) {
@@ -323,10 +353,10 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
           padding: EdgeInsets.only(
               bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24)),
+                  const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
             child: Column(
@@ -353,7 +383,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                       color: AppColors.success.withAlpha(26),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.build_outlined,
+                    child: Icon(Icons.build_outlined,
                         color: AppColors.success, size: 20),
                   ),
                   const SizedBox(width: 12),
@@ -430,12 +460,12 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          const BorderSide(color: AppColors.border),
+                          BorderSide(color: AppColors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide:
-                          const BorderSide(color: AppColors.border),
+                          BorderSide(color: AppColors.border),
                     ),
                   ),
                 ),
@@ -512,6 +542,15 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
   }
 }
 
+// ── CATEGORY ISSUE STATE ────────────────────────────────────────────────────
+
+enum _CategoryIssueState {
+  healthy,
+  open,
+  inProgress,
+  pending,
+}
+
 // ── HEALTH TAB ──────────────────────────────────────────────────────────────
 
 class _HealthTab extends StatelessWidget {
@@ -519,12 +558,14 @@ class _HealthTab extends StatelessWidget {
   final List<_IssueData> issues;
   final List<_CategoryDef> categories;
   final void Function(String category) onLogMaintenance;
+  final void Function(String category, _CategoryIssueState issueState) onViewIssues;
 
   const _HealthTab({
     required this.property,
     required this.issues,
     required this.categories,
     required this.onLogMaintenance,
+    required this.onViewIssues,
   });
 
   @override
@@ -592,6 +633,18 @@ class _HealthTab extends StatelessWidget {
     );
   }
 
+  /// Determine the issue state for a category based on its active issues.
+  _CategoryIssueState _getCategoryIssueState(List<_IssueData> catIssues) {
+    final hasOpen = catIssues.any((i) => i.status == 'open');
+    final hasInProgress = catIssues.any((i) => i.status == 'in_progress');
+    final hasPending = catIssues.any((i) => i.status == 'pending_confirmation');
+
+    if (hasOpen) return _CategoryIssueState.open;
+    if (hasInProgress) return _CategoryIssueState.inProgress;
+    if (hasPending) return _CategoryIssueState.pending;
+    return _CategoryIssueState.healthy;
+  }
+
   Widget _buildHealthGrid(BuildContext context) {
     return GridView.builder(
       shrinkWrap: true,
@@ -615,15 +668,19 @@ class _HealthTab extends StatelessWidget {
             .where((i) => i.status == 'pending_confirmation')
             .length;
 
+        final issueState = _getCategoryIssueState(catIssues);
+
         return _CategoryHealthCard(
           def: cat,
           openIssues: openIssues,
           inProgress: inProgress,
           pending: pending,
-          // Highlight amenities that match this category
+          issueState: issueState,
           isAmenitiPresent: property.amenities.any((a) => cat.amenityKeywords
               .any((kw) => a.toLowerCase().contains(kw))),
-          onTap: () => onLogMaintenance(cat.key),
+          onTap: issueState != _CategoryIssueState.healthy
+              ? () => onViewIssues(cat.key, issueState)
+              : () => onLogMaintenance(cat.key),
         );
       },
     );
@@ -639,7 +696,7 @@ class _HealthTab extends StatelessWidget {
             Text('Maintenance Log', style: AppTextStyles.h4),
             TextButton.icon(
               onPressed: () => onLogMaintenance('other'),
-              icon: const Icon(Icons.add, size: 16,
+              icon: Icon(Icons.add, size: 16,
                   color: AppColors.primary),
               label: Text('Add Entry',
                   style: AppTextStyles.labelMedium
@@ -663,9 +720,9 @@ class _HealthTab extends StatelessWidget {
               .snapshots(),
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(
+              return Center(
                   child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: CircularProgressIndicator(
                     color: AppColors.primary),
               ));
@@ -747,7 +804,7 @@ class _IssueHistoryTab extends StatelessWidget {
                   color: AppColors.success.withAlpha(26),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.verified_outlined,
+                child: Icon(Icons.verified_outlined,
                     size: 40, color: AppColors.success),
               ),
               const SizedBox(height: 24),
@@ -766,7 +823,6 @@ class _IssueHistoryTab extends StatelessWidget {
       );
     }
 
-    // Sort: open first, then in_progress, pending, resolved
     final sorted = [...issues]..sort((a, b) {
         const order = {
           'open': 0,
@@ -792,6 +848,7 @@ class _CategoryHealthCard extends StatelessWidget {
   final int openIssues;
   final int inProgress;
   final int pending;
+  final _CategoryIssueState issueState;
   final bool isAmenitiPresent;
   final VoidCallback onTap;
 
@@ -800,6 +857,7 @@ class _CategoryHealthCard extends StatelessWidget {
     required this.openIssues,
     required this.inProgress,
     required this.pending,
+    required this.issueState,
     required this.isAmenitiPresent,
     required this.onTap,
   });
@@ -863,16 +921,14 @@ class _CategoryHealthCard extends StatelessWidget {
                   ),
                   child: Icon(def.icon, size: 18, color: color),
                 ),
-                // Amenity presence dot
-                if (isAmenitiPresent)
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withAlpha(160),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
+                // Show arrow for issues, wrench for maintenance
+                Icon(
+                  issueState != _CategoryIssueState.healthy
+                      ? Icons.arrow_forward_ios
+                      : Icons.build_outlined,
+                  size: 12,
+                  color: AppColors.textHint,
+                ),
               ],
             ),
             const Spacer(),
@@ -884,10 +940,14 @@ class _CategoryHealthCard extends StatelessWidget {
             Row(children: [
               Icon(_statusIcon, size: 12, color: color),
               const SizedBox(width: 4),
-              Text(
-                _statusLabel,
-                style: AppTextStyles.caption
-                    .copyWith(color: color, fontWeight: FontWeight.w600),
+              Expanded(
+                child: Text(
+                  _statusLabel,
+                  style: AppTextStyles.caption
+                      .copyWith(color: color, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ]),
           ],

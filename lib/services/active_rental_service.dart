@@ -161,18 +161,49 @@ class ActiveRentalService {
 
   // ============ HELPERS ============
 
-  /// Update property status (mark as rented/available)
+  /// Update property status — increments/decrements currentTenantsCount
+  /// and only marks unavailable when all slots are filled (respects maxTenants).
   Future<void> _updatePropertyStatus(
       String propertyId, String tenantId, bool isRented) async {
     try {
-      await _firestore.collection('properties').doc(propertyId).update({
-        'isAvailable': !isRented,
-        'rentedToTenantId': isRented ? tenantId : null,
-        'rentalStartDate': isRented ? FieldValue.serverTimestamp() : null,
+      final propertyDoc =
+          await _firestore.collection('properties').doc(propertyId).get();
+      final propertyData = propertyDoc.data();
+
+      final maxTenants =
+          (propertyData?['maxTenants'] as num?)?.toInt() ?? 1;
+      final currentCount =
+          (propertyData?['currentTenantsCount'] as num?)?.toInt() ?? 0;
+
+      final newCount = isRented
+          ? currentCount + 1
+          : (currentCount - 1).clamp(0, maxTenants);
+
+      // Only mark unavailable when every slot is filled
+      final nowFull = newCount >= maxTenants;
+      // Only mark available again when count drops to 0
+      final nowEmpty = newCount <= 0;
+
+      final Map<String, dynamic> updates = {
+        'currentTenantsCount': newCount,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
-      developer.log('✅ Property status updated: $propertyId',
-          name: 'ActiveRentalService');
+      };
+
+      if (isRented) {
+        updates['rentedToTenantId'] = tenantId;
+        updates['rentalStartDate'] = FieldValue.serverTimestamp();
+        if (nowFull) updates['isAvailable'] = false;
+      } else {
+        updates['rentedToTenantId'] = null;
+        if (nowEmpty) updates['isAvailable'] = true;
+      }
+
+      await _firestore.collection('properties').doc(propertyId).update(updates);
+
+      developer.log(
+        '✅ Property $propertyId: tenants $currentCount → $newCount / $maxTenants',
+        name: 'ActiveRentalService',
+      );
     } catch (e) {
       developer.log('❌ Error updating property status: $e',
           name: 'ActiveRentalService');

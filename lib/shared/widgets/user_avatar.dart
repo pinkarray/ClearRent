@@ -234,7 +234,7 @@ class UserAvatarProfile extends StatelessWidget {
             ),
             child: ClipOval(
               child: isLoading
-                  ? const Center(
+                  ? Center(
                       child: CircularProgressIndicator(
                         color: AppColors.primary,
                         strokeWidth: 2,

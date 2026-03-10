@@ -5,6 +5,7 @@ import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/account_type_screen.dart';
 import '../features/auth/presentation/screens/profile_setup_screen.dart';
 import '../features/tenant/presentation/screens/tenant_home_screen.dart';
+import '../features/auth/presentation/screens/otp_screen.dart';
 import '../features/tenant/presentation/screens/tenant_inspections_screen.dart';
 import '../features/landlord/presentation/screens/landlord_home_screen.dart';
 import '../features/landlord/presentation/screens/add_property_screen.dart';
@@ -80,6 +81,18 @@ final appRouter = GoRouter(
         return ProfileSetupScreen(accountType: accountType);
       },
     ),
+    GoRoute(
+      path: '/otp',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>? ?? {};
+        final phoneNumber = extra['phoneNumber'] as String? ?? '';
+        final verificationId = extra['verificationId'] as String?;
+        return OtpScreen(
+          phoneNumber: phoneNumber,
+          verificationId: verificationId,
+        );
+      },
+    ),
 
     // ============ SHARED ROUTES ============
     GoRoute(
@@ -140,6 +153,10 @@ final appRouter = GoRouter(
           landlordName: extra['landlordName'] as String,
         );
       },
+    ),
+    GoRoute(
+      path: '/tenant/activities',
+      builder: (context, state) => const RecentActivitiesScreen(),
     ),
     GoRoute(
       path: '/tenant/issue-history',
@@ -235,7 +252,15 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/landlord/issues',
-      builder: (context, state) => const LandlordIssuesScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return LandlordIssuesScreen(
+          propertyId: extra?['propertyId'] as String?,
+          category: extra?['category'] as String?,
+          initialTab: extra?['initialTab'] as int? ?? 0,
+          propertyTitle: extra?['propertyTitle'] as String?,
+        );
+      },
     ),
     GoRoute(
       path: '/landlord/property-health',
@@ -279,16 +304,16 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/agent/inspections',
-      builder: (context, state) => const AgentInspectionsScreen(),
-    ),
-    GoRoute(
-      path: '/agent/inspections',
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         return AgentInspectionsScreen(
           initialTab: extra?['initialTab'] ?? 0,
         );
       },
+    ),
+    GoRoute(
+      path: '/agent/activities',
+      builder: (context, state) => const RecentActivitiesScreen(),
     ),
 
     // ============ ADMIN ROUTES ============

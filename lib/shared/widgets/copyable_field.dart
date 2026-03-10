@@ -84,10 +84,12 @@ class CopyableField extends StatelessWidget {
                   style: isLargeValue
                       ? AppTextStyles.h4.copyWith(
                           color: valueColor ?? AppColors.textPrimary,
+                          fontFamily: value.contains('₦') ? 'Roboto' : null,
                         )
                       : AppTextStyles.labelLarge.copyWith(
                           color: valueColor ?? AppColors.textPrimary,
                           letterSpacing: label.toLowerCase().contains('account') ? 1.5 : 0,
+                          fontFamily: value.contains('₦') ? 'Roboto' : null,
                         ),
                 ),
               ),
@@ -101,7 +103,7 @@ class CopyableField extends StatelessWidget {
                       color: AppColors.primary.withAlpha(26),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.copy_rounded,
                       size: 18,
                       color: AppColors.primary,
@@ -168,16 +170,19 @@ class BankAccountCard extends StatelessWidget {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.account_balance,
                   color: AppColors.primary,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Transfer to this account',
-                style: AppTextStyles.labelLarge,
+              Expanded(
+                child: Text(
+                  'Transfer to this account',
+                  style: AppTextStyles.labelLarge,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),

@@ -11,8 +11,25 @@ import '../../../../services/conversation_service.dart';
 
 /// Landlord screen to view and manage reported issues from tenants.
 /// Shows issues grouped by status: Open, In Progress, Resolved.
+///
+/// Accepts optional extras from navigation:
+///   - `propertyId` (String?) — filter to a specific property
+///   - `category` (String?) — filter to a specific issue category
+///   - `initialTab` (int?) — which tab to open (0=Open, 1=In Progress, 2=Pending, 3=Resolved)
+///   - `propertyTitle` (String?) — shown in the app bar when filtering
 class LandlordIssuesScreen extends StatefulWidget {
-  const LandlordIssuesScreen({super.key});
+  final String? propertyId;
+  final String? category;
+  final int initialTab;
+  final String? propertyTitle;
+
+  const LandlordIssuesScreen({
+    super.key,
+    this.propertyId,
+    this.category,
+    this.initialTab = 0,
+    this.propertyTitle,
+  });
 
   @override
   State<LandlordIssuesScreen> createState() => _LandlordIssuesScreenState();
@@ -26,13 +43,35 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 3),
+    );
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Whether this screen is showing filtered results from property health.
+  bool get _isFiltered => widget.propertyId != null || widget.category != null;
+
+  String get _appBarTitle {
+    if (widget.propertyTitle != null && widget.category != null) {
+      return '${_capitalize(widget.category!)} Issues';
+    }
+    if (widget.propertyTitle != null) {
+      return '${widget.propertyTitle} Issues';
+    }
+    return 'Reported Issues';
+  }
+
+  String _capitalize(String s) {
+    if (s.isEmpty) return s;
+    return s[0].toUpperCase() + s.substring(1);
   }
 
   @override
@@ -43,43 +82,123 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
-        title: Text('Reported Issues', style: AppTextStyles.h4),
+        title: Text(_appBarTitle, style: AppTextStyles.h4),
         centerTitle: true,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textSecondary,
-          indicatorColor: AppColors.primary,
-          indicatorWeight: 3,
-          labelStyle: AppTextStyles.labelMedium,
-          tabs: const [
-            Tab(text: 'Open'),
-            Tab(text: 'In Progress'),
-            Tab(text: 'Pending'),
-            Tab(text: 'Resolved'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Column(
+            children: [
+              // Filter indicator chip
+              if (_isFiltered)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.filter_list, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _filterDescription(),
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          // Navigate to unfiltered issues screen
+                          context.pop();
+                          context.push('/landlord/issues');
+                        },
+                        child: Text(
+                          'View all',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              TabBar(
+                controller: _tabController,
+                labelColor: AppColors.primary,
+                unselectedLabelColor: AppColors.textSecondary,
+                indicatorColor: AppColors.primary,
+                indicatorWeight: 3,
+                labelStyle: AppTextStyles.labelMedium,
+                tabs: const [
+                  Tab(text: 'Open'),
+                  Tab(text: 'In Progress'),
+                  Tab(text: 'Pending'),
+                  Tab(text: 'Resolved'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _IssuesTab(status: 'open', authService: _authService),
-          _IssuesTab(status: 'in_progress', authService: _authService),
-          _IssuesTab(status: 'pending_confirmation', authService: _authService),
-          _IssuesTab(status: 'resolved', authService: _authService),
+          _IssuesTab(
+            status: 'open',
+            authService: _authService,
+            propertyId: widget.propertyId,
+            category: widget.category,
+          ),
+          _IssuesTab(
+            status: 'in_progress',
+            authService: _authService,
+            propertyId: widget.propertyId,
+            category: widget.category,
+          ),
+          _IssuesTab(
+            status: 'pending_confirmation',
+            authService: _authService,
+            propertyId: widget.propertyId,
+            category: widget.category,
+          ),
+          _IssuesTab(
+            status: 'resolved',
+            authService: _authService,
+            propertyId: widget.propertyId,
+            category: widget.category,
+          ),
         ],
       ),
     );
+  }
+
+  String _filterDescription() {
+    final parts = <String>[];
+    if (widget.propertyTitle != null) parts.add(widget.propertyTitle!);
+    if (widget.category != null) parts.add(_capitalize(widget.category!));
+    return 'Filtered: ${parts.join(' · ')}';
   }
 }
 
 class _IssuesTab extends StatelessWidget {
   final String status;
   final AuthService authService;
-  const _IssuesTab({required this.status, required this.authService});
+  final String? propertyId;
+  final String? category;
+
+  const _IssuesTab({
+    required this.status,
+    required this.authService,
+    this.propertyId,
+    this.category,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,16 +207,26 @@ class _IssuesTab extends StatelessWidget {
       return const Center(child: Text('Not authenticated'));
     }
 
+    // Build the query with optional filters
+    Query query = FirebaseFirestore.instance
+        .collection('issues')
+        .where('landlordId', isEqualTo: currentUserId)
+        .where('status', isEqualTo: status);
+
+    if (propertyId != null) {
+      query = query.where('propertyId', isEqualTo: propertyId);
+    }
+    if (category != null) {
+      query = query.where('category', isEqualTo: category);
+    }
+
+    query = query.orderBy('createdAt', descending: true);
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('issues')
-          .where('landlordId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: status)
-          .orderBy('createdAt', descending: true)
-          .snapshots(),
+      stream: query.snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
               child: CircularProgressIndicator(color: AppColors.primary));
         }
 
@@ -313,8 +442,6 @@ class _IssueCardState extends State<_IssueCard> {
         return;
       }
 
-      // Fetch fresh names from Firestore so the conversation always shows
-      // correct names regardless of what was cached in the issue document.
       String landlordName = widget.data['landlordName'] ?? '';
       String tenantName = _tenantName;
       try {
@@ -330,7 +457,7 @@ class _IssueCardState extends State<_IssueCard> {
         if (tenantDoc.exists) {
           tenantName = tenantDoc.data()?['fullName'] ?? tenantName;
         }
-      } catch (_) {} // fallback to issue doc values on error
+      } catch (_) {}
 
       final conv = await _conversationService.getOrCreateConversation(
         propertyId: widget.data['propertyId'] ?? '',
@@ -434,12 +561,12 @@ class _IssueCardState extends State<_IssueCard> {
           ]),
 
           const SizedBox(height: 12),
-          const Divider(height: 1),
+          Divider(height: 1, color: AppColors.divider),
           const SizedBox(height: 12),
 
           // Property + tenant
           Row(children: [
-            const Icon(Icons.home_outlined,
+            Icon(Icons.home_outlined,
                 size: 14, color: AppColors.textSecondary),
             const SizedBox(width: 6),
             Expanded(
@@ -450,7 +577,7 @@ class _IssueCardState extends State<_IssueCard> {
                   overflow: TextOverflow.ellipsis),
             ),
             const SizedBox(width: 12),
-            const Icon(Icons.person_outline,
+            Icon(Icons.person_outline,
                 size: 14, color: AppColors.textSecondary),
             const SizedBox(width: 4),
             Text(_tenantName,
@@ -509,7 +636,7 @@ class _IssueCardState extends State<_IssueCard> {
                 border: Border.all(color: AppColors.info.withAlpha(60)),
               ),
               child: Row(children: [
-                const Icon(Icons.hourglass_top_rounded,
+                Icon(Icons.hourglass_top_rounded,
                     size: 16, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(
@@ -523,7 +650,7 @@ class _IssueCardState extends State<_IssueCard> {
             ),
           ],
 
-          // Dispute reason — shown when tenant disputed and status went back to in_progress
+          // Dispute reason
           if (widget.data['disputeReason'] != null &&
               widget.currentStatus == 'in_progress') ...[
             const SizedBox(height: 10),
@@ -537,7 +664,7 @@ class _IssueCardState extends State<_IssueCard> {
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.error),
+                  Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.error),
                   const SizedBox(width: 6),
                   Text('Tenant Disputed This Fix',
                       style: AppTextStyles.labelSmall.copyWith(color: AppColors.error)),
@@ -561,7 +688,7 @@ class _IssueCardState extends State<_IssueCard> {
               child: OutlinedButton.icon(
                 onPressed: _isMessageLoading ? null : _messageTenant,
                 icon: _isMessageLoading
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
@@ -570,7 +697,7 @@ class _IssueCardState extends State<_IssueCard> {
                 label: const Text('Message'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),
@@ -601,7 +728,7 @@ class _IssueCardState extends State<_IssueCard> {
                 ),
               ),
 
-            // in_progress → mark fixed (sends to pending_confirmation)
+            // in_progress → mark fixed
             if (widget.currentStatus == 'in_progress')
               Expanded(
                 child: ElevatedButton(
@@ -624,7 +751,7 @@ class _IssueCardState extends State<_IssueCard> {
                 ),
               ),
 
-            // pending_confirmation → re-open (if tenant disputes or landlord recalls)
+            // pending_confirmation → still working
             if (widget.currentStatus == 'pending_confirmation')
               Expanded(
                 child: OutlinedButton(
@@ -633,12 +760,12 @@ class _IssueCardState extends State<_IssueCard> {
                       : () => _updateStatus('in_progress'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    side: const BorderSide(color: AppColors.warning),
+                    side: BorderSide(color: AppColors.warning),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
                   ),
                   child: _isUpdating
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 16, height: 16,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: AppColors.warning))
@@ -656,7 +783,7 @@ class _IssueCardState extends State<_IssueCard> {
                       : () => _updateStatus('open'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    side: const BorderSide(color: AppColors.warning),
+                    side: BorderSide(color: AppColors.warning),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
                   ),

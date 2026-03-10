@@ -54,7 +54,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
         debugPrint('🏠 AgentAssignedProperties - docs count: ${snapshot.data?.docs.length ?? 0}');
         
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
@@ -144,7 +144,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
                 color: AppColors.warning.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.lock_outline,
                 size: 50,
                 color: AppColors.warning,
@@ -266,13 +266,13 @@ class _AssignedPropertyCard extends StatelessWidget {
                           errorWidget: (context, url, error) => Container(
                             height: 150,
                             color: AppColors.background,
-                            child: const Icon(Icons.home, size: 50, color: AppColors.textHint),
+                            child: Icon(Icons.home, size: 50, color: AppColors.textHint),
                           ),
                         )
                       : Container(
                           height: 150,
                           color: AppColors.background,
-                          child: const Center(
+                          child: Center(
                             child: Icon(Icons.home, size: 50, color: AppColors.textHint),
                           ),
                         ),
@@ -340,7 +340,7 @@ class _AssignedPropertyCard extends StatelessWidget {
                   // Location
                   Row(
                     children: [
-                      const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+                      Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(

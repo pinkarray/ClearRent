@@ -10,6 +10,8 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/verification_service.dart';
+import '../../../../services/activity_service.dart';
+import '../../../../shared/widgets/copyable_field.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -61,12 +63,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final PageController _pageController = PageController();
   final PropertyService _propertyService = PropertyService();
   final VerificationService _verificationService = VerificationService();
+  final ActivityService _activityService = ActivityService();
   final ImagePicker _imagePicker = ImagePicker();
 
   int _currentStep = 0;
   final int _totalSteps = 5;
   bool _isPublishing = false;
   bool _isCheckingVerification = true;
+
+  // Listing fee state
+  static const int _listingFeeAmount = 10000; // ₦10,000
+  bool _requiresListingFee = false;
+  File? _paymentProofFile;
+  String? _paymentProofUrl;
 
   final List<File> _selectedImageFiles = [];
   final _addressController = TextEditingController();
@@ -186,7 +195,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _checkVerificationStatus();
   }
 
-  /// Check if landlord is verified before allowing property listing
+  /// Check if landlord is verified before allowing property listing,
+  /// and whether they need to pay the ₦10,000 subsequent listing fee.
   Future<void> _checkVerificationStatus() async {
     try {
       final data = await _verificationService.getVerificationStatus();
@@ -194,10 +204,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (!mounted) return;
 
       if (data.status != VerificationStatus.verified) {
-        // Show verification required dialog
         _showVerificationRequiredDialog(data.status);
       } else {
-        setState(() => _isCheckingVerification = false);
+        // Verified — check how many properties they've listed
+        final count = await _propertyService.getLandlordPropertyCount();
+        if (!mounted) return;
+        setState(() {
+          _requiresListingFee = count > 0; // first listing is free
+          _isCheckingVerification = false;
+        });
+        if (_requiresListingFee) {
+          _showListingFeeDialog();
+        }
       }
     } catch (e) {
       debugPrint('❌ Error checking verification: $e');
@@ -313,6 +331,131 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
           ),
+    );
+  }
+
+  void _showListingFeeDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.receipt_long_outlined,
+                  size: 40, color: AppColors.primary),
+            ),
+            const SizedBox(height: 24),
+            Text('Listing Fee Required', style: AppTextStyles.h3,
+                textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'Your first listing is free. Each additional property listing requires a ₦10,000 fee. Make payment to the account below, then upload your proof to continue.',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            BankAccountCard(
+              accountNumber: '6507861182',
+              accountName: 'Oredugba Ayomide',
+              bankName: 'Providus Bank',
+              amount: _listingFeeAmount.toDouble(),
+              amountLabel: 'Listing Fee',
+            ),
+            const SizedBox(height: 20),
+            StatefulBuilder(
+              builder: (context, setDialogState) => Column(
+                children: [
+                  if (_paymentProofFile != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: AppColors.success, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _paymentProofFile!.path.split('/').last,
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.success),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final picked = await _imagePicker.pickImage(
+                            source: ImageSource.gallery);
+                        if (picked != null) {
+                          setDialogState(
+                              () => _paymentProofFile = File(picked.path));
+                          setState(
+                              () => _paymentProofFile = File(picked.path));
+                        }
+                      },
+                      icon: Icon(Icons.upload_outlined,
+                          color: AppColors.primary),
+                      label: Text(
+                        _paymentProofFile == null
+                            ? 'Upload Payment Proof'
+                            : 'Change Screenshot',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.primary),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: AppButton(
+                      text: 'Continue to Listing',
+                      onPressed: _paymentProofFile == null
+                          ? null
+                          : () => Navigator.pop(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.pop();
+                    },
+                    child: Text('Cancel',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.textSecondary)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -498,6 +641,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
       if (!mounted) return;
 
+      // Step 2b: Upload payment proof if this is a paid listing
+      if (_requiresListingFee && _paymentProofFile != null) {
+        _updateUploadProgress('Uploading payment proof...');
+        final proofUrls =
+            await _propertyService.uploadImages([_paymentProofFile!]);
+        if (proofUrls.isNotEmpty) _paymentProofUrl = proofUrls.first;
+      }
+
+      if (!mounted) return;
+
       // Step 3: Create property in Firestore
       debugPrint('🏠 Creating property in Firestore...');
       _updateUploadProgress('Saving property...');
@@ -546,6 +699,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         caretakerLivesOnPremises: _caretakerLivesOnPremises,
         ownershipDocUrl: ownershipDocUrl,
         ownershipDocType: _ownershipDocType,
+        listingFeeProofUrl: _paymentProofUrl,
       );
 
       if (!mounted) return;
@@ -561,6 +715,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       }
 
       debugPrint('✅ Property created successfully with ID: $propertyId');
+
+      // Track activity — fire and forget
+      _activityService.trackPropertyAdded(
+        propertyId: propertyId,
+        propertyTitle: _titleController.text.trim(),
+      );
 
       // If agent inspection selected, show agent selection prompt
       if (_inspectionHandler == 'agent') {
@@ -590,7 +750,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(color: AppColors.primary),
+                CircularProgressIndicator(color: AppColors.primary),
                 const SizedBox(height: 16),
                 Text(message, style: AppTextStyles.bodyMedium),
               ],
@@ -626,7 +786,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     color: AppColors.primary.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.support_agent,
                     size: 40,
                     color: AppColors.primary,
@@ -701,7 +861,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     color: AppColors.successLight,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.check,
                     size: 40,
                     color: AppColors.success,
@@ -799,13 +959,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.close, color: AppColors.textPrimary),
+            icon: Icon(Icons.close, color: AppColors.textPrimary),
             onPressed: () => context.pop(),
           ),
           title: Text('Add Property', style: AppTextStyles.h4),
           centerTitle: true,
         ),
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -823,7 +983,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.close, color: AppColors.textPrimary),
+            icon: Icon(Icons.close, color: AppColors.textPrimary),
             onPressed: _showExitConfirmation,
           ),
           title: Text('Add Property', style: AppTextStyles.h4),
@@ -1054,7 +1214,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                             color: AppColors.primary.withAlpha(26),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.photo_library_outlined,
                             color: AppColors.primary,
                             size: 20,
@@ -1093,7 +1253,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                             color: AppColors.textHint.withAlpha(26),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.camera_alt_outlined,
                             color: AppColors.textSecondary,
                             size: 20,
@@ -1264,7 +1424,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.group_outlined, size: 20, color: AppColors.primary),
+                Icon(Icons.group_outlined, size: 20, color: AppColors.primary),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1315,7 +1475,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                           color: AppColors.primary.withAlpha(26),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Icon(Icons.add, size: 16, color: AppColors.primary),
+                        child: Icon(Icons.add, size: 16, color: AppColors.primary),
                       ),
                     ),
                   ],
@@ -1574,7 +1734,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     color: AppColors.primary.withAlpha(26),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.add,
                     size: 18,
                     color: AppColors.primary,
@@ -1605,7 +1765,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           const SizedBox(height: 24),
 
           // Rent amount with comma formatting
-          Text('Rent Amount (NGN)', style: AppTextStyles.labelMedium),
+          Text('Rent Amount (₦', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
@@ -1682,7 +1842,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.check_circle_outline,
                   color: AppColors.success,
                   size: 20,
@@ -1751,7 +1911,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               border: Border.all(color: AppColors.success.withAlpha(50)),
             ),
             child: Row(children: [
-              const Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
+              Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1981,7 +2141,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Icon(
+                        Icon(
                           Icons.chevron_right,
                           color: AppColors.textSecondary,
                           size: 20,
@@ -2016,7 +2176,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         maxChildSize: 0.95,
         expand: false,
         builder: (_, scrollController) => Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
@@ -2039,7 +2199,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 Text('Where do you live?', style: AppTextStyles.h4),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                  icon: Icon(Icons.close, color: AppColors.textSecondary),
                   onPressed: () => Navigator.pop(ctx),
                 ),
               ]),
@@ -2212,7 +2372,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   ),
                   if (_inspectionHandler == 'self') ...[
                     const SizedBox(width: 8),
-                    const Icon(
+                    Icon(
                       Icons.check_circle,
                       color: AppColors.primary,
                       size: 24,
@@ -2308,7 +2468,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   ),
                   if (_inspectionHandler == 'agent') ...[
                     const SizedBox(width: 8),
-                    const Icon(
+                    Icon(
                       Icons.check_circle,
                       color: AppColors.primary,
                       size: 24,
@@ -2331,7 +2491,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.info_outline,
                     size: 18,
                     color: AppColors.info,
@@ -2367,7 +2527,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.calendar_month,
                 size: 20,
                 color: AppColors.primary,
@@ -2522,7 +2682,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.lightbulb_outline,
                   size: 16,
                   color: AppColors.info,
@@ -2623,7 +2783,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           // Location
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.location_on,
                 size: 16,
                 color: AppColors.textSecondary,
@@ -2665,7 +2825,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.calendar_month,
                       size: 16,
                       color: AppColors.primary,
@@ -2848,7 +3008,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 onPressed: _previousStep,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),

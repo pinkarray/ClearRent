@@ -48,7 +48,7 @@ class PropertyCard extends StatelessWidget {
                     placeholder: (context, url) => Container(
                       height: 160,
                       color: AppColors.background,
-                      child: const Center(
+                      child: Center(
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: AppColors.primary,
@@ -58,7 +58,7 @@ class PropertyCard extends StatelessWidget {
                     errorWidget: (context, url, error) => Container(
                       height: 160,
                       color: AppColors.background,
-                      child: const Icon(
+                      child: Icon(
                         Icons.image_not_supported_outlined,
                         color: AppColors.textHint,
                         size: 40,
@@ -207,7 +207,7 @@ class PropertyCard extends StatelessWidget {
                   // Location
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.location_on_outlined,
                         size: 16,
                         color: AppColors.textSecondary,

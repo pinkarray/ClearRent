@@ -272,7 +272,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             color: AppColors.warning.withAlpha(26),
             shape: BoxShape.circle,
           ),
-          child: const Icon(Icons.timer_outlined,
+          child: Icon(Icons.timer_outlined,
               color: AppColors.warning, size: 22),
         ),
         const SizedBox(width: 12),
@@ -314,7 +314,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
           // Property image
           ClipRRect(
             borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(16)),
+                BorderRadius.vertical(top: Radius.circular(16)),
             child: SizedBox(
               height: 180,
               width: double.infinity,
@@ -339,7 +339,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                     overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 6),
                 Row(children: [
-                  const Icon(Icons.location_on_outlined,
+                  Icon(Icons.location_on_outlined,
                       size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Expanded(
@@ -363,7 +363,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                       ),
                       child: Text(
                         '₦${_formatAmount(rental.rentAmount)}${rental.rentPeriod}',
-                        style: AppTextStyles.labelLarge
+                        style: AppTextStyles.naira(AppTextStyles.labelLarge)
                             .copyWith(color: AppColors.primary),
                       ),
                     ),
@@ -400,7 +400,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.calendar_today_outlined,
+            Icon(Icons.calendar_today_outlined,
                 size: 18, color: AppColors.primary),
             const SizedBox(width: 8),
             Text('Lease Timeline', style: AppTextStyles.labelLarge),
@@ -511,7 +511,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         IconButton(
           onPressed: _isMessageLoading ? null : _messageLandlord,
           icon: _isMessageLoading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 36,
                   height: 36,
                   child: Padding(
@@ -526,7 +526,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                     color: AppColors.primary.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.chat_outlined,
+                  child: Icon(Icons.chat_outlined,
                       color: AppColors.primary, size: 20),
                 ),
         ),
@@ -539,7 +539,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               color: AppColors.success.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.phone,
+            child: Icon(Icons.phone,
                 color: AppColors.success, size: 20),
           ),
         ),
@@ -570,7 +570,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             Row(children: [
               Container(
                 width: 8, height: 8,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                     color: AppColors.info, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
@@ -673,7 +673,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             const Spacer(),
             // Reminder toggle
             if (_isTogglingReminder)
-              const SizedBox(
+              SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
@@ -719,7 +719,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                           .copyWith(color: AppColors.textHint)),
                   const SizedBox(height: 2),
                   Text('₦${_formatAmount(rental.rentAmount)}',
-                      style: AppTextStyles.h4
+                      style: AppTextStyles.naira(AppTextStyles.h4)
                           .copyWith(color: AppColors.textPrimary)),
                 ],
               ),
@@ -755,7 +755,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(children: [
-                const Icon(Icons.error_outline,
+                Icon(Icons.error_outline,
                     size: 16, color: AppColors.error),
                 const SizedBox(width: 8),
                 Text(
@@ -775,7 +775,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(children: [
-                const Icon(Icons.info_outline,
+                Icon(Icons.info_outline,
                     size: 16, color: AppColors.warning),
                 const SizedBox(width: 8),
                 Text(
@@ -810,7 +810,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               color: AppColors.primary.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.search,
+            child: Icon(Icons.search,
                 color: AppColors.primary, size: 20),
           ),
           const SizedBox(width: 12),
@@ -829,7 +829,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: AppColors.primary),
+          Icon(Icons.chevron_right, color: AppColors.primary),
         ]),
       ),
     );
@@ -837,7 +837,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
 
   Widget _imagePlaceholder() => Container(
         color: AppColors.background,
-        child: const Center(
+        child: Center(
           child: Icon(Icons.home_outlined,
               size: 48, color: AppColors.textHint),
         ),
@@ -1038,7 +1038,7 @@ class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
                 color: AppColors.info.withAlpha(26),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.build_outlined,
+              child: Icon(Icons.build_outlined,
                   size: 16, color: AppColors.info),
             ),
             const SizedBox(width: 10),
@@ -1068,7 +1068,7 @@ class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
                 onPressed: _isActing ? null : _dispute,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 10),
-                  side: const BorderSide(color: AppColors.error),
+                  side: BorderSide(color: AppColors.error),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),

@@ -46,7 +46,7 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.go('/tenant/home'),
         ),
         title: Text('My Inspections', style: AppTextStyles.h4),
@@ -90,11 +90,11 @@ class _TenantPendingTab extends StatelessWidget {
       stream: inspectionService.getTenantRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         if (snapshot.hasError) {
-          developer.log('âŒ Error: ${snapshot.error}',
+          developer.log('❌ Error: ${snapshot.error}',
               name: 'TenantInspections');
           return const _EmptyState(
             icon: Icons.error_outline,
@@ -321,7 +321,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
                     Row(children: [
-                      const Icon(Icons.location_on_outlined,
+                      Icon(Icons.location_on_outlined,
                           size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
                       Expanded(
@@ -345,7 +345,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                 color: AppColors.primary.withAlpha(13),
                 borderRadius: BorderRadius.circular(10)),
             child: Row(children: [
-              const Icon(Icons.calendar_today_outlined,
+              Icon(Icons.calendar_today_outlined,
                   size: 18, color: AppColors.primary),
               const SizedBox(width: 10),
               Expanded(
@@ -397,7 +397,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
             IconButton(
               onPressed: _isMessageLoading ? null : _messageHandler,
               icon: _isMessageLoading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 32,
                       height: 32,
                       child: Padding(
@@ -409,7 +409,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                       decoration: BoxDecoration(
                           color: AppColors.primary.withAlpha(26),
                           shape: BoxShape.circle),
-                      child: const Icon(Icons.chat_outlined,
+                      child: Icon(Icons.chat_outlined,
                           color: AppColors.primary, size: 16)),
             ),
           ]),
@@ -425,7 +425,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.note_outlined,
+                    Icon(Icons.note_outlined,
                         size: 16, color: AppColors.textSecondary),
                     const SizedBox(width: 8),
                     Expanded(
@@ -444,7 +444,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                 onPressed: _isLoading ? null : _cancelRequest,
                 style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: const BorderSide(color: AppColors.border),
+                    side: BorderSide(color: AppColors.border),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10))),
                 child: _isLoading
@@ -476,7 +476,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
       width: 70,
       height: 70,
       color: AppColors.background,
-      child: const Icon(Icons.home, color: AppColors.textHint));
+      child: Icon(Icons.home, color: AppColors.textHint));
 }
 
 // ============================================================
@@ -492,7 +492,7 @@ class _TenantUpcomingTab extends StatelessWidget {
       stream: inspectionService.getTenantRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         final all = snapshot.data ?? [];
@@ -646,7 +646,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 Text(r.propertyTitle, style: AppTextStyles.labelLarge),
                 const SizedBox(height: 4),
                 Row(children: [
-                  const Icon(Icons.access_time,
+                  Icon(Icons.access_time,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Text(r.requestedTimeDisplay,
@@ -655,7 +655,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 ]),
                 const SizedBox(height: 2),
                 Row(children: [
-                  const Icon(Icons.location_on_outlined,
+                  Icon(Icons.location_on_outlined,
                       size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Expanded(
@@ -718,7 +718,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.primary.withAlpha(51))),
             child: Row(children: [
-              const Icon(Icons.info_outline,
+              Icon(Icons.info_outline,
                   size: 20, color: AppColors.primary),
               const SizedBox(width: 10),
               Expanded(
@@ -786,7 +786,7 @@ class _TenantHistoryTab extends StatelessWidget {
       stream: inspectionService.getTenantRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+          return Center(
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         final all = snapshot.data ?? [];
@@ -870,7 +870,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         });
       }
     } catch (e) {
-      developer.log('âŒ Error loading rental interest: $e',
+      developer.log('❌ Error loading rental interest: $e',
           name: 'TenantHistory');
       if (mounted) {
         setState(
@@ -938,7 +938,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.warning.withAlpha(77))),
             child: Row(children: [
-              const Icon(Icons.bolt, size: 20, color: AppColors.warning),
+              Icon(Icons.bolt, size: 20, color: AppColors.warning),
               const SizedBox(width: 8),
               Expanded(
                   child: Column(
@@ -972,13 +972,13 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                         width: 50,
                         height: 50,
                         color: AppColors.background,
-                        child: const Icon(Icons.home,
+                        child: Icon(Icons.home,
                             color: AppColors.textHint, size: 24)))
                 : Container(
                     width: 50,
                     height: 50,
                     color: AppColors.background,
-                    child: const Icon(Icons.home,
+                    child: Icon(Icons.home,
                         color: AppColors.textHint, size: 24)),
           ),
           const SizedBox(width: 12),
@@ -1023,7 +1023,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
             child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline,
+                  Icon(Icons.info_outline,
                       size: 16, color: AppColors.error),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1102,7 +1102,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                   onPressed: () => _passOnProperty(),
                   style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: AppColors.border),
+                      side: BorderSide(color: AppColors.border),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10))),
                   child: Text('I\'ll Keep Looking',
@@ -1132,7 +1132,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
               border: Border.all(color: AppColors.border),
             ),
             child: Row(children: [
-              const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+              Icon(Icons.search, color: AppColors.textSecondary, size: 20),
               const SizedBox(width: 10),
               Expanded(child: Text(
                 'You passed on this property. Keep browsing to find your perfect home!',
@@ -1151,7 +1151,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         // Loading
         if (r.isCompleted && r.tenantRated && _isLoadingInterest) ...[
           const SizedBox(height: 12),
-          const Center(
+          Center(
               child: SizedBox(
                   width: 20,
                   height: 20,
@@ -1275,7 +1275,8 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Rate Your Experience'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('How was your inspection with $target?',
                 style: AppTextStyles.bodyMedium
                     .copyWith(color: AppColors.textSecondary),
@@ -1317,10 +1318,11 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                 fillColor: AppColors.background,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border)),
+                    borderSide: BorderSide(color: AppColors.border)),
               ),
             ),
           ]),
+          ), // SingleChildScrollView
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           actions: [

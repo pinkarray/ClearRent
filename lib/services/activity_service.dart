@@ -1,52 +1,51 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:developer' as developer;
+import '../core/utils/app_logger.dart';
 import '../shared/models/activity_model.dart';
 
 class ActivityService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  static const String _tag = 'ActivityService';
+
   CollectionReference get _activitiesRef => _firestore.collection('activities');
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
-  // ============ CREATE ACTIVITIES ============
+  // ─────────────────────────────────────────────
+  // CREATE
+  // ─────────────────────────────────────────────
 
-  /// Track when a property is added
+  /// Track when a landlord lists a property.
+  /// [landlordId] is optional — falls back to the current user's uid.
   Future<void> trackPropertyAdded({
-    required String landlordId,
+    String? landlordId,
     required String propertyId,
     required String propertyTitle,
   }) async {
+    final uid = landlordId ?? _currentUserId;
+    if (uid == null) return;
     try {
       await _activitiesRef.add({
-        'landlordId': landlordId,
+        'landlordId': uid,
         'type': 'propertyAdded',
         'title': 'Property Listed',
         'subtitle': propertyTitle,
         'propertyId': propertyId,
         'propertyTitle': propertyTitle,
-        'actorId': landlordId,
+        'actorId': uid,
         'actorName': 'You',
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      developer.log(
-        '✅ Activity tracked: Property added',
-        name: 'ActivityService',
-      );
+      AppLogger.i('Property added tracked ($propertyId)', name: _tag);
     } catch (e) {
-      developer.log(
-        '❌ Failed to track property added: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('trackPropertyAdded failed', error: e, name: _tag);
     }
   }
 
-  /// Track when someone views a property
+  /// Track when a tenant or agent views a property.
   Future<void> trackPropertyViewed({
     required String landlordId,
     required String propertyId,
@@ -54,33 +53,25 @@ class ActivityService {
     required String viewerId,
     required String viewerName,
   }) async {
+    if (landlordId == viewerId) return;
     try {
-      // Don't track if landlord views their own property
-      if (landlordId == viewerId) return;
+      // Deduplicate: skip if same viewer viewed within the last hour
+      final recent = await _activitiesRef
+          .where('landlordId', isEqualTo: landlordId)
+          .where('propertyId', isEqualTo: propertyId)
+          .where('actorId', isEqualTo: viewerId)
+          .where('type', isEqualTo: 'propertyViewed')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .get();
 
-      // Check if this viewer already viewed this property recently (within 1 hour)
-      final recentView =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: landlordId)
-              .where('propertyId', isEqualTo: propertyId)
-              .where('actorId', isEqualTo: viewerId)
-              .where('type', isEqualTo: 'propertyViewed')
-              .orderBy('createdAt', descending: true)
-              .limit(1)
-              .get();
-
-      if (recentView.docs.isNotEmpty) {
-        final lastView =
-            (recentView.docs.first.data() as Map<String, dynamic>)['createdAt'];
-        if (lastView != null) {
-          final lastViewTime = (lastView as Timestamp).toDate();
-          if (DateTime.now().difference(lastViewTime).inHours < 1) {
-            developer.log(
-              '⏭️ Skipping duplicate view tracking',
-              name: 'ActivityService',
-            );
-            return;
-          }
+      if (recent.docs.isNotEmpty) {
+        final ts = (recent.docs.first.data()
+            as Map<String, dynamic>)['createdAt'] as Timestamp?;
+        if (ts != null &&
+            DateTime.now().difference(ts.toDate()).inHours < 1) {
+          AppLogger.i('Skipping duplicate view', name: _tag);
+          return;
         }
       }
 
@@ -96,21 +87,13 @@ class ActivityService {
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      developer.log(
-        '✅ Activity tracked: Property viewed by $viewerName',
-        name: 'ActivityService',
-      );
+      AppLogger.i('Property viewed by $viewerName', name: _tag);
     } catch (e) {
-      developer.log(
-        '❌ Failed to track property view: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('trackPropertyViewed failed', error: e, name: _tag);
     }
   }
 
-  /// Track when someone sends an inquiry (starts a chat)
+  /// Track when a tenant starts a chat (first inquiry only).
   Future<void> trackInquiry({
     required String landlordId,
     required String propertyId,
@@ -119,21 +102,16 @@ class ActivityService {
     required String tenantName,
   }) async {
     try {
-      // Check if inquiry already exists for this property from this tenant
-      final existingInquiry =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: landlordId)
-              .where('propertyId', isEqualTo: propertyId)
-              .where('actorId', isEqualTo: tenantId)
-              .where('type', isEqualTo: 'inquiry')
-              .limit(1)
-              .get();
+      final existing = await _activitiesRef
+          .where('landlordId', isEqualTo: landlordId)
+          .where('propertyId', isEqualTo: propertyId)
+          .where('actorId', isEqualTo: tenantId)
+          .where('type', isEqualTo: 'inquiry')
+          .limit(1)
+          .get();
 
-      if (existingInquiry.docs.isNotEmpty) {
-        developer.log(
-          '⏭️ Inquiry already tracked for this property',
-          name: 'ActivityService',
-        );
+      if (existing.docs.isNotEmpty) {
+        AppLogger.i('Inquiry already tracked for this property', name: _tag);
         return;
       }
 
@@ -149,21 +127,13 @@ class ActivityService {
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      developer.log(
-        '✅ Activity tracked: Inquiry from $tenantName',
-        name: 'ActivityService',
-      );
+      AppLogger.i('Inquiry tracked from $tenantName', name: _tag);
     } catch (e) {
-      developer.log(
-        '❌ Failed to track inquiry: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('trackInquiry failed', error: e, name: _tag);
     }
   }
 
-  /// Track when rent is paid
+  /// Track a rent payment received by the landlord.
   Future<void> trackPayment({
     required String landlordId,
     required String propertyId,
@@ -173,16 +143,15 @@ class ActivityService {
     required double amount,
   }) async {
     try {
-      final formattedAmount =
-          amount >= 1000000
-              ? 'NGN ${(amount / 1000000).toStringAsFixed(1)}M'
-              : 'NGN ${(amount / 1000).toStringAsFixed(0)}K';
+      final formatted = amount >= 1000000
+          ? '₦${(amount / 1000000).toStringAsFixed(1)}M'
+          : '₦${(amount / 1000).toStringAsFixed(0)}K';
 
       await _activitiesRef.add({
         'landlordId': landlordId,
         'type': 'payment',
         'title': 'Rent payment received',
-        'subtitle': '$formattedAmount from $tenantName',
+        'subtitle': '$formatted from $tenantName',
         'propertyId': propertyId,
         'propertyTitle': propertyTitle,
         'actorId': tenantId,
@@ -190,159 +159,112 @@ class ActivityService {
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      developer.log(
-        '✅ Activity tracked: Payment received',
-        name: 'ActivityService',
-      );
+      AppLogger.i('Payment tracked ($formatted)', name: _tag);
     } catch (e) {
-      developer.log(
-        '❌ Failed to track payment: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('trackPayment failed', error: e, name: _tag);
     }
   }
 
-  // ============ FETCH ACTIVITIES ============
+  // ─────────────────────────────────────────────
+  // READ
+  // ─────────────────────────────────────────────
 
-  /// Get recent activities for landlord (limited)
+  /// Recent activities for the current landlord (one-time fetch).
   Future<List<ActivityModel>> getRecentActivities({int limit = 5}) async {
     try {
       if (_currentUserId == null) return [];
-
-      final snapshot =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: _currentUserId)
-              .orderBy('createdAt', descending: true)
-              .limit(limit)
-              .get();
-
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return ActivityModel.fromJson(data);
-      }).toList();
+      final snap = await _activitiesRef
+          .where('landlordId', isEqualTo: _currentUserId)
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .get();
+      return _mapDocs(snap.docs);
     } catch (e) {
-      developer.log(
-        '❌ Failed to get recent activities: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('getRecentActivities failed', error: e, name: _tag);
       return [];
     }
   }
 
-  /// Get all activities for landlord (for full list screen)
+  /// All activities for the current landlord (one-time fetch).
   Future<List<ActivityModel>> getAllActivities() async {
     try {
       if (_currentUserId == null) return [];
-
-      final snapshot =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: _currentUserId)
-              .orderBy('createdAt', descending: true)
-              .get();
-
-      return snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return ActivityModel.fromJson(data);
-      }).toList();
+      final snap = await _activitiesRef
+          .where('landlordId', isEqualTo: _currentUserId)
+          .orderBy('createdAt', descending: true)
+          .get();
+      return _mapDocs(snap.docs);
     } catch (e) {
-      developer.log(
-        '❌ Failed to get all activities: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      AppLogger.e('getAllActivities failed', error: e, name: _tag);
       return [];
     }
   }
 
-  /// Get unread activity count
-  Future<int> getUnreadCount() async {
-    try {
-      if (_currentUserId == null) return 0;
-
-      final snapshot =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: _currentUserId)
-              .where('isRead', isEqualTo: false)
-              .count()
-              .get();
-
-      return snapshot.count ?? 0;
-    } catch (e) {
-      developer.log(
-        '❌ Failed to get unread count: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
-      return 0;
-    }
-  }
-
-  /// Mark activity as read
-  Future<void> markAsRead(String activityId) async {
-    try {
-      await _activitiesRef.doc(activityId).update({'isRead': true});
-    } catch (e) {
-      developer.log(
-        '❌ Failed to mark as read: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
-    }
-  }
-
-  /// Mark all activities as read
-  Future<void> markAllAsRead() async {
-    try {
-      if (_currentUserId == null) return;
-
-      final snapshot =
-          await _activitiesRef
-              .where('landlordId', isEqualTo: _currentUserId)
-              .where('isRead', isEqualTo: false)
-              .get();
-
-      final batch = _firestore.batch();
-      for (final doc in snapshot.docs) {
-        batch.update(doc.reference, {'isRead': true});
-      }
-      await batch.commit();
-      developer.log('✅ All activities marked as read', name: 'ActivityService');
-    } catch (e) {
-      developer.log(
-        '❌ Failed to mark all as read: $e',
-        name: 'ActivityService',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
-    }
-  }
-
-  /// Stream of activities (for real-time updates)
+  /// Real-time stream of activities for the current landlord.
   Stream<List<ActivityModel>> activitiesStream({int limit = 10}) {
-    if (_currentUserId == null) {
-      return Stream.value([]);
-    }
-
+    if (_currentUserId == null) return Stream.value([]);
     return _activitiesRef
         .where('landlordId', isEqualTo: _currentUserId)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id;
-            return ActivityModel.fromJson(data);
-          }).toList();
-        });
+        .map((snap) => _mapDocs(snap.docs));
+  }
+
+  // ─────────────────────────────────────────────
+  // UNREAD
+  // ─────────────────────────────────────────────
+
+  Future<int> getUnreadCount() async {
+    try {
+      if (_currentUserId == null) return 0;
+      final snap = await _activitiesRef
+          .where('landlordId', isEqualTo: _currentUserId)
+          .where('isRead', isEqualTo: false)
+          .count()
+          .get();
+      return snap.count ?? 0;
+    } catch (e) {
+      AppLogger.e('getUnreadCount failed', error: e, name: _tag);
+      return 0;
+    }
+  }
+
+  Future<void> markAsRead(String activityId) async {
+    try {
+      await _activitiesRef.doc(activityId).update({'isRead': true});
+    } catch (e) {
+      AppLogger.e('markAsRead failed', error: e, name: _tag);
+    }
+  }
+
+  Future<void> markAllAsRead() async {
+    try {
+      if (_currentUserId == null) return;
+      final snap = await _activitiesRef
+          .where('landlordId', isEqualTo: _currentUserId)
+          .where('isRead', isEqualTo: false)
+          .get();
+      final batch = _firestore.batch();
+      for (final doc in snap.docs) {
+        batch.update(doc.reference, {'isRead': true});
+      }
+      await batch.commit();
+      AppLogger.i('All activities marked as read', name: _tag);
+    } catch (e) {
+      AppLogger.e('markAllAsRead failed', error: e, name: _tag);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // HELPERS
+  // ─────────────────────────────────────────────
+
+  List<ActivityModel> _mapDocs(List<QueryDocumentSnapshot> docs) {
+    return docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      data['id'] = doc.id;
+      return ActivityModel.fromJson(data);
+    }).toList();
   }
 }

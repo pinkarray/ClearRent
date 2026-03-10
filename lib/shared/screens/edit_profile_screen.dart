@@ -220,7 +220,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Edit Profile', style: AppTextStyles.h4),
@@ -228,7 +228,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
       body:
           _isLoading
-              ? const Center(
+              ? Center(
                 child: CircularProgressIndicator(color: AppColors.primary),
               )
               : SingleChildScrollView(
@@ -307,7 +307,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 child:
                     _isUploadingPhoto
-                        ? const Center(
+                        ? Center(
                           child: CircularProgressIndicator(
                             color: AppColors.primary,
                             strokeWidth: 2,
@@ -427,7 +427,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             prefixIcon: Icon(Icons.phone_outlined, color: AppColors.textHint),
             suffixIcon:
                 _isSavingPhone
-                    ? const Padding(
+                    ? Padding(
                       padding: EdgeInsets.all(12),
                       child: SizedBox(
                         width: 20,

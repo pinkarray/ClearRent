@@ -249,7 +249,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -324,7 +324,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.info_outline,
                             color: AppColors.warning,
                             size: 20,
@@ -481,7 +481,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.verified,
                     size: 12,
                     color: AppColors.success,
@@ -509,7 +509,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
           color: AppColors.background,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Center(
+        child: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -670,7 +670,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
           color: AppColors.background,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Center(
+        child: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -810,8 +810,8 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
             '₦${NumberFormat('#,###').format(amount)}',
             style:
                 isTotal
-                    ? AppTextStyles.h4.copyWith(color: AppColors.primary)
-                    : AppTextStyles.labelMedium,
+                    ? AppTextStyles.naira(AppTextStyles.h4).copyWith(color: AppColors.primary)
+                    : AppTextStyles.naira(AppTextStyles.labelMedium),
           ),
         ],
       ),

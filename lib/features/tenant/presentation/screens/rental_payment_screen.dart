@@ -53,7 +53,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Rental Payment', style: AppTextStyles.h4),
@@ -77,7 +77,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Icon(Icons.warning_amber_rounded,
+                      Icon(Icons.warning_amber_rounded,
                           color: AppColors.error, size: 20),
                       const SizedBox(width: 8),
                       Text('Payment Rejected',
@@ -114,7 +114,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                   decoration: BoxDecoration(
                       color: AppColors.primary.withAlpha(26),
                       borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(Icons.home_outlined,
+                  child: Icon(Icons.home_outlined,
                       color: AppColors.primary, size: 28),
                 ),
                 const SizedBox(width: 12),
@@ -128,7 +128,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
                       Row(children: [
-                        const Icon(Icons.location_on_outlined,
+                        Icon(Icons.location_on_outlined,
                             size: 14, color: AppColors.textSecondary),
                         const SizedBox(width: 4),
                         Expanded(
@@ -257,7 +257,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                               decoration: BoxDecoration(
                                   color: AppColors.primary.withAlpha(26),
                                   shape: BoxShape.circle),
-                              child: const Icon(
+                              child: Icon(
                                   Icons.photo_library_outlined,
                                   color: AppColors.primary,
                                   size: 20),
@@ -290,7 +290,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                               decoration: BoxDecoration(
                                   color: AppColors.textHint.withAlpha(26),
                                   shape: BoxShape.circle),
-                              child: const Icon(
+                              child: Icon(
                                   Icons.camera_alt_outlined,
                                   color: AppColors.textSecondary,
                                   size: 20),
@@ -332,7 +332,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                   color: AppColors.infoLight.withAlpha(128),
                   borderRadius: BorderRadius.circular(10)),
               child: Row(children: [
-                const Icon(Icons.info_outline,
+                Icon(Icons.info_outline,
                     size: 16, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(
@@ -479,7 +479,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
               decoration: BoxDecoration(
                   color: AppColors.successLight,
                   shape: BoxShape.circle),
-              child: const Icon(Icons.check,
+              child: Icon(Icons.check,
                   size: 40, color: AppColors.success),
             ),
             const SizedBox(height: 24),

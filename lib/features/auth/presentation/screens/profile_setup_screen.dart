@@ -42,38 +42,90 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   File? _profileImageFile;
   final PropertyService _profileUploadService = PropertyService();
 
-  // Lagos LGAs for location selection
+  // Real Lagos neighbourhoods and areas — accurate for on-the-ground agents
   static const List<String> _lagosAreas = [
-    'Agege',
-    'Ajeromi-Ifelodun',
+    // Island / High-end
+    'Victoria Island',
+    'Ikoyi',
+    'Lekki Phase 1',
+    'Lekki Phase 2',
+    'Lekki',
+    'Ajah',
+    'Sangotedo',
+    'Chevron',
+    'Ilasan',
+    'Oniru',
+    'Obalende',
+    'Marina',
+    'Lagos Island',
+    'Ibeju-Lekki',
+    'Epe',
+    // Mainland — Central
+    'Ikeja',
+    'GRA Ikeja',
+    'Alausa',
+    'Oregun',
+    'Omole',
+    'Ojodu',
+    'Ogba',
+    'Berger',
+    'Isheri',
+    'Maryland',
+    'Anthony',
+    'Palmgrove',
+    'Gbagada',
+    'Ogudu',
+    // Mainland — South
+    'Yaba',
+    'Surulere',
+    'Bariga',
+    'Shomolu',
+    'Fadeyi',
+    'Mushin',
+    'Isolo',
+    'Ikotun',
+    'Egbeda',
     'Alimosho',
+    'Oshodi',
+    'Mafoluku',
+    'Festac',
     'Amuwo-Odofin',
     'Apapa',
-    'Badagry',
-    'Epe',
-    'Eti-Osa',
-    'Ibeju-Lekki',
+    'Ajegunle',
+    // Mainland — North / Outer
+    'Ketu',
+    'Mile 12',
+    'Ojota',
+    'Agege',
+    'Magodo',
     'Ifako-Ijaiye',
-    'Ikeja',
     'Ikorodu',
-    'Kosofe',
-    'Lagos Island',
-    'Lagos Mainland',
-    'Mushin',
+    'Badagry',
     'Ojo',
-    'Oshodi-Isolo',
-    'Shomolu',
-    'Surulere',
-    'Lekki',
-    'Victoria Island',
-    'Yaba',
-    'Ajah',
-    'Ikoyi',
+    // Other
     'Other',
   ];
 
   bool get _isLandlord => widget.accountType == 'landlord';
   bool get _isAgent => widget.accountType == 'agent';
+
+  // All selectable areas (excluding 'Other')
+  List<String> get _selectableAreas =>
+      _lagosAreas.where((a) => a != 'Other').toList();
+
+  bool get _allSelected =>
+      _selectableAreas.every((a) => _selectedServiceAreas.contains(a));
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_allSelected) {
+        _selectedServiceAreas.clear();
+      } else {
+        _selectedServiceAreas.clear();
+        _selectedServiceAreas.addAll(_selectableAreas);
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -170,30 +222,42 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
               const SizedBox(height: 20),
               Text('Profile Photo', style: AppTextStyles.h4),
               const SizedBox(height: 24),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                _buildImageSourceOption(
-                  icon: Icons.camera_alt_rounded, label: 'Camera',
-                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
-                ),
-                _buildImageSourceOption(
-                  icon: Icons.photo_library_rounded, label: 'Gallery',
-                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-                ),
-                if (_profileImageFile != null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
                   _buildImageSourceOption(
-                    icon: Icons.delete_outline, label: 'Remove',
-                    onTap: () {
-                      Navigator.pop(ctx, null);
-                      setState(() => _profileImageFile = null);
-                    },
-                    color: AppColors.error,
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Camera',
+                    onTap: () => Navigator.pop(ctx, ImageSource.camera),
                   ),
-              ]),
+                  _buildImageSourceOption(
+                    icon: Icons.photo_library_rounded,
+                    label: 'Gallery',
+                    onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                  ),
+                  if (_profileImageFile != null)
+                    _buildImageSourceOption(
+                      icon: Icons.delete_outline,
+                      label: 'Remove',
+                      onTap: () {
+                        Navigator.pop(ctx, null);
+                        setState(() => _profileImageFile = null);
+                      },
+                      color: AppColors.error,
+                    ),
+                ],
+              ),
               const SizedBox(height: 16),
             ],
           ),
@@ -217,22 +281,34 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
   }
 
-  Widget _buildImageSourceOption({required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
+  Widget _buildImageSourceOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(children: [
-        Container(
-          width: 64, height: 64,
-          decoration: BoxDecoration(
-            color: (color ?? AppColors.primary).withAlpha(26),
-            borderRadius: BorderRadius.circular(16),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: (color ?? AppColors.primary).withAlpha(26),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: color ?? AppColors.primary, size: 32),
           ),
-          child: Icon(icon, color: color ?? AppColors.primary, size: 32),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: AppTextStyles.labelMedium.copyWith(
-          color: color ?? AppColors.textPrimary)),
-      ]),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: AppTextStyles.labelMedium.copyWith(
+              color: color ?? AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -269,7 +345,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         email: _authService.currentUser?.email ?? '',
         accountType: widget.accountType,
         bvn: _bvnController.text.trim(),
-        phone: (_isLandlord || _isAgent) ? _phoneController.text.trim() : null,
+        phone: _phoneController.text.trim(),
         // Agent-specific fields
         baseLocation: _isAgent ? _selectedBaseLocation : null,
         serviceAreas: _isAgent ? _selectedServiceAreas : null,
@@ -282,10 +358,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         });
         return;
       }
-      
+
       if (_profileImageFile != null) {
         try {
-          final imageUrl = await _profileUploadService.uploadImage(_profileImageFile!);
+          final imageUrl =
+              await _profileUploadService.uploadImage(_profileImageFile!);
           if (imageUrl != null && imageUrl.isNotEmpty) {
             await _authService.updateUserProfile({
               'profileImageUrl': imageUrl,
@@ -306,14 +383,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     setState(() => _isLoading = false);
 
-    if (mounted) {
-      if (widget.accountType == 'landlord') {
+    if (!mounted) return;
+
+    // Profile saved — navigate to home based on account type
+    final accountType = widget.accountType.toLowerCase();
+    switch (accountType) {
+      case 'landlord':
         context.go('/landlord/home');
-      } else if (widget.accountType == 'agent') {
+        break;
+      case 'agent':
         context.go('/agent/home');
-      } else {
+        break;
+      default:
         context.go('/tenant/home');
-      }
     }
   }
 
@@ -337,10 +419,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Title
-                Text(
-                  AppStrings.setupProfile,
-                  style: AppTextStyles.h2,
-                ),
+                Text(AppStrings.setupProfile, style: AppTextStyles.h2),
                 const SizedBox(height: 8),
                 Text(
                   _getSubtitle(),
@@ -351,10 +430,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                 const SizedBox(height: 32),
 
-                // Profile picture placeholder
+                // Profile picture
                 Center(
                   child: UserAvatar(
-                    name: _nameController.text.isNotEmpty ? _nameController.text : null,
+                    name: _nameController.text.isNotEmpty
+                        ? _nameController.text
+                        : null,
                     imageFile: _profileImageFile,
                     size: 100,
                     showEditBadge: true,
@@ -422,7 +503,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                        Icon(
+                          Icons.error_outline,
+                          color: AppColors.error,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -450,34 +535,37 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                 const SizedBox(height: 20),
 
-                // Phone number (for landlords and agents)
-                if (_isLandlord || _isAgent) ...[
-                  AppTextField(
-                    label: 'Phone Number',
-                    hint: '08012345678',
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    validator: _validatePhone,
-                    prefixIcon: const Icon(Icons.phone_outlined, color: AppColors.textSecondary),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(11),
-                    ],
+                // Phone number — all roles
+                AppTextField(
+                  label: 'Phone Number',
+                  hint: '08012345678',
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  validator: _validatePhone,
+                  prefixIcon: Icon(
+                    Icons.phone_outlined,
+                    color: AppColors.textSecondary,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _isAgent
-                        ? 'Landlords and tenants will use this number to contact you'
-                        : 'Tenants will use this number to contact you',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(11),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _isAgent
+                      ? 'Landlords and tenants will use this number to contact you'
+                      : _isLandlord
+                          ? 'Tenants will use this number to contact you'
+                          : 'You\'ll verify this number with a one-time code',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
                   ),
-                  const SizedBox(height: 20),
-                ],
+                ),
+                const SizedBox(height: 20),
 
-                // Agent-specific: Base Location
+                // Agent-specific: Base Location + Service Areas
                 if (_isAgent) ...[
                   _buildBaseLocationSelector(),
                   const SizedBox(height: 20),
@@ -487,7 +575,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
                 // BVN/NIN
                 AppTextField(
-                  label: (_isLandlord || _isAgent) ? 'NIN (National Identification Number)' : AppStrings.bvn,
+                  label: (_isLandlord || _isAgent)
+                      ? 'NIN (National Identification Number)'
+                      : AppStrings.bvn,
                   hint: AppStrings.bvnHint,
                   controller: _bvnController,
                   keyboardType: TextInputType.number,
@@ -516,7 +606,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        (_isLandlord || _isAgent) ? 'Why do we need your NIN?' : AppStrings.whyBvn,
+                        (_isLandlord || _isAgent)
+                            ? 'Why do we need your NIN?'
+                            : AppStrings.whyBvn,
                         style: AppTextStyles.labelMedium.copyWith(
                           color: AppColors.primary,
                         ),
@@ -537,7 +629,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.info_outline,
                           size: 20,
                           color: AppColors.info,
@@ -607,9 +699,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         const SizedBox(height: 4),
         Text(
           'Where are you based? This helps us calculate inspection distances.',
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 12),
         Container(
@@ -629,8 +719,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 ),
               ),
               isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-              items: _lagosAreas.where((area) => area != 'Other').map((area) {
+              icon: Icon(
+                Icons.keyboard_arrow_down,
+                color: AppColors.textSecondary,
+              ),
+              items: _selectableAreas.map((area) {
                 return DropdownMenuItem(
                   value: area,
                   child: Text(area, style: AppTextStyles.bodyMedium),
@@ -661,9 +754,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         const SizedBox(height: 4),
         Text(
           'Which areas can you cover for inspections? Select all that apply.',
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 12),
 
@@ -705,34 +796,80 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Tap to select areas:',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+              // Header row with count + Select All / Clear All
+              Row(
+                children: [
+                  Text(
+                    'Tap to select areas:',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _toggleSelectAll,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _allSelected
+                            ? AppColors.error.withAlpha(26)
+                            : AppColors.primary.withAlpha(26),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: _allSelected
+                              ? AppColors.error.withAlpha(77)
+                              : AppColors.primary.withAlpha(77),
+                        ),
+                      ),
+                      child: Text(
+                        _allSelected ? 'Clear All' : 'Select All',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: _allSelected
+                              ? AppColors.error
+                              : AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
+
+              // Area chips
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: _lagosAreas.map((area) {
-                  final isSelected = _selectedServiceAreas.contains(area) || 
-                                     (area == 'Other' && _showCustomAreaInput);
+                  final isSelected = _selectedServiceAreas.contains(area) ||
+                      (area == 'Other' && _showCustomAreaInput);
                   return GestureDetector(
                     onTap: () => _toggleServiceArea(area),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSelected ? AppColors.primary : AppColors.background,
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.background,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.border,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.border,
                         ),
                       ),
                       child: Text(
                         area,
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: isSelected ? Colors.white : AppColors.textPrimary,
+                          color: isSelected
+                              ? Colors.white
+                              : AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -763,7 +900,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 padding: const EdgeInsets.only(top: 24),
                 child: IconButton(
                   onPressed: _addCustomArea,
-                  icon: const Icon(Icons.add_circle, color: AppColors.primary, size: 32),
+                  icon: Icon(
+                    Icons.add_circle,
+                    color: AppColors.primary,
+                    size: 32,
+                  ),
                 ),
               ),
             ],

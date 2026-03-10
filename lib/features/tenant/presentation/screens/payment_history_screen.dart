@@ -143,14 +143,14 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Payment History', style: AppTextStyles.h4),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : _payments.isEmpty
               ? _buildEmptyState()
@@ -394,7 +394,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(children: [
-                const Icon(Icons.info_outline,
+                Icon(Icons.info_outline,
                     size: 14, color: AppColors.error),
                 const SizedBox(width: 6),
                 Expanded(
@@ -421,7 +421,7 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
               color: AppColors.primary.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.receipt_long_outlined,
+            child: Icon(Icons.receipt_long_outlined,
                 size: 48, color: AppColors.primary),
           ),
           const SizedBox(height: 24),

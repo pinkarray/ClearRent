@@ -117,11 +117,11 @@ class PropertyModel {
   // Format rent display
   String get formattedRent {
     if (rent >= 1000000) {
-      return 'NGN ${(rent / 1000000).toStringAsFixed(1)}M';
+      return '₦${(rent / 1000000).toStringAsFixed(1)}M';
     } else if (rent >= 1000) {
-      return 'NGN ${(rent / 1000).toStringAsFixed(0)}K';
+      return '₦${(rent / 1000).toStringAsFixed(0)}K';
     }
-    return 'NGN ${rent.toStringAsFixed(0)}';
+    return '₦${rent.toStringAsFixed(0)}';
   }
 
   String get rentPeriod => rentFrequency == 'yearly' ? '/year' : '/month';

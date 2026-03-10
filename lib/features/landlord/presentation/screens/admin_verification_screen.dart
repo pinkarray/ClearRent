@@ -92,7 +92,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, color: AppColors.success, size: 20),
+                  Icon(Icons.info_outline, color: AppColors.success, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -169,7 +169,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber, color: AppColors.warning, size: 20),
+                  Icon(Icons.warning_amber, color: AppColors.warning, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('They will be able to re-submit with new documents.',
@@ -238,7 +238,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Verification Review',
@@ -246,7 +246,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.primary),
+            icon: Icon(Icons.refresh, color: AppColors.primary),
             onPressed: _loadPendingVerifications,
           ),
         ],
@@ -256,7 +256,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _filteredVerifications.isEmpty
               ? _buildEmptyState()
               : _buildVerificationList(),
@@ -331,7 +331,7 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen>
           Container(
             width: 100, height: 100,
             decoration: BoxDecoration(color: AppColors.successLight, shape: BoxShape.circle),
-            child: const Icon(Icons.check_circle_outline, size: 50, color: AppColors.success),
+            child: Icon(Icons.check_circle_outline, size: 50, color: AppColors.success),
           ),
           const SizedBox(height: 24),
           Text('All caught up!', style: AppTextStyles.h4),
@@ -489,7 +489,7 @@ class _VerificationCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.payments_outlined, size: 20, color: AppColors.primary),
+                  Icon(Icons.payments_outlined, size: 20, color: AppColors.primary),
                   const SizedBox(width: 10),
                   Text('Verification Fee: ', style: AppTextStyles.bodySmall),
                   Text(_getPaymentLabel(),
@@ -527,7 +527,7 @@ class _VerificationCard extends StatelessWidget {
                   onPressed: isProcessing ? null : onReject,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
+                    side: BorderSide(color: AppColors.error),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
@@ -641,7 +641,7 @@ class _VerificationCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.people_outline, size: 18, color: AppColors.info),
+            Icon(Icons.people_outline, size: 18, color: AppColors.info),
             const SizedBox(width: 8),
             Text('Guarantor Information',
                 style: AppTextStyles.labelMedium.copyWith(color: AppColors.info)),
@@ -708,7 +708,7 @@ class _DocumentRow extends StatelessWidget {
                       color: hasUrl ? AppColors.textPrimary : AppColors.textHint)),
             ),
             if (hasUrl)
-              const Icon(Icons.open_in_new, size: 18, color: AppColors.primary)
+              Icon(Icons.open_in_new, size: 18, color: AppColors.primary)
             else
               Text('Not uploaded', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
           ],

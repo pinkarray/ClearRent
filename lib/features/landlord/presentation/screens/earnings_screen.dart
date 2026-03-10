@@ -110,7 +110,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : RefreshIndicator(
               onRefresh: _refreshData,
               color: AppColors.primary,
@@ -305,7 +305,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
               color: AppColors.primaryLight.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.account_balance_wallet_outlined,
               size: 32,
               color: AppColors.primary,

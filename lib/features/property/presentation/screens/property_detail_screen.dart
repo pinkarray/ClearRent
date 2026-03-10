@@ -402,8 +402,55 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       return;
     }
 
+    // Block if ownership doc was rejected — landlord must re-submit
+    final docStatus = widget.property.ownershipDocStatus;
+    if (docStatus == 'rejected') {
+      _showDocBlockedDialog(
+        title: 'Document Rejected',
+        message:
+            'The ownership document for this property was rejected by our team. '
+            'The landlord must re-upload a valid document before inspections can be booked.',
+      );
+      return;
+    }
+
+    // Block if no doc uploaded yet — landlord must provide it first
+    if (docStatus == 'none') {
+      _showDocBlockedDialog(
+        title: 'Document Required',
+        message:
+            'The landlord has not yet uploaded an ownership document for this property. '
+            'Inspections cannot be booked until ownership is verified.',
+      );
+      return;
+    }
+
     // Both verified - proceed with inspection request
     _showRequestInspectionSheet();
+  }
+
+  void _showDocBlockedDialog({required String title, required String message}) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Icon(Icons.shield_outlined, color: AppColors.warning, size: 22),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title, style: AppTextStyles.h4)),
+        ]),
+        content: Text(
+          message,
+          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Got it', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showRequestInspectionSheet() async {
@@ -534,7 +581,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (_isLoading) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -571,7 +618,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           Row(
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.location_on,
                                 size: 18,
                                 color: AppColors.textSecondary,
@@ -615,6 +662,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                             if (!_isCheckingVerification &&
                                 !_isCurrentUserVerified)
+                              const SizedBox(height: 24),
+
+                            // Ownership doc status banner — shown when doc is not verified
+                            if (property.ownershipDocStatus != 'verified')
+                              _buildDocStatusBanner(property),
+
+                            if (property.ownershipDocStatus != 'verified')
                               const SizedBox(height: 24),
 
                             // Inspection fee section (for agent-handled properties)
@@ -705,7 +759,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                         ),
                                         child: Row(
                                           children: [
-                                            const Icon(
+                                            Icon(
                                               Icons.info_outline,
                                               size: 18,
                                               color: AppColors.warning,
@@ -802,6 +856,85 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
+  Widget _buildDocStatusBanner(PropertyModel property) {
+    final docStatus = property.ownershipDocStatus;
+
+    final Color color;
+    final IconData icon;
+    final String title;
+    final String subtitle;
+
+    switch (docStatus) {
+      case 'rejected':
+        color = AppColors.error;
+        icon = Icons.gpp_bad_outlined;
+        title = 'Ownership Document Rejected';
+        subtitle =
+            'The landlord\'s ownership document was rejected. Inspections are '
+            'blocked until a valid document is re-uploaded and approved.';
+        break;
+      case 'pending':
+        color = AppColors.warning;
+        icon = Icons.hourglass_top_outlined;
+        title = 'Document Under Review';
+        subtitle =
+            'The landlord\'s ownership document is being reviewed by our team. '
+            'You can still browse this listing but cannot book an inspection yet.';
+        break;
+      case 'none':
+      default:
+        color = AppColors.textSecondary;
+        icon = Icons.description_outlined;
+        title = 'Document Not Yet Uploaded';
+        subtitle =
+            'The landlord has not yet uploaded an ownership document. '
+            'Inspections will be available once ownership is verified.';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withAlpha(18),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.labelMedium.copyWith(color: color),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImageCarousel(PropertyModel property) {
     return Stack(
       children: [
@@ -811,7 +944,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               property.images.isEmpty
                   ? Container(
                     color: AppColors.background,
-                    child: const Center(
+                    child: Center(
                       child: Icon(
                         Icons.image_not_supported,
                         size: 50,
@@ -831,7 +964,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         placeholder:
                             (context, url) => Container(
                               color: AppColors.background,
-                              child: const Center(
+                              child: Center(
                                 child: CircularProgressIndicator(
                                   color: AppColors.primary,
                                 ),
@@ -840,7 +973,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         errorWidget:
                             (context, url, error) => Container(
                               color: AppColors.background,
-                              child: const Icon(
+                              child: Icon(
                                 Icons.image_not_supported,
                                 size: 50,
                                 color: AppColors.textHint,
@@ -882,7 +1015,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 8),
                 ],
               ),
-              child: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+              child: Icon(Icons.arrow_back, color: AppColors.textPrimary),
             ),
           ),
         ),
@@ -908,7 +1041,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           ),
                         ],
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.share_outlined,
                         color: AppColors.textPrimary,
                       ),
@@ -1005,6 +1138,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           case 'edit':
             _editProperty();
             break;
+          case 'health':
+            context.push('/landlord/property-health', extra: widget.property);
+            break;
           case 'toggle':
             _toggleAvailability();
             break;
@@ -1028,6 +1164,16 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   Icon(Icons.edit_outlined, size: 20),
                   SizedBox(width: 12),
                   Text('Edit Property'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'health',
+              child: Row(
+                children: [
+                  Icon(Icons.monitor_heart_outlined, size: 20),
+                  SizedBox(width: 12),
+                  Text('Property Health'),
                 ],
               ),
             ),
@@ -1071,7 +1217,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
             ),
             const PopupMenuDivider(),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
               child: Row(
                 children: [
@@ -1092,7 +1238,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
             BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 8),
           ],
         ),
-        child: const Icon(Icons.more_vert, color: AppColors.textPrimary),
+        child: Icon(Icons.more_vert, color: AppColors.textPrimary),
       ),
     );
   }
@@ -1152,7 +1298,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.analytics_outlined,
                 size: 20,
                 color: AppColors.primary,
@@ -1161,9 +1307,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               Text('Property Performance', style: AppTextStyles.labelLarge),
               const Spacer(),
               TextButton(
-                onPressed: _viewPropertyStats,
+                onPressed: () => context.push('/landlord/property-health', extra: property),
                 child: Text(
-                  'See Details',
+                  'View Health',
                   style: AppTextStyles.labelMedium.copyWith(
                     color: AppColors.primary,
                   ),
@@ -1208,162 +1354,275 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   // ============ TENANT MANAGEMENT (OWNER) ============
 
   Widget _buildTenantManagementSection(PropertyModel property) {
-    return StreamBuilder<List<TenancyLinkModel>>(
-      stream: _tenancyLinkService.propertyTenantsStream(property.id),
-      builder: (context, snapshot) {
-        final links = snapshot.data ?? [];
-        final confirmed = links.where((l) => l.status == 'confirmed').toList();
-        final pending = links.where((l) => l.status == 'pending').toList();
-        final occupied = confirmed.length;
-        final max = property.maxTenants;
-        final isFull = occupied >= max;
+    // Outer stream: active rentals for this property (inspection → payment path)
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('active_rentals')
+          .where('propertyId', isEqualTo: property.id)
+          .where('status', isEqualTo: 'active')
+          .snapshots(),
+      builder: (context, rentalSnapshot) {
+        final rentalDocs = rentalSnapshot.data?.docs ?? [];
+        // Collect tenant IDs that came through the rental path
+        final rentalTenantIds = rentalDocs
+            .map((d) => (d.data() as Map<String, dynamic>)['tenantId'] as String? ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
 
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header row
-              Row(
+        // Inner stream: tenancy links for this property (landlord-link path)
+        return StreamBuilder<List<TenancyLinkModel>>(
+          stream: _tenancyLinkService.propertyTenantsStream(property.id),
+          builder: (context, snapshot) {
+            final links = snapshot.data ?? [];
+            final confirmed = links.where((l) => l.status == 'confirmed').toList();
+            final pending = links.where((l) => l.status == 'pending').toList();
+
+            // Union of both tenant ID sets = all unique occupied slots.
+            // Using a Set prevents double-counting if the same tenant somehow
+            // appears in both collections.
+            final linkedTenantIds = confirmed.map((l) => l.tenantId).toSet();
+            final allOccupiedIds = {...rentalTenantIds, ...linkedTenantIds};
+            final occupied = allOccupiedIds.length;
+
+            final max = property.maxTenants;
+            final isFull = occupied >= max;
+
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.people_outline,
-                    size: 20,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text('Tenants', style: AppTextStyles.labelLarge),
-                  const Spacer(),
-                  // Capacity pill
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color:
-                          isFull
+                  // Header row
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.people_outline,
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text('Tenants', style: AppTextStyles.labelLarge),
+                      const Spacer(),
+                      // Capacity pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isFull
                               ? AppColors.error.withAlpha(26)
                               : AppColors.success.withAlpha(26),
-                      borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$occupied / $max occupied',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: isFull ? AppColors.error : AppColors.success,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Capacity bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: max > 0 ? occupied / max : 0,
+                      minHeight: 6,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isFull ? AppColors.error : AppColors.success,
+                      ),
                     ),
-                    child: Text(
-                      '$occupied / $max occupied',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: isFull ? AppColors.error : AppColors.success,
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Active rental tenants (read-only — managed by rental flow)
+                  if (rentalDocs.isNotEmpty) ...[
+                    Text(
+                      'Active Rental${rentalDocs.length > 1 ? 's' : ''}',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...rentalDocs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final name = data['tenantName'] as String? ?? 'Tenant';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppColors.success.withAlpha(77)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withAlpha(26),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : 'T',
+                                    style: AppTextStyles.labelMedium.copyWith(
+                                      color: AppColors.success,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: AppTextStyles.labelMedium),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Active rental tenant',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withAlpha(26),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Active',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    if (confirmed.isNotEmpty || pending.isNotEmpty)
+                      const SizedBox(height: 8),
+                  ],
+
+                  // Pending requests banner
+                  if (pending.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withAlpha(26),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.warning.withAlpha(77)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.hourglass_empty,
+                            size: 16,
+                            color: AppColors.warning,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${pending.length} pending request${pending.length > 1 ? 's' : ''}',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.warning,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Confirmed linked tenants list
+                  if (confirmed.isNotEmpty) ...[
+                    if (rentalDocs.isNotEmpty) ...[
+                      Text(
+                        'Linked Tenant${confirmed.length > 1 ? 's' : ''}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    ...confirmed.map((link) => _buildTenantTile(link)),
+                  ] else if (rentalDocs.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'No tenants linked yet. Search for existing tenants to connect them.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+
+                  // Pending tenants list
+                  if (pending.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Awaiting Response',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...pending.map(
+                      (link) => _buildTenantTile(link, isPending: true),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  // Link tenant button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          isFull ? null : () => _showLinkTenantSheet(property),
+                      icon: const Icon(Icons.person_add_outlined, size: 18),
+                      label: Text(
+                        isFull ? 'Property Full' : 'Link Existing Tenant',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        disabledForegroundColor: AppColors.textHint,
+                        side: BorderSide(
+                          color: isFull ? AppColors.border : AppColors.primary,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
-
-              const SizedBox(height: 16),
-
-              // Capacity bar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: max > 0 ? occupied / max : 0,
-                  minHeight: 6,
-                  backgroundColor: AppColors.border,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isFull ? AppColors.error : AppColors.success,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Pending requests banner
-              if (pending.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withAlpha(26),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.warning.withAlpha(77)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.hourglass_empty,
-                        size: 16,
-                        color: AppColors.warning,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${pending.length} pending request${pending.length > 1 ? 's' : ''}',
-                        style: AppTextStyles.labelSmall.copyWith(
-                          color: AppColors.warning,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Confirmed tenants list
-              if (confirmed.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    'No tenants linked yet. Search for existing tenants to connect them.',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                )
-              else
-                ...confirmed.map((link) => _buildTenantTile(link)),
-
-              // Pending tenants list
-              if (pending.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Awaiting Response',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...pending.map(
-                  (link) => _buildTenantTile(link, isPending: true),
-                ),
-              ],
-
-              const SizedBox(height: 16),
-
-              // Link tenant button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed:
-                      isFull ? null : () => _showLinkTenantSheet(property),
-                  icon: const Icon(Icons.person_add_outlined, size: 18),
-                  label: Text(
-                    isFull ? 'Property Full' : 'Link Existing Tenant',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    disabledForegroundColor: AppColors.textHint,
-                    side: BorderSide(
-                      color: isFull ? AppColors.border : AppColors.primary,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -1448,7 +1707,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     color: AppColors.error.withAlpha(26),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.person_remove_outlined,
                     size: 16,
                     color: AppColors.error,
@@ -1559,7 +1818,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: AppColors.border),
+                side: BorderSide(color: AppColors.border),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1691,7 +1950,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     ),
                     if (_isLandlordVerified) ...[
                       const SizedBox(width: 4),
-                      const Icon(
+                      Icon(
                         Icons.verified,
                         size: 14,
                         color: AppColors.primary,
@@ -1716,7 +1975,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Center(
+              child: Center(
                 child: SizedBox(
                   width: 16,
                   height: 16,
@@ -1752,7 +2011,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.phone_outlined,
                   color: AppColors.primary,
                   size: 20,
@@ -1802,7 +2061,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.directions_walk,
                   size: 20,
                   color: AppColors.primary,
@@ -1839,7 +2098,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.verified,
                       size: 12,
                       color: AppColors.success,
@@ -1900,6 +2159,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       'From ${InspectionPricing.formatNaira(feeBreakdown.totalFee)}',
                       style: AppTextStyles.labelLarge.copyWith(
                         color: AppColors.primary,
+                        fontFamily: 'Roboto',
                       ),
                     ),
                   ],
@@ -1920,7 +2180,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline, size: 14, color: AppColors.info),
+                Icon(Icons.info_outline, size: 14, color: AppColors.info),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1966,7 +2226,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         ),
         Text(
           InspectionPricing.formatNaira(amount),
-          style: AppTextStyles.labelMedium,
+          style: AppTextStyles.labelMedium.copyWith(
+            fontFamily: 'Roboto',
+          ),
         ),
       ],
     );
@@ -1992,7 +2254,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.receipt_long_outlined,
                 size: 20,
                 color: AppColors.info,
@@ -2065,7 +2327,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 label: const Text('Message'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -2080,8 +2342,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               child: _isLinkedToThisProperty
                   ? ElevatedButton.icon(
                       onPressed: null,
-                      icon: const Icon(Icons.home),
-                      label: const Text('You live here'),
+                      icon: Icon(Icons.home),
+                      label: Text('You live here'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.success,
                         foregroundColor: Colors.white,
@@ -2092,35 +2354,54 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         ),
                       ),
                     )
-                  : ElevatedButton.icon(
-                      onPressed:
-                          _isCheckingRequest || _hasExistingRequest
-                              ? null
-                              : () => _requestInspection(),
-                      icon: Icon(
-                        _hasExistingRequest
-                            ? Icons.check_circle
-                            : Icons.event_available,
-                      ),
-                      label: Text(
-                        _hasExistingRequest ? 'Request Sent' : 'Request Inspection',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            _hasExistingRequest
-                                ? AppColors.success
-                                : AppColors.primary,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor:
-                            _hasExistingRequest
-                                ? AppColors.success.withAlpha(179)
-                                : AppColors.textHint,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  : Builder(builder: (context) {
+                      final docStatus = widget.property.ownershipDocStatus;
+                      final docBlocked = docStatus == 'rejected' ||
+                          docStatus == 'none' ||
+                          docStatus == 'pending';
+                      final Color docColor;
+                      if (docStatus == 'rejected') {
+                        docColor = AppColors.error;
+                      } else if (docStatus == 'pending') {
+                        docColor = AppColors.warning;
+                      } else {
+                        docColor = AppColors.textSecondary;
+                      }
+                      return ElevatedButton.icon(
+                        onPressed: _isCheckingRequest || _hasExistingRequest
+                            ? null
+                            : () => _requestInspection(),
+                        icon: Icon(
+                          _hasExistingRequest
+                              ? Icons.check_circle
+                              : docBlocked
+                                  ? Icons.lock_outline
+                                  : Icons.event_available,
                         ),
-                      ),
-                    ),
+                        label: Text(
+                          _hasExistingRequest
+                              ? 'Request Sent'
+                              : docBlocked
+                                  ? 'Inspection Unavailable'
+                                  : 'Request Inspection',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _hasExistingRequest
+                              ? AppColors.success
+                              : docBlocked
+                                  ? docColor
+                                  : AppColors.primary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: _hasExistingRequest
+                              ? AppColors.success.withAlpha(179)
+                              : AppColors.textHint,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      );
+                    }),
             ),
           ],
         ),
@@ -2131,14 +2412,37 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   // ============ SHARED WIDGETS ============
 
   /// Occupancy info card shown to tenants — transparent view of who lives there.
-  /// Uses a live stream for tenant count so it reflects linked + platform tenants.
+  /// Combines confirmed tenancy links AND active rentals for accurate count.
   Widget _buildOccupancyInfoCard(PropertyModel property) {
-    return StreamBuilder<List<TenancyLinkModel>>(
-      stream: _tenancyLinkService.propertyTenantsStream(property.id),
-      builder: (context, snap) {
-        final liveCount = snap.data?.where((l) => l.status == 'confirmed').length
-            ?? (property.currentTenantsCount ?? 0);
-        return _buildOccupancyCard(property, liveCount);
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('active_rentals')
+          .where('propertyId', isEqualTo: property.id)
+          .where('status', isEqualTo: 'active')
+          .snapshots(),
+      builder: (context, rentalSnap) {
+        return StreamBuilder<List<TenancyLinkModel>>(
+          stream: _tenancyLinkService.propertyTenantsStream(property.id),
+          builder: (context, linkSnap) {
+            final rentalTenantIds = (rentalSnap.data?.docs ?? [])
+                .map((d) => d['tenantId'] as String? ?? '')
+                .where((id) => id.isNotEmpty)
+                .toSet();
+
+            final linkedTenantIds = (linkSnap.data ?? [])
+                .where((l) => l.status == 'confirmed')
+                .map((l) => l.tenantId)
+                .toSet();
+
+            // Union of both sets — avoid double-counting same tenant
+            final allTenantIds = {...rentalTenantIds, ...linkedTenantIds};
+            final liveCount = allTenantIds.isNotEmpty
+                ? allTenantIds.length
+                : (property.currentTenantsCount ?? 0);
+
+            return _buildOccupancyCard(property, liveCount);
+          },
+        );
       },
     );
   }
@@ -2392,11 +2696,11 @@ class _FeeRow extends StatelessWidget {
           style: isTotal ? AppTextStyles.labelLarge : AppTextStyles.bodyMedium,
         ),
         Text(
-          'NGN ${_formatAmount(amount)}',
+          '₦${_formatAmount(amount)}',
           style:
               isTotal
-                  ? AppTextStyles.h4.copyWith(color: AppColors.primary)
-                  : AppTextStyles.labelLarge,
+                  ? AppTextStyles.h4.copyWith(color: AppColors.primary, fontFamily: 'Roboto')
+                  : AppTextStyles.labelLarge.copyWith(fontFamily: 'Roboto'),
         ),
       ],
     );
@@ -2528,7 +2832,7 @@ class _ContactSheetState extends State<_ContactSheet> {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -2658,7 +2962,7 @@ class _ContactOption extends StatelessWidget {
               ),
               child:
                   isLoading
-                      ? const Center(
+                      ? Center(
                         child: SizedBox(
                           width: 20,
                           height: 20,
@@ -2681,7 +2985,7 @@ class _ContactOption extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textHint),
+            Icon(Icons.chevron_right, color: AppColors.textHint),
           ],
         ),
       ),
@@ -2702,7 +3006,7 @@ class _PropertyStatsSheet extends StatelessWidget {
       maxChildSize: 0.9,
       expand: false,
       builder: (context, scrollController) => Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -2981,7 +3285,7 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
@@ -3019,13 +3323,13 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
               onChanged: _search,
               decoration: InputDecoration(
                 hintText: 'Search by name...',
-                prefixIcon: const Icon(
+                prefixIcon: Icon(
                   Icons.search,
                   color: AppColors.textSecondary,
                 ),
                 suffixIcon:
                     _isSearching
-                        ? const Padding(
+                        ? Padding(
                           padding: EdgeInsets.all(12),
                           child: SizedBox(
                             width: 16,
@@ -3041,15 +3345,15 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
                 fillColor: AppColors.background,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.border),
+                  borderSide: BorderSide(color: AppColors.border),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
+                  borderSide: BorderSide(
                     color: AppColors.primary,
                     width: 2,
                   ),
@@ -3126,7 +3430,7 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
                                     ),
                                     if (tenant.isVerified) ...[
                                       const SizedBox(width: 4),
-                                      const Icon(
+                                      Icon(
                                         Icons.verified,
                                         size: 14,
                                         color: AppColors.primary,
@@ -3227,7 +3531,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
@@ -3264,7 +3568,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                 border: Border.all(color: AppColors.primary.withAlpha(51)),
               ),
               child: Row(children: [
-                const Icon(Icons.home_outlined, size: 16, color: AppColors.primary),
+                Icon(Icons.home_outlined, size: 16, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -3350,9 +3654,9 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                       filled: true,
                       fillColor: AppColors.background,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.primary, width: 2)),
                     ),
                     onChanged: (val) {
                       final n = int.tryParse(val);
@@ -3441,9 +3745,9 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                       filled: true,
                       fillColor: AppColors.background,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.primary, width: 2)),
                     ),
                     onChanged: (val) {
                       final n = int.tryParse(val);

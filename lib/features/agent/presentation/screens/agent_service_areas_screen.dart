@@ -199,7 +199,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Service Areas', style: AppTextStyles.h4),
@@ -208,7 +208,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
           TextButton(
             onPressed: _isSaving ? null : _saveServiceAreas,
             child: _isSaving
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
@@ -221,7 +221,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : Column(
               children: [
                 // Info and base location
@@ -241,7 +241,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, color: AppColors.info, size: 20),
+                            Icon(Icons.info_outline, color: AppColors.info, size: 20),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -270,7 +270,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
                                   color: AppColors.primary.withAlpha(51),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.home, color: AppColors.primary, size: 18),
+                                child: Icon(Icons.home, color: AppColors.primary, size: 18),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -303,13 +303,13 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
                         decoration: InputDecoration(
                           hintText: 'Search areas...',
                           hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
-                          prefixIcon: const Icon(Icons.search, color: AppColors.textHint),
+                          prefixIcon: Icon(Icons.search, color: AppColors.textHint),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
                                   onPressed: () {
                                     _searchController.clear();
                                   },
-                                  icon: const Icon(Icons.close, color: AppColors.textHint),
+                                  icon: Icon(Icons.close, color: AppColors.textHint),
                                 )
                               : null,
                           filled: true,
@@ -360,7 +360,7 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.search_off, size: 48, color: AppColors.textHint),
+                              Icon(Icons.search_off, size: 48, color: AppColors.textHint),
                               const SizedBox(height: 16),
                               Text(
                                 'No areas found',

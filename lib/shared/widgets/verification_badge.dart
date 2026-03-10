@@ -222,7 +222,7 @@ class VerificationExplainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -254,7 +254,7 @@ class VerificationExplainer extends StatelessWidget {
                   color: AppColors.successLight,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.verified,
                   color: AppColors.success,
                   size: 24,
@@ -316,7 +316,7 @@ class VerificationExplainer extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.shield_outlined,
                   color: AppColors.primary,
                   size: 20,

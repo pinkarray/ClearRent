@@ -158,7 +158,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
+      builder: (context) => Center(
         child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
@@ -229,11 +229,11 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
             onPressed: () => context.pop(),
           ),
         ),
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -246,7 +246,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
             onPressed: () => context.pop(),
           ),
         ),
@@ -254,7 +254,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+              Icon(Icons.error_outline, size: 64, color: AppColors.error),
               const SizedBox(height: 16),
               Text(_error ?? 'Something went wrong', style: AppTextStyles.h4),
               const SizedBox(height: 24),
@@ -317,7 +317,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                       if (property.images.isEmpty) {
                         return Container(
                           color: AppColors.surface,
-                          child: const Center(
+                          child: Center(
                             child: Icon(Icons.home, size: 80, color: AppColors.textHint),
                           ),
                         );
@@ -429,7 +429,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textSecondary),
+                          Icon(Icons.location_on_outlined, size: 16, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -531,7 +531,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                 color: AppColors.success.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.call, color: AppColors.success, size: 20),
+              child: Icon(Icons.call, color: AppColors.success, size: 20),
             ),
           ),
           IconButton(
@@ -542,7 +542,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                 color: AppColors.primary.withAlpha(26),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.chat_outlined, color: AppColors.primary, size: 20),
+              child: Icon(Icons.chat_outlined, color: AppColors.primary, size: 20),
             ),
           ),
         ],
@@ -564,7 +564,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.event_note, color: AppColors.primary, size: 20),
+              Icon(Icons.event_note, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Inspection Overview',
@@ -606,7 +606,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: AppColors.warning, size: 18),
+                    Icon(Icons.info_outline, color: AppColors.warning, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -614,7 +614,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                         style: AppTextStyles.bodySmall.copyWith(color: AppColors.warning),
                       ),
                     ),
-                    const Icon(Icons.chevron_right, color: AppColors.warning, size: 18),
+                    Icon(Icons.chevron_right, color: AppColors.warning, size: 18),
                   ],
                 ),
               ),
@@ -786,7 +786,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
-                        const Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
+                        Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
                         const SizedBox(width: 8),
                         Text(displayTime, style: AppTextStyles.bodySmall),
                       ],
@@ -851,7 +851,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.check_circle, color: AppColors.success, size: 16),
+                    Icon(Icons.check_circle, color: AppColors.success, size: 16),
                     const SizedBox(width: 6),
                     Text(
                       amenity,
@@ -889,7 +889,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.rule, color: AppColors.warning, size: 18),
+                      Icon(Icons.rule, color: AppColors.warning, size: 18),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(rule, style: AppTextStyles.bodySmall),
@@ -928,7 +928,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
               label: const Text('Call Landlord'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: AppColors.primary),
+                side: BorderSide(color: AppColors.primary),
                 foregroundColor: AppColors.primary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -951,7 +951,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                       top: -6,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppColors.error,
                           shape: BoxShape.circle,
                         ),

@@ -52,70 +52,81 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 40),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).padding.top -
+                  MediaQuery.of(context).padding.bottom,
+            ),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 40),
 
-              // Title
-              Text(
-                AppStrings.chooseAccountType,
-                style: AppTextStyles.h2,
+                  // Title
+                  Text(
+                    AppStrings.chooseAccountType,
+                    style: AppTextStyles.h2,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You can always change this later',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // Landlord option
+                  _AccountTypeCard(
+                    icon: Icons.apartment_rounded,
+                    title: AppStrings.landlord,
+                    description: AppStrings.landlordDesc,
+                    isSelected: _selectedType == 'landlord',
+                    onTap: () => _selectType('landlord'),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Tenant option
+                  _AccountTypeCard(
+                    icon: Icons.person_search_rounded,
+                    title: AppStrings.tenant,
+                    description: AppStrings.tenantDesc,
+                    isSelected: _selectedType == 'tenant',
+                    onTap: () => _selectType('tenant'),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Agent option
+                  _AccountTypeCard(
+                    icon: Icons.support_agent_rounded,
+                    title: 'Agent',
+                    description: 'Help landlords manage property inspections',
+                    isSelected: _selectedType == 'agent',
+                    onTap: () => _selectType('agent'),
+                  ),
+
+                  const Spacer(),
+
+                  const SizedBox(height: 32),
+
+                  // Continue button
+                  AppButton(
+                    text: AppStrings.continueText,
+                    onPressed: _selectedType != null ? _continue : null,
+                    isLoading: _isLoading,
+                  ),
+
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'You can always change this later',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Landlord option
-              _AccountTypeCard(
-                icon: Icons.apartment_rounded,
-                title: AppStrings.landlord,
-                description: AppStrings.landlordDesc,
-                isSelected: _selectedType == 'landlord',
-                onTap: () => _selectType('landlord'),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Tenant option
-              _AccountTypeCard(
-                icon: Icons.person_search_rounded,
-                title: AppStrings.tenant,
-                description: AppStrings.tenantDesc,
-                isSelected: _selectedType == 'tenant',
-                onTap: () => _selectType('tenant'),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Agent option
-              _AccountTypeCard(
-                icon: Icons.support_agent_rounded,
-                title: 'Agent',
-                description: 'Help landlords manage property inspections',
-                isSelected: _selectedType == 'agent',
-                onTap: () => _selectType('agent'),
-              ),
-
-              const Spacer(),
-
-              // Continue button
-              AppButton(
-                text: AppStrings.continueText,
-                onPressed: _selectedType != null ? _continue : null,
-                isLoading: _isLoading,
-              ),
-
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
         ),
       ),
@@ -201,7 +212,7 @@ class _AccountTypeCard extends StatelessWidget {
               Container(
                 width: 24,
                 height: 24,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),

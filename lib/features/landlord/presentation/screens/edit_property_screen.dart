@@ -574,7 +574,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(color: AppColors.primary),
+            CircularProgressIndicator(color: AppColors.primary),
             const SizedBox(height: 16),
             Text(message, style: AppTextStyles.bodyMedium),
           ],
@@ -627,7 +627,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           backgroundColor: AppColors.surface,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.close, color: AppColors.textPrimary),
+            icon: Icon(Icons.close, color: AppColors.textPrimary),
             onPressed: _showDiscardConfirmation,
           ),
           title: Text('Edit Property', style: AppTextStyles.h4),
@@ -796,13 +796,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                           fit: BoxFit.cover,
                           placeholder: (context, url) => Container(
                             color: AppColors.surface,
-                            child: const Center(
+                            child: Center(
                               child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
                             ),
                           ),
                           errorWidget: (context, url, error) => Container(
                             color: AppColors.surface,
-                            child: const Icon(Icons.image_not_supported, color: AppColors.textHint),
+                            child: Icon(Icons.image_not_supported, color: AppColors.textHint),
                           ),
                         ),
                       ),
@@ -906,7 +906,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 label: const Text('Gallery'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   foregroundColor: AppColors.primary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
@@ -920,7 +920,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 label: const Text('Camera'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                   foregroundColor: AppColors.textSecondary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
@@ -1050,7 +1050,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                     color: AppColors.primary.withAlpha(26),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.add, size: 18, color: AppColors.primary),
+                  child: Icon(Icons.add, size: 18, color: AppColors.primary),
                 ),
               ),
             ],
@@ -1080,7 +1080,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             border: Border.all(color: AppColors.info.withAlpha(50)),
           ),
           child: Row(children: [
-            const Icon(Icons.info_outline, size: 14, color: AppColors.info),
+            Icon(Icons.info_outline, size: 14, color: AppColors.info),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -1122,7 +1122,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Rent Amount (NGN)', style: AppTextStyles.labelMedium),
+        Text('Rent Amount (₦', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
 
         if (hasActiveTenants) ...[
@@ -1135,7 +1135,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               border: Border.all(color: AppColors.border),
             ),
             child: Row(children: [
-              const Icon(Icons.lock_outline, size: 20, color: AppColors.textHint),
+              Icon(Icons.lock_outline, size: 20, color: AppColors.textHint),
               const SizedBox(width: 12),
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(
@@ -1158,7 +1158,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               border: Border.all(color: AppColors.warning.withAlpha(50)),
             ),
             child: Row(children: [
-              const Icon(Icons.warning_amber_outlined, size: 14, color: AppColors.warning),
+              Icon(Icons.warning_amber_outlined, size: 14, color: AppColors.warning),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1500,7 +1500,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           const SizedBox(height: 12),
           
           if (_isLoadingAgent)
-            const Center(
+            Center(
               child: Padding(
                 padding: EdgeInsets.all(8.0),
                 child: SizedBox(
@@ -1536,7 +1536,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                       Text(_assignedAgentName!, style: AppTextStyles.labelLarge),
                       Row(
                         children: [
-                          const Icon(Icons.verified, size: 14, color: AppColors.success),
+                          Icon(Icons.verified, size: 14, color: AppColors.success),
                           const SizedBox(width: 4),
                           Text(
                             'Verified Agent',
@@ -1550,7 +1550,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 // Change / Remove buttons
                 IconButton(
                   onPressed: _selectAgent,
-                  icon: const Icon(Icons.swap_horiz, color: AppColors.primary),
+                  icon: Icon(Icons.swap_horiz, color: AppColors.primary),
                   tooltip: 'Change Agent',
                 ),
                 IconButton(
@@ -1593,7 +1593,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                     label: const Text('Select Agent'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: const BorderSide(color: AppColors.primary),
+                      side: BorderSide(color: AppColors.primary),
                       foregroundColor: AppColors.primary,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1642,7 +1642,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               border: Border.all(color: AppColors.success.withAlpha(50)),
             ),
             child: Row(children: [
-              const Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
+              Icon(Icons.verified_outlined, color: AppColors.success, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1695,7 +1695,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
         if (_isUploadingDoc) ...[
           const SizedBox(height: 12),
-          const LinearProgressIndicator(color: AppColors.primary),
+          LinearProgressIndicator(color: AppColors.primary),
         ],
       ]),
     );

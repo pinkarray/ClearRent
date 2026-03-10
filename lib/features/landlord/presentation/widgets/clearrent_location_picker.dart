@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
+import '../../../../core/constants/colors.dart';
+import '../../../../core/constants/text_styles.dart';
 
 // ============================================================
 // LOCATION PICKER WIDGET FOR CLEARRENT
@@ -240,45 +242,43 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       children: [
         Text(
           'Street Address',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[800],
-          ),
+          style: AppTextStyles.labelLarge,
         ),
         const SizedBox(height: 8),
         TextField(
           controller: widget.addressController,
           focusNode: _addressFocusNode,
           textCapitalization: TextCapitalization.words,
+          style: AppTextStyles.bodyLarge,
           decoration: InputDecoration(
             hintText: 'Start typing to search...',
-            hintStyle: TextStyle(color: Colors.grey[400]),
+            hintStyle: TextStyle(color: AppColors.textHint),
             filled: true,
-            fillColor: Colors.grey[50],
+            fillColor: AppColors.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+              borderSide: BorderSide(color: AppColors.border),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+              borderSide: BorderSide(color: AppColors.border),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 1.5),
+              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             suffixIcon: _isSearching
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
                     child: SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.primary),
                     ),
                   )
-                : const Icon(Icons.search, color: Colors.grey),
+                : Icon(Icons.search, color: AppColors.textHint),
           ),
         ),
       ],
@@ -289,11 +289,12 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     return Container(
       margin: const EdgeInsets.only(top: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(26),
+            color: AppColors.shadowMedium,
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -304,19 +305,19 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: _suggestions.length,
-        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey[200]),
+        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.divider),
         itemBuilder: (context, index) {
           final place = _suggestions[index];
           return ListTile(
             dense: true,
             leading: Icon(
               Icons.location_on_outlined,
-              color: Colors.grey[600],
+              color: AppColors.textSecondary,
               size: 20,
             ),
             title: Text(
               place.displayName,
-              style: const TextStyle(fontSize: 14),
+              style: AppTextStyles.bodyMedium,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -337,32 +338,29 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[800],
-          ),
+          style: AppTextStyles.labelLarge,
         ),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           textCapitalization: TextCapitalization.words,
+          style: AppTextStyles.bodyLarge,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey[400]),
+            hintStyle: TextStyle(color: AppColors.textHint),
             filled: true,
-            fillColor: Colors.grey[50],
+            fillColor: AppColors.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+              borderSide: BorderSide(color: AppColors.border),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+              borderSide: BorderSide(color: AppColors.border),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 1.5),
+              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
@@ -379,22 +377,14 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           children: [
             Text(
               'Pin Location',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[800],
-              ),
+              style: AppTextStyles.labelLarge,
             ),
             const SizedBox(width: 8),
-            Icon(Icons.touch_app, size: 16, color: Colors.grey[500]),
+            Icon(Icons.touch_app, size: 16, color: AppColors.textHint),
             const SizedBox(width: 4),
             Text(
               'Tap to adjust',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
-              ),
+              style: AppTextStyles.caption.copyWith(fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -403,7 +393,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           height: 180,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
+            border: Border.all(color: AppColors.border),
           ),
           clipBehavior: Clip.antiAlias,
           child: FlutterMap(
@@ -431,9 +421,9 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                       point: _selectedLocation!,
                       width: 40,
                       height: 40,
-                      child: const Icon(
+                      child: Icon(
                         Icons.location_pin,
-                        color: Color(0xFF2E7D32),
+                        color: AppColors.primary,
                         size: 40,
                       ),
                     ),
@@ -446,15 +436,12 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(230),
+                      color: AppColors.surface.withAlpha(230),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       'Search address or tap to place pin',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: AppTextStyles.caption,
                     ),
                   ),
                 ),

@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../shared/models/inspection_request_model.dart';
 import '../shared/models/property_model.dart';
 import '../core/utils/inspection_pricing.dart';
@@ -45,11 +47,27 @@ class InspectionService {
         if (!agentDoc.exists) return null;
 
         final agentData = agentDoc.data()!;
-        final agentLat = agentData['baseLatitude']?.toDouble();
-        final agentLon = agentData['baseLongitude']?.toDouble();
+        var agentLat = agentData['baseLatitude']?.toDouble();
+        var agentLon = agentData['baseLongitude']?.toDouble();
 
         if (agentLat == null || agentLon == null) {
-          return InspectionPricing.calculateFee(distanceKm: 0);
+          // No stored coordinates — geocode baseLocation text and cache result
+          final baseLocation = agentData['baseLocation'] as String?;
+          if (baseLocation != null && baseLocation.isNotEmpty) {
+            final coords = await _geocodeLocation(
+                baseLocation, property.assignedAgentId!);
+            if (coords != null) {
+              agentLat = coords['lat'];
+              agentLon = coords['lon'];
+            }
+          }
+          if (agentLat == null || agentLon == null) {
+            developer.log(
+              '⚠️ Agent no coordinates for fee calc, using minimum fee.',
+              name: 'InspectionService',
+            );
+            return InspectionPricing.calculateFee(distanceKm: 0);
+          }
         }
 
         final propertyLat = property.latitude;
@@ -67,7 +85,7 @@ class InspectionService {
         return InspectionPricing.calculateFee(distanceKm: 0);
       } catch (e) {
         developer.log(
-          'âŒ Error calculating agent fee: $e',
+          '❌ Error calculating agent fee: $e',
           name: 'InspectionService',
         );
         return null;
@@ -121,7 +139,7 @@ class InspectionService {
         return InspectionPricing.calculateFee(distanceKm: 0);
       } catch (e) {
         developer.log(
-          'âŒ Error calculating landlord fee: $e',
+          '❌ Error calculating landlord fee: $e',
           name: 'InspectionService',
         );
         return InspectionPricing.calculateFee(distanceKm: 0);
@@ -145,6 +163,42 @@ class InspectionService {
     );
   }
 
+  /// Geocodes a location text using Nominatim.
+  /// Returns lat/lon if successful. Does NOT write to Firestore — only the
+  /// user themselves can update their own document per security rules.
+  /// Coordinates are written back when the agent updates their own profile.
+  Future<Map<String, double>?> _geocodeLocation(
+      String locationText, String userId) async {
+    try {
+      final encoded = Uri.encodeComponent('$locationText, Nigeria');
+      final uri = Uri.parse(
+          'https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=1');
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'ClearRentApp/1.0',
+      }).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final List results = jsonDecode(response.body);
+        if (results.isNotEmpty) {
+          final lat = double.tryParse(results[0]['lat'] as String? ?? '');
+          final lon = double.tryParse(results[0]['lon'] as String? ?? '');
+          if (lat != null && lon != null) {
+            developer.log(
+              '✅ Geocoded $locationText → ($lat, $lon)',
+              name: 'InspectionService',
+            );
+            return {'lat': lat, 'lon': lon};
+          }
+        }
+      }
+      developer.log('⚠️ Geocode returned no results for $locationText',
+          name: 'InspectionService');
+      return null;
+    } catch (e) {
+      developer.log('❌ Geocode error: $e', name: 'InspectionService');
+      return null;
+    }
+  }
+
   // ============ VERIFICATION CHECK ============
 
   Future<bool> _isUserVerified(String userId) async {
@@ -157,7 +211,7 @@ class InspectionService {
       return verificationStatus == 'verified';
     } catch (e) {
       developer.log(
-        'âŒ Error checking verification: $e',
+        'Error checking verification: $e',
         name: 'InspectionService',
       );
       return false;
@@ -178,7 +232,7 @@ class InspectionService {
   }) async {
     try {
       if (_currentUserId == null) {
-        developer.log('âŒ User not authenticated', name: 'InspectionService');
+        developer.log('❌ User not authenticated', name: 'InspectionService');
         return null;
       }
 
@@ -189,13 +243,13 @@ class InspectionService {
       final tenantVerificationStatus =
           tenantData?['verificationStatus'] ?? 'none';
       if (tenantVerificationStatus != 'verified') {
-        developer.log('âŒ Tenant not verified', name: 'InspectionService');
+        developer.log('❌ Tenant not verified', name: 'InspectionService');
         return 'not_verified';
       }
 
       final landlordVerified = await _isUserVerified(property.landlordId);
       if (!landlordVerified) {
-        developer.log('âŒ Landlord not verified', name: 'InspectionService');
+        developer.log('❌ Landlord not verified', name: 'InspectionService');
         return 'landlord_not_verified';
       }
 
@@ -215,7 +269,7 @@ class InspectionService {
 
       if (existingRequest.docs.isNotEmpty) {
         developer.log(
-          'âŒ Tenant already has active request',
+          '❌ Tenant already has active request',
           name: 'InspectionService',
         );
         return 'already_pending';
@@ -233,7 +287,7 @@ class InspectionService {
       if (isAgentHandled) {
         final agentVerified = await _isUserVerified(property.assignedAgentId!);
         if (!agentVerified) {
-          developer.log('âŒ Agent not verified', name: 'InspectionService');
+          developer.log('❌ Agent not verified', name: 'InspectionService');
           return 'agent_not_verified';
         }
 
@@ -373,7 +427,7 @@ class InspectionService {
       return docRef.id;
     } catch (e) {
       developer.log(
-        'âŒ Error creating inspection request: $e',
+        '❌ Error creating inspection request: $e',
         name: 'InspectionService',
       );
       return null;
@@ -632,7 +686,7 @@ class InspectionService {
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error approving request: $e', name: 'InspectionService');
+      developer.log('❌ Error approving request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -676,7 +730,7 @@ class InspectionService {
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
+      developer.log('❌ Error declining request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -722,7 +776,7 @@ class InspectionService {
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
+      developer.log('❌ Error declining request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -787,7 +841,7 @@ class InspectionService {
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error declining request: $e', name: 'InspectionService');
+      developer.log('❌ Error declining request: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -841,7 +895,7 @@ class InspectionService {
       return true;
     } catch (e) {
       developer.log(
-        'âŒ Error marking tenant arrived: $e',
+        '❌ Error marking tenant arrived: $e',
         name: 'InspectionService',
       );
       return false;
@@ -887,7 +941,7 @@ class InspectionService {
       return true;
     } catch (e) {
       developer.log(
-        'âŒ Error marking handler arrived: $e',
+        '❌ Error marking handler arrived: $e',
         name: 'InspectionService',
       );
       return false;
@@ -898,25 +952,33 @@ class InspectionService {
 
   Future<bool> completeInspection(String requestId) async {
     try {
-      // Fetch request data first to determine agent status
       final requestDoc =
           await _firestore
               .collection('inspection_requests')
               .doc(requestId)
               .get();
       final requestData = requestDoc.data();
-
       if (requestData == null) return false;
 
-      // Update with payout status
+      // Determine the actual handler — whoever is calling this method.
+      // If the current user is the assigned agent, they handled it.
+      // If the landlord called it (even on an agent-assigned property), landlord handled it.
+      final String? assignedAgentId = requestData['agentId'] as String?;
+      final bool agentHandled = assignedAgentId != null &&
+          assignedAgentId.isNotEmpty &&
+          _currentUserId == assignedAgentId;
+
+      // Record who actually completed it
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
-        'agentPayoutStatus': 'pending', // applies to whoever handled it
+        'agentPayoutStatus': 'pending',
+        'completedBy': _currentUserId,
+        'completedByType': agentHandled ? 'agent' : 'landlord',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // requestData is guaranteed to be non-null here
+      // Notify tenant
       await _createActivity(
         userId: requestData['tenantId'],
         type: 'inspection_completed',
@@ -927,7 +989,8 @@ class InspectionService {
         propertyId: requestData['propertyId'],
       );
 
-      if (requestData['agentId'] != null) {
+      if (agentHandled) {
+        // Agent did the inspection — agent gets paid and notified
         await _createActivity(
           userId: requestData['landlordId'],
           type: 'inspection_completed',
@@ -937,17 +1000,13 @@ class InspectionService {
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
-
         await _creditAgentEarnings(
-          requestData['agentId'],
+          assignedAgentId,
           requestData['agentEarnings']?.toDouble() ?? 0,
         );
-      }
-
-      // Credit landlord earnings if self-handled
-      if (requestData['agentId'] == null) {
+      } else {
+        // Landlord did the inspection (either self-handled or overrode agent)
         final landlordEarnings = (requestData['agentEarnings'] ?? 0).toDouble();
-        // landlordEarnings uses the same field because it's the handler's cut
         if (landlordEarnings > 0) {
           await _firestore
               .collection('users')
@@ -961,15 +1020,12 @@ class InspectionService {
       }
 
       developer.log(
-        'âœ… Inspection completed: $requestId',
+        '✅ Inspection completed: $requestId by ${agentHandled ? 'agent' : 'landlord'}',
         name: 'InspectionService',
       );
       return true;
     } catch (e) {
-      developer.log(
-        'âŒ Error completing inspection: $e',
-        name: 'InspectionService',
-      );
+      developer.log('❌ Error completing inspection: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -991,7 +1047,25 @@ class InspectionService {
       final requestData = requestDoc.data();
       if (requestData == null) return false;
 
-      final isAgentHandled = requestData['agentId'] != null;
+      // Guard: prevent double-rating which corrupts the running average
+      if (requestData['tenantRated'] == true) {
+        developer.log(
+          '⚠️ rateInspection: already rated, ignoring duplicate call',
+          name: 'InspectionService',
+        );
+        return false;
+      }
+
+      final rawAgentId = requestData['agentId'];
+      final completedByType = requestData['completedByType'] as String?;
+
+      // Rate whoever actually conducted the inspection.
+      // If completedByType is recorded, use it. Otherwise fall back to agentId check.
+      final isAgentHandled = completedByType == 'agent' ||
+          (completedByType == null &&
+              rawAgentId != null &&
+              rawAgentId is String &&
+              rawAgentId.isNotEmpty);
       final ratedUserId = isAgentHandled
           ? requestData['agentId'] as String
           : requestData['landlordId'] as String;
@@ -1012,8 +1086,12 @@ class InspectionService {
         'ratedUserName': ratedUserName,
       });
 
+      developer.log('🔵 RATING: about to call _updateAgentRating/Landlord. isAgentHandled=$isAgentHandled', name: 'InspectionService');
+
       if (isAgentHandled) {
+        developer.log('🔵 RATING: calling _updateAgentRating for $ratedUserId', name: 'InspectionService');
         await _updateAgentRating(ratedUserId, rating);
+        developer.log('🟢 RATING: _updateAgentRating returned', name: 'InspectionService' );
         await _createActivity(
           userId: ratedUserId,
           type: 'new_rating',
@@ -1061,6 +1139,7 @@ class InspectionService {
   /// inspections they handled. Use this to fix agents whose past ratings
   /// were incorrectly written to the landlord document.
   Future<void> recalculateUserRating(String userId, String userType) async {
+    developer.log('🔵 RECALC START: userId=$userId userType=$userType', name: 'InspectionService');
     try {
       final field = userType == 'agent' ? 'agentId' : 'landlordId';
       final snapshot = await _firestore
@@ -1069,24 +1148,30 @@ class InspectionService {
           .where('tenantRated', isEqualTo: true)
           .get();
 
+      developer.log('🔵 RECALC: query returned ${snapshot.docs.length} docs with tenantRated=true', name: 'InspectionService');
+      for (final doc in snapshot.docs) {
+        final d = doc.data();
+        developer.log('  doc ${doc.id}: agentId=${d['agentId']} tenantRating=${d['tenantRating']}', name: 'InspectionService');
+      }
+
       final relevantDocs = snapshot.docs.where((doc) {
         final data = doc.data();
         if (userType == 'agent') {
           return data['agentId'] == userId;
         } else {
-          return data['agentId'] == null;
+          final rawAgentId = data['agentId'];
+          return rawAgentId == null || (rawAgentId is String && rawAgentId.isEmpty);
         }
       }).toList();
 
+      developer.log('🔵 RECALC: ${relevantDocs.length} docs after filtering for $userType');
+
       if (relevantDocs.isEmpty) {
+        developer.log('🟡 RECALC: no relevant docs — writing rating=0', name: 'InspectionService');
         await _firestore.collection('users').doc(userId).update({
           'rating': 0.0,
           'totalRatings': 0,
         });
-        developer.log(
-          '⭐ Recalculated $userType $userId: no ratings, reset to 0',
-          name: 'InspectionService',
-        );
         return;
       }
 
@@ -1095,23 +1180,25 @@ class InspectionService {
           .where((r) => r > 0)
           .toList();
 
+      developer.log('🔵 RECALC: extracted ratings=$ratings', name: 'InspectionService');
+
       if (ratings.isEmpty) {
+        developer.log('🟡 RECALC: all ratings were 0 — writing rating=0', name: 'InspectionService');
         await _firestore.collection('users').doc(userId).update({'rating': 0.0, 'totalRatings': 0});
         return;
       }
 
       final average = ratings.reduce((a, b) => a + b) / ratings.length;
+      developer.log('🟢 RECALC: writing rating=${average.toStringAsFixed(2)} totalRatings=${ratings.length} to users/$userId', name: 'InspectionService');
+
       await _firestore.collection('users').doc(userId).update({
         'rating': average,
         'totalRatings': ratings.length,
       });
 
-      developer.log(
-        '⭐ Recalculated $userType $userId: ${average.toStringAsFixed(2)} from ${ratings.length} ratings',
-        name: 'InspectionService',
-      );
+      developer.log('🟢 RECALC DONE: $userType $userId = ${average.toStringAsFixed(2)} stars', name: 'InspectionService');
     } catch (e) {
-      developer.log('❌ Error recalculating rating: $e', name: 'InspectionService');
+      developer.log('🔴 RECALC ERROR: $e', name: 'InspectionService');
     }
   }
 
@@ -1146,7 +1233,7 @@ class InspectionService {
       return true;
     } catch (e) {
       developer.log(
-        'âŒ Error cancelling request: $e',
+        '❌ Error cancelling request: $e',
         name: 'InspectionService',
       );
       return false;
@@ -1378,12 +1465,12 @@ class InspectionService {
         type: 'refund_processed',
         title: 'Refund Processed',
         message:
-            'Your payment of â‚¦${requestData['totalFee']?.toStringAsFixed(0) ?? '0'} for ${requestData['propertyTitle']} has been refunded.',
+            'Your payment of ₦${requestData['totalFee']?.toStringAsFixed(0) ?? '0'} for ${requestData['propertyTitle']} has been refunded.',
         relatedId: requestId,
         propertyId: requestData['propertyId'],
       );
     } catch (e) {
-      developer.log('âŒ Error processing refund: $e', name: 'InspectionService');
+      developer.log('❌ Error processing refund: $e', name: 'InspectionService');
     }
   }
 
@@ -1397,77 +1484,22 @@ class InspectionService {
       });
 
       developer.log(
-        'ðŸ’° Credited â‚¦$amount to agent: $agentId',
+        'ðŸ’° Credited ₦$amount to agent: $agentId',
         name: 'InspectionService',
       );
     } catch (e) {
-      developer.log('âŒ Error crediting agent: $e', name: 'InspectionService');
+      developer.log('❌ Error crediting agent: $e', name: 'InspectionService');
     }
   }
 
   Future<void> _updateAgentRating(String agentId, int newRating) async {
-    try {
-      final agentDoc = await _firestore.collection('users').doc(agentId).get();
-      if (!agentDoc.exists) return;
-
-      final agentData = agentDoc.data()!;
-      final currentRating = (agentData['rating'] ?? 0).toDouble();
-      final totalRatings = (agentData['totalRatings'] ?? 0) + 1;
-
-      final newAverage =
-          totalRatings == 1
-              ? newRating.toDouble()
-              : ((currentRating * (totalRatings - 1)) + newRating) /
-                  totalRatings;
-
-      await _firestore.collection('users').doc(agentId).update({
-        'rating': newAverage,
-        'totalRatings': totalRatings,
-      });
-
-      developer.log(
-        'â­ Updated agent rating to ${newAverage.toStringAsFixed(2)}',
-        name: 'InspectionService',
-      );
-    } catch (e) {
-      developer.log(
-        'âŒ Error updating agent rating: $e',
-        name: 'InspectionService',
-      );
-    }
+    // Use recalculateUserRating to recompute from all rated inspections.
+    // This avoids Firestore transaction conflicts that silently fail.
+    await recalculateUserRating(agentId, 'agent');
   }
 
   Future<void> _updateLandlordRating(String landlordId, int newRating) async {
-    try {
-      final landlordDoc =
-          await _firestore.collection('users').doc(landlordId).get();
-      if (!landlordDoc.exists) return;
-
-      final landlordData = landlordDoc.data()!;
-      final currentRating = (landlordData['rating'] ?? 0).toDouble();
-      final totalRatings = (landlordData['totalRatings'] ?? 0) + 1;
-
-      final newAverage =
-          totalRatings == 1
-              ? newRating.toDouble()
-              : ((currentRating * (totalRatings - 1)) + newRating) /
-                  totalRatings;
-
-      await _firestore.collection('users').doc(landlordId).update({
-        'rating': newAverage,
-        'totalRatings': totalRatings,
-      });
-
-      developer.log(
-        'â­ Updated landlord rating to ${newAverage.toStringAsFixed(2)}',
-        name: 'InspectionService',
-      );
-    } catch (e) {
-      developer.log(
-        'âŒ Error updating landlord rating: $e',
-        name: 'InspectionService',
-      );
-    }
+    await recalculateUserRating(landlordId, 'landlord');
   }
 
   // ============ PAYMENT VERIFICATION (ADMIN) ============
@@ -1535,7 +1567,7 @@ class InspectionService {
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error verifying payment: $e', name: 'InspectionService');
+      developer.log('❌ Error verifying payment: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -1569,12 +1601,12 @@ class InspectionService {
       );
 
       developer.log(
-        'âŒ Payment rejected for request: $requestId',
+        '❌ Payment rejected for request: $requestId',
         name: 'InspectionService',
       );
       return true;
     } catch (e) {
-      developer.log('âŒ Error rejecting payment: $e', name: 'InspectionService');
+      developer.log('❌ Error rejecting payment: $e', name: 'InspectionService');
       return false;
     }
   }
@@ -1637,17 +1669,29 @@ class InspectionService {
       final doc = await _firestore.collection('users').doc(agentId).get();
       if (!doc.exists) return null;
       final data = doc.data()!;
+
+      // Bank details are stored in a nested 'bankDetails' map
+      final bankDetails = data['bankDetails'] as Map<String, dynamic>? ?? {};
+
+      // Fall back to root-level fields for older accounts
+      final bankName = bankDetails['bankName'] as String? ?? 
+                       data['bankName'] as String? ?? '';
+      final accountNumber = bankDetails['accountNumber'] as String? ?? 
+                            data['accountNumber'] as String? ?? '';
+      final accountName = bankDetails['accountName'] as String? ?? 
+                          data['accountName'] as String? ?? '';
+
       return {
         'agentName': data['fullName'] ?? data['name'] ?? '',
-        'bankName': data['bankName'] ?? '',
-        'accountNumber': data['accountNumber'] ?? '',
-        'accountName': data['accountName'] ?? '',
+        'bankName': bankName,
+        'accountNumber': accountNumber,
+        'accountName': accountName,
         'agentPhone': data['phone'] ?? '',
         'pendingEarnings': (data['pendingEarnings'] ?? 0).toDouble(),
       };
     } catch (e) {
       developer.log(
-        'âŒ Error getting agent bank details: $e',
+        '❌ Error getting agent bank details: $e',
         name: 'InspectionService',
       );
       return null;
@@ -1692,7 +1736,7 @@ class InspectionService {
           type: 'payout_received',
           title: 'Payment Received',
           message:
-              'You\'ve been paid â‚¦${earnings.toStringAsFixed(0)} for inspection at ${data['propertyTitle']}',
+              'You\'ve been paid ₦${earnings.toStringAsFixed(0)} for inspection at ${data['propertyTitle']}',
           relatedId: requestId,
           propertyId: data['propertyId'],
         );
@@ -1705,7 +1749,7 @@ class InspectionService {
       return true;
     } catch (e) {
       developer.log(
-        'âŒ Error marking agent paid: $e',
+        '❌ Error marking agent paid: $e',
         name: 'InspectionService',
       );
       return false;
@@ -1747,7 +1791,7 @@ class InspectionService {
       return true;
     } catch (e) {
       developer.log(
-        'âŒ Error confirming payment: $e',
+        '❌ Error confirming payment: $e',
         name: 'InspectionService',
       );
       return false;

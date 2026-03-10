@@ -6,6 +6,7 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
+import '../../shared/widgets/theme_selector.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -412,7 +413,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('Settings', style: AppTextStyles.h4),
@@ -433,7 +434,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: 'Send a password reset link to your email',
                 onTap: _showChangePasswordDialog,
                 trailing: _isSendingReset
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
@@ -458,7 +459,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: null,
                   showChevron: false,
                   trailing: _isLoadingBiometric
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -471,8 +472,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onChanged: _toggleBiometric,
                           activeColor: AppColors.primary,
                         ),
-                ),
+              ),
             ]),
+
+            // ── Appearance Section (Theme Selector) ──
+            const SizedBox(height: 24),
+            const ThemeSelector(),
 
             // Communication Section (Landlords only)
             if (isLandlord) ...[
@@ -489,7 +494,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: null,
                   showChevron: false,
                   trailing: _isUpdatingCallPermission
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
@@ -598,7 +603,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.logout, color: AppColors.error, size: 20),
+                    Icon(Icons.logout, color: AppColors.error, size: 20),
                     const SizedBox(width: 8),
                     Text(
                       'Logout',

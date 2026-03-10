@@ -63,14 +63,14 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('My Rentals', style: AppTextStyles.h4),
         centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : !hasActiveRental && _pastRentals.isEmpty
               ? _buildEmptyState()
@@ -399,7 +399,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                       label: const Text('Message'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.textPrimary,
-                        side: const BorderSide(color: AppColors.border),
+                        side: BorderSide(color: AppColors.border),
                         padding:
                             const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -417,7 +417,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                       label: const Text('Lease Details'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
+                        side: BorderSide(color: AppColors.primary),
                         padding:
                             const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -502,7 +502,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               color: AppColors.primary.withAlpha(26),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.home_outlined,
+            child: Icon(Icons.home_outlined,
                 size: 48, color: AppColors.primary),
           ),
           const SizedBox(height: 20),
@@ -568,7 +568,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
     return Container(
       height: 140,
       color: AppColors.border,
-      child: const Center(
+      child: Center(
         child: Icon(Icons.image_not_supported, color: AppColors.textHint),
       ),
     );

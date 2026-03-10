@@ -108,6 +108,7 @@ class PropertyService {
     double? landlordBaseLongitude,
     String? ownershipDocUrl,
     String? ownershipDocType,
+    String? listingFeeProofUrl,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -195,6 +196,7 @@ class PropertyService {
         if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
         if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
         'ownershipDocStatus': ownershipDocUrl != null ? 'pending' : 'none',
+        if (listingFeeProofUrl != null) 'listingFeeProofUrl': listingFeeProofUrl,
       };
 
       final docRef = await _propertiesRef.add(propertyData);
@@ -237,7 +239,8 @@ class PropertyService {
         final data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id;
         return PropertyModel.fromJson(_convertTimestamps(data));
-      }).toList();
+      // Exclude properties whose ownership doc was explicitly rejected
+      }).where((p) => p.ownershipDocStatus != 'rejected').toList();
     } catch (e) {
       developer.log(
         '❌ Failed to get properties: $e',
@@ -332,7 +335,7 @@ class PropertyService {
                     data['id'] = doc.id;
                     return PropertyModel.fromJson(_convertTimestamps(data));
                   })
-                  .where((p) => p.isAvailable) // Filter client-side
+                  .where((p) => p.isAvailable && p.ownershipDocStatus != 'rejected') // Filter client-side
                   .toList();
 
           allProperties.addAll(batchProperties);
@@ -384,6 +387,28 @@ class PropertyService {
         stackTrace: stackTrace,
       );
       return [];
+    }
+  }
+
+  /// Get the number of properties owned by the current landlord
+  Future<int> getLandlordPropertyCount() async {
+    try {
+      if (_currentUserId == null) return 0;
+      final snapshot = await _propertiesRef
+          .where('landlordId', isEqualTo: _currentUserId)
+          .count()
+          .get();
+      return snapshot.count ?? 0;
+    } catch (e) {
+      // Fallback: fetch docs and count client-side if .count() unsupported
+      try {
+        final snapshot = await _propertiesRef
+            .where('landlordId', isEqualTo: _currentUserId)
+            .get();
+        return snapshot.docs.length;
+      } catch (_) {
+        return 0;
+      }
     }
   }
 
@@ -544,10 +569,11 @@ class PropertyService {
             return PropertyModel.fromJson(_convertTimestamps(data));
           }).toList();
 
-      // Filter to only verified landlords
+      // Filter to only verified landlords, also exclude rejected docs
       properties =
           properties
               .where((p) => verifiedLandlordIds.contains(p.landlordId))
+              .where((p) => p.ownershipDocStatus != 'rejected')
               .toList();
 
       // Filter by rent range (done client-side to avoid complex indexes)
@@ -838,7 +864,8 @@ class PropertyService {
             final data = doc.data() as Map<String, dynamic>;
             data['id'] = doc.id;
             return PropertyModel.fromJson(_convertTimestamps(data));
-          }).toList();
+          // Exclude rejected doc properties from tenant-facing stream
+          }).where((p) => p.ownershipDocStatus != 'rejected').toList();
         });
   }
 

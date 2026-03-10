@@ -73,7 +73,7 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
         backgroundColor: AppColors.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
         title: Text('My Rentals', style: AppTextStyles.h4),
@@ -92,7 +92,7 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
         ),
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : TabBarView(
               controller: _tabController,
@@ -378,7 +378,7 @@ class _RentalCardState extends State<_RentalCard> {
                               overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 4),
                           Row(children: [
-                            const Icon(Icons.location_on_outlined,
+                            Icon(Icons.location_on_outlined,
                                 size: 14,
                                 color: AppColors.textSecondary),
                             const SizedBox(width: 4),
@@ -447,7 +447,7 @@ class _RentalCardState extends State<_RentalCard> {
                       onPressed:
                           _isMessageLoading ? null : _messageTenant,
                       icon: _isMessageLoading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 36,
                               height: 36,
                               child: Padding(
@@ -463,7 +463,7 @@ class _RentalCardState extends State<_RentalCard> {
                                 color: AppColors.primary.withAlpha(26),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.chat_outlined,
+                              child: Icon(Icons.chat_outlined,
                                   color: AppColors.primary, size: 18),
                             ),
                     ),
@@ -620,7 +620,7 @@ class _RentalCardState extends State<_RentalCard> {
 
   Widget _imagePlaceholder() => Container(
         color: AppColors.background,
-        child: const Center(
+        child: Center(
           child: Icon(Icons.home_outlined,
               size: 40, color: AppColors.textHint),
         ),

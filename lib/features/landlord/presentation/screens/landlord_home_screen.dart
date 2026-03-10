@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -6,16 +8,16 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/activity_model.dart';
+import '../../../../shared/widgets/announcements_banner.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/activity_service.dart';
 import '../../../../services/conversation_service.dart';
-import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
-import '../../../../services/tenancy_link_service.dart';
+
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
@@ -39,8 +41,6 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   late final PropertyService _propertyService;
   late final ActivityService _activityService;
   late final ConversationService _conversationService;
-  late final ActiveRentalService _activeRentalService;
-  late final TenancyLinkService _tenancyLinkService;
   
   // User data
   String _userName = '';
@@ -51,6 +51,14 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   VerificationStatus _verificationStatus = VerificationStatus.none;
   double _landlordRating = 0.0;
   int _totalRatings = 0;
+
+  // Live stream subscriptions
+  StreamSubscription? _profileSubscription;
+  StreamSubscription? _propertiesSubscription;
+  StreamSubscription? _activitiesSubscription;
+  StreamSubscription? _rentalsSubscription;
+  StreamSubscription? _linkedTenantsSubscription;
+  StreamSubscription? _unreadCountSubscription;
 
   // Properties - now from Firestore
   List<PropertyModel> _myProperties = [];
@@ -86,40 +94,48 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _propertyService = PropertyService();
     _activityService = ActivityService();
     _conversationService = ConversationService();
-    _activeRentalService = ActiveRentalService();
-    _tenancyLinkService = TenancyLinkService();
-    _loadUserProfile();
-    _loadVerificationStatus();
-    _loadProperties();
-    _loadActivities();
-    _loadUnreadCount();
-    _loadActiveRentals();
-    _loadLinkedTenants();
+    _startProfileStream();
+    _startPropertiesStream();
+    _startActivitiesStream();
+    _startRentalsStream();
+    _startLinkedTenantsStream();
+    _startUnreadCountStream();
   }
 
-  Future<void> _loadUserProfile() async {
-    try {
-      final profile = await _authService.getUserProfile();
-      if (profile != null && mounted) {
-        setState(() {
-          _userName = profile['fullName'] ?? 'Landlord';
-          _profileImageUrl = profile['profileImageUrl'];
-          _landlordRating = (profile['rating'] ?? 0.0).toDouble();
-          _totalRatings = (profile['totalRatings'] ?? 0) as int;
-          _isLoadingProfile = false;
-        });
-      } else {
-        setState(() {
-          _userName = 'Landlord';
-          _isLoadingProfile = false;
-        });
+  void _startProfileStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() { _userName = 'Landlord'; _isLoadingProfile = false; });
+      return;
+    }
+    _profileSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted || !doc.exists) return;
+      final data = doc.data()!;
+      // Parse verification status directly from profile doc
+      final statusStr = data['verificationStatus'] as String? ?? 'none';
+      VerificationStatus vStatus;
+      switch (statusStr) {
+        case 'verified':  vStatus = VerificationStatus.verified;  break;
+        case 'pending':   vStatus = VerificationStatus.pending;   break;
+        case 'rejected':  vStatus = VerificationStatus.rejected;  break;
+        default:          vStatus = VerificationStatus.none;
       }
-    } catch (e) {
       setState(() {
-        _userName = 'Landlord';
+        _userName = data['fullName'] ?? 'Landlord';
+        _profileImageUrl = data['profileImageUrl'];
+        _landlordRating = (data['rating'] ?? 0.0).toDouble();
+        _totalRatings = (data['totalRatings'] ?? 0) as int;
+        _verificationStatus = vStatus;
         _isLoadingProfile = false;
       });
-    }
+    }, onError: (e) {
+      debugPrint('❌ Profile stream error: $e');
+      if (mounted) setState(() { _userName = 'Landlord'; _isLoadingProfile = false; });
+    });
   }
 
   Future<void> _pickProfileImage() async {
@@ -253,92 +269,154 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     }
   }
 
-  Future<void> _loadProperties() async {
-    try {
-      final properties = await _propertyService.getLandlordProperties();
-      if (mounted) {
-        setState(() {
-          _myProperties = properties;
-          _isLoadingProperties = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('âŒ Error loading properties: $e');
-      setState(() => _isLoadingProperties = false);
-    }
+  void _startPropertiesStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _isLoadingProperties = false); return; }
+    _propertiesSubscription = FirebaseFirestore.instance
+        .collection('properties')
+        .where('landlordId', isEqualTo: uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final properties = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        // Convert Timestamps to ISO strings for PropertyModel.fromJson
+        for (final key in ['createdAt', 'updatedAt']) {
+          if (data[key] is Timestamp) {
+            data[key] = (data[key] as Timestamp).toDate().toIso8601String();
+          }
+        }
+        return PropertyModel.fromJson(data);
+      }).toList();
+      setState(() {
+        _myProperties = properties;
+        _isLoadingProperties = false;
+      });
+    }, onError: (e) {
+      debugPrint('❌ Properties stream error: $e');
+      if (mounted) setState(() => _isLoadingProperties = false);
+    });
   }
 
-  Future<void> _loadActivities() async {
-    try {
-      final activities = await _activityService.getRecentActivities(limit: 10);
-      if (mounted) {
-        setState(() {
-          _recentActivities = activities;
-          _isLoadingActivities = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('âŒ Error loading activities: $e');
-      setState(() => _isLoadingActivities = false);
-    }
+  void _startActivitiesStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _isLoadingActivities = false); return; }
+    _activitiesSubscription = FirebaseFirestore.instance
+        .collection('activities')
+        .where('landlordId', isEqualTo: uid)
+        .orderBy('createdAt', descending: true)
+        .limit(10)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final activities = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return ActivityModel.fromJson(data);
+      }).toList();
+      setState(() {
+        _recentActivities = activities;
+        _isLoadingActivities = false;
+      });
+    }, onError: (e) {
+      debugPrint('❌ Activities stream error: $e');
+      if (mounted) setState(() => _isLoadingActivities = false);
+    });
   }
 
-  Future<void> _loadUnreadCount() async {
-    try {
-      final count = await _conversationService.getTotalUnreadCount();
-      if (mounted) {
-        setState(() => _unreadCount = count);
+  void _startUnreadCountStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    _unreadCountSubscription = FirebaseFirestore.instance
+        .collection('conversations')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      int total = 0;
+      for (final doc in snapshot.docs) {
+        final counts = doc.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
+        total += (counts[uid] as num? ?? 0).toInt();
       }
-    } catch (e) {
-      debugPrint('âŒ Error loading unread count: $e');
-    }
+      setState(() => _unreadCount = total);
+    }, onError: (e) {
+      debugPrint('❌ Unread count stream error: $e');
+    });
   }
 
-  Future<void> _loadActiveRentals() async {
-    try {
-      final rentals = await _activeRentalService.getLandlordRentals();
-      if (mounted) {
-        setState(() {
-          _activeRentals = rentals
-              .where((r) => r.isActive || r.isExpiringSoon)
-              .toList();
-          _isLoadingRentals = false;
-        });
-      }
-    } catch (e) {
-       debugPrint('âŒ Error loading rentals: $e');
-       if (mounted) setState(() => _isLoadingRentals = false);
-    }
+  void _startRentalsStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _isLoadingRentals = false); return; }
+    _rentalsSubscription = FirebaseFirestore.instance
+        .collection('active_rentals')
+        .where('landlordId', isEqualTo: uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final rentals = snapshot.docs
+          .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
+          .toList()
+          .where((r) => r.isActive || r.isExpiringSoon)
+          .toList();
+      setState(() {
+        _activeRentals = rentals;
+        _isLoadingRentals = false;
+      });
+    }, onError: (e) {
+      debugPrint('❌ Rentals stream error: $e');
+      if (mounted) setState(() => _isLoadingRentals = false);
+    });
   }
 
-  Future<void> _loadLinkedTenants() async {
-    try {
-      final uid = _authService.currentUserId;
-      if (uid == null) {
-        if (mounted) setState(() => _isLoadingLinkedTenants = false);
-        return;
-      }
-      final links = await _tenancyLinkService.landlordConfirmedLinksOnce(uid);
-      if (mounted) {
-        setState(() {
-          _linkedTenants = links;
-          _isLoadingLinkedTenants = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Error loading linked tenants: $e');
+  void _startLinkedTenantsStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _isLoadingLinkedTenants = false); return; }
+    _linkedTenantsSubscription = FirebaseFirestore.instance
+        .collection('tenancy_links')
+        .where('landlordId', isEqualTo: uid)
+        .where('status', isEqualTo: 'confirmed')
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final links = snapshot.docs
+          .map((doc) => TenancyLinkModel.fromFirestore(doc.data(), doc.id))
+          .toList();
+      setState(() {
+        _linkedTenants = links;
+        _isLoadingLinkedTenants = false;
+      });
+    }, onError: (e) {
+      debugPrint('❌ Linked tenants stream error: $e');
       if (mounted) setState(() => _isLoadingLinkedTenants = false);
-    }
+    });
   }
 
+  @override
+  void dispose() {
+    _profileSubscription?.cancel();
+    _propertiesSubscription?.cancel();
+    _activitiesSubscription?.cancel();
+    _rentalsSubscription?.cancel();
+    _linkedTenantsSubscription?.cancel();
+    _unreadCountSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Streams auto-update, but pull-to-refresh restarts them cleanly
   Future<void> _refreshData() async {
-    await Future.wait([
-      _loadProperties(),
-      _loadActivities(),
-      _loadUnreadCount(),
-      _loadActiveRentals(),
-      _loadLinkedTenants(),
-    ]);
+    _profileSubscription?.cancel();
+    _propertiesSubscription?.cancel();
+    _activitiesSubscription?.cancel();
+    _rentalsSubscription?.cancel();
+    _linkedTenantsSubscription?.cancel();
+    _unreadCountSubscription?.cancel();
+    _startProfileStream();
+    _startPropertiesStream();
+    _startActivitiesStream();
+    _startRentalsStream();
+    _startLinkedTenantsStream();
+    _startUnreadCountStream();
   }
 
   String get _firstName {
@@ -444,6 +522,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               const SizedBox(height: 16),
               _buildVerificationPrompt(),
             ],
+            // Announcements
+            AnnouncementsBanner(
+              userId: _authService.currentUserId ?? '',
+              accountType: 'landlord',
+              notificationsRoute: '/landlord/activities',
+            ),
+            const SizedBox(height: 8),
 
             const SizedBox(height: 24),
 
@@ -601,7 +686,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
         ),
-        child: const Center(
+        child: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -657,7 +742,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
   Future<void> _onActivityTap(ActivityModel activity) async {
     await _activityService.markAsRead(activity.id);
-    _loadActivities();
+    
     if (!mounted) return;
 
     // Issue activities — go straight to the issues screen so landlord can act
@@ -733,7 +818,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
         ),
-        child: const Center(
+        child: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
       );
@@ -774,7 +859,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         padding: const EdgeInsets.only(bottom: 12), 
         child: _LandlordPropertyCard(
           property: p, 
-          onTap: () => context.push('/landlord/property-health', extra: p),
+          onTap: () => context.push('/property-detail', extra: p),
         ),
       )).toList(),
     );
@@ -812,7 +897,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                         width: 56,
                         height: 56,
                         color: AppColors.background,
-                        child: const Icon(Icons.home,
+                        child: Icon(Icons.home,
                             color: AppColors.textHint, size: 24),
                       ),
                     )
@@ -820,7 +905,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                       width: 56,
                       height: 56,
                       color: AppColors.background,
-                      child: const Icon(Icons.home,
+                      child: Icon(Icons.home,
                           color: AppColors.textHint, size: 24),
                     ),
             ),
@@ -920,7 +1005,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ),
               const SizedBox(height: 2),
               Row(children: [
-                const Icon(Icons.home_outlined, size: 13, color: AppColors.textSecondary),
+                Icon(Icons.home_outlined, size: 13, color: AppColors.textSecondary),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -1022,11 +1107,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       Padding(padding: const EdgeInsets.all(20), child: Text('My Properties', style: AppTextStyles.h2)),
       Expanded(
         child: _isLoadingProperties
-            ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+            ? Center(child: CircularProgressIndicator(color: AppColors.primary))
             : _myProperties.isEmpty
                 ? _buildEmptyProperties()
                 : RefreshIndicator(
-                    onRefresh: _loadProperties,
+                    onRefresh: _refreshData,
                     color: AppColors.primary,
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
@@ -1037,7 +1122,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                           padding: const EdgeInsets.only(bottom: 16), 
                           child: _LandlordPropertyCard(
                             property: property, 
-                            onTap: () => context.push('/landlord/property-health', extra: property), 
+                            onTap: () => context.push('/property-detail', extra: property), 
                             showActions: true,
                             onDelete: () => _deleteProperty(property),
                             onToggleStatus: () => _togglePropertyStatus(property),
@@ -1072,7 +1157,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
     if (confirmed == true) {
       await _propertyService.deleteProperty(property.id);
-      _loadProperties();
+      // Stream auto-updates the list
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1086,7 +1171,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
   Future<void> _togglePropertyStatus(PropertyModel property) async {
     await _propertyService.updateAvailability(property.id, !property.isAvailable);
-    _loadProperties();
+    // Stream auto-updates the list
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1103,7 +1188,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         width: 100, 
         height: 100, 
         decoration: BoxDecoration(color: AppColors.primaryLight.withAlpha(26), shape: BoxShape.circle), 
-        child: const Icon(Icons.home_outlined, size: 50, color: AppColors.primary),
+        child: Icon(Icons.home_outlined, size: 50, color: AppColors.primary),
       ),
       const SizedBox(height: 24),
       Text('No properties yet', style: AppTextStyles.h4),
@@ -1223,7 +1308,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ]),
             const SizedBox(height: 24),
             _ProfileSection(title: 'Finances', items: [
-              _ProfileMenuItem(icon: Icons.account_balance_wallet_outlined, title: 'Earnings & Transactions', subtitle: _totalEarnings > 0 ? 'NGN ${(_totalEarnings / 1000000).toStringAsFixed(1)}M total' : 'View your earnings and payment history', onTap: () => context.push('/landlord/earnings')),
+              _ProfileMenuItem(icon: Icons.account_balance_wallet_outlined, title: 'Earnings & Transactions', subtitle: _totalEarnings > 0 ? '₦${(_totalEarnings / 1000000).toStringAsFixed(1)}M total' : 'View your earnings and payment history', onTap: () => context.push('/landlord/earnings')),
             ]),
             const SizedBox(height: 24),
             _ProfileSection(title: 'Preferences', items: [
@@ -1290,7 +1375,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               onTap: () {
                 setState(() {
                   _currentNavIndex = 2;
-                  _loadUnreadCount();
+                  // Unread count is live via stream — no manual reload needed
                 });
               },
               badge: _unreadCount > 0 ? '$_unreadCount' : null,
@@ -1333,7 +1418,7 @@ class _DashStat extends StatelessWidget {
           ]),
           if (onTap != null) ...[
             const Spacer(),
-            const Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
+            Icon(Icons.chevron_right, size: 14, color: AppColors.textHint),
           ],
         ]),
       ),
@@ -1445,7 +1530,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
     final initial = actorName.isNotEmpty ? actorName[0].toUpperCase() : 'T';
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -1604,7 +1689,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
                 border: Border.all(color: AppColors.warning.withAlpha(60)),
               ),
               child: Row(children: [
-                const Icon(Icons.lock_outline,
+                Icon(Icons.lock_outline,
                     size: 18, color: AppColors.warning),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1648,7 +1733,7 @@ class _ActivityItem extends StatelessWidget {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
                 ),
             ],
           ),
@@ -1682,7 +1767,7 @@ class _LandlordPropertyCard extends StatelessWidget {
             child: Image.network(
               property.images.isNotEmpty ? property.images.first : 'https://via.placeholder.com/100', 
               width: 80, height: 80, fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => Container(width: 80, height: 80, color: AppColors.background, child: const Icon(Icons.image_not_supported, color: AppColors.textHint)),
+              errorBuilder: (c, e, s) => Container(width: 80, height: 80, color: AppColors.background, child: Icon(Icons.image_not_supported, color: AppColors.textHint)),
             ),
           ),
           const SizedBox(width: 12),
@@ -1702,19 +1787,24 @@ class _LandlordPropertyCard extends StatelessWidget {
             ]),
           ])),
           if (showActions) PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: AppColors.textSecondary, size: 20),
+            icon: Icon(Icons.more_vert, color: AppColors.textSecondary, size: 20),
             padding: EdgeInsets.zero,
             onSelected: (v) {
-              if (v == 'delete' && onDelete != null) {
+              if (v == 'edit') {
+                context.push('/landlord/edit-property', extra: property);
+              } else if (v == 'health') {
+                context.push('/landlord/property-health', extra: property);
+              } else if (v == 'delete' && onDelete != null) {
                 onDelete!();
               } else if (v == 'toggle' && onToggleStatus != null) {
                 onToggleStatus!();
               }
             },
             itemBuilder: (c) => [
-              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 8), Text('Edit')])),
+              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 8), Text('Edit Property')])),
+              const PopupMenuItem(value: 'health', child: Row(children: [Icon(Icons.monitor_heart_outlined, size: 20), SizedBox(width: 8), Text('Property Health')])),
               PopupMenuItem(value: 'toggle', child: Row(children: [Icon(property.isAvailable ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20), SizedBox(width: 8), Text(property.isAvailable ? 'Mark Occupied' : 'Mark Available')])),
-              const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 20, color: AppColors.error), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppColors.error))])),
+              PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 20, color: AppColors.error), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppColors.error))])),
             ],
           ),
         ]),
@@ -1778,7 +1868,7 @@ class _ProfileMenuItem extends StatelessWidget {
             const SizedBox(height: 2),
             Text(subtitle, style: AppTextStyles.caption),
           ])),
-          trailing ?? const Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
+          trailing ?? Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
         ]),
       ),
     );
