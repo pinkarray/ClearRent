@@ -17,6 +17,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
+import 'agent_discover_properties_screen.dart';
 
 class AgentHomeScreen extends StatefulWidget {
   const AgentHomeScreen({super.key});
@@ -301,6 +302,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   String get _accountType => _userProfile?['accountType'] ?? 'agent';
   String get _userName => _userProfile?['fullName'] ?? 'Agent';
   String get _baseLocation => _userProfile?['baseLocation'] ?? 'Not set';
+  bool get _hasBankDetails {
+    final bankDetails = _userProfile?['bankDetails'] as Map<String, dynamic>?;
+    return bankDetails != null &&
+        (bankDetails['bankName'] ?? '').toString().isNotEmpty &&
+        (bankDetails['accountNumber'] ?? '').toString().isNotEmpty;
+  }
   List<String> get _serviceAreas =>
       List<String>.from(_userProfile?['serviceAreas'] ?? []);
   double get _rating => (_userProfile?['rating'] ?? 0.0).toDouble();
@@ -351,8 +358,10 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 : _currentNavIndex == 0
                 ? SafeArea(child: _buildHomeTab())
                 : _currentNavIndex == 1
-                ? SafeArea(child: _buildPropertiesTab())
+                ? const SafeArea(child: AgentDiscoverPropertiesScreen())
                 : _currentNavIndex == 2
+                ? SafeArea(child: _buildPropertiesTab())
+                : _currentNavIndex == 3
                 ? SafeArea(child: _buildMessagesTab())
                 : _buildProfileTab(),
         bottomNavigationBar: _buildBottomNav(),
@@ -367,6 +376,8 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         SliverToBoxAdapter(child: _buildHeader()),
         if (!_isVerified || _accountType != 'agent')
           SliverToBoxAdapter(child: _buildVerificationBanner()),
+        if (!_hasBankDetails && !_isLoading && _isVerified)
+          SliverToBoxAdapter(child: _buildBankDetailsBanner()),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
@@ -384,7 +395,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         SliverToBoxAdapter(
           child: _buildSectionHeader(
             'Assigned Properties',
-            onSeeAll: () => setState(() => _currentNavIndex = 1),
+            onSeeAll: () => setState(() => _currentNavIndex = 2),
           ),
         ),
         SliverToBoxAdapter(child: _buildAssignedPropertiesSection()),
@@ -466,7 +477,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             ),
           ),
           IconButton(
-            onPressed: () => setState(() => _currentNavIndex = 3),
+            onPressed: () => setState(() => _currentNavIndex = 4),
             icon: const Icon(Icons.menu),
           ),
         ],
@@ -620,6 +631,39 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     );
   }
 
+  Widget _buildBankDetailsBanner() {
+    return GestureDetector(
+      onTap: () => context.push('/agent/bank-details'),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(77)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(26),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Add Bank Details', style: AppTextStyles.labelLarge.copyWith(color: AppColors.warning)),
+            const SizedBox(height: 2),
+            Text('Required to receive inspection payouts',
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.warning.withAlpha(204))),
+          ])),
+          Icon(Icons.chevron_right, color: AppColors.warning),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildStatsSection() {
     return Padding(
       padding: const EdgeInsets.all(20),
@@ -693,42 +737,71 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   Widget _buildQuickActions() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.map_outlined,
-              label: 'Service Areas',
-              onTap: () => context.push('/agent/service-areas'),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.explore_outlined,
+                  label: 'Discover',
+                  onTap: () => setState(() => _currentNavIndex = 1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.people_outline,
+                  label: 'Find Tenants',
+                  onTap: () => setState(() => _currentNavIndex = 1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.map_outlined,
+                  label: 'Service Areas',
+                  onTap: () => context.push('/agent/service-areas'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.schedule_outlined,
+                  label: 'Availability',
+                  onTap: () => context.push('/agent/availability'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.schedule_outlined,
-              label: 'Availability',
-              onTap: () => context.push('/agent/availability'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.account_balance_outlined,
-              label: 'Bank Details',
-              onTap: () => context.push('/agent/bank-details'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _buildActionButton(
-              icon: Icons.history,
-              label: 'History',
-              onTap:
-                  () => context.push(
-                    '/agent/inspections',
-                    extra: {'initialTab': 1},
-                  ),
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.account_balance_outlined,
+                  label: 'Bank Details',
+                  onTap: () => context.push('/agent/bank-details'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.history,
+                  label: 'History',
+                  onTap:
+                      () => context.push(
+                        '/agent/inspections',
+                        extra: {'initialTab': 1},
+                      ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Spacers to keep uniform sizing
+              const Expanded(child: SizedBox()),
+              const SizedBox(width: 12),
+              const Expanded(child: SizedBox()),
+            ],
           ),
         ],
       ),
@@ -1938,11 +2011,18 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 onTap: () => setState(() => _currentNavIndex = 0),
               ),
               _NavItem(
+                icon: Icons.explore_outlined,
+                activeIcon: Icons.explore,
+                label: 'Discover',
+                isActive: _currentNavIndex == 1,
+                onTap: () => setState(() => _currentNavIndex = 1),
+              ),
+              _NavItem(
                 icon: Icons.home_work_outlined,
                 activeIcon: Icons.home_work,
                 label: 'Properties',
-                isActive: _currentNavIndex == 1,
-                onTap: () => setState(() => _currentNavIndex = 1),
+                isActive: _currentNavIndex == 2,
+                onTap: () => setState(() => _currentNavIndex = 2),
                 badge:
                     _assignedPropertiesCount > 0
                         ? '$_assignedPropertiesCount'
@@ -1952,10 +2032,10 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 icon: Icons.chat_outlined,
                 activeIcon: Icons.chat,
                 label: 'Messages',
-                isActive: _currentNavIndex == 2,
+                isActive: _currentNavIndex == 3,
                 onTap: () {
                   setState(() {
-                    _currentNavIndex = 2;
+                    _currentNavIndex = 3;
                   });
                 },
                 badge: _unreadCount > 0 ? '$_unreadCount' : null,
@@ -1964,8 +2044,8 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 icon: Icons.person_outline,
                 activeIcon: Icons.person,
                 label: 'Profile',
-                isActive: _currentNavIndex == 3,
-                onTap: () => setState(() => _currentNavIndex = 3),
+                isActive: _currentNavIndex == 4,
+                onTap: () => setState(() => _currentNavIndex = 4),
               ),
             ],
           ),

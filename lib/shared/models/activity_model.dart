@@ -8,6 +8,12 @@ enum ActivityType {
   issueReported,
   issueDisputed,
   issueConfirmed,
+  inspectionRequest,
+  inspectionApproved,
+  inspectionDeclined,
+  inspectionCompleted,
+  inspectionRated,
+  payoutReceived,
 }
 
 class ActivityModel {
@@ -20,6 +26,7 @@ class ActivityModel {
   final String? propertyTitle;
   final String? actorId;
   final String? actorName;
+  final String? relatedId;
   final bool isRead;
   final DateTime createdAt;
 
@@ -33,6 +40,7 @@ class ActivityModel {
     this.propertyTitle,
     this.actorId,
     this.actorName,
+    this.relatedId,
     this.isRead = false,
     required this.createdAt,
   });
@@ -40,25 +48,37 @@ class ActivityModel {
   // Get icon based on type
   String get iconName {
     switch (type) {
-      case ActivityType.propertyAdded:   return 'home';
-      case ActivityType.propertyViewed:  return 'visibility';
-      case ActivityType.inquiry:         return 'chat_bubble';
-      case ActivityType.payment:         return 'payments';
-      case ActivityType.issueReported:   return 'report_problem';
-      case ActivityType.issueDisputed:   return 'warning';
-      case ActivityType.issueConfirmed:  return 'check_circle';
+      case ActivityType.propertyAdded:       return 'home';
+      case ActivityType.propertyViewed:      return 'visibility';
+      case ActivityType.inquiry:             return 'chat_bubble';
+      case ActivityType.payment:             return 'payments';
+      case ActivityType.issueReported:       return 'report_problem';
+      case ActivityType.issueDisputed:       return 'warning';
+      case ActivityType.issueConfirmed:      return 'check_circle';
+      case ActivityType.inspectionRequest:   return 'search';
+      case ActivityType.inspectionApproved:  return 'event_available';
+      case ActivityType.inspectionDeclined:  return 'event_busy';
+      case ActivityType.inspectionCompleted: return 'done_all';
+      case ActivityType.inspectionRated:     return 'star';
+      case ActivityType.payoutReceived:      return 'account_balance_wallet';
     }
   }
 
   String get colorName {
     switch (type) {
-      case ActivityType.propertyAdded:   return 'primary';
-      case ActivityType.propertyViewed:  return 'info';
-      case ActivityType.inquiry:         return 'warning';
-      case ActivityType.payment:         return 'success';
-      case ActivityType.issueReported:   return 'error';
-      case ActivityType.issueDisputed:   return 'error';
-      case ActivityType.issueConfirmed:  return 'success';
+      case ActivityType.propertyAdded:       return 'primary';
+      case ActivityType.propertyViewed:      return 'info';
+      case ActivityType.inquiry:             return 'warning';
+      case ActivityType.payment:             return 'success';
+      case ActivityType.issueReported:       return 'error';
+      case ActivityType.issueDisputed:       return 'error';
+      case ActivityType.issueConfirmed:      return 'success';
+      case ActivityType.inspectionRequest:   return 'warning';
+      case ActivityType.inspectionApproved:  return 'success';
+      case ActivityType.inspectionDeclined:  return 'error';
+      case ActivityType.inspectionCompleted: return 'success';
+      case ActivityType.inspectionRated:     return 'primary';
+      case ActivityType.payoutReceived:      return 'success';
     }
   }
 
@@ -84,14 +104,15 @@ class ActivityModel {
   factory ActivityModel.fromJson(Map<String, dynamic> json) {
     return ActivityModel(
       id: json['id'] ?? '',
-      landlordId: json['landlordId'] ?? '',
+      landlordId: json['landlordId'] ?? json['userId'] ?? '',
       type: _parseType(json['type']),
       title: json['title'] ?? '',
-      subtitle: json['subtitle'] ?? '',
+      subtitle: json['subtitle'] ?? json['message'] ?? '',
       propertyId: json['propertyId'],
       propertyTitle: json['propertyTitle'],
       actorId: json['actorId'],
       actorName: json['actorName'],
+      relatedId: json['relatedId'],
       isRead: json['isRead'] ?? false,
       createdAt: json['createdAt'] != null
           ? (json['createdAt'] is Timestamp
@@ -112,6 +133,7 @@ class ActivityModel {
       'propertyTitle': propertyTitle,
       'actorId': actorId,
       'actorName': actorName,
+      'relatedId': relatedId,
       'isRead': isRead,
       'createdAt': FieldValue.serverTimestamp(),
     };
@@ -119,14 +141,21 @@ class ActivityModel {
 
   static ActivityType _parseType(String? type) {
     switch (type) {
-      case 'propertyAdded':   return ActivityType.propertyAdded;
-      case 'propertyViewed':  return ActivityType.propertyViewed;
-      case 'inquiry':         return ActivityType.inquiry;
-      case 'payment':         return ActivityType.payment;
-      case 'issue_reported':  return ActivityType.issueReported;
-      case 'issue_disputed':  return ActivityType.issueDisputed;
-      case 'issue_confirmed': return ActivityType.issueConfirmed;
-      default:                return ActivityType.propertyViewed;
+      case 'propertyAdded':          return ActivityType.propertyAdded;
+      case 'propertyViewed':         return ActivityType.propertyViewed;
+      case 'inquiry':                return ActivityType.inquiry;
+      case 'payment':                return ActivityType.payment;
+      case 'issue_reported':         return ActivityType.issueReported;
+      case 'issue_disputed':         return ActivityType.issueDisputed;
+      case 'issue_confirmed':        return ActivityType.issueConfirmed;
+      case 'inspection_request':     return ActivityType.inspectionRequest;
+      case 'inspection_request_agent': return ActivityType.inspectionRequest;
+      case 'inspection_approved':    return ActivityType.inspectionApproved;
+      case 'inspection_declined':    return ActivityType.inspectionDeclined;
+      case 'inspection_completed':   return ActivityType.inspectionCompleted;
+      case 'inspection_rated':       return ActivityType.inspectionRated;
+      case 'payout_received':        return ActivityType.payoutReceived;
+      default:                       return ActivityType.propertyViewed;
     }
   }
 
@@ -141,6 +170,7 @@ class ActivityModel {
     String? propertyTitle,
     String? actorId,
     String? actorName,
+    String? relatedId,
     bool? isRead,
     DateTime? createdAt,
   }) {
@@ -154,6 +184,7 @@ class ActivityModel {
       propertyTitle: propertyTitle ?? this.propertyTitle,
       actorId: actorId ?? this.actorId,
       actorName: actorName ?? this.actorName,
+      relatedId: relatedId ?? this.relatedId,
       isRead: isRead ?? this.isRead,
       createdAt: createdAt ?? this.createdAt,
     );

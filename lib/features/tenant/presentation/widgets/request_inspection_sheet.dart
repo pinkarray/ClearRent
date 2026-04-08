@@ -43,7 +43,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
   bool _isLoadingDates = true;
   bool _isLoadingSlots = false;
-  bool _isSubmitting = false;
+  final bool _isSubmitting = false;
   bool _hasExistingRequest = false;
 
   InspectionFeeBreakdown? _feeBreakdown;
@@ -116,8 +116,6 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
   }
 
   Future<void> _loadFeeBreakdown() async {
-    if (widget.property.inspectionHandler != 'agent') return;
-
     try {
       final breakdown = await _inspectionService.calculateInspectionFee(
         property: widget.property,
@@ -143,102 +141,36 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
   Future<void> _submitRequest() async {
     if (!_canSubmit) return;
 
-    // If agent-handled, show manual payment sheet
-    if (_isAgentHandled) {
-      // Close this sheet first
-      Navigator.pop(context);
-      
-      // Get the fee breakdown (use default if not loaded)
-      final feeBreakdown = _feeBreakdown ?? InspectionPricing.calculateFee(distanceKm: 0);
-      
-      // Show the manual payment sheet
-      final result = await ManualPaymentSheet.show(
-        context,
-        property: widget.property,
-        selectedDate: _selectedDate!,
-        selectedTimeSlot: _selectedTimeSlot!,
-        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        feeBreakdown: feeBreakdown,
-      );
-      
-      // If payment was submitted successfully, trigger callback
-      if (result == true) {
-        widget.onRequestSent?.call();
-      }
-      return;
-    }
+    // Build the fee breakdown — use calculated or a sensible fallback
+    final feeBreakdown = _feeBreakdown ?? (_isAgentHandled
+        ? InspectionPricing.calculateFee(
+            agentCluster: 'maryland_ikeja',
+            propertyCluster: 'maryland_ikeja',
+          )
+        : InspectionPricing.calculateSelfHandledFee(
+            landlordLivesInProperty: widget.property.landlordLivesInProperty,
+            propertyCluster: 'maryland_ikeja',
+          ));
 
-    // Self-handled: create request directly (no payment needed)
-    setState(() => _isSubmitting = true);
+    // Close this sheet first
+    Navigator.pop(context);
 
-    try {
-      final result = await _inspectionService.createInspectionRequest(
-        property: widget.property,
-        requestedDate: _selectedDate!,
-        requestedTimeSlot: _selectedTimeSlot!,
-        notes:
-            _notesController.text.trim().isEmpty
-                ? null
-                : _notesController.text.trim(),
-      );
-
-      if (!mounted) return;
-
-      if (result == 'already_pending') {
-        _showError('You already have a pending request for this property');
-        setState(() => _isSubmitting = false);
-        return;
-      }
-
-      if (result != null) {
-        Navigator.pop(context, true);
-        _showSuccess(
-          'Inspection request sent! The landlord will review it shortly.',
-        );
-        widget.onRequestSent?.call();
-      } else {
-        _showError('Failed to send request. Please try again.');
-        setState(() => _isSubmitting = false);
-      }
-    } catch (e) {
-      debugPrint('❌ Error submitting request: $e');
-      _showError('Something went wrong. Please try again.');
-      setState(() => _isSubmitting = false);
-    }
-  }
-
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+    // Show the manual payment sheet for ALL inspection types
+    final result = await ManualPaymentSheet.show(
+      context,
+      property: widget.property,
+      selectedDate: _selectedDate!,
+      selectedTimeSlot: _selectedTimeSlot!,
+      notes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
+      feeBreakdown: feeBreakdown,
     );
-  }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    // If payment was submitted successfully, trigger callback
+    if (result == true) {
+      widget.onRequestSent?.call();
+    }
   }
 
   @override
@@ -382,22 +314,17 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                     ),
                   ),
 
-                  // Fee breakdown (for agent-handled)
-                  if (_isAgentHandled) ...[
-                    const SizedBox(height: 24),
-                    _buildFeeBreakdown(),
-                  ],
+                  // Fee breakdown (always shown)
+                  const SizedBox(height: 24),
+                  _buildFeeBreakdown(),
 
                   const SizedBox(height: 24),
 
                   // Submit button
                   AppButton(
-                    text:
-                        _isAgentHandled
-                            ? (_feeBreakdown != null 
-                                ? 'Pay ₦${NumberFormat('#,###').format(_feeBreakdown!.totalFee)} & Request'
-                                : 'Continue to Payment')
-                            : 'Send Request',
+                    text: _feeBreakdown != null
+                        ? 'Pay ₦${NumberFormat('#,###').format(_feeBreakdown!.totalFee)} & Request'
+                        : 'Continue to Payment',
                     onPressed: _canSubmit ? _submitRequest : null,
                     isLoading: _isSubmitting,
                   ),
@@ -407,9 +334,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                   // Info text
                   Center(
                     child: Text(
-                      _isAgentHandled
-                          ? 'You\'ll transfer payment and upload proof on the next screen'
-                          : 'The landlord will review and respond to your request',
+                      'You\'ll transfer payment and upload proof on the next screen',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.textHint,
                       ),
@@ -745,6 +670,8 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
   }
 
   Widget _buildFeeBreakdown() {
+    final isAgent = _isAgentHandled;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -768,17 +695,30 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
           const SizedBox(height: 12),
 
           if (_feeBreakdown != null) ...[
-            _buildFeeRow('Agent Service Fee', _feeBreakdown!.agentServiceFee),
-            _buildFeeRow('Transport Fee', _feeBreakdown!.transportFee),
-            _buildFeeRow('Platform Fee', _feeBreakdown!.clearrentFee),
+            // Agent-handled shows agent service fee; self-handled shows booking fee
+            if (isAgent)
+              _buildFeeRow('Agent Service Fee', _feeBreakdown!.agentServiceFee)
+            else
+              _buildFeeRow('Booking Fee', _feeBreakdown!.tenantServiceCharge),
+            if (_feeBreakdown!.transportFee > 0)
+              _buildFeeRow('Transport Fee', _feeBreakdown!.transportFee),
+            if (isAgent)
+              _buildFeeRow('Platform Fee', _feeBreakdown!.clearrentFee),
             const Divider(height: 16),
             _buildFeeRow('Total', _feeBreakdown!.totalFee, isTotal: true),
           ] else ...[
-            _buildFeeRow('Agent Service Fee', 5000),
-            _buildFeeRow('Transport Fee', 2000),
-            _buildFeeRow('Platform Fee', 3000),
-            const Divider(height: 16),
-            _buildFeeRow('Total', 10000, isTotal: true),
+            // Fallback while loading
+            if (isAgent) ...[
+              _buildFeeRow('Agent Service Fee', 10000),
+              _buildFeeRow('Transport Fee', 1000),
+              _buildFeeRow('Platform Fee', 3000),
+              const Divider(height: 16),
+              _buildFeeRow('Total', 14000, isTotal: true),
+            ] else ...[
+              _buildFeeRow('Booking Fee', 3000),
+              const Divider(height: 16),
+              _buildFeeRow('Total', 3000, isTotal: true),
+            ],
           ],
 
           const SizedBox(height: 8),
@@ -810,8 +750,8 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
             '₦${NumberFormat('#,###').format(amount)}',
             style:
                 isTotal
-                    ? AppTextStyles.naira(AppTextStyles.h4).copyWith(color: AppColors.primary)
-                    : AppTextStyles.naira(AppTextStyles.labelMedium),
+                    ? AppTextStyles.h4.copyWith(color: AppColors.primary)
+                    : AppTextStyles.labelMedium,
           ),
         ],
       ),

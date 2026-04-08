@@ -6,7 +6,19 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 
 class BankDetailsScreen extends StatefulWidget {
-  const BankDetailsScreen({super.key});
+  /// If true, this is part of the onboarding flow after profile setup.
+  /// Shows a skip option and navigates to home after save.
+  final bool isOnboarding;
+
+  /// Account type — used to navigate to the correct home screen.
+  /// Only needed when isOnboarding is true.
+  final String? accountType;
+
+  const BankDetailsScreen({
+    super.key,
+    this.isOnboarding = false,
+    this.accountType,
+  });
 
   @override
   State<BankDetailsScreen> createState() => _BankDetailsScreenState();
@@ -140,7 +152,15 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
 
         if (success) {
           setState(() => _hasExistingDetails = true);
-          _showSuccess('Bank details saved successfully');
+
+          if (widget.isOnboarding) {
+            // Onboarding flow — navigate to home
+            _showSuccess('Bank details saved! Welcome to ClearRent');
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (mounted) _navigateToHome();
+          } else {
+            _showSuccess('Bank details saved successfully');
+          }
         } else {
           _showError('Failed to save bank details');
         }
@@ -152,6 +172,47 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
         _showError('Something went wrong. Please try again.');
       }
     }
+  }
+
+  /// Navigate to the correct home screen based on account type.
+  void _navigateToHome() {
+    if (!mounted) return;
+
+    // If we know the account type from the route extra, use it
+    if (widget.accountType != null) {
+      switch (widget.accountType) {
+        case 'landlord':
+          context.go('/landlord/home');
+          return;
+        case 'agent':
+          context.go('/agent/home');
+          return;
+        default:
+          context.go('/tenant/home');
+          return;
+      }
+    }
+
+    // Otherwise, fetch it from the profile
+    _authService.getUserProfile().then((profile) {
+      if (!mounted) return;
+      final accountType = (profile?['accountType'] ?? 'tenant').toString().toLowerCase();
+      switch (accountType) {
+        case 'landlord':
+          context.go('/landlord/home');
+          break;
+        case 'agent':
+          context.go('/agent/home');
+          break;
+        default:
+          context.go('/tenant/home');
+      }
+    });
+  }
+
+  /// Skip bank details during onboarding — go straight to home.
+  void _skipBankDetails() {
+    _navigateToHome();
   }
 
   void _showSuccess(String message) {
@@ -199,12 +260,27 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => context.pop(),
-        ),
+        leading: widget.isOnboarding
+            ? null // No back button during onboarding
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+                onPressed: () => context.pop(),
+              ),
         title: Text('Bank Details', style: AppTextStyles.h4),
         centerTitle: true,
+        actions: [
+          // Skip button during onboarding only
+          if (widget.isOnboarding)
+            TextButton(
+              onPressed: _skipBankDetails,
+              child: Text(
+                'Skip',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+        ],
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
@@ -213,58 +289,76 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header info
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight.withAlpha(26),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary.withAlpha(51)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withAlpha(26),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.account_balance,
-                            color: AppColors.primary,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Payout Account',
-                                style: AppTextStyles.labelLarge,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Rent payments will be sent to this account',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: AppColors.textSecondary,
+                  // Onboarding context message
+                  if (widget.isOnboarding) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withAlpha(13),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primary.withAlpha(50)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              size: 24, color: AppColors.primary),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Almost done!',
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Add your bank details so you can receive payments. You can also do this later from settings.',
+                                  style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.textSecondary),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 24),
+                  ],
 
-                  const SizedBox(height: 32),
+                  // Info banner (only when not onboarding)
+                  if (!widget.isOnboarding) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.infoLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.account_balance,
+                              color: AppColors.info, size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Your bank details are used for rent payouts. All information is encrypted and secure.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.info,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
 
-                  // Bank Selection
+                  // Bank selection
                   Text(
-                    'Bank Name',
+                    'Bank',
                     style: AppTextStyles.labelMedium.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -391,7 +485,9 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                               ),
                             )
                           : Text(
-                              _hasExistingDetails ? 'Update Bank Details' : 'Save Bank Details',
+                              widget.isOnboarding
+                                  ? 'Save & Continue'
+                                  : (_hasExistingDetails ? 'Update Bank Details' : 'Save Bank Details'),
                               style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
                             ),
                     ),

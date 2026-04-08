@@ -302,21 +302,21 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   void _startActivitiesStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _isLoadingActivities = false); return; }
-    _activitiesSubscription = FirebaseFirestore.instance
-        .collection('activities')
-        .where('landlordId', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
-        .limit(10)
-        .snapshots()
-        .listen((snapshot) {
+
+    // Use ActivityService stream which queries by 'landlordId' —
+    // this picks up property views, inquiries, AND inspection activities.
+    _activitiesSubscription = _activityService.activitiesStream(limit: 20)
+        .listen((activities) {
       if (!mounted) return;
-      final activities = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return ActivityModel.fromJson(data);
-      }).toList();
+
+      // Only show activities from the last 3 days on the dashboard
+      final cutoff = DateTime.now().subtract(const Duration(days: 3));
+      final recent = activities
+          .where((a) => a.createdAt.isAfter(cutoff))
+          .toList();
+
       setState(() {
-        _recentActivities = activities;
+        _recentActivities = recent;
         _isLoadingActivities = false;
       });
     }, onError: (e) {
@@ -499,7 +499,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     children: [
                       _isLoadingProfile
                           ? Container(width: 150, height: 16, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(4)))
-                          : Text('Hello, $_firstName ðŸ‘‹', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                          : Text('Hello, $_firstName', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
                       const SizedBox(height: 4),
                       Text('Dashboard', style: AppTextStyles.h2),
                     ],
@@ -719,24 +719,31 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       );
     }
 
-    // Show only first 3 activities on dashboard
-    final displayActivities = _recentActivities.take(3).toList();
+    // Show activities in a scrollable container on dashboard
+    final displayActivities = _recentActivities.take(10).toList();
 
-    return Column(
-      children: displayActivities.map((activity) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: GestureDetector(
-          onTap: () => _onActivityTap(activity),
-          child: _ActivityItem(
-            icon: _getActivityIcon(activity.type),
-            title: activity.title,
-            subtitle: activity.subtitle,
-            time: activity.timeAgo,
-            color: _getActivityColor(activity.type),
-            isUnread: !activity.isRead,
-          ),
-        ),
-      )).toList(),
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: displayActivities.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final activity = displayActivities[index];
+          return GestureDetector(
+            onTap: () => _onActivityTap(activity),
+            child: _ActivityItem(
+              icon: _getActivityIcon(activity.type),
+              title: activity.title,
+              subtitle: activity.subtitle,
+              time: activity.timeAgo,
+              color: _getActivityColor(activity.type),
+              isUnread: !activity.isRead,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -745,7 +752,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     
     if (!mounted) return;
 
-    // Issue activities — go straight to the issues screen so landlord can act
+    // Issue activities — go straight to the issues screen
     if (activity.type == ActivityType.issueReported ||
         activity.type == ActivityType.issueDisputed ||
         activity.type == ActivityType.issueConfirmed) {
@@ -753,7 +760,23 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // For property views and inquiries — show who viewed/inquired
+    // Inspection activities — go to landlord inspections screen
+    if (activity.type == ActivityType.inspectionRequest ||
+        activity.type == ActivityType.inspectionApproved ||
+        activity.type == ActivityType.inspectionDeclined ||
+        activity.type == ActivityType.inspectionCompleted ||
+        activity.type == ActivityType.inspectionRated) {
+      context.push('/landlord/inspections');
+      return;
+    }
+
+    // Payout activities — go to earnings
+    if (activity.type == ActivityType.payoutReceived) {
+      context.push('/landlord/earnings');
+      return;
+    }
+
+    // Property views and inquiries — show viewer info sheet
     if ((activity.type == ActivityType.propertyViewed ||
             activity.type == ActivityType.inquiry) &&
         activity.actorId != null) {
@@ -761,7 +784,16 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // For other activity types — navigate to the property
+    // Payment activities — go to property
+    if (activity.type == ActivityType.payment && activity.propertyId != null) {
+      final property = await _propertyService.getProperty(activity.propertyId!);
+      if (property != null && mounted) {
+        context.push('/property-detail', extra: property);
+      }
+      return;
+    }
+
+    // Fallback — navigate to the property if available
     if (activity.propertyId != null) {
       final property = await _propertyService.getProperty(activity.propertyId!);
       if (property != null && mounted) {
@@ -787,25 +819,37 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
   IconData _getActivityIcon(ActivityType type) {
     switch (type) {
-      case ActivityType.propertyAdded:   return Icons.home_outlined;
-      case ActivityType.propertyViewed:  return Icons.visibility_outlined;
-      case ActivityType.inquiry:         return Icons.chat_bubble_outline;
-      case ActivityType.payment:         return Icons.payments_outlined;
-      case ActivityType.issueReported:   return Icons.report_problem_outlined;
-      case ActivityType.issueDisputed:   return Icons.warning_amber_outlined;
-      case ActivityType.issueConfirmed:  return Icons.check_circle_outline;
+      case ActivityType.propertyAdded:       return Icons.home_outlined;
+      case ActivityType.propertyViewed:      return Icons.visibility_outlined;
+      case ActivityType.inquiry:             return Icons.chat_bubble_outline;
+      case ActivityType.payment:             return Icons.payments_outlined;
+      case ActivityType.issueReported:       return Icons.report_problem_outlined;
+      case ActivityType.issueDisputed:       return Icons.warning_amber_outlined;
+      case ActivityType.issueConfirmed:      return Icons.check_circle_outline;
+      case ActivityType.inspectionRequest:   return Icons.search_outlined;
+      case ActivityType.inspectionApproved:  return Icons.event_available_outlined;
+      case ActivityType.inspectionDeclined:  return Icons.event_busy_outlined;
+      case ActivityType.inspectionCompleted: return Icons.done_all_outlined;
+      case ActivityType.inspectionRated:     return Icons.star_outline;
+      case ActivityType.payoutReceived:      return Icons.account_balance_wallet_outlined;
     }
   }
 
   Color _getActivityColor(ActivityType type) {
     switch (type) {
-      case ActivityType.propertyAdded:   return AppColors.primary;
-      case ActivityType.propertyViewed:  return AppColors.info;
-      case ActivityType.inquiry:         return AppColors.warning;
-      case ActivityType.payment:         return AppColors.success;
-      case ActivityType.issueReported:   return AppColors.error;
-      case ActivityType.issueDisputed:   return AppColors.error;
-      case ActivityType.issueConfirmed:  return AppColors.success;
+      case ActivityType.propertyAdded:       return AppColors.primary;
+      case ActivityType.propertyViewed:      return AppColors.info;
+      case ActivityType.inquiry:             return AppColors.warning;
+      case ActivityType.payment:             return AppColors.success;
+      case ActivityType.issueReported:       return AppColors.error;
+      case ActivityType.issueDisputed:       return AppColors.error;
+      case ActivityType.issueConfirmed:      return AppColors.success;
+      case ActivityType.inspectionRequest:   return AppColors.warning;
+      case ActivityType.inspectionApproved:  return AppColors.success;
+      case ActivityType.inspectionDeclined:  return AppColors.error;
+      case ActivityType.inspectionCompleted: return AppColors.success;
+      case ActivityType.inspectionRated:     return AppColors.primary;
+      case ActivityType.payoutReceived:      return AppColors.success;
     }
   }
 
@@ -1523,6 +1567,108 @@ class _ViewerSheetState extends State<_ViewerSheet> {
     }
   }
 
+  Widget _buildTenantDetails() {
+    final p = _viewerProfile!;
+    final occupation = p['occupation'] as String?;
+    final employer = p['employer'] as String?;
+    final workMode = p['workMode'] as String?;
+    final workplaceArea = p['workplaceArea'] as String?;
+    final budgetMin = (p['budgetMin'] as num?)?.toDouble();
+    final budgetMax = (p['budgetMax'] as num?)?.toDouble();
+    final preferredAreas = (p['preferredAreas'] as List?)?.cast<String>();
+
+    final hasDetails = occupation != null || employer != null ||
+        workMode != null || budgetMin != null;
+
+    if (!hasDetails) return const SizedBox.shrink();
+
+    String? workModeLabel;
+    if (workMode != null) {
+      switch (workMode) {
+        case 'remote': workModeLabel = 'Works remotely';
+        case 'commute': workModeLabel = 'Commutes to work';
+        case 'hybrid': workModeLabel = 'Hybrid (home & office)';
+        default: workModeLabel = workMode;
+      }
+    }
+
+    String? budgetLabel;
+    if (budgetMin != null || budgetMax != null) {
+      final min = budgetMin != null ? '₦${_formatAmount(budgetMin)}' : '';
+      final max = budgetMax != null ? '₦${_formatAmount(budgetMax)}' : '';
+      if (min.isNotEmpty && max.isNotEmpty) {
+        budgetLabel = '$min – $max / year';
+      } else if (max.isNotEmpty) {
+        budgetLabel = 'Up to $max / year';
+      } else {
+        budgetLabel = 'From $min / year';
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Tenant Profile', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 12),
+          if (occupation != null)
+            _detailRow(Icons.work_outline, 'Occupation', occupation),
+          if (employer != null && employer.isNotEmpty)
+            _detailRow(Icons.business_outlined, 'Employer', employer),
+          if (workModeLabel != null)
+            _detailRow(Icons.laptop_mac_outlined, 'Work Style', workModeLabel),
+          if (workplaceArea != null && workplaceArea.isNotEmpty)
+            _detailRow(Icons.location_on_outlined, 'Workplace', workplaceArea),
+          if (budgetLabel != null)
+            _detailRow(Icons.account_balance_wallet_outlined, 'Budget', budgetLabel),
+          if (preferredAreas != null && preferredAreas.isNotEmpty)
+            _detailRow(Icons.map_outlined, 'Preferred Areas', preferredAreas.join(', ')),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: AppColors.textHint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+                const SizedBox(height: 2),
+                Text(value, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatAmount(double amount) {
+    final formatted = amount.toStringAsFixed(0);
+    final chars = formatted.split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
+  }
+
   @override
   Widget build(BuildContext context) {
     final isViewed = widget.activity.type == ActivityType.propertyViewed;
@@ -1530,14 +1676,18 @@ class _ViewerSheetState extends State<_ViewerSheet> {
     final initial = actorName.isNotEmpty ? actorName[0].toUpperCase() : 'T';
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.8,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           // Handle
           Center(
             child: Container(
@@ -1650,6 +1800,12 @@ class _ViewerSheetState extends State<_ViewerSheet> {
           ),
           const SizedBox(height: 20),
 
+          // Tenant profile details (if loaded)
+          if (!_isLoadingProfile && _viewerProfile != null)
+            _buildTenantDetails(),
+
+          const SizedBox(height: 20),
+
           // Message button — disabled with explanation if unverified
           if (_isLoadingProfile)
             Container(
@@ -1702,6 +1858,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
               ]),
             ),
         ],
+      ),
       ),
     );
   }

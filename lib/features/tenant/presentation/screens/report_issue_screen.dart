@@ -81,9 +81,62 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
       return;
     }
 
+    // Let tenant choose camera or gallery
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Add Photo', style: AppTextStyles.h4),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildImageSourceOption(
+                  ctx: ctx,
+                  icon: Icons.camera_alt_rounded,
+                  label: 'Camera',
+                  source: ImageSource.camera,
+                ),
+                _buildImageSourceOption(
+                  ctx: ctx,
+                  icon: Icons.photo_library_rounded,
+                  label: 'Gallery',
+                  source: ImageSource.gallery,
+                ),
+              ],
+            ),
+            SizedBox(height: MediaQuery.of(ctx).padding.bottom + 16),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
     try {
       final picker = ImagePicker();
-      final image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1200);
+      final image = await picker.pickImage(
+        source: source,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
       if (image == null) return;
 
       setState(() => _isUploadingImage = true);
@@ -111,6 +164,31 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
       developer.log('❌ Error picking image: $e', name: 'ReportIssue');
       if (mounted) setState(() => _isUploadingImage = false);
     }
+  }
+
+  Widget _buildImageSourceOption({
+    required BuildContext ctx,
+    required IconData icon,
+    required String label,
+    required ImageSource source,
+  }) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(ctx, source),
+      child: Column(
+        children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(26),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 32),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: AppTextStyles.labelMedium),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {

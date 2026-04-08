@@ -7,7 +7,8 @@ import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
-
+import '../../../../services/paystack_service.dart';
+import '../../../../shared/screens/paystack_checkout_screen.dart';
 class InspectionPaymentScreen extends StatefulWidget {
   final PropertyModel property;
   final DateTime selectedDate;
@@ -39,12 +40,15 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   InspectionFeeBreakdown get _fee =>
       widget.feeBreakdown ??
       InspectionFeeBreakdown(
-        distanceKm: 0,
+        agentCluster: 'maryland_ikeja',
+        propertyCluster: 'maryland_ikeja',
+        oneWayFare: 0,
         transportFee: 0,
-        agentServiceFee: 5000,
-        clearrentFee: 3000,
-        totalFee: 8000,
-        agentEarnings: 5000,
+        agentServiceFee: 10000,
+        tenantServiceCharge: 3000,
+        totalFee: 13000,
+        agentEarnings: 7000,
+        clearrentEarnings: 6000,
       );
 
   String get _formattedDate {
@@ -84,18 +88,46 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      // TODO: Integrate with Paystack
-      // For now, simulate payment success
-      await Future.delayed(const Duration(seconds: 2));
+      // Launch Paystack checkout
+      final paymentResult = await PaystackCheckoutScreen.launch(
+        context: context,
+        amount: _fee.totalFee,
+        type: PaystackService.typeInspection,
+        metadata: {
+          'propertyId': widget.property.id,
+          'propertyTitle': widget.property.title,
+          'inspectionDate': widget.selectedDate.toIso8601String(),
+          'timeSlot': widget.selectedTimeSlot,
+          'description': 'Inspection fee for ${widget.property.title}',
+        },
+      );
 
-      // Generate mock payment reference
-      _paymentReference = 'PAY_${DateTime.now().millisecondsSinceEpoch}';
+      if (!mounted) return;
 
-      // Payment successful - update UI state
+      if (paymentResult == null) {
+        // User cancelled
+        setState(() => _isProcessing = false);
+        return;
+      }
+
+      if (!paymentResult.success) {
+        _showError('Payment was not completed. Please try again.');
+        setState(() => _isProcessing = false);
+        return;
+      }
+
+      // Payment successful
+      _paymentReference = paymentResult.reference;
       setState(() => _paymentSuccessful = true);
 
-      // Brief pause to show payment confirmed state
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Record payment
+      await PaystackService().recordPayment(
+        reference: paymentResult.reference,
+        type: PaystackService.typeInspection,
+        amount: paymentResult.amountPaid ?? _fee.totalFee,
+        status: 'completed',
+        extra: {'propertyId': widget.property.id},
+      );
 
       // Create inspection request after successful payment
       await _createInspectionRequest();
@@ -807,9 +839,9 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             'Transport Fee',
             _fee.transportFee,
             subtitle:
-                _fee.distanceKm > 0
-                    ? '${_fee.distanceKm.toStringAsFixed(1)} km'
-                    : null,
+                _fee.agentCluster != _fee.propertyCluster
+                    ? '${InspectionPricing.getClusterLabel(_fee.agentCluster)} → ${InspectionPricing.getClusterLabel(_fee.propertyCluster)}'
+                    : 'Same zone',
           ),
           const SizedBox(height: 8),
           _buildPaymentRow('Platform Fee', _fee.clearrentFee),

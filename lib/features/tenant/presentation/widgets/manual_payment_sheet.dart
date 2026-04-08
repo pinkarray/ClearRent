@@ -481,7 +481,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
           const SizedBox(height: 12),
           _feeRow('Agent Service Fee', fee.agentServiceFee),
           const SizedBox(height: 6),
-          _feeRow('Transport Fee', fee.transportFee, subtitle: fee.distanceKm > 0 ? '${fee.distanceKm.toStringAsFixed(1)} km' : null),
+          _feeRow('Transport Fee', fee.transportFee, subtitle: fee.agentCluster != fee.propertyCluster ? '${InspectionPricing.getClusterLabel(fee.agentCluster)} → ${InspectionPricing.getClusterLabel(fee.propertyCluster)}' : 'Same zone'),
           const SizedBox(height: 6),
           _feeRow('Platform Fee', fee.clearrentFee),
           const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider(height: 1)),
@@ -534,7 +534,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                     onTap: _showImageSourceDialog,
                     child: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: AppColors.shadowMedium, blurRadius: 4)]),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 4)]),
                       child: Icon(Icons.edit, size: 18, color: AppColors.primary),
                     ),
                   ),
@@ -543,7 +543,7 @@ class _ManualPaymentSheetState extends State<ManualPaymentSheet> {
                     onTap: () => setState(() { _paymentProofFile = null; _uploadedProofUrl = null; }),
                     child: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: AppColors.shadowMedium, blurRadius: 4)]),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 4)]),
                       child: Icon(Icons.close, size: 18, color: AppColors.error),
                     ),
                   ),

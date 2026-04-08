@@ -101,6 +101,17 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
+    // Inspection activities — go to inspections screen
+    if (activity.type == ActivityType.inspectionRequest ||
+        activity.type == ActivityType.inspectionApproved ||
+        activity.type == ActivityType.inspectionDeclined ||
+        activity.type == ActivityType.inspectionCompleted ||
+        activity.type == ActivityType.inspectionRated ||
+        activity.type == ActivityType.payoutReceived) {
+      context.push('/landlord/inspections');
+      return;
+    }
+
     if (activity.propertyId != null) {
       final property =
           await _propertyService.getProperty(activity.propertyId!);
@@ -580,25 +591,37 @@ class _ActivityCard extends StatelessWidget {
 
   IconData _getIcon() {
     switch (activity.type) {
-      case ActivityType.propertyAdded:  return Icons.home_outlined;
-      case ActivityType.propertyViewed: return Icons.visibility_outlined;
-      case ActivityType.inquiry:        return Icons.chat_bubble_outline;
-      case ActivityType.payment:        return Icons.payments_outlined;
-      case ActivityType.issueReported:  return Icons.report_problem_outlined;
-      case ActivityType.issueDisputed:  return Icons.warning_amber_outlined;
-      case ActivityType.issueConfirmed: return Icons.check_circle_outline;
+      case ActivityType.propertyAdded:       return Icons.home_outlined;
+      case ActivityType.propertyViewed:      return Icons.visibility_outlined;
+      case ActivityType.inquiry:             return Icons.chat_bubble_outline;
+      case ActivityType.payment:             return Icons.payments_outlined;
+      case ActivityType.issueReported:       return Icons.report_problem_outlined;
+      case ActivityType.issueDisputed:       return Icons.warning_amber_outlined;
+      case ActivityType.issueConfirmed:      return Icons.check_circle_outline;
+      case ActivityType.inspectionRequest:   return Icons.search_outlined;
+      case ActivityType.inspectionApproved:  return Icons.event_available_outlined;
+      case ActivityType.inspectionDeclined:  return Icons.event_busy_outlined;
+      case ActivityType.inspectionCompleted: return Icons.done_all_outlined;
+      case ActivityType.inspectionRated:     return Icons.star_outline;
+      case ActivityType.payoutReceived:      return Icons.account_balance_wallet_outlined;
     }
   }
 
   Color _getColor() {
     switch (activity.type) {
-      case ActivityType.propertyAdded:  return AppColors.primary;
-      case ActivityType.propertyViewed: return AppColors.info;
-      case ActivityType.inquiry:        return AppColors.warning;
-      case ActivityType.payment:        return AppColors.success;
-      case ActivityType.issueReported:  return AppColors.error;
-      case ActivityType.issueDisputed:  return AppColors.error;
-      case ActivityType.issueConfirmed: return AppColors.success;
+      case ActivityType.propertyAdded:       return AppColors.primary;
+      case ActivityType.propertyViewed:      return AppColors.info;
+      case ActivityType.inquiry:             return AppColors.warning;
+      case ActivityType.payment:             return AppColors.success;
+      case ActivityType.issueReported:       return AppColors.error;
+      case ActivityType.issueDisputed:       return AppColors.error;
+      case ActivityType.issueConfirmed:      return AppColors.success;
+      case ActivityType.inspectionRequest:   return AppColors.warning;
+      case ActivityType.inspectionApproved:  return AppColors.success;
+      case ActivityType.inspectionDeclined:  return AppColors.error;
+      case ActivityType.inspectionCompleted: return AppColors.success;
+      case ActivityType.inspectionRated:     return AppColors.primary;
+      case ActivityType.payoutReceived:      return AppColors.success;
     }
   }
 }

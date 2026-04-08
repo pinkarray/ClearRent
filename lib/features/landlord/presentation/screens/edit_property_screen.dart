@@ -86,6 +86,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _rentController;
+  late final TextEditingController _agentFeeController;
+  late final TextEditingController _cautionDepositController;
   late final TextEditingController _addressController;
   late final TextEditingController _cityController;
   late final TextEditingController _stateController;
@@ -100,6 +102,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late List<String> _selectedRules;
   late bool _isAvailable;
   late String _inspectionHandler;
+  late bool _includeAgentFee; // Agent fee is optional
 
   // Agent assignment
   String? _assignedAgentId;
@@ -168,6 +171,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _descriptionController = TextEditingController(text: p.description);
     // FIX: Format rent as plain number with commas, not abbreviated (e.g., "3,500,000" not "3.5M")
     _rentController = TextEditingController(text: _formatRentForInput(p.rent));
+    _agentFeeController = TextEditingController(text: _formatRentForInput(p.agentFee));
+    _cautionDepositController = TextEditingController(text: _formatRentForInput(p.cautionDeposit));
     _addressController = TextEditingController(text: p.address);
     _cityController = TextEditingController(text: p.city);
     _stateController = TextEditingController(text: p.state);
@@ -181,6 +186,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _selectedRules = List.from(p.rules);
     _isAvailable = p.isAvailable;
     _inspectionHandler = p.inspectionHandler;
+    _includeAgentFee = p.agentFee > 0; // Derive from existing data
     
     // Initialize inspection availability
     _availableDays = List.from(p.inspectionDays);
@@ -194,6 +200,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _titleController.addListener(_onFieldChanged);
     _descriptionController.addListener(_onFieldChanged);
     _rentController.addListener(_onFieldChanged);
+    _agentFeeController.addListener(_onFieldChanged);
+    _cautionDepositController.addListener(_onFieldChanged);
     _addressController.addListener(_onFieldChanged);
     _cityController.addListener(_onFieldChanged);
     _stateController.addListener(_onFieldChanged);
@@ -242,6 +250,22 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     return result.reversed.join('');
   }
 
+  String _formatAmount(double amount) {
+    if (amount >= 1000000) {
+      return '${(amount / 1000000).toStringAsFixed(2)}M';
+    }
+    final formatted = amount.toStringAsFixed(0);
+    final chars = formatted.split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) {
+        result.add(',');
+      }
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
+  }
+
   Future<void> _loadAgentInfo() async {
     if (_assignedAgentId == null) return;
     
@@ -274,6 +298,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _rentController.dispose();
+    _agentFeeController.dispose();
+    _cautionDepositController.dispose();
     _addressController.dispose();
     _cityController.dispose();
     _stateController.dispose();
@@ -282,6 +308,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   double _parseRentAmount() {
     final cleanedText = _rentController.text.replaceAll(',', '');
+    return double.tryParse(cleanedText) ?? 0.0;
+  }
+
+  double _parseAmountFromController(TextEditingController controller) {
+    final cleanedText = controller.text.replaceAll(',', '');
     return double.tryParse(cleanedText) ?? 0.0;
   }
 
@@ -430,6 +461,14 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       _showError('Please enter a valid rent amount');
       return false;
     }
+    if (_includeAgentFee && _parseAmountFromController(_agentFeeController) <= 0) {
+      _showError('Please enter a valid agent fee amount');
+      return false;
+    }
+    if (_parseAmountFromController(_cautionDepositController) <= 0) {
+      _showError('Please enter a valid caution deposit amount');
+      return false;
+    }
     if (_availableDays.isEmpty) {
       _showError('Please select at least one day for inspections');
       return false;
@@ -507,6 +546,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'state': _stateController.text.trim(),
         'rent': _parseRentAmount(),
         'rentFrequency': _rentPeriod,
+        'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
+        'cautionDeposit': _parseAmountFromController(_cautionDepositController),
         'amenities': _selectedAmenities,
         'rules': _selectedRules,
         'isAvailable': _isAvailable,
@@ -1122,33 +1163,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Rent Amount (₦', style: AppTextStyles.labelMedium),
+        Text('Rent Amount (₦)', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
 
         if (hasActiveTenants) ...[
           // Locked rent display — active tenants present
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(children: [
-              Icon(Icons.lock_outline, size: 20, color: AppColors.textHint),
-              const SizedBox(width: 12),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  '₦${_rentController.text}',
-                  style: AppTextStyles.h4.copyWith(color: AppColors.textSecondary),
-                ),
-                Text(
-                  _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-                ),
-              ]),
-            ]),
-          ),
+          _buildLockedAmountDisplay('₦${_rentController.text}', _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month'),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1162,7 +1182,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Rent cannot be changed while you have active tenants. To propose a new rent, use the Rent Review feature.',
+                  'Pricing cannot be changed while you have active tenants. To propose changes, use the Rent Review feature.',
                   style: AppTextStyles.caption.copyWith(color: AppColors.warning, height: 1.5),
                 ),
               ),
@@ -1170,33 +1190,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           ),
         ] else ...[
           // Editable rent field — no active tenants
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: TextField(
-              controller: _rentController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                ThousandsSeparatorInputFormatter(),
-              ],
-              style: AppTextStyles.h4.copyWith(color: AppColors.primary),
-              decoration: InputDecoration(
-                hintText: '0',
-                hintStyle: AppTextStyles.h4.copyWith(color: AppColors.textHint),
-                prefixIcon: Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 8),
-                  child: Text('₦', style: AppTextStyles.h4.copyWith(color: AppColors.primary)),
-                ),
-                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              ),
-            ),
-          ),
+          _buildNairaInput(controller: _rentController),
         ],
         const SizedBox(height: 16),
 
@@ -1208,6 +1202,217 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             const SizedBox(width: 12),
             _buildPeriodChip('Per Month', 'monthly', locked: hasActiveTenants),
           ],
+        ),
+        const SizedBox(height: 24),
+
+        // Agent Fee (optional toggle)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _includeAgentFee ? AppColors.primary.withAlpha(80) : AppColors.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.person_outline,
+                size: 20,
+                color: _includeAgentFee ? AppColors.primary : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Include an agent fee?', style: AppTextStyles.labelMedium),
+                    if (!_includeAgentFee)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Agents are optional on ClearRent',
+                          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _includeAgentFee,
+                activeColor: AppColors.primary,
+                onChanged: hasActiveTenants ? null : (v) {
+                  setState(() {
+                    _includeAgentFee = v;
+                    if (!v) _agentFeeController.clear();
+                    _hasChanges = true;
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        if (_includeAgentFee) ...[
+          const SizedBox(height: 16),
+          Text('Agent Fee (₦)', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Flat amount collected by the agent, paid by the tenant.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          if (hasActiveTenants)
+            _buildLockedAmountDisplay('₦${_agentFeeController.text}', 'Agent Fee')
+          else
+            _buildNairaInput(controller: _agentFeeController),
+        ],
+        const SizedBox(height: 24),
+
+        // Caution Deposit
+        Text('Caution Deposit (₦)', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Refundable deposit for damages.',
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        if (hasActiveTenants)
+          _buildLockedAmountDisplay('₦${_cautionDepositController.text}', 'Caution Deposit')
+        else
+          _buildNairaInput(controller: _cautionDepositController),
+
+        // Total Package preview
+        if (!hasActiveTenants) ...[
+          const SizedBox(height: 24),
+          _buildTotalPackagePreview(),
+        ],
+      ],
+    );
+  }
+
+  /// Reusable Naira input field with comma formatting
+  Widget _buildNairaInput({required TextEditingController controller}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          ThousandsSeparatorInputFormatter(),
+        ],
+        style: AppTextStyles.h4.copyWith(color: AppColors.primary),
+        decoration: InputDecoration(
+          hintText: '0',
+          hintStyle: AppTextStyles.h4.copyWith(color: AppColors.textHint),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            child: Text('₦', style: AppTextStyles.h4.copyWith(color: AppColors.primary)),
+          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  /// Locked amount display when tenants are active
+  Widget _buildLockedAmountDisplay(String amount, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        Icon(Icons.lock_outline, size: 20, color: AppColors.textHint),
+        const SizedBox(width: 12),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            amount,
+            style: AppTextStyles.h4.copyWith(color: AppColors.textSecondary),
+          ),
+          Text(
+            subtitle,
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  /// Live Total Package breakdown
+  Widget _buildTotalPackagePreview() {
+    final rent = _parseRentAmount();
+    final agentFee = _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0.0;
+    final cautionDeposit = _parseAmountFromController(_cautionDepositController);
+    final totalPackage = rent + agentFee + cautionDeposit;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withAlpha(13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withAlpha(50)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_outlined, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Total Package Preview',
+                style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildPackageRow('Rent', rent),
+          if (agentFee > 0) ...[
+            const SizedBox(height: 8),
+            _buildPackageRow('Agent Fee', agentFee),
+          ],
+          const SizedBox(height: 8),
+          _buildPackageRow('Caution Deposit', cautionDeposit),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Total Package', style: AppTextStyles.labelLarge),
+              Text(
+                '₦${_formatAmount(totalPackage)}',
+                style: AppTextStyles.h4.copyWith(
+                  color: AppColors.primary,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPackageRow(String label, double amount) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: AppTextStyles.bodyMedium),
+        Text(
+          '₦${_formatAmount(amount)}',
+          style: AppTextStyles.labelLarge.copyWith(fontFamily: 'Roboto'),
         ),
       ],
     );

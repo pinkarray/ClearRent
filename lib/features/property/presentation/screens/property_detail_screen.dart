@@ -2040,8 +2040,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   /// Inspection fee card for agent-handled properties
   Widget _buildInspectionFeeCard(PropertyModel property) {
-    // Calculate estimated fee (minimum fee since we don't have exact distance)
-    final feeBreakdown = InspectionPricing.calculateFee(distanceKm: 0);
+    // Calculate estimated fee (same-zone minimum since we don't know agent yet)
+    final feeBreakdown = InspectionPricing.calculateFee(
+      agentCluster: 'maryland_ikeja',
+      propertyCluster: 'maryland_ikeja',
+    );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2135,7 +2138,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 _buildInspectionFeeRow(
                   'Transport Fee',
                   feeBreakdown.transportFee,
-                  note: 'varies by distance',
+                  note: 'varies by zone',
                 ),
                 const SizedBox(height: 8),
                 _buildInspectionFeeRow(
@@ -2236,11 +2239,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   Widget _buildFeeBreakdown(PropertyModel property) {
     final rent = property.rent;
-    final agentFee =
-        property.hasAgent && property.agentFeePaidBy == 'tenant'
-            ? rent * property.agentFee / 100
-            : 0.0;
-    final total = rent + agentFee;
+    final agentFee = property.agentFee;
+    final cautionDeposit = property.cautionDeposit;
+    final totalPackage = property.totalPackage;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2261,29 +2262,38 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                AppStrings.feeBreakdown,
+                'Total Package Breakdown',
                 style: AppTextStyles.labelLarge.copyWith(color: AppColors.info),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _FeeRow(label: AppStrings.rentToLandlord, amount: rent),
+          _FeeRow(label: 'Rent', amount: rent),
           if (agentFee > 0) ...[
             const SizedBox(height: 8),
-            _FeeRow(
-              label: '${AppStrings.agentFee} (${property.formattedAgentFee})',
-              amount: agentFee,
-            ),
+            _FeeRow(label: 'Agent Fee', amount: agentFee),
+          ],
+          if (cautionDeposit > 0) ...[
+            const SizedBox(height: 8),
+            _FeeRow(label: 'Caution Deposit', amount: cautionDeposit),
           ],
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(),
           ),
-          _FeeRow(label: 'Total First Payment', amount: total, isTotal: true),
-          if (agentFee > 0) ...[
-            const SizedBox(height: 8),
+          _FeeRow(label: 'Total Package', amount: totalPackage, isTotal: true),
+          const SizedBox(height: 8),
+          Text(
+            'Renewal after first year: ${property.formattedRent}${property.rentPeriod}',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          if (cautionDeposit > 0) ...[
+            const SizedBox(height: 4),
             Text(
-              'Agent fee is one-time (first year only)',
+              'Caution deposit is refundable when you move out',
               style: AppTextStyles.caption.copyWith(
                 color: AppColors.textSecondary,
                 fontStyle: FontStyle.italic,

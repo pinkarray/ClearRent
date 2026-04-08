@@ -21,8 +21,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _phoneController = TextEditingController();
   final _phoneFocusNode = FocusNode();
 
+  // Tenant profile controllers
+  final _occupationController = TextEditingController();
+  final _employerController = TextEditingController();
+  final _budgetMinController = TextEditingController();
+  final _budgetMaxController = TextEditingController();
+
   bool _isLoading = true;
   bool _isSavingPhone = false;
+  bool _isSavingTenantProfile = false;
   bool _isUploadingPhoto = false;
 
   String _fullName = '';
@@ -30,13 +37,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String _phone = '';
   String? _photoUrl;
   bool _isVerified = false;
+  String _accountType = 'tenant';
+
+  // Tenant profile state
+  String? _workMode;
+  String? _workplaceArea;
+  String? _incomeRange;
+  String? _maritalStatus;
+  List<String> _preferredAreas = [];
+  bool _tenantProfileDirty = false;
+
+  // Lagos areas for dropdowns
+  static const List<String> _lagosAreas = [
+    'Victoria Island', 'Ikoyi', 'Lekki Phase 1', 'Lekki Phase 2', 'Lekki',
+    'Ajah', 'Sangotedo', 'Chevron', 'Ilasan', 'Oniru', 'Obalende',
+    'Marina', 'Lagos Island', 'Ibeju-Lekki', 'Epe',
+    'Ikeja', 'GRA Ikeja', 'Alausa', 'Oregun', 'Omole', 'Ojodu', 'Ogba',
+    'Berger', 'Isheri', 'Maryland', 'Anthony', 'Palmgrove', 'Gbagada', 'Ogudu',
+    'Yaba', 'Surulere', 'Bariga', 'Shomolu', 'Fadeyi', 'Mushin', 'Isolo',
+    'Ikotun', 'Egbeda', 'Alimosho', 'Oshodi', 'Mafoluku', 'Festac',
+    'Amuwo-Odofin', 'Apapa', 'Ajegunle',
+    'Ketu', 'Mile 12', 'Ojota', 'Agege', 'Magodo', 'Ifako-Ijaiye',
+    'Ikorodu', 'Badagry', 'Ojo',
+  ];
+
+  static const List<Map<String, String>> _incomeRanges = [
+    {'id': 'below_100k', 'label': 'Below ₦100K'},
+    {'id': '100k_200k', 'label': '₦100K – ₦200K'},
+    {'id': '200k_500k', 'label': '₦200K – ₦500K'},
+    {'id': '500k_1m', 'label': '₦500K – ₦1M'},
+    {'id': 'above_1m', 'label': 'Above ₦1M'},
+  ];
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
 
-    // Listen for phone field losing focus to auto-save
     _phoneFocusNode.addListener(() {
       if (!_phoneFocusNode.hasFocus) {
         _savePhoneIfChanged();
@@ -48,6 +85,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _phoneController.dispose();
     _phoneFocusNode.dispose();
+    _occupationController.dispose();
+    _employerController.dispose();
+    _budgetMinController.dispose();
+    _budgetMaxController.dispose();
     super.dispose();
   }
 
@@ -68,23 +109,52 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _phone = profile['phone'] ?? '';
           _photoUrl = profile['photoUrl'];
           _isVerified = profile['verificationStatus'] == 'verified';
+          _accountType = profile['accountType'] ?? 'tenant';
           _phoneController.text = _phone;
+
+          // Load tenant profile fields
+          _occupationController.text = profile['occupation'] ?? '';
+          _employerController.text = profile['employer'] ?? '';
+          _workMode = profile['workMode'] as String?;
+          _workplaceArea = profile['workplaceArea'] as String?;
+          _incomeRange = profile['incomeRange'] as String?;
+          _maritalStatus = profile['maritalStatus'] as String?;
+          _preferredAreas = List<String>.from(profile['preferredAreas'] ?? []);
+
+          final budgetMin = (profile['budgetMin'] as num?)?.toDouble();
+          final budgetMax = (profile['budgetMax'] as num?)?.toDouble();
+          if (budgetMin != null && budgetMin > 0) {
+            _budgetMinController.text = _formatForInput(budgetMin);
+          }
+          if (budgetMax != null && budgetMax > 0) {
+            _budgetMaxController.text = _formatForInput(budgetMax);
+          }
+
           _isLoading = false;
         });
       } else {
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      developer.log(
-        '❌ Error loading profile: $e',
-        name: 'EditProfileScreen',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      developer.log('❌ Error loading profile: $e', name: 'EditProfileScreen', error: e);
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _formatForInput(double value) {
+    final intValue = value.toInt();
+    final chars = intValue.toString().split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
+  }
+
+  double _parseBudgetAmount(TextEditingController controller) {
+    final cleaned = controller.text.replaceAll(',', '');
+    return double.tryParse(cleaned) ?? 0;
   }
 
   Future<void> _savePhoneIfChanged() async {
@@ -92,11 +162,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (newPhone == _phone || newPhone.isEmpty) return;
 
     setState(() => _isSavingPhone = true);
-
     final success = await _authService.updateUserProfile({'phone': newPhone});
-
     if (!mounted) return;
-
     setState(() => _isSavingPhone = false);
 
     if (success) {
@@ -105,6 +172,45 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } else {
       _phoneController.text = _phone;
       _showError('Failed to update phone number');
+    }
+  }
+
+  Future<void> _saveTenantProfile() async {
+    setState(() => _isSavingTenantProfile = true);
+
+    final updates = <String, dynamic>{
+      'occupation': _occupationController.text.trim(),
+      'employer': _employerController.text.trim(),
+      'workMode': _workMode,
+      'workplaceArea': _workplaceArea,
+      'incomeRange': _incomeRange,
+      'maritalStatus': _maritalStatus,
+      'preferredAreas': _preferredAreas,
+      'budgetMin': _parseBudgetAmount(_budgetMinController),
+      'budgetMax': _parseBudgetAmount(_budgetMaxController),
+    };
+
+    // Remove null values
+    updates.removeWhere((key, value) => value == null);
+
+    final success = await _authService.updateUserProfile(updates);
+
+    if (!mounted) return;
+    setState(() {
+      _isSavingTenantProfile = false;
+      _tenantProfileDirty = false;
+    });
+
+    if (success) {
+      _showSuccess('Profile updated');
+    } else {
+      _showError('Failed to save profile');
+    }
+  }
+
+  void _markDirty() {
+    if (!_tenantProfileDirty) {
+      setState(() => _tenantProfileDirty = true);
     }
   }
 
@@ -161,12 +267,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _showError('Failed to save photo');
       }
     } catch (e) {
-      developer.log(
-        '❌ Photo upload error: $e',
-        name: 'EditProfileScreen',
-        error: e,
-        stackTrace: StackTrace.current,
-      );
+      developer.log('❌ Photo upload error: $e', name: 'EditProfileScreen', error: e);
       if (mounted) {
         setState(() => _isUploadingPhoto = false);
         _showError('Failed to upload photo');
@@ -201,7 +302,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           children: [
             const Icon(Icons.error_outline, color: Colors.white, size: 20),
             const SizedBox(width: 8),
-            Text(message),
+            Expanded(child: Text(message)),
           ],
         ),
         backgroundColor: AppColors.error,
@@ -228,20 +329,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
       body:
           _isLoading
-              ? Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              )
+              ? Center(child: CircularProgressIndicator(color: AppColors.primary))
               : SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    // Profile photo section
                     _buildPhotoSection(),
-
                     const SizedBox(height: 32),
-
-                    // Form fields
                     _buildFormSection(),
+
+                    // Tenant profile section
+                    if (_accountType == 'tenant') ...[
+                      const SizedBox(height: 32),
+                      _buildTenantProfileSection(),
+                    ],
 
                     const SizedBox(height: 24),
 
@@ -251,38 +352,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: BoxDecoration(
                         color: AppColors.info.withAlpha(26),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.info.withAlpha(77)),
+                        border: Border.all(color: AppColors.info.withAlpha(50)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: AppColors.info,
-                            size: 20,
-                          ),
+                          Icon(Icons.info_outline, size: 20, color: AppColors.info),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               'Your name and email are linked to your account verification and cannot be changed directly. Contact support if you need to update them.',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.info,
-                              ),
+                              style: AppTextStyles.bodySmall.copyWith(color: AppColors.info),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
     );
   }
 
+  // ── Photo Section (unchanged) ──
+
   Widget _buildPhotoSection() {
     return Column(
       children: [
-        // Photo with edit button
         Stack(
           children: [
             GestureDetector(
@@ -297,38 +394,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     color: _isVerified ? AppColors.primary : AppColors.border,
                     width: 3,
                   ),
-                  image:
-                      _photoUrl != null
-                          ? DecorationImage(
-                            image: NetworkImage(_photoUrl!),
-                            fit: BoxFit.cover,
-                          )
-                          : null,
+                  image: _photoUrl != null
+                      ? DecorationImage(image: NetworkImage(_photoUrl!), fit: BoxFit.cover)
+                      : null,
                 ),
-                child:
-                    _isUploadingPhoto
+                child: _isUploadingPhoto
+                    ? Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2))
+                    : _photoUrl == null
                         ? Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        )
-                        : _photoUrl == null
-                        ? Center(
-                          child: Text(
-                            _fullName.isNotEmpty
-                                ? _fullName[0].toUpperCase()
-                                : '?',
-                            style: AppTextStyles.h1.copyWith(
-                              color: AppColors.primary,
+                            child: Text(
+                              _fullName.isNotEmpty ? _fullName[0].toUpperCase() : '?',
+                              style: AppTextStyles.h1.copyWith(color: AppColors.primary),
                             ),
-                          ),
-                        )
+                          )
                         : null,
               ),
             ),
-
-            // Edit badge
             if (_isVerified)
               Positioned(
                 bottom: 0,
@@ -343,20 +424,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    child: const Icon(
-                      Icons.camera_alt,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+                    child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
                   ),
                 ),
               ),
           ],
         ),
-
         const SizedBox(height: 12),
-
-        // Verification status
         if (!_isVerified)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -369,12 +443,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               children: [
                 Icon(Icons.info_outline, size: 14, color: AppColors.warning),
                 const SizedBox(width: 6),
-                Text(
-                  'Get verified to change your photo',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.warning,
-                  ),
-                ),
+                Text('Get verified to change your photo',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.warning)),
               ],
             ),
           ),
@@ -382,35 +452,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  // ── Core Form Section (name, email, phone) ──
+
   Widget _buildFormSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Full Name (read-only)
-        _buildReadOnlyField(
-          label: 'Full Name',
-          value: _fullName,
-          icon: Icons.person_outline,
-        ),
-
+        _buildReadOnlyField(label: 'Full Name', value: _fullName, icon: Icons.person_outline),
+        const SizedBox(height: 20),
+        _buildReadOnlyField(label: 'Email', value: _email, icon: Icons.email_outlined),
         const SizedBox(height: 20),
 
-        // Email (read-only)
-        _buildReadOnlyField(
-          label: 'Email',
-          value: _email,
-          icon: Icons.email_outlined,
-        ),
-
-        const SizedBox(height: 20),
-
-        // Phone (editable)
-        Text(
-          'Phone Number',
-          style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
+        Text('Phone Number', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 8),
         TextField(
           controller: _phoneController,
@@ -425,46 +478,421 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             hintText: 'Enter your phone number',
             hintStyle: TextStyle(color: AppColors.textHint),
             prefixIcon: Icon(Icons.phone_outlined, color: AppColors.textHint),
-            suffixIcon:
-                _isSavingPhone
-                    ? Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    )
-                    : null,
+            suffixIcon: _isSavingPhone
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                    ),
+                  )
+                : null,
             filled: true,
             fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 16,
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primary, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
         ),
         const SizedBox(height: 6),
-        Text(
-          'Changes are saved automatically',
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textHint,
-            fontStyle: FontStyle.italic,
+        Text('Changes are saved automatically',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint, fontStyle: FontStyle.italic)),
+      ],
+    );
+  }
+
+  // ── Tenant Profile Section ──
+
+  Widget _buildTenantProfileSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Row(
+          children: [
+            Icon(Icons.person_search_outlined, size: 22, color: AppColors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Tenant Profile', style: AppTextStyles.h4),
+                  Text(
+                    'Helps agents and landlords find the right property for you.',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Occupation
+        _buildEditableField(
+          label: 'Occupation',
+          hint: 'e.g. Software Engineer, Banker',
+          controller: _occupationController,
+          icon: Icons.work_outline,
+          onChanged: (_) => _markDirty(),
+        ),
+        const SizedBox(height: 16),
+
+        // Employer
+        _buildEditableField(
+          label: 'Employer (Optional)',
+          hint: 'e.g. Access Bank, MTN, Self-employed',
+          controller: _employerController,
+          icon: Icons.business_outlined,
+          onChanged: (_) => _markDirty(),
+        ),
+        const SizedBox(height: 20),
+
+        // Work mode
+        Text('How do you work?', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildWorkModeChip('Remote', 'remote', Icons.home_outlined),
+            const SizedBox(width: 8),
+            _buildWorkModeChip('Hybrid', 'hybrid', Icons.sync_alt),
+            const SizedBox(width: 8),
+            _buildWorkModeChip('Commute', 'commute', Icons.directions_car_outlined),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Workplace area (only for commute/hybrid)
+        if (_workMode == 'commute' || _workMode == 'hybrid') ...[
+          Text('Where do you work?', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          _buildDropdown(
+            value: _workplaceArea,
+            hint: 'Select workplace area',
+            items: _lagosAreas,
+            onChanged: (v) {
+              setState(() => _workplaceArea = v);
+              _markDirty();
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+
+        // Marital status
+        Text('Marital Status', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildChipOption('Single', 'single', _maritalStatus, (v) {
+              setState(() => _maritalStatus = v);
+              _markDirty();
+            }),
+            const SizedBox(width: 8),
+            _buildChipOption('Married', 'married', _maritalStatus, (v) {
+              setState(() => _maritalStatus = v);
+              _markDirty();
+            }),
+            const SizedBox(width: 8),
+            _buildChipOption('Family', 'family', _maritalStatus, (v) {
+              setState(() => _maritalStatus = v);
+              _markDirty();
+            }),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Income range
+        Text('Monthly Income Range', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 4),
+        Text('This is private and helps match you with affordable properties.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _incomeRanges.map((range) {
+            final isSelected = _incomeRange == range['id'];
+            return GestureDetector(
+              onTap: () {
+                setState(() => _incomeRange = range['id']);
+                _markDirty();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+                ),
+                child: Text(
+                  range['label']!,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+
+        // Budget range
+        Text('Rent Budget (₦)', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 4),
+        Text('Annual rent range you can afford.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: _buildBudgetInput(_budgetMinController, 'Min')),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text('to', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+            ),
+            Expanded(child: _buildBudgetInput(_budgetMaxController, 'Max')),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        // Preferred areas
+        Text('Preferred Areas', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 4),
+        Text('Where are you looking to rent?',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 8),
+        if (_preferredAreas.isNotEmpty) ...[
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _preferredAreas.map((area) => Chip(
+              label: Text(area, style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary)),
+              backgroundColor: AppColors.primary.withAlpha(26),
+              deleteIcon: const Icon(Icons.close, size: 16),
+              deleteIconColor: AppColors.primary,
+              onDeleted: () {
+                setState(() => _preferredAreas.remove(area));
+                _markDirty();
+              },
+              side: BorderSide.none,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            )).toList(),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Container(
+          padding: const EdgeInsets.all(12),
+          constraints: const BoxConstraints(maxHeight: 200),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: SingleChildScrollView(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _lagosAreas.map((area) {
+                final isSelected = _preferredAreas.contains(area);
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _preferredAreas.remove(area);
+                      } else {
+                        _preferredAreas.add(area);
+                      }
+                    });
+                    _markDirty();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : AppColors.background,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+                    ),
+                    child: Text(
+                      area,
+                      style: AppTextStyles.caption.copyWith(
+                        color: isSelected ? Colors.white : AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Save button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _isSavingTenantProfile ? null : _saveTenantProfile,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: _isSavingTenantProfile
+                ? SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    _tenantProfileDirty ? 'Save Changes' : 'Save Profile',
+                    style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Reusable Widgets ──
+
+  Widget _buildWorkModeChip(String label, String value, IconData icon) {
+    final isSelected = _workMode == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _workMode = value);
+          _markDirty();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.textSecondary),
+              const SizedBox(height: 4),
+              Text(label, style: AppTextStyles.labelSmall.copyWith(
+                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChipOption(String label, String value, String? selected, ValueChanged<String> onTap) {
+    final isSelected = selected == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onTap(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
+          ),
+          child: Center(
+            child: Text(label, style: AppTextStyles.labelMedium.copyWith(
+              color: isSelected ? AppColors.primary : AppColors.textSecondary,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            )),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown({
+    required String? value,
+    required String hint,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          hint: Text(hint, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+          isExpanded: true,
+          icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+          items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: AppTextStyles.bodyMedium))).toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBudgetInput(TextEditingController controller, String hint) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          _ThousandsSeparator(),
+        ],
+        onChanged: (_) => _markDirty(),
+        style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            child: Text('₦', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary, fontFamily: 'Roboto')),
+          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditableField({
+    required String label,
+    required String hint,
+    required TextEditingController controller,
+    required IconData icon,
+    ValueChanged<String>? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          textCapitalization: TextCapitalization.words,
+          onChanged: onChanged,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: AppColors.textHint),
+            prefixIcon: Icon(icon, color: AppColors.textHint),
+            filled: true,
+            fillColor: AppColors.surface,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primary, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
         ),
       ],
@@ -479,12 +907,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: AppTextStyles.labelMedium.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
+        Text(label, style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
@@ -502,10 +925,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Text(
                   value.isNotEmpty ? value : 'Not set',
                   style: AppTextStyles.bodyMedium.copyWith(
-                    color:
-                        value.isNotEmpty
-                            ? AppColors.textPrimary
-                            : AppColors.textHint,
+                    color: value.isNotEmpty ? AppColors.textPrimary : AppColors.textHint,
                   ),
                 ),
               ),
@@ -515,5 +935,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ],
     );
+  }
+}
+
+/// Thousands separator for budget inputs
+class _ThousandsSeparator extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digitsOnly = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+    if (digitsOnly.isEmpty) {
+      return const TextEditingValue(text: '', selection: TextSelection.collapsed(offset: 0));
+    }
+    final chars = digitsOnly.split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    final formatted = result.reversed.join('');
+    return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length));
   }
 }

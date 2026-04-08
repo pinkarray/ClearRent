@@ -17,8 +17,8 @@ class PropertyModel {
   final String lga;
   final double rent;
   final String rentFrequency;
-  final double agentFee;
-  final String agentFeePaidBy;
+  final double agentFee; // Now flat Naira amount (e.g. 200000), NOT percentage
+  final double cautionDeposit; // Caution / damages deposit in Naira
   final bool isAvailable;
   final bool isVerified;
   final List<String> amenities;
@@ -77,7 +77,7 @@ class PropertyModel {
     required this.rent,
     required this.rentFrequency,
     this.agentFee = 0,
-    this.agentFeePaidBy = 'tenant',
+    this.cautionDeposit = 0,
     this.isAvailable = true,
     this.isVerified = false,
     this.amenities = const [],
@@ -114,7 +114,9 @@ class PropertyModel {
     this.ownershipDocRejectionReason,
   });
 
-  // Format rent display
+  // ── Pricing helpers ──
+
+  /// Format rent display (abbreviated)
   String get formattedRent {
     if (rent >= 1000000) {
       return '₦${(rent / 1000000).toStringAsFixed(1)}M';
@@ -126,19 +128,44 @@ class PropertyModel {
 
   String get rentPeriod => rentFrequency == 'yearly' ? '/year' : '/month';
 
-  // Check if has agent
-  bool get hasAgent => agentId != null && agentId!.isNotEmpty;
-
-  // Calculate total first payment for tenant
-  double get totalFirstPayment {
-    if (hasAgent && agentFeePaidBy == 'tenant') {
-      return rent + (rent * agentFee / 100);
+  /// Format agent fee as Naira (flat amount)
+  String get formattedAgentFee {
+    if (agentFee >= 1000000) {
+      return '₦${(agentFee / 1000000).toStringAsFixed(1)}M';
+    } else if (agentFee >= 1000) {
+      return '₦${(agentFee / 1000).toStringAsFixed(0)}K';
     }
-    return rent;
+    return '₦${agentFee.toStringAsFixed(0)}';
   }
 
-  // Format agent fee
-  String get formattedAgentFee => '${agentFee.toStringAsFixed(0)}%';
+  /// Format caution deposit as Naira
+  String get formattedCautionDeposit {
+    if (cautionDeposit >= 1000000) {
+      return '₦${(cautionDeposit / 1000000).toStringAsFixed(1)}M';
+    } else if (cautionDeposit >= 1000) {
+      return '₦${(cautionDeposit / 1000).toStringAsFixed(0)}K';
+    }
+    return '₦${cautionDeposit.toStringAsFixed(0)}';
+  }
+
+  /// Total Package = Rent + Agent Fee + Caution Deposit
+  double get totalPackage => rent + agentFee + cautionDeposit;
+
+  /// Format total package as Naira
+  String get formattedTotalPackage {
+    if (totalPackage >= 1000000) {
+      return '₦${(totalPackage / 1000000).toStringAsFixed(1)}M';
+    } else if (totalPackage >= 1000) {
+      return '₦${(totalPackage / 1000).toStringAsFixed(0)}K';
+    }
+    return '₦${totalPackage.toStringAsFixed(0)}';
+  }
+
+  /// Renewal rent (just the base rent after the first year)
+  double get renewalAmount => rent;
+
+  // Check if has agent
+  bool get hasAgent => agentId != null && agentId!.isNotEmpty;
 
   // Copy with
   PropertyModel copyWith({
@@ -159,7 +186,7 @@ class PropertyModel {
     double? rent,
     String? rentFrequency,
     double? agentFee,
-    String? agentFeePaidBy,
+    double? cautionDeposit,
     bool? isAvailable,
     bool? isVerified,
     List<String>? amenities,
@@ -206,7 +233,7 @@ class PropertyModel {
       rent: rent ?? this.rent,
       rentFrequency: rentFrequency ?? this.rentFrequency,
       agentFee: agentFee ?? this.agentFee,
-      agentFeePaidBy: agentFeePaidBy ?? this.agentFeePaidBy,
+      cautionDeposit: cautionDeposit ?? this.cautionDeposit,
       isAvailable: isAvailable ?? this.isAvailable,
       isVerified: isVerified ?? this.isVerified,
       amenities: amenities ?? this.amenities,
@@ -266,7 +293,7 @@ class PropertyModel {
       rent: (json['rent'] ?? 0).toDouble(),
       rentFrequency: json['rentFrequency'] ?? 'yearly',
       agentFee: (json['agentFee'] ?? 0).toDouble(),
-      agentFeePaidBy: json['agentFeePaidBy'] ?? 'tenant',
+      cautionDeposit: (json['cautionDeposit'] ?? 0).toDouble(),
       isAvailable: json['isAvailable'] ?? true,
       isVerified: json['isVerified'] ?? false,
       amenities: List<String>.from(json['amenities'] ?? []),
@@ -331,7 +358,7 @@ class PropertyModel {
       rent: (data['rent'] ?? 0).toDouble(),
       rentFrequency: data['rentFrequency'] ?? 'yearly',
       agentFee: (data['agentFee'] ?? 0).toDouble(),
-      agentFeePaidBy: data['agentFeePaidBy'] ?? 'tenant',
+      cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
       isAvailable: data['isAvailable'] ?? true,
       isVerified: data['isVerified'] ?? false,
       amenities: List<String>.from(data['amenities'] ?? []),
@@ -395,7 +422,7 @@ class PropertyModel {
       'rent': rent,
       'rentFrequency': rentFrequency,
       'agentFee': agentFee,
-      'agentFeePaidBy': agentFeePaidBy,
+      'cautionDeposit': cautionDeposit,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,
@@ -445,7 +472,7 @@ class PropertyModel {
       'rent': rent,
       'rentFrequency': rentFrequency,
       'agentFee': agentFee,
-      'agentFeePaidBy': agentFeePaidBy,
+      'cautionDeposit': cautionDeposit,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,

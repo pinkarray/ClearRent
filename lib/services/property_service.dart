@@ -82,6 +82,8 @@ class PropertyService {
     double? longitude,
     required double rent,
     required String rentFrequency,
+    double agentFee = 0, // Flat Naira amount (e.g. 200000)
+    double cautionDeposit = 0, // Caution / damages deposit in Naira
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
@@ -108,7 +110,15 @@ class PropertyService {
     double? landlordBaseLongitude,
     String? ownershipDocUrl,
     String? ownershipDocType,
-    String? listingFeeProofUrl,
+    String? listingFeePaymentReference,
+    String? assignedAgentId,
+    String? assignedAgentName,
+    // Pre-calculated inspection fee (stored on property for consistent display)
+    double? inspectionFeeTotal,
+    double? inspectionTransportFee,
+    double? inspectionServiceFee,
+    String? inspectionAgentCluster,
+    String? inspectionPropertyCluster,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -170,6 +180,8 @@ class PropertyService {
         'longitude': longitude,
         'rent': rent,
         'rentFrequency': rentFrequency,
+        'agentFee': agentFee,
+        'cautionDeposit': cautionDeposit,
         'isAvailable': true,
         'isVerified': isVerified, // Based on landlord verification status
         'amenities': amenities,
@@ -179,8 +191,8 @@ class PropertyService {
         'inspectionHandler': inspectionHandler,
         'inspectionDays': inspectionDays,
         'inspectionTimeSlots': inspectionTimeSlots,
-        'assignedAgentId': null,
-        'assignedAgentName': null,
+        'assignedAgentId': assignedAgentId,
+        'assignedAgentName': assignedAgentName,
         'assignedAgentPhone': null,
         'maxTenants': maxTenants,
         'viewCount': 0,
@@ -191,12 +203,18 @@ class PropertyService {
         'currentTenantsCount': currentTenantsCount,
         'hasCaretaker': hasCaretaker,
         'caretakerLivesOnPremises': caretakerLivesOnPremises,
+        // Pre-calculated inspection fee
+        'inspectionFeeTotal': inspectionFeeTotal ?? 0,
+        'inspectionTransportFee': inspectionTransportFee ?? 0,
+        'inspectionServiceFee': inspectionServiceFee ?? 0,
+        'inspectionAgentCluster': inspectionAgentCluster,
+        'inspectionPropertyCluster': inspectionPropertyCluster,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
         if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
         'ownershipDocStatus': ownershipDocUrl != null ? 'pending' : 'none',
-        if (listingFeeProofUrl != null) 'listingFeeProofUrl': listingFeeProofUrl,
+        if (listingFeePaymentReference != null) 'listingFeePaymentReference': listingFeePaymentReference,
       };
 
       final docRef = await _propertiesRef.add(propertyData);
@@ -204,6 +222,21 @@ class PropertyService {
         '✅ Property created with ID: ${docRef.id}',
         name: 'PropertyService',
       );
+
+      // Increment lifetime listing count on the user document.
+      // This counter only goes up — removing a property doesn't decrease it.
+      // Used to determine whether the landlord qualifies for the free first listing.
+      try {
+        await _firestore.collection('users').doc(_currentUserId).update({
+          'totalListingsCreated': FieldValue.increment(1),
+        });
+      } catch (e) {
+        developer.log(
+          '⚠️ Failed to increment totalListingsCreated: $e',
+          name: 'PropertyService',
+        );
+        // Don't fail property creation if counter update fails
+      }
 
       // Track activity
       await _activityService.trackPropertyAdded(
@@ -391,16 +424,25 @@ class PropertyService {
   }
 
   /// Get the number of properties owned by the current landlord
+  /// Returns the landlord's lifetime listing count.
+  /// This reads from the user document's `totalListingsCreated` field,
+  /// which only increments and never decreases when properties are removed.
+  /// This ensures the free first listing is truly a one-time benefit.
   Future<int> getLandlordPropertyCount() async {
     try {
       if (_currentUserId == null) return 0;
-      final snapshot = await _propertiesRef
-          .where('landlordId', isEqualTo: _currentUserId)
-          .count()
+      final userDoc = await _firestore
+          .collection('users')
+          .doc(_currentUserId)
           .get();
-      return snapshot.count ?? 0;
+      final data = userDoc.data();
+      return (data?['totalListingsCreated'] ?? 0) as int;
     } catch (e) {
-      // Fallback: fetch docs and count client-side if .count() unsupported
+      developer.log(
+        '⚠️ Failed to read totalListingsCreated, falling back to query: $e',
+        name: 'PropertyService',
+      );
+      // Fallback: count current properties (less accurate but safe)
       try {
         final snapshot = await _propertiesRef
             .where('landlordId', isEqualTo: _currentUserId)
@@ -605,15 +647,32 @@ class PropertyService {
 
   // ============ UPDATE ============
 
-  /// Update property availability
-  Future<bool> updateAvailability(String propertyId, bool isAvailable) async {
+  /// Update property availability.
+  /// Returns 'not_approved' if the property hasn't been admin-approved yet.
+  Future<String> updateAvailability(String propertyId, bool isAvailable) async {
     try {
+      // If trying to make available, check admin approval first
+      if (isAvailable) {
+        final doc = await _propertiesRef.doc(propertyId).get();
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>?;
+          final docStatus = data?['ownershipDocStatus'] ?? 'none';
+          if (docStatus != 'verified') {
+            developer.log(
+              '⚠️ Cannot make property available — ownershipDocStatus: $docStatus',
+              name: 'PropertyService',
+            );
+            return 'not_approved';
+          }
+        }
+      }
+
       await _propertiesRef.doc(propertyId).update({
         'isAvailable': isAvailable,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       developer.log('✅ Property availability updated', name: 'PropertyService');
-      return true;
+      return 'success';
     } catch (e) {
       developer.log(
         '❌ Failed to update availability: $e',
@@ -621,7 +680,7 @@ class PropertyService {
         error: e,
         stackTrace: StackTrace.current,
       );
-      return false;
+      return 'error';
     }
   }
 

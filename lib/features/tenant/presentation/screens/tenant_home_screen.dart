@@ -100,6 +100,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   bool _isLoadingProfile = true;
 
   VerificationStatus _verificationStatus = VerificationStatus.none;
+  bool _hasBankDetails = false;
 
   @override
   void initState() {
@@ -149,6 +150,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           _profileImageUrl = profile['profileImageUrl'];
           _verificationStatus = verStatus;
           _isLoadingProfile = false;
+          // Track bank details
+          final bankDetails = profile['bankDetails'] as Map<String, dynamic>?;
+          _hasBankDetails = bankDetails != null &&
+              (bankDetails['bankName'] ?? '').toString().isNotEmpty &&
+              (bankDetails['accountNumber'] ?? '').toString().isNotEmpty;
         });
       } else {
         if (mounted) setState(() { _userName = 'Tenant'; _isLoadingProfile = false; });
@@ -475,14 +481,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     // ── TIER 3: Unlinked tenant — browse mode (with active rental if any) ─
     if (!_isLoadingRental && _activeRental != null && !_browsingFromDashboard) {
       if (_currentNavIndex == 0) {
-        return SafeArea(
-          child: TenantRentalDashboard(
-            rental: _activeRental!,
-            userName: _userName,
-            userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
-            isLoadingProfile: _isLoadingProfile,
-            onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
-          ),
+        return TenantRentalDashboard(
+          rental: _activeRental!,
+          userName: _userName,
+          userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+          isLoadingProfile: _isLoadingProfile,
+          onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
         );
       }
     }
@@ -558,7 +562,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   const SizedBox(height: 12),
                   Text(
                     "You're currently a linked tenant. Pay ₦5,000 to get verified and unlock:",
-                    style: AppTextStyles.naira(AppTextStyles.bodySmall).copyWith(color: Colors.white.withAlpha(220), height: 1.4),
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.white.withAlpha(220), height: 1.4),
                   ),
                   const SizedBox(height: 12),
                   ...const [
@@ -586,7 +590,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: Text('Get Verified — ₦5,000', style: AppTextStyles.naira(AppTextStyles.labelLarge).copyWith(color: AppColors.primary)),
+                      child: Text('Get Verified — ₦5,000', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
                     ),
                   ),
                 ]),
@@ -1026,7 +1030,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(border: Border.all(color: AppColors.primary), borderRadius: BorderRadius.circular(8)),
-                      child: Text('Edit', style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+                      child: Text('Edit', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
                     ),
                   ),
                 ]),
@@ -1057,7 +1061,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Get Verified', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
                   const SizedBox(height: 2),
-                  Text('Pay ₦5,000 to unlock full platform access', style: AppTextStyles.naira(AppTextStyles.caption).copyWith(color: AppColors.textSecondary)),
+                  Text('Pay ₦5,000 to unlock full platform access', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
                 ])),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1348,7 +1352,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             Text(link.propertyAddress, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
             const SizedBox(height: 6),
             Row(children: [
-              Text(_livePropertyRent != null ? (_livePropertyRent! >= 1000000 ? '₦${(_livePropertyRent! / 1000000).toStringAsFixed(1)}M' : _livePropertyRent! >= 1000 ? '₦${(_livePropertyRent! / 1000).toStringAsFixed(0)}K' : '₦${_livePropertyRent!.toStringAsFixed(0)}') : link.formattedRentAmount, style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+              Text(_livePropertyRent != null ? (_livePropertyRent! >= 1000000 ? '₦${(_livePropertyRent! / 1000000).toStringAsFixed(1)}M' : _livePropertyRent! >= 1000 ? '₦${(_livePropertyRent! / 1000).toStringAsFixed(0)}K' : '₦${_livePropertyRent!.toStringAsFixed(0)}') : link.formattedRentAmount, style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
               Text('  ${_livePropertyRentFrequency != null ? (_livePropertyRentFrequency == 'yearly' ? 'per year' : 'per month') : link.rentPeriodLabel}', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
               const Spacer(),
               Icon(Icons.calendar_today_outlined, size: 13, color: AppColors.textSecondary),
@@ -1440,7 +1444,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
               child: Row(children: [
                 Icon(Icons.arrow_back, size: 16, color: AppColors.primary),
                 const SizedBox(width: 8),
-                Text('Back to my tenancy', style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+                Text('Back to my tenancy', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
               ]),
             ),
           ),
@@ -1449,6 +1453,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           _buildPendingLinksBanner(pendingLinks),
         if (_verificationStatus != VerificationStatus.verified)
           _buildVerificationPrompt(),
+        if (!_hasBankDetails && !_isLoadingProfile && _verificationStatus == VerificationStatus.verified)
+          _buildBankDetailsBanner(),
         _buildSearchBar(),
         _buildFilters(),
         Expanded(
@@ -1550,6 +1556,40 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             Text(subtitle, style: AppTextStyles.bodySmall.copyWith(color: color.withAlpha(204))),
           ])),
           Icon(Icons.chevron_right, color: color),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildBankDetailsBanner() {
+    return GestureDetector(
+      onTap: () => context.push('/tenant/bank-details').then((_) => _loadUserProfile()),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(77)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(26),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Add Bank Details', style: AppTextStyles.labelLarge.copyWith(color: AppColors.warning)),
+            const SizedBox(height: 2),
+            Text('Required for receiving refunds and deposits',
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.warning.withAlpha(204))),
+          ])),
+          Icon(Icons.chevron_right, color: AppColors.warning),
         ]),
       ),
     );
@@ -1679,7 +1719,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           ],
           const Spacer(),
           Text('Sort by: ', style: AppTextStyles.bodySmall),
-          Text('Newest', style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+          Text('Newest', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
           Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.primary),
         ]),
       ),
@@ -1747,7 +1787,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), borderRadius: BorderRadius.circular(12)),
-              child: Text('${savedList.length}', style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+              child: Text('${savedList.length}', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
             ),
         ]),
       ),
@@ -1859,7 +1899,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(border: Border.all(color: AppColors.primary), borderRadius: BorderRadius.circular(8)),
-                      child: Text('Edit', style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(color: AppColors.primary)),
+                      child: Text('Edit', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
                     ),
                   ),
                 ]),

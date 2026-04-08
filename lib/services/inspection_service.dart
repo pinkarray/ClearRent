@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../shared/models/inspection_request_model.dart';
 import '../shared/models/property_model.dart';
 import '../core/utils/inspection_pricing.dart';
@@ -30,62 +28,83 @@ class InspectionService {
 
   // ============ PRICING CALCULATION ============
 
+  /// Resolves the property's area/cluster from its address, LGA, or city fields.
+  /// Tries address first (most specific), then LGA, then city.
+  String? _resolvePropertyArea(PropertyModel property) {
+    // Try address — extract the most likely area name
+    final address = property.address.trim();
+    if (address.isNotEmpty) {
+      // Try each comma-separated segment (e.g. "12 Adeola Odeku, Victoria Island, Lagos")
+      final segments = address.split(',').map((s) => s.trim()).toList();
+      for (final segment in segments) {
+        if (InspectionPricing.getClusterForArea(segment) != null) {
+          return segment;
+        }
+      }
+    }
+
+    // Try LGA
+    final lga = property.lga.trim();
+    if (lga.isNotEmpty && InspectionPricing.getClusterForArea(lga) != null) {
+      return lga;
+    }
+
+    // Try city
+    final city = property.city.trim();
+    if (city.isNotEmpty && InspectionPricing.getClusterForArea(city) != null) {
+      return city;
+    }
+
+    return null;
+  }
+
   Future<InspectionFeeBreakdown?> calculateInspectionFee({
     required PropertyModel property,
   }) async {
-    // Agent-handled: calculate from agent location
+    // Agent-handled: calculate from agent's baseLocation to property area
     if (property.inspectionHandler == 'agent') {
       if (property.assignedAgentId == null) return null;
 
       try {
-        final agentDoc =
-            await _firestore
-                .collection('users')
-                .doc(property.assignedAgentId)
-                .get();
+        final agentDoc = await _firestore
+            .collection('users')
+            .doc(property.assignedAgentId)
+            .get();
 
         if (!agentDoc.exists) return null;
 
         final agentData = agentDoc.data()!;
-        var agentLat = agentData['baseLatitude']?.toDouble();
-        var agentLon = agentData['baseLongitude']?.toDouble();
+        final agentBaseLocation = agentData['baseLocation'] as String? ?? '';
 
-        if (agentLat == null || agentLon == null) {
-          // No stored coordinates — geocode baseLocation text and cache result
-          final baseLocation = agentData['baseLocation'] as String?;
-          if (baseLocation != null && baseLocation.isNotEmpty) {
-            final coords = await _geocodeLocation(
-                baseLocation, property.assignedAgentId!);
-            if (coords != null) {
-              agentLat = coords['lat'];
-              agentLon = coords['lon'];
-            }
-          }
-          if (agentLat == null || agentLon == null) {
-            developer.log(
-              '⚠️ Agent no coordinates for fee calc, using minimum fee.',
-              name: 'InspectionService',
-            );
-            return InspectionPricing.calculateFee(distanceKm: 0);
-          }
-        }
+        final agentCluster = InspectionPricing.getClusterForArea(agentBaseLocation);
+        final propertyArea = _resolvePropertyArea(property);
+        final propertyCluster = propertyArea != null
+            ? InspectionPricing.getClusterForArea(propertyArea)
+            : null;
 
-        final propertyLat = property.latitude;
-        final propertyLon = property.longitude;
-
-        if (propertyLat != null && propertyLon != null) {
-          return InspectionPricing.calculateFeeFromCoordinates(
-            agentLat: agentLat,
-            agentLon: agentLon,
-            propertyLat: propertyLat,
-            propertyLon: propertyLon,
+        if (agentCluster == null) {
+          developer.log(
+            '\u26a0\ufe0f Agent baseLocation "$agentBaseLocation" not mapped to any cluster, using same-zone fallback.',
+            name: 'InspectionService',
           );
         }
 
-        return InspectionPricing.calculateFee(distanceKm: 0);
+        if (propertyCluster == null) {
+          developer.log(
+            '\u26a0\ufe0f Property area not resolved (address: "${property.address}", lga: "${property.lga}"), using same-zone fallback.',
+            name: 'InspectionService',
+          );
+        }
+
+        // If either cluster is unknown, assume same-zone (minimum transport)
+        return InspectionPricing.calculateFee(
+          agentCluster: agentCluster ?? propertyCluster ?? 'maryland_ikeja',
+          propertyCluster: propertyCluster ?? agentCluster ?? 'maryland_ikeja',
+          propertyArea: propertyArea,
+        );
       } catch (e) {
         developer.log(
-          '❌ Error calculating agent fee: $e',
+          '\u274c Error calculating agent fee: $e',
           name: 'InspectionService',
         );
         return null;
@@ -94,109 +113,52 @@ class InspectionService {
 
     // Self-handled by landlord
     if (property.inspectionHandler == 'self') {
-      // Landlord lives in property â†’ no transport, ClearRent keeps transport fee
+      final propertyArea = _resolvePropertyArea(property);
+      final propertyCluster = propertyArea != null
+          ? InspectionPricing.getClusterForArea(propertyArea)
+          : null;
+
       if (property.landlordLivesInProperty == true) {
-        return InspectionPricing.calculateFee(distanceKm: 0);
+        return InspectionPricing.calculateSelfHandledFee(
+          landlordLivesInProperty: true,
+          propertyCluster: propertyCluster ?? 'maryland_ikeja',
+          propertyArea: propertyArea,
+        );
       }
 
-      // Landlord lives elsewhere â†’ calculate from landlord location to property
+      // Landlord lives elsewhere — get their baseLocation
       try {
-        final landlordDoc =
-            await _firestore.collection('users').doc(property.landlordId).get();
+        final landlordDoc = await _firestore
+            .collection('users')
+            .doc(property.landlordId)
+            .get();
 
-        if (!landlordDoc.exists) {
-          // Fallback: use property location if landlord doc not found
-          return InspectionPricing.calculateFee(distanceKm: 0);
+        String? landlordCluster;
+        if (landlordDoc.exists) {
+          final landlordData = landlordDoc.data()!;
+          final landlordBase = landlordData['baseLocation'] as String? ?? '';
+          landlordCluster = InspectionPricing.getClusterForArea(landlordBase);
         }
 
-        final landlordData = landlordDoc.data()!;
-        final landlordLat = landlordData['baseLatitude']?.toDouble();
-        final landlordLon = landlordData['baseLongitude']?.toDouble();
-
-        // If landlord hasn't set base location, use property location as fallback
-        // This means no transport distance (0 km), as we can't calculate accurately
-        if (landlordLat == null || landlordLon == null) {
-          developer.log(
-            'âš ï¸ Landlord ${property.landlordId} has no baseLocation set. Using property location as fallback (0 km).',
-            name: 'InspectionService',
-          );
-          return InspectionPricing.calculateFee(distanceKm: 0);
-        }
-
-        final propertyLat = property.latitude;
-        final propertyLon = property.longitude;
-
-        if (propertyLat != null && propertyLon != null) {
-          return InspectionPricing.calculateFeeFromCoordinates(
-            agentLat: landlordLat,
-            agentLon: landlordLon,
-            propertyLat: propertyLat,
-            propertyLon: propertyLon,
-          );
-        }
-
-        // Property location not set, use 0 km
-        return InspectionPricing.calculateFee(distanceKm: 0);
+        return InspectionPricing.calculateSelfHandledFee(
+          landlordLivesInProperty: false,
+          propertyCluster: propertyCluster ?? 'maryland_ikeja',
+          landlordCluster: landlordCluster,
+          propertyArea: propertyArea,
+        );
       } catch (e) {
         developer.log(
-          '❌ Error calculating landlord fee: $e',
+          '\u274c Error calculating landlord fee: $e',
           name: 'InspectionService',
         );
-        return InspectionPricing.calculateFee(distanceKm: 0);
+        return InspectionPricing.calculateSelfHandledFee(
+          landlordLivesInProperty: true,
+          propertyCluster: propertyCluster ?? 'maryland_ikeja',
+        );
       }
     }
 
     return null;
-  }
-
-  InspectionFeeBreakdown calculateFeeFromCoordinates({
-    required double agentLat,
-    required double agentLon,
-    required double propertyLat,
-    required double propertyLon,
-  }) {
-    return InspectionPricing.calculateFeeFromCoordinates(
-      agentLat: agentLat,
-      agentLon: agentLon,
-      propertyLat: propertyLat,
-      propertyLon: propertyLon,
-    );
-  }
-
-  /// Geocodes a location text using Nominatim.
-  /// Returns lat/lon if successful. Does NOT write to Firestore — only the
-  /// user themselves can update their own document per security rules.
-  /// Coordinates are written back when the agent updates their own profile.
-  Future<Map<String, double>?> _geocodeLocation(
-      String locationText, String userId) async {
-    try {
-      final encoded = Uri.encodeComponent('$locationText, Nigeria');
-      final uri = Uri.parse(
-          'https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=1');
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'ClearRentApp/1.0',
-      }).timeout(const Duration(seconds: 8));
-      if (response.statusCode == 200) {
-        final List results = jsonDecode(response.body);
-        if (results.isNotEmpty) {
-          final lat = double.tryParse(results[0]['lat'] as String? ?? '');
-          final lon = double.tryParse(results[0]['lon'] as String? ?? '');
-          if (lat != null && lon != null) {
-            developer.log(
-              '✅ Geocoded $locationText → ($lat, $lon)',
-              name: 'InspectionService',
-            );
-            return {'lat': lat, 'lon': lon};
-          }
-        }
-      }
-      developer.log('⚠️ Geocode returned no results for $locationText',
-          name: 'InspectionService');
-      return null;
-    } catch (e) {
-      developer.log('❌ Geocode error: $e', name: 'InspectionService');
-      return null;
-    }
   }
 
   // ============ VERIFICATION CHECK ============
@@ -283,6 +245,7 @@ class InspectionService {
       String? agentPhone;
       double? agentLat;
       double? agentLon;
+      String? agentBaseLocation;
 
       if (isAgentHandled) {
         final agentVerified = await _isUserVerified(property.assignedAgentId!);
@@ -303,6 +266,7 @@ class InspectionService {
           agentPhone = agentData['phone'];
           agentLat = agentData['baseLatitude']?.toDouble();
           agentLon = agentData['baseLongitude']?.toDouble();
+          agentBaseLocation = agentData['baseLocation'] as String?;
         }
       }
 
@@ -328,6 +292,7 @@ class InspectionService {
         'agentPhone': agentPhone,
         'agentLatitude': agentLat,
         'agentLongitude': agentLon,
+        'agentBaseLocation': agentBaseLocation,
 
         'requestedDate': Timestamp.fromDate(requestedDate),
         'requestedTimeSlot': requestedTimeSlot,
@@ -335,16 +300,20 @@ class InspectionService {
             timeSlotDisplay[requestedTimeSlot] ?? requestedTimeSlot,
         'notes': notes,
 
-        'distanceKm': feeBreakdown?.distanceKm ?? 0,
+        'agentCluster': feeBreakdown?.agentCluster,
+        'propertyCluster': feeBreakdown?.propertyCluster,
+        'propertyArea': feeBreakdown?.propertyArea,
         'transportFee': feeBreakdown?.transportFee ?? 0,
         'agentServiceFee': feeBreakdown?.agentServiceFee ?? 0,
-        'clearrentFee': feeBreakdown?.clearrentFee ?? 0,
+        'clearrentFee': feeBreakdown?.clearrentEarnings ?? 0,
         'totalFee': feeBreakdown?.totalFee ?? 0,
         'agentEarnings': feeBreakdown?.agentEarnings ?? 0,
 
         'paymentStatus':
             paymentStatus ??
-            (isAgentHandled ? 'pending_verification' : 'not_required'),
+            (feeBreakdown != null && feeBreakdown.totalFee > 0
+                ? 'pending_verification'
+                : 'not_required'),
         'paymentReference': paymentReference,
         'paymentProofUrl': paymentProofUrl,
         'paidAt': null,
@@ -353,12 +322,14 @@ class InspectionService {
         'refundedAt': null,
         'refundReason': null,
 
-        'status':
-            isAgentHandled
-                ? (paymentProofUrl != null
-                    ? 'pendingVerification'
-                    : 'pendingPayment')
-                : 'pending',
+        // If payment proof was uploaded, go to pendingVerification.
+        // If fee is required but no proof yet, go to pendingPayment.
+        // If no fee at all, go straight to pending.
+        'status': paymentProofUrl != null
+            ? 'pendingVerification'
+            : (feeBreakdown != null && feeBreakdown.totalFee > 0
+                ? 'pendingPayment'
+                : 'pending'),
         'declinedBy': null,
         'declineReason': null,
         'declinedAt': null,
@@ -1428,9 +1399,11 @@ class InspectionService {
     try {
       await _firestore.collection('activities').add({
         'userId': userId,
+        'landlordId': userId, // Also write as landlordId for unified querying
         'type': type,
         'title': title,
         'message': message,
+        'subtitle': message, // Also write as subtitle for ActivityModel compat
         'relatedId': relatedId,
         'propertyId': propertyId,
         'isRead': false,

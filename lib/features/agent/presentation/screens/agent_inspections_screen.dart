@@ -337,7 +337,9 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                         ),
                         const SizedBox(width: 2),
                         Text(
-                          '${request.distanceKm.toStringAsFixed(1)} km away',
+                          request.propertyCluster != null
+                              ? InspectionPricing.getClusterLabel(request.propertyCluster!)
+                              : request.propertyAddress,
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textHint,
                           ),
@@ -391,7 +393,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
             child: Column(
               children: [
                 _buildFeeRow(
-                  'Transport (${request.distanceKm.toStringAsFixed(1)} km × 2)',
+                  'Transport (round trip)',
                   request.transportFee,
                 ),
                 const SizedBox(height: 4),

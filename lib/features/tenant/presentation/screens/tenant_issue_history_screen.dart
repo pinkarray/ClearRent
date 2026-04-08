@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
@@ -189,6 +190,8 @@ class _IssueHistoryTile extends StatelessWidget {
   final Map<String, dynamic> data;
   const _IssueHistoryTile({required this.data});
 
+  List<String> get _images => List<String>.from(data['images'] ?? []);
+
   @override
   Widget build(BuildContext context) {
     final status = (data['status'] as String?) ?? 'open';
@@ -202,66 +205,91 @@ class _IssueHistoryTile extends StatelessWidget {
     final statusColor = _statusColor(status);
     final statusLabel = _statusLabel(status);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Category icon
-        Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(
-              color: _categoryColor(category).withAlpha(26),
-              borderRadius: BorderRadius.circular(8)),
-          child: Icon(_categoryIcon(category),
-              color: _categoryColor(category), size: 18),
-        ),
-        const SizedBox(width: 12),
-        // Content
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(
-                child: Text(title,
-                    style: AppTextStyles.labelMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-              ),
-              const SizedBox(width: 8),
-              // Status chip
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: statusColor.withAlpha(26),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: statusColor.withAlpha(77))),
-                child: Text(statusLabel,
-                    style: AppTextStyles.caption.copyWith(
-                        color: statusColor, fontWeight: FontWeight.w600)),
-              ),
-            ]),
-            const SizedBox(height: 4),
-            Row(children: [
-              // Priority dot
-              Container(
-                width: 6, height: 6,
-                margin: const EdgeInsets.only(right: 5, top: 1),
-                decoration: BoxDecoration(
-                    color: _priorityColor(priority), shape: BoxShape.circle),
-              ),
-              Text('${_capitalize(priority)} priority',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textSecondary)),
-              if (createdAt != null) ...[
-                Text(' · ',
+    return GestureDetector(
+      onTap: () => _showIssueDetail(context),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Category icon
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+                color: _categoryColor(category).withAlpha(26),
+                borderRadius: BorderRadius.circular(8)),
+            child: Icon(_categoryIcon(category),
+                color: _categoryColor(category), size: 18),
+          ),
+          const SizedBox(width: 12),
+          // Content
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(
+                  child: Text(title,
+                      style: AppTextStyles.labelMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: 8),
+                // Status chip
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: statusColor.withAlpha(26),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: statusColor.withAlpha(77))),
+                  child: Text(statusLabel,
+                      style: AppTextStyles.caption.copyWith(
+                          color: statusColor, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Row(children: [
+                // Priority dot
+                Container(
+                  width: 6, height: 6,
+                  margin: const EdgeInsets.only(right: 5, top: 1),
+                  decoration: BoxDecoration(
+                      color: _priorityColor(priority), shape: BoxShape.circle),
+                ),
+                Text('${_capitalize(priority)} priority',
                     style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textHint)),
-                Text(_formatDate(createdAt),
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textHint)),
-              ],
+                        .copyWith(color: AppColors.textSecondary)),
+                if (_images.isNotEmpty) ...[
+                  Text(' · ',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint)),
+                  Icon(Icons.photo_outlined, size: 13, color: AppColors.textHint),
+                  const SizedBox(width: 2),
+                  Text('${_images.length}',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint)),
+                ],
+                if (createdAt != null) ...[
+                  Text(' · ',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint)),
+                  Text(_formatDate(createdAt),
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint)),
+                ],
+              ]),
             ]),
-          ]),
-        ),
-      ]),
+          ),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
+        ]),
+      ),
+    );
+  }
+
+  void _showIssueDetail(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _IssueDetailScreen(data: data),
+      ),
     );
   }
 
@@ -312,6 +340,382 @@ class _IssueHistoryTile extends StatelessWidget {
       case 'pest':        return Icons.pest_control_outlined;
       case 'appliance':   return Icons.kitchen_outlined;
       default:            return Icons.report_problem_outlined;
+    }
+  }
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'
+    ];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+}
+
+// ── Issue Detail Screen ───────────────────────────────────────────────────────
+
+class _IssueDetailScreen extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _IssueDetailScreen({required this.data});
+
+  List<String> get _images => List<String>.from(data['images'] ?? []);
+  String get _status => (data['status'] as String?) ?? 'open';
+  String get _category => (data['category'] as String?) ?? 'general';
+  String get _priority => (data['priority'] as String?) ?? 'low';
+  String get _title => (data['title'] as String?)?.trim().isNotEmpty == true
+      ? data['title'] as String
+      : _category;
+  String get _description => (data['description'] as String?) ?? '';
+  String get _propertyTitle => (data['propertyTitle'] as String?) ?? 'Property';
+  DateTime? get _createdAt => (data['createdAt'] as Timestamp?)?.toDate();
+  String? get _landlordNote => data['landlordNote'] as String?;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text('Issue Details', style: AppTextStyles.h4),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status + priority header
+            Row(
+              children: [
+                _buildStatusChip(),
+                const SizedBox(width: 8),
+                _buildPriorityChip(),
+                const Spacer(),
+                if (_createdAt != null)
+                  Text(
+                    _formatDate(_createdAt!),
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Title
+            Text(_title, style: AppTextStyles.h3),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.home_outlined, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _propertyTitle,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Description
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Description', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    _description.isNotEmpty ? _description : 'No description provided.',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Photos
+            if (_images.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text('Photos (${_images.length})', style: AppTextStyles.labelMedium),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 180,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _images.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (context, i) {
+                    return GestureDetector(
+                      onTap: () => _showFullImage(context, i),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: _images[i],
+                          width: 240,
+                          height: 180,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            width: 240, height: 180,
+                            color: AppColors.border,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            width: 240, height: 180,
+                            color: AppColors.border,
+                            child: Icon(Icons.broken_image, color: AppColors.textHint),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+
+            // Landlord response
+            if (_landlordNote != null && _landlordNote!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(13),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.info.withAlpha(51)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.person_outline, size: 16, color: AppColors.info),
+                        const SizedBox(width: 6),
+                        Text('Landlord Response',
+                            style: AppTextStyles.labelMedium.copyWith(color: AppColors.info)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _landlordNote!,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Status timeline
+            const SizedBox(height: 20),
+            _buildStatusTimeline(),
+
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip() {
+    final color = _statusColorFor(_status);
+    final label = _statusLabelFor(_status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(26),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withAlpha(77)),
+      ),
+      child: Text(label,
+          style: AppTextStyles.labelSmall.copyWith(
+              color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _buildPriorityChip() {
+    final color = _priorityColorFor(_priority);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withAlpha(20),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6, height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          Text('${_capitalize(_priority)} Priority',
+              style: AppTextStyles.caption.copyWith(
+                  color: color, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusTimeline() {
+    final steps = [
+      {'key': 'open', 'label': 'Reported', 'icon': Icons.flag_outlined},
+      {'key': 'in_progress', 'label': 'In Progress', 'icon': Icons.build_outlined},
+      {'key': 'pending_confirmation', 'label': 'Pending Confirmation', 'icon': Icons.hourglass_top},
+      {'key': 'resolved', 'label': 'Resolved', 'icon': Icons.check_circle_outline},
+    ];
+
+    final currentIndex = steps.indexWhere((s) => s['key'] == _status);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Status', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 16),
+          ...steps.asMap().entries.map((entry) {
+            final i = entry.key;
+            final step = entry.value;
+            final isActive = i <= currentIndex;
+            final isCurrent = i == currentIndex;
+            final isLast = i == steps.length - 1;
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Timeline dot + line
+                Column(
+                  children: [
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? (isCurrent ? AppColors.primary : AppColors.success)
+                            : AppColors.border,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        step['icon'] as IconData,
+                        size: 14,
+                        color: isActive ? Colors.white : AppColors.textHint,
+                      ),
+                    ),
+                    if (!isLast)
+                      Container(
+                        width: 2, height: 24,
+                        color: isActive ? AppColors.success.withAlpha(100) : AppColors.border,
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    step['label'] as String,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: isActive ? AppColors.textPrimary : AppColors.textHint,
+                      fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _showFullImage(BuildContext context, int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: Text(
+              'Photo ${initialIndex + 1} of ${_images.length}',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+          body: PageView.builder(
+            controller: PageController(initialPage: initialIndex),
+            itemCount: _images.length,
+            itemBuilder: (_, i) => InteractiveViewer(
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: _images[i],
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => CircularProgressIndicator(
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _statusColorFor(String s) {
+    switch (s) {
+      case 'open':           return AppColors.error;
+      case 'in_progress':   return AppColors.warning;
+      case 'pending_confirmation': return AppColors.info;
+      case 'resolved':      return AppColors.success;
+      default:              return AppColors.textSecondary;
+    }
+  }
+
+  String _statusLabelFor(String s) {
+    switch (s) {
+      case 'open':           return 'Open';
+      case 'in_progress':   return 'In Progress';
+      case 'pending_confirmation': return 'Awaiting Confirmation';
+      case 'resolved':      return 'Resolved';
+      default:              return _capitalize(s);
+    }
+  }
+
+  Color _priorityColorFor(String p) {
+    switch (p) {
+      case 'high':   return AppColors.error;
+      case 'medium': return AppColors.warning;
+      default:       return AppColors.success;
     }
   }
 

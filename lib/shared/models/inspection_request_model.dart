@@ -47,7 +47,9 @@ class InspectionRequest {
   final String? notes;
   
   // Pricing
-  final double distanceKm;
+  final String? agentCluster;
+  final String? propertyCluster;
+  final String? propertyArea;
   final double transportFee;
   final double agentServiceFee;
   final double clearrentFee;
@@ -132,10 +134,12 @@ class InspectionRequest {
     required this.requestedTimeSlot,
     required this.requestedTimeDisplay,
     this.notes,
-    this.distanceKm = 0,
+    this.agentCluster,
+    this.propertyCluster,
+    this.propertyArea,
     this.transportFee = 0,
-    this.agentServiceFee = 5000,
-    this.clearrentFee = 3000,
+    this.agentServiceFee = 10000,
+    this.clearrentFee = 6000,
     this.totalFee = 0,
     this.agentEarnings = 0,
     this.paymentStatus = 'pending',
@@ -278,7 +282,9 @@ class InspectionRequest {
     String? requestedTimeSlot,
     String? requestedTimeDisplay,
     String? notes,
-    double? distanceKm,
+    String? agentCluster,
+    String? propertyCluster,
+    String? propertyArea,
     double? transportFee,
     double? agentServiceFee,
     double? clearrentFee,
@@ -345,7 +351,9 @@ class InspectionRequest {
       requestedTimeSlot: requestedTimeSlot ?? this.requestedTimeSlot,
       requestedTimeDisplay: requestedTimeDisplay ?? this.requestedTimeDisplay,
       notes: notes ?? this.notes,
-      distanceKm: distanceKm ?? this.distanceKm,
+      agentCluster: agentCluster ?? this.agentCluster,
+      propertyCluster: propertyCluster ?? this.propertyCluster,
+      propertyArea: propertyArea ?? this.propertyArea,
       transportFee: transportFee ?? this.transportFee,
       agentServiceFee: agentServiceFee ?? this.agentServiceFee,
       clearrentFee: clearrentFee ?? this.clearrentFee,
@@ -416,10 +424,12 @@ class InspectionRequest {
       requestedTimeSlot: data['requestedTimeSlot'] ?? '',
       requestedTimeDisplay: data['requestedTimeDisplay'] ?? '',
       notes: data['notes'],
-      distanceKm: (data['distanceKm'] ?? 0).toDouble(),
+      agentCluster: data['agentCluster'],
+      propertyCluster: data['propertyCluster'],
+      propertyArea: data['propertyArea'],
       transportFee: (data['transportFee'] ?? 0).toDouble(),
-      agentServiceFee: (data['agentServiceFee'] ?? 5000).toDouble(),
-      clearrentFee: (data['clearrentFee'] ?? 3000).toDouble(),
+      agentServiceFee: (data['agentServiceFee'] ?? 10000).toDouble(),
+      clearrentFee: (data['clearrentFee'] ?? 6000).toDouble(),
       totalFee: (data['totalFee'] ?? 0).toDouble(),
       agentEarnings: (data['agentEarnings'] ?? 0).toDouble(),
       paymentStatus: data['paymentStatus'] ?? 'pending',
@@ -491,7 +501,9 @@ class InspectionRequest {
       'requestedTimeSlot': requestedTimeSlot,
       'requestedTimeDisplay': requestedTimeDisplay,
       'notes': notes,
-      'distanceKm': distanceKm,
+      'agentCluster': agentCluster,
+      'propertyCluster': propertyCluster,
+      'propertyArea': propertyArea,
       'transportFee': transportFee,
       'agentServiceFee': agentServiceFee,
       'clearrentFee': clearrentFee,

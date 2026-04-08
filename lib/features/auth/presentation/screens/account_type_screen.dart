@@ -4,7 +4,6 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/widgets/app_button.dart';
-import '../../../../services/auth_service.dart';
 
 class AccountTypeScreen extends StatefulWidget {
   const AccountTypeScreen({super.key});
@@ -15,42 +14,26 @@ class AccountTypeScreen extends StatefulWidget {
 
 class _AccountTypeScreenState extends State<AccountTypeScreen> {
   String? _selectedType;
-  bool _isLoading = false;
-  late final AuthService _authService;
-
-  @override
-  void initState() {
-    super.initState();
-    _authService = AuthService();
-  }
 
   void _selectType(String type) {
     setState(() => _selectedType = type);
   }
 
-  Future<void> _continue() async {
+  void _continue() {
     if (_selectedType == null) return;
 
-    setState(() => _isLoading = true);
-
-    try {
-      // Save account type to Firestore
-      await _authService.updateAccountType(_selectedType!);
-    } catch (e) {
-      debugPrint('❌ Failed to save account type: $e');
-    }
-
-    setState(() => _isLoading = false);
-
-    if (mounted) {
-      context.go('/profile-setup', extra: _selectedType);
-    }
+    // Navigate to profile setup with the selected account type
+    context.go('/profile-setup', extra: _selectedType);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        automaticallyImplyLeading: false, // No back button — user must complete setup
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -58,13 +41,14 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
             constraints: BoxConstraints(
               minHeight: MediaQuery.of(context).size.height -
                   MediaQuery.of(context).padding.top -
-                  MediaQuery.of(context).padding.bottom,
+                  MediaQuery.of(context).padding.bottom -
+                  kToolbarHeight,
             ),
             child: IntrinsicHeight(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 20),
 
                   // Title
                   Text(
@@ -73,7 +57,7 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'You can always change this later',
+                    'How would you like to use ClearRent?',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -120,7 +104,6 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
                   AppButton(
                     text: AppStrings.continueText,
                     onPressed: _selectedType != null ? _continue : null,
-                    isLoading: _isLoading,
                   ),
 
                   const SizedBox(height: 16),

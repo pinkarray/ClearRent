@@ -1,17 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'property_service.dart';
 
 class AuthService {
-  // Singleton — ensures _verificationId is shared across all screens
-  static final AuthService _instance = AuthService._internal();
-  factory AuthService() => _instance;
-  AuthService._internal();
-
   // Use singleton instances directly - Firebase is already initialized in main.dart
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -33,9 +27,9 @@ class AuthService {
 
   // ============ PHONE AUTH ============
 
-  // Store verification ID for OTP verification
-  String? _verificationId;
-  int? _resendToken;
+  // Static — must persist across AuthService instances (LoginScreen vs OtpScreen)
+  static String? _verificationId;
+  static int? _resendToken;
 
   String? get verificationId => _verificationId;
 
@@ -46,71 +40,49 @@ class AuthService {
     int? forceResendingToken,
   }) async {
     try {
-      debugPrint('📱 Sending OTP to $phoneNumber');
+      developer.log('📱 Sending OTP to $phoneNumber');
 
-      // Enable test phone number bypass for debug builds
-      // This tells Firebase to skip app verification (Play Integrity / reCAPTCHA)
-      // which is required for test phone numbers to work on unregistered apps
-      _auth.setSettings(appVerificationDisabledForTesting: true);
-
-      final completer = Completer<PhoneAuthResult>();
+      final completer = PhoneAuthCompleter();
 
       await _auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         timeout: const Duration(seconds: 60),
         forceResendingToken: forceResendingToken ?? _resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          debugPrint('✅ Phone auto-verified via verificationCompleted callback');
-          if (!completer.isCompleted) {
-            completer.complete(PhoneAuthResult(
-              success: true,
-              autoVerified: true,
-              credential: credential,
-            ));
-          }
+          // Auto-verification (e.g., on Android with SMS retriever)
+          developer.log('✅ Phone auto-verified');
+          completer.complete(PhoneAuthResult(
+            success: true,
+            autoVerified: true,
+            credential: credential,
+          ));
         },
         verificationFailed: (FirebaseAuthException e) {
-          debugPrint('❌ Phone verificationFailed callback: ${e.code} - ${e.message}');
-          if (!completer.isCompleted) {
-            completer.complete(PhoneAuthResult(
-              success: false,
-              error: _getPhoneErrorMessage(e.code),
-            ));
-          }
+          developer.log('❌ Phone verification failed: ${e.code} - ${e.message}');
+          completer.complete(PhoneAuthResult(
+            success: false,
+            error: _getPhoneErrorMessage(e.code),
+          ));
         },
         codeSent: (String verificationId, int? resendToken) {
-          debugPrint('📨 codeSent callback fired. verificationId: $verificationId');
+          developer.log('📨 OTP code sent. verificationId: $verificationId');
           _verificationId = verificationId;
           _resendToken = resendToken;
-          if (!completer.isCompleted) {
-            completer.complete(PhoneAuthResult(
-              success: true,
-              verificationId: verificationId,
-            ));
-          }
+          completer.complete(PhoneAuthResult(
+            success: true,
+            verificationId: verificationId,
+          ));
         },
         codeAutoRetrievalTimeout: (String verificationId) {
-          debugPrint('⏱️ codeAutoRetrievalTimeout callback. verificationId: $verificationId');
+          developer.log('⏱️ Auto-retrieval timeout. verificationId: $verificationId');
           _verificationId = verificationId;
-          // Don't complete here — codeSent should have already completed
+          // Don't complete here — codeSent already did
         },
       );
 
-      // Add a safety timeout — if no callback fires within 30 seconds, return error
-      final result = await completer.future.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          debugPrint('⏱️ sendOtp timed out — no Firebase callback received within 30s');
-          return PhoneAuthResult(
-            success: false,
-            error: 'Verification timed out. Please check your connection and try again.',
-          );
-        },
-      );
-
-      return result;
+      return await completer.future;
     } catch (e) {
-      debugPrint('❌ sendOtp error: $e');
+      developer.log('❌ sendOtp error: $e');
       return PhoneAuthResult(
         success: false,
         error: 'Failed to send verification code. Please try again.',
@@ -118,7 +90,7 @@ class AuthService {
     }
   }
 
-  /// Verify OTP code and sign in
+  /// Verify OTP code and in
   Future<AuthResult> verifyOtpAndSignIn(String smsCode) async {
     try {
       if (_verificationId == null) {
@@ -128,7 +100,7 @@ class AuthService {
         );
       }
 
-      debugPrint('🔑 Verifying OTP code...');
+      developer.log('🔑 Verifying OTP code...');
 
       final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
@@ -139,7 +111,7 @@ class AuthService {
       final user = userCredential.user;
       final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
 
-      debugPrint('✅ Phone sign-in successful. uid=${user?.uid}, isNew=$isNew');
+      developer.log('✅ Phone sign-in successful. uid=${user?.uid}, isNew=$isNew');
 
       // Check if user has completed profile
       bool hasProfile = false;
@@ -154,13 +126,13 @@ class AuthService {
         hasCompletedProfile: hasProfile,
       );
     } on FirebaseAuthException catch (e) {
-      debugPrint('❌ OTP verification failed: ${e.code} - ${e.message}');
+      developer.log('❌ OTP verification failed: ${e.code} - ${e.message}');
       return AuthResult(
         success: false,
         error: _getPhoneErrorMessage(e.code),
       );
     } catch (e) {
-      debugPrint('❌ OTP verification error: $e');
+      developer.log('❌ OTP verification error: $e');
       return AuthResult(
         success: false,
         error: 'Verification failed. Please try again.',
@@ -185,7 +157,7 @@ class AuthService {
         );
       }
 
-      debugPrint('🔗 Linking phone to existing account...');
+      developer.log('🔗 Linking phone to existing account...');
 
       final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
@@ -204,11 +176,11 @@ class AuthService {
         });
       }
 
-      debugPrint('✅ Phone linked successfully');
+      developer.log('✅ Phone linked successfully');
 
       return AuthResult(success: true, user: currentUser);
     } on FirebaseAuthException catch (e) {
-      debugPrint('❌ Phone link failed: ${e.code} - ${e.message}');
+      developer.log('❌ Phone link failed: ${e.code} - ${e.message}');
       
       // Handle "already linked" case
       if (e.code == 'credential-already-in-use') {
@@ -223,7 +195,7 @@ class AuthService {
         error: _getPhoneErrorMessage(e.code),
       );
     } catch (e) {
-      debugPrint('❌ Phone link error: $e');
+      developer.log('❌ Phone link error: $e');
       return AuthResult(
         success: false,
         error: 'Failed to link phone number. Please try again.',
@@ -250,10 +222,93 @@ class AuthService {
         hasCompletedProfile: hasProfile,
       );
     } catch (e) {
-      debugPrint('❌ Credential sign-in error: $e');
+      developer.log('❌ Credential sign-in error: $e');
       return AuthResult(
         success: false,
         error: 'Sign in failed. Please try again.',
+      );
+    }
+  }
+
+  // ============ EMAIL LINKING (for phone-primary accounts) ============
+
+  /// Link email + password to the current phone-auth account.
+  /// This gives the user a second way to sign in and enables biometric login.
+  /// Call this during profile setup after phone OTP sign-in.
+  Future<AuthResult> linkEmailToPhoneAccount({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      if (currentUser == null) {
+        return AuthResult(
+          success: false,
+          error: 'No user signed in. Please sign in first.',
+        );
+      }
+
+      developer.log('🔗 Linking email $email to phone account (uid=${currentUser!.uid})...');
+
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: password,
+      );
+
+      await currentUser!.linkWithCredential(credential);
+
+      // Send verification email in background
+      try {
+        await currentUser!.sendEmailVerification();
+        developer.log('📧 Verification email sent to $email');
+      } catch (e) {
+        developer.log('⚠️ Failed to send verification email: $e');
+      }
+
+      developer.log('✅ Email linked successfully to uid=${currentUser!.uid}');
+
+      return AuthResult(success: true, user: currentUser);
+    } on FirebaseAuthException catch (e) {
+      developer.log('❌ Email link failed: ${e.code} - ${e.message}');
+
+      if (e.code == 'email-already-in-use') {
+        return AuthResult(
+          success: false,
+          error: 'This email is already registered to another account. Please use a different email.',
+        );
+      }
+      if (e.code == 'provider-already-linked') {
+        // Already has email linked — that's fine, treat as success
+        developer.log('ℹ️ Email provider already linked — continuing');
+        return AuthResult(success: true, user: currentUser);
+      }
+      if (e.code == 'invalid-email') {
+        return AuthResult(
+          success: false,
+          error: 'Please enter a valid email address.',
+        );
+      }
+      if (e.code == 'weak-password') {
+        return AuthResult(
+          success: false,
+          error: 'Password is too weak. Please use at least 6 characters.',
+        );
+      }
+      if (e.code == 'requires-recent-login') {
+        return AuthResult(
+          success: false,
+          error: 'Your session has expired. Please sign in again.',
+        );
+      }
+
+      return AuthResult(
+        success: false,
+        error: _getErrorMessage(e.code),
+      );
+    } catch (e) {
+      developer.log('❌ Email link error: $e');
+      return AuthResult(
+        success: false,
+        error: 'Failed to link email. Please try again.',
       );
     }
   }
@@ -426,6 +481,16 @@ class AuthService {
     // Agent-specific fields
     String? baseLocation,
     List<String>? serviceAreas,
+    // Tenant-specific fields
+    String? occupation,
+    String? employer,
+    String? workMode,
+    String? workplaceArea,
+    String? incomeRange,
+    double? budgetMin,
+    double? budgetMax,
+    List<String>? preferredAreas,
+    String? maritalStatus,
   }) async {
     try {
       if (currentUser == null) {
@@ -476,6 +541,37 @@ class AuthService {
       if (accountType == 'landlord') {
         data.putIfAbsent('rating', () => 0.0);
         data.putIfAbsent('totalRatings', () => 0);
+      }
+
+      // Add tenant-specific fields
+      if (accountType == 'tenant') {
+        if (occupation != null && occupation.isNotEmpty) {
+          data['occupation'] = occupation;
+        }
+        if (employer != null && employer.isNotEmpty) {
+          data['employer'] = employer;
+        }
+        if (workMode != null && workMode.isNotEmpty) {
+          data['workMode'] = workMode;
+        }
+        if (workplaceArea != null && workplaceArea.isNotEmpty) {
+          data['workplaceArea'] = workplaceArea;
+        }
+        if (incomeRange != null && incomeRange.isNotEmpty) {
+          data['incomeRange'] = incomeRange;
+        }
+        if (budgetMin != null && budgetMin > 0) {
+          data['budgetMin'] = budgetMin;
+        }
+        if (budgetMax != null && budgetMax > 0) {
+          data['budgetMax'] = budgetMax;
+        }
+        if (preferredAreas != null && preferredAreas.isNotEmpty) {
+          data['preferredAreas'] = preferredAreas;
+        }
+        if (maritalStatus != null && maritalStatus.isNotEmpty) {
+          data['maritalStatus'] = maritalStatus;
+        }
       }
 
       await _firestore
@@ -621,6 +717,55 @@ class AuthService {
     }
   }
 
+  /// Sign in using phone number + password.
+  /// Looks up the user's email from Firestore by phone, then signs in with email+password.
+  Future<AuthResult> signInWithPhone({
+    required String phoneNumber,
+    required String password,
+  }) async {
+    try {
+      developer.log('📱 Looking up email for phone: $phoneNumber', name: 'AuthService');
+
+      // Query Firestore for user with this phone number
+      final query = await _firestore
+          .collection('users')
+          .where('phone', isEqualTo: phoneNumber)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        return AuthResult(
+          success: false,
+          error: 'No account found with this phone number. Please sign up.',
+        );
+      }
+
+      final email = query.docs.first.data()['email'] as String?;
+      if (email == null || email.isEmpty) {
+        return AuthResult(
+          success: false,
+          error: 'No email linked to this account. Please contact support.',
+        );
+      }
+
+      developer.log('✅ Found email: $email, signing in...', name: 'AuthService');
+
+      // Sign in with the looked-up email + provided password
+      return await signIn(email: email, password: password);
+    } catch (e) {
+      developer.log(
+        '❌ Phone sign-in error: $e',
+        name: 'AuthService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return AuthResult(
+        success: false,
+        error: 'Sign in failed. Please try again.',
+      );
+    }
+  }
+
   // Password reset
   Future<bool> sendPasswordResetEmail(String email) async {
     try {
@@ -697,4 +842,18 @@ class PhoneAuthResult {
     this.autoVerified = false,
     this.credential,
   });
+}
+
+/// Helper to handle the async callback pattern of verifyPhoneNumber
+class PhoneAuthCompleter {
+  final _completer = Completer<PhoneAuthResult>();
+  bool _completed = false;
+
+  void complete(PhoneAuthResult result) {
+    if (_completed) return; // Only complete once
+    _completed = true;
+    _completer.complete(result);
+  }
+
+  Future<PhoneAuthResult> get future => _completer.future;
 }

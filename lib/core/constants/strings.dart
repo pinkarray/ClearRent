@@ -34,10 +34,10 @@ class AppStrings {
   static const String setupProfile = 'Set up your profile';
   static const String fullName = 'Full Name';
   static const String email = 'Email Address';
-  static const String bvn = 'BVN (Bank Verification Number)';
-  static const String bvnHint = '22211122233';
-  static const String whyBvn = 'Why do we need your BVN?';
-  static const String bvnExplanation = 'We use your BVN to verify your identity and build trust on the platform. Your information is secure and never shared.';
+  static const String bvn = 'NIN (National Identification Number)';
+  static const String bvnHint = '12345678901';
+  static const String whyBvn = 'Why do we need your NIN?';
+  static const String bvnExplanation = 'Your NIN helps us verify your identity and build trust on the platform. Your information is securely stored and only used for verification purposes.';
 
   // Property
   static const String addProperty = 'Add Property';
@@ -88,7 +88,7 @@ class AppStrings {
   static const String errorNetwork = 'Please check your internet connection.';
   static const String errorInvalidPhone = 'Please enter a valid phone number.';
   static const String errorInvalidOtp = 'Invalid OTP. Please try again.';
-  static const String errorInvalidBvn = 'Please enter a valid 11-digit BVN.';
+  static const String errorInvalidBvn = 'Please enter a valid 11-digit NIN.';
 
   // Empty States
   static const String noProperties = 'No properties found';

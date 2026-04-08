@@ -197,6 +197,16 @@ final appRouter = GoRouter(
         );
       },
     ),
+    GoRoute(
+      path: '/tenant/bank-details',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return BankDetailsScreen(
+          isOnboarding: extra?['isOnboarding'] as bool? ?? false,
+          accountType: extra?['accountType'] as String?,
+        );
+      },
+    ),
     
     // ============ LANDLORD ROUTES ============
     GoRoute(
@@ -220,7 +230,13 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/landlord/bank-details',
-      builder: (context, state) => const BankDetailsScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return BankDetailsScreen(
+          isOnboarding: extra?['isOnboarding'] as bool? ?? false,
+          accountType: extra?['accountType'] as String?,
+        );
+      },
     ),
     GoRoute(
       path: '/landlord/earnings',
@@ -285,7 +301,13 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/agent/bank-details',
-      builder: (context, state) => const BankDetailsScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return BankDetailsScreen(
+          isOnboarding: extra?['isOnboarding'] as bool? ?? false,
+          accountType: extra?['accountType'] as String?,
+        );
+      },
     ),
     GoRoute(
       path: '/agent/availability',

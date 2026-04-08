@@ -65,8 +65,6 @@ class VerificationDocument {
       experienceProofUrl: map['experienceProof'] ?? map['experienceProofUrl'],
     );
   }
-
-  bool get isComplete => ninUrl != null;
 }
 
 class VerificationData {
@@ -81,9 +79,11 @@ class VerificationData {
   final String? guarantorPhone;
   final String? guarantorAddress;
   // Payment
+  final String? paymentReference;
+  final double paymentAmount;
+  final String? paymentStatus;
+  // Legacy field — kept for backward compat with old records
   final String? paymentProofUrl;
-  final double? paymentAmount;
-  final String? paymentStatus; // pending_verification, verified, rejected
 
   VerificationData({
     this.status = VerificationStatus.none,
@@ -95,9 +95,10 @@ class VerificationData {
     this.guarantorName,
     this.guarantorPhone,
     this.guarantorAddress,
-    this.paymentProofUrl,
-    this.paymentAmount,
+    this.paymentReference,
+    this.paymentAmount = 0,
     this.paymentStatus,
+    this.paymentProofUrl,
   }) : documents = documents ?? VerificationDocument();
 
   factory VerificationData.fromMap(Map<String, dynamic>? map) {
@@ -112,9 +113,10 @@ class VerificationData {
       guarantorName: map['guarantorName'],
       guarantorPhone: map['guarantorPhone'],
       guarantorAddress: map['guarantorAddress'],
-      paymentProofUrl: map['verificationPaymentProofUrl'],
+      paymentReference: map['verificationPaymentReference'],
       paymentAmount: (map['verificationPaymentAmount'] ?? 0).toDouble(),
       paymentStatus: map['verificationPaymentStatus'],
+      paymentProofUrl: map['verificationPaymentProofUrl'],
     );
   }
 
@@ -152,9 +154,11 @@ class PendingVerification {
   final String? guarantorPhone;
   final String? guarantorAddress;
   // Payment
-  final String? paymentProofUrl;
+  final String? paymentReference;
   final double? paymentAmount;
   final String? paymentStatus;
+  // Legacy
+  final String? paymentProofUrl;
 
   PendingVerification({
     required this.uid,
@@ -168,9 +172,10 @@ class PendingVerification {
     this.guarantorName,
     this.guarantorPhone,
     this.guarantorAddress,
-    this.paymentProofUrl,
+    this.paymentReference,
     this.paymentAmount,
     this.paymentStatus,
+    this.paymentProofUrl,
   });
 }
 
@@ -230,7 +235,8 @@ class VerificationService {
   Future<VerificationResult> submitLandlordVerification({
     required File ninFile,
     required File utilityBillFile,
-    required File paymentProofFile,
+    required String paymentReference,
+    required double paymentAmount,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -239,9 +245,8 @@ class VerificationService {
 
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final utilityBillUrl = await _uploadDocument(utilityBillFile, 'utility_bill');
-      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || utilityBillUrl == null || paymentProofUrl == null) {
+      if (ninUrl == null || utilityBillUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -252,9 +257,9 @@ class VerificationService {
           'nin': ninUrl,
           'utilityBill': utilityBillUrl,
         },
-        'verificationPaymentProofUrl': paymentProofUrl,
-        'verificationPaymentAmount': VerificationFees.landlordFee,
-        'verificationPaymentStatus': 'pending_verification',
+        'verificationPaymentReference': paymentReference,
+        'verificationPaymentAmount': paymentAmount,
+        'verificationPaymentStatus': 'paid',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -264,13 +269,13 @@ class VerificationService {
         'status': 'pending',
         'ninUrl': ninUrl,
         'utilityBillUrl': utilityBillUrl,
-        'paymentProofUrl': paymentProofUrl,
-        'paymentAmount': VerificationFees.landlordFee,
-        'paymentStatus': 'pending_verification',
+        'paymentReference': paymentReference,
+        'paymentAmount': paymentAmount,
+        'paymentStatus': 'paid',
         'submittedAt': FieldValue.serverTimestamp(),
       });
 
-      developer.log('✅ Landlord verification submitted', name: 'VerificationService');
+      developer.log('✅ Landlord verification submitted (payment: $paymentReference)', name: 'VerificationService');
       return VerificationResult(success: true, message: 'Verification submitted successfully');
     } catch (e) {
       developer.log('❌ Landlord verification failed: $e', name: 'VerificationService', error: e);
@@ -282,7 +287,8 @@ class VerificationService {
   Future<VerificationResult> submitTenantVerification({
     required File ninFile,
     required File proofOfIncomeFile,
-    required File paymentProofFile,
+    required String paymentReference,
+    required double paymentAmount,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -291,9 +297,8 @@ class VerificationService {
 
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final proofOfIncomeUrl = await _uploadDocument(proofOfIncomeFile, 'proof_of_income');
-      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || proofOfIncomeUrl == null || paymentProofUrl == null) {
+      if (ninUrl == null || proofOfIncomeUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -304,9 +309,9 @@ class VerificationService {
           'nin': ninUrl,
           'proofOfIncome': proofOfIncomeUrl,
         },
-        'verificationPaymentProofUrl': paymentProofUrl,
-        'verificationPaymentAmount': VerificationFees.tenantFee,
-        'verificationPaymentStatus': 'pending_verification',
+        'verificationPaymentReference': paymentReference,
+        'verificationPaymentAmount': paymentAmount,
+        'verificationPaymentStatus': 'paid',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -316,13 +321,13 @@ class VerificationService {
         'status': 'pending',
         'ninUrl': ninUrl,
         'proofOfIncomeUrl': proofOfIncomeUrl,
-        'paymentProofUrl': paymentProofUrl,
-        'paymentAmount': VerificationFees.tenantFee,
-        'paymentStatus': 'pending_verification',
+        'paymentReference': paymentReference,
+        'paymentAmount': paymentAmount,
+        'paymentStatus': 'paid',
         'submittedAt': FieldValue.serverTimestamp(),
       });
 
-      developer.log('✅ Tenant verification submitted', name: 'VerificationService');
+      developer.log('✅ Tenant verification submitted (payment: $paymentReference)', name: 'VerificationService');
       return VerificationResult(success: true, message: 'Verification submitted successfully');
     } catch (e) {
       developer.log('❌ Tenant verification failed: $e', name: 'VerificationService', error: e);
@@ -338,7 +343,8 @@ class VerificationService {
     required String guarantorName,
     required String guarantorPhone,
     required String guarantorAddress,
-    required File paymentProofFile,
+    required String paymentReference,
+    required double paymentAmount,
     File? experienceProofFile,
   }) async {
     try {
@@ -349,9 +355,8 @@ class VerificationService {
       final ninUrl = await _uploadDocument(ninFile, 'nin');
       final proofOfAddressUrl = await _uploadDocument(proofOfAddressFile, 'proof_of_address');
       final guarantorIdUrl = await _uploadDocument(guarantorIdFile, 'guarantor_id');
-      final paymentProofUrl = await _uploadDocument(paymentProofFile, 'payment_proof');
 
-      if (ninUrl == null || proofOfAddressUrl == null || guarantorIdUrl == null || paymentProofUrl == null) {
+      if (ninUrl == null || proofOfAddressUrl == null || guarantorIdUrl == null) {
         return VerificationResult(success: false, error: 'Failed to upload one or more documents');
       }
 
@@ -376,9 +381,9 @@ class VerificationService {
         'guarantorName': guarantorName,
         'guarantorPhone': guarantorPhone,
         'guarantorAddress': guarantorAddress,
-        'verificationPaymentProofUrl': paymentProofUrl,
-        'verificationPaymentAmount': VerificationFees.agentFee,
-        'verificationPaymentStatus': 'pending_verification',
+        'verificationPaymentReference': paymentReference,
+        'verificationPaymentAmount': paymentAmount,
+        'verificationPaymentStatus': 'paid',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -392,9 +397,9 @@ class VerificationService {
         'guarantorName': guarantorName,
         'guarantorPhone': guarantorPhone,
         'guarantorAddress': guarantorAddress,
-        'paymentProofUrl': paymentProofUrl,
-        'paymentAmount': VerificationFees.agentFee,
-        'paymentStatus': 'pending_verification',
+        'paymentReference': paymentReference,
+        'paymentAmount': paymentAmount,
+        'paymentStatus': 'paid',
         'submittedAt': FieldValue.serverTimestamp(),
       };
       if (experienceProofUrl != null) {
@@ -403,7 +408,7 @@ class VerificationService {
 
       await _firestore.collection('verification_requests').add(requestData);
 
-      developer.log('✅ Agent verification submitted', name: 'VerificationService');
+      developer.log('✅ Agent verification submitted (payment: $paymentReference)', name: 'VerificationService');
       return VerificationResult(success: true, message: 'Verification submitted successfully');
     } catch (e) {
       developer.log('❌ Agent verification failed: $e', name: 'VerificationService', error: e);
@@ -416,8 +421,8 @@ class VerificationService {
     required File ninFile,
     required File utilityBillFile,
   }) async {
-    developer.log('⚠️ Legacy submitVerification called — payment proof required now', name: 'VerificationService');
-    return VerificationResult(success: false, error: 'Payment proof is now required for verification');
+    developer.log('⚠️ Legacy submitVerification called — use Paystack payment flow', name: 'VerificationService');
+    return VerificationResult(success: false, error: 'Please use the updated payment flow');
   }
 
   // ============ ADMIN METHODS ============
@@ -458,9 +463,10 @@ class VerificationService {
           guarantorName: data['guarantorName'],
           guarantorPhone: data['guarantorPhone'],
           guarantorAddress: data['guarantorAddress'],
-          paymentProofUrl: data['paymentProofUrl'],
+          paymentReference: data['paymentReference'],
           paymentAmount: (data['paymentAmount'] ?? 0).toDouble(),
           paymentStatus: data['paymentStatus'],
+          paymentProofUrl: data['paymentProofUrl'],
         ));
       }
 
@@ -492,9 +498,10 @@ class VerificationService {
           guarantorName: data['guarantorName'],
           guarantorPhone: data['guarantorPhone'],
           guarantorAddress: data['guarantorAddress'],
-          paymentProofUrl: data['verificationPaymentProofUrl'],
+          paymentReference: data['verificationPaymentReference'],
           paymentAmount: (data['verificationPaymentAmount'] ?? 0).toDouble(),
           paymentStatus: data['verificationPaymentStatus'],
+          paymentProofUrl: data['verificationPaymentProofUrl'],
         );
       }).toList();
     } catch (e) {

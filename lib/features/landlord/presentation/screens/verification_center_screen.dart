@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/utils/app_logger.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/auth_service.dart';
-import '../../../../shared/widgets/copyable_field.dart';
+import '../../../../services/paystack_service.dart';
+import '../../../../shared/screens/paystack_checkout_screen.dart';
 
 class VerificationCenterScreen extends StatefulWidget {
   const VerificationCenterScreen({super.key});
@@ -22,6 +25,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   final ImagePicker _picker = ImagePicker();
 
   VerificationData? _verificationData;
+  StreamSubscription<VerificationData>? _verificationSub;
   String _accountType = 'landlord';
   bool _isLoading = true;
   bool _isSubmitting = false;
@@ -34,18 +38,13 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   File? _guarantorIdFile;
   File? _experienceProofFile;
 
-  // Payment proof
-  File? _paymentProofFile;
+  // NIN number input
+  final _ninNumberController = TextEditingController();
 
   // Agent guarantor details
   final _guarantorNameController = TextEditingController();
   final _guarantorPhoneController = TextEditingController();
   final _guarantorAddressController = TextEditingController();
-
-  // Bank account details
-  static const String _accountNumber = '6507861182';
-  static const String _accountName = 'Oredugba Ayomide';
-  static const String _bankName = 'Providus Bank';
 
   @override
   void initState() {
@@ -55,6 +54,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   @override
   void dispose() {
+    _verificationSub?.cancel();
+    _ninNumberController.dispose();
     _guarantorNameController.dispose();
     _guarantorPhoneController.dispose();
     _guarantorAddressController.dispose();
@@ -66,19 +67,30 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   Future<void> _loadUserDataAndVerificationStatus() async {
     final profile = await _authService.getUserProfile();
-    if (profile != null) {
+    if (profile != null && mounted) {
       setState(() {
         _accountType = profile['accountType'] ?? 'landlord';
       });
     }
 
-    final data = await _verificationService.getVerificationStatus();
-    if (mounted) {
-      setState(() {
-        _verificationData = data;
-        _isLoading = false;
-      });
-    }
+    // Listen to verification status in real-time so admin approval
+    // is reflected immediately without leaving and returning.
+    _verificationSub = _verificationService.streamVerificationStatus().listen(
+      (data) {
+        if (mounted) {
+          setState(() {
+            _verificationData = data;
+            _isLoading = false;
+          });
+        }
+      },
+      onError: (e) {
+        AppLogger.e('Verification stream error', error: e, name: 'VerificationCenter');
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      },
+    );
   }
 
   Future<void> _pickDocument(String type) async {
@@ -86,28 +98,36 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     if (source == null) return;
 
     try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
+      // NOTE: Do NOT pass maxWidth/maxHeight/imageQuality here.
+      // Those params force the Android plugin to decode the image via
+      // a content URI internally, which fails on some devices/galleries
+      // (Samsung, Google Photos cloud-backed) with no_valid_image_uri.
+      final XFile? image = await _picker.pickImage(source: source);
 
       if (image != null) {
+        // Materialise bytes first — this resolves cloud-backed URIs
+        // (Google Photos, etc.) before we touch the file path.
+        final bytes = await image.readAsBytes();
+        final tempDir = Directory.systemTemp;
+        final tempFile = File(
+          '${tempDir.path}/clearrent_doc_${type}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        );
+        await tempFile.writeAsBytes(bytes);
+
         setState(() {
           switch (type) {
-            case 'nin': _ninFile = File(image.path); break;
-            case 'utilityBill': _utilityBillFile = File(image.path); break;
-            case 'proofOfIncome': _proofOfIncomeFile = File(image.path); break;
-            case 'proofOfAddress': _proofOfAddressFile = File(image.path); break;
-            case 'guarantorId': _guarantorIdFile = File(image.path); break;
-            case 'experienceProof': _experienceProofFile = File(image.path); break;
-            case 'paymentProof': _paymentProofFile = File(image.path); break;
+            case 'nin': _ninFile = tempFile; break;
+            case 'utilityBill': _utilityBillFile = tempFile; break;
+            case 'proofOfIncome': _proofOfIncomeFile = tempFile; break;
+            case 'proofOfAddress': _proofOfAddressFile = tempFile; break;
+            case 'guarantorId': _guarantorIdFile = tempFile; break;
+            case 'experienceProof': _experienceProofFile = tempFile; break;
           }
         });
       }
-    } catch (e) {
-      debugPrint('❌ Error picking image: $e');
+    } catch (e, stack) {
+      AppLogger.e('Error picking image: $e', error: e, name: 'VerificationCenter');
+      AppLogger.e('Stack trace: $stack', name: 'VerificationCenter');
       _showError('Failed to select image. Please try again.');
     }
   }
@@ -169,18 +189,22 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     );
   }
 
+  bool get _isNinNumberValid {
+    final nin = _ninNumberController.text.trim();
+    return nin.length == 11 && RegExp(r'^\d{11}$').hasMatch(nin);
+  }
+
   bool get _allRequiredDocsUploaded {
-    // Payment proof is always required
-    if (_paymentProofFile == null) return false;
+    // All roles require a valid NIN number + NIN slip photo
+    if (!_isNinNumberValid || _ninFile == null) return false;
 
     switch (_accountType) {
       case 'landlord':
-        return _ninFile != null && _utilityBillFile != null;
+        return _utilityBillFile != null;
       case 'tenant':
-        return _ninFile != null && _proofOfIncomeFile != null;
+        return _proofOfIncomeFile != null;
       case 'agent':
-        return _ninFile != null &&
-               _proofOfAddressFile != null &&
+        return _proofOfAddressFile != null &&
                _guarantorIdFile != null &&
                _guarantorNameController.text.isNotEmpty &&
                _guarantorPhoneController.text.isNotEmpty &&
@@ -190,13 +214,39 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     }
   }
 
-  Future<void> _submitVerification() async {
+  Future<void> _payAndSubmitVerification() async {
     if (!_allRequiredDocsUploaded) {
-      _showError('Please upload all required documents and payment proof');
+      _showError('Please upload all required documents first');
       return;
     }
 
+    AppLogger.i('About to launch Paystack checkout for $_verificationFeeLabel', name: 'VerificationCenter');
+
+    // Step 1: Launch Paystack checkout
+    final paymentResult = await PaystackCheckoutScreen.launch(
+      context: context,
+      amount: _verificationFee,
+      type: PaystackService.typeVerification,
+      metadata: {
+        'accountType': _accountType,
+        'description': '$_accountType verification fee',
+      },
+    );
+
+    if (paymentResult == null) return; // User cancelled
+
+    if (!paymentResult.success) {
+      if (mounted) _showError('Payment was not completed. Please try again.');
+      return;
+    }
+
+    // Step 2: Payment succeeded — now submit verification docs
+    if (!mounted) return;
     setState(() => _isSubmitting = true);
+
+    // Save NIN number to user profile
+    final ninNumber = _ninNumberController.text.trim();
+    await _authService.updateUserProfile({'nin': ninNumber});
 
     VerificationResult result;
 
@@ -205,14 +255,16 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         result = await _verificationService.submitLandlordVerification(
           ninFile: _ninFile!,
           utilityBillFile: _utilityBillFile!,
-          paymentProofFile: _paymentProofFile!,
+          paymentReference: paymentResult.reference,
+          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
         );
         break;
       case 'tenant':
         result = await _verificationService.submitTenantVerification(
           ninFile: _ninFile!,
           proofOfIncomeFile: _proofOfIncomeFile!,
-          paymentProofFile: _paymentProofFile!,
+          paymentReference: paymentResult.reference,
+          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
         );
         break;
       case 'agent':
@@ -223,7 +275,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           guarantorName: _guarantorNameController.text.trim(),
           guarantorPhone: _guarantorPhoneController.text.trim(),
           guarantorAddress: _guarantorAddressController.text.trim(),
-          paymentProofFile: _paymentProofFile!,
+          paymentReference: paymentResult.reference,
+          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
           experienceProofFile: _experienceProofFile,
         );
         break;
@@ -231,23 +284,34 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         result = VerificationResult(success: false, error: 'Unknown account type');
     }
 
+    // Step 3: Record payment in Firestore payments collection
+    await PaystackService().recordPayment(
+      reference: paymentResult.reference,
+      type: PaystackService.typeVerification,
+      amount: paymentResult.amountPaid ?? _verificationFee,
+      status: result.success ? 'completed' : 'docs_upload_failed',
+      extra: {'accountType': _accountType},
+    );
+
     setState(() => _isSubmitting = false);
 
     if (result.success) {
-      _showSuccess('Verification submitted! We\'ll review your documents and payment within 24-48 hours.');
+      _showSuccess('Verification submitted! We\'ll review your documents within 24-48 hours.');
       await _loadUserDataAndVerificationStatus();
     } else {
-      _showError(result.error ?? 'Failed to submit verification');
+      _showError(result.error ?? 'Failed to submit verification. Your payment was recorded — please contact support.');
     }
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating,
     ));
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message), backgroundColor: AppColors.success, behavior: SnackBarBehavior.floating,
     ));
@@ -319,20 +383,25 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 120, height: 120,
             decoration: BoxDecoration(color: AppColors.warningLight, shape: BoxShape.circle),
-            child: Icon(Icons.schedule, size: 60, color: AppColors.warning),
+            child: Icon(Icons.hourglass_top_rounded, size: 60, color: AppColors.warning),
           ),
           const SizedBox(height: 24),
           Text('Verification Pending', style: AppTextStyles.h2),
           const SizedBox(height: 12),
-          Text('We\'re reviewing your documents and payment. This usually takes 24-48 hours.',
+          Text('We\'re reviewing your documents. This usually takes 24-48 hours.',
               style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
               textAlign: TextAlign.center),
+          if (_verificationData?.submittedAt != null) ...[
+            const SizedBox(height: 8),
+            Text('Submitted ${_formatDate(_verificationData!.submittedAt)}',
+                style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+          ],
           const SizedBox(height: 40),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.surface, borderRadius: BorderRadius.circular(16),
+              color: AppColors.surface, borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.border),
             ),
             child: Column(
@@ -341,14 +410,11 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                 Text('Documents Submitted', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 16),
                 ..._getPendingDocumentsList(),
-                const SizedBox(height: 12),
-                _buildDocumentStatus('Payment Proof', true),
+                const SizedBox(height: 16),
+                _buildDocumentStatus('Payment', true),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Text('Submitted ${_formatDate(_verificationData?.submittedAt)}',
-              style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
         ],
       ),
     );
@@ -364,42 +430,35 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Container(
             width: 120, height: 120,
             decoration: BoxDecoration(color: AppColors.error.withAlpha(26), shape: BoxShape.circle),
-            child: Icon(Icons.error_outline, size: 60, color: AppColors.error),
+            child: Icon(Icons.cancel_outlined, size: 60, color: AppColors.error),
           ),
           const SizedBox(height: 24),
-          Text('Verification Failed', style: AppTextStyles.h2),
+          Text('Verification Rejected', style: AppTextStyles.h2),
           const SizedBox(height: 12),
-          Text('We couldn\'t verify your documents. Please review the reason below and try again.',
+          Text('Unfortunately, we couldn\'t verify your documents.',
               style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
               textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          if (_verificationData?.rejectionReason != null)
+          if (_verificationData?.rejectionReason != null) ...[
+            const SizedBox(height: 16),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.error.withAlpha(26), borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.error.withAlpha(77)),
+                color: AppColors.error.withAlpha(13),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.error.withAlpha(51)),
               ),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline, color: AppColors.error, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Reason', style: AppTextStyles.labelMedium.copyWith(color: AppColors.error)),
-                        const SizedBox(height: 4),
-                        Text(_verificationData!.rejectionReason!,
-                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.error)),
-                      ],
-                    ),
-                  ),
+                  Text('Reason:', style: AppTextStyles.labelMedium.copyWith(color: AppColors.error)),
+                  const SizedBox(height: 8),
+                  Text(_verificationData!.rejectionReason!,
+                      style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
                 ],
               ),
             ),
+          ],
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
@@ -427,7 +486,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _proofOfAddressFile = null;
       _guarantorIdFile = null;
       _experienceProofFile = null;
-      _paymentProofFile = null;
+      _ninNumberController.clear();
       _guarantorNameController.clear();
       _guarantorPhoneController.clear();
       _guarantorAddressController.clear();
@@ -436,122 +495,139 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   // ============ UPLOAD FORM ============
   Widget _buildUploadForm() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeaderInfo(),
-          const SizedBox(height: 32),
-
-          Text('${_getUserTypeLabel()} Documents', style: AppTextStyles.h4),
-          const SizedBox(height: 8),
-          Text(_getUploadDescription(),
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-          const SizedBox(height: 24),
-
-          // Document upload cards
-          ..._buildDocumentUploadCards(),
-
-          const SizedBox(height: 32),
-
-          // ── PAYMENT SECTION ──
-          Text('Verification Payment', style: AppTextStyles.h4),
-          const SizedBox(height: 8),
-          Text('A one-time verification fee is required to process your application.',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-          const SizedBox(height: 16),
-
-          // Fee display
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(13),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withAlpha(51)),
-            ),
-            child: Row(
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildHeaderInfo(),
+                const SizedBox(height: 32),
+
+                Text('${_getUserTypeLabel()} Documents', style: AppTextStyles.h4),
+                const SizedBox(height: 8),
+                Text(_getUploadDescription(),
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 24),
+
+                // Document upload cards
+                ..._buildDocumentUploadCards(),
+
+                const SizedBox(height: 32),
+
+                // ── PAYMENT INFO ──
+                Text('Verification Payment', style: AppTextStyles.h4),
+                const SizedBox(height: 8),
+                Text('A one-time verification fee is required to process your application.',
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 16),
+
+                // Fee display
                 Container(
-                  width: 48, height: 48,
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(26),
+                    color: AppColors.primary.withAlpha(13),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary.withAlpha(51)),
                   ),
-                  child: Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text('${_getUserTypeLabel()} Verification Fee',
-                          style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
-                      const SizedBox(height: 4),
-                      Text(_verificationFeeLabel,
-                          style: AppTextStyles.h3.copyWith(color: AppColors.primary, fontFamily: 'Roboto')),
+                      Container(
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withAlpha(26),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${_getUserTypeLabel()} Verification Fee',
+                                style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+                            const SizedBox(height: 4),
+                            Text(_verificationFeeLabel,
+                                style: AppTextStyles.h3.copyWith(color: AppColors.primary)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.lock_outline, size: 18, color: AppColors.success),
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 12),
+
+                // Paystack secure payment note
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withAlpha(13),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.success.withAlpha(51)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.shield_outlined, size: 18, color: AppColors.success),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Payment is processed securely via Paystack. You can pay with card or bank transfer.',
+                          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                // Privacy note
+                _buildPrivacyNote(),
+
+                const SizedBox(height: 24),
               ],
             ),
           ),
+        ),
 
-          const SizedBox(height: 16),
-
-          // Bank account card (reusable widget)
-          BankAccountCard(
-            accountNumber: _accountNumber,
-            accountName: _accountName,
-            bankName: _bankName,
-            amount: _verificationFee,
-            amountLabel: 'Amount to Transfer',
+        // ── STICKY BOTTOM BUTTON ──
+        Container(
+          padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).padding.bottom + 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            border: Border(top: BorderSide(color: AppColors.border.withAlpha(128))),
           ),
-
-          const SizedBox(height: 16),
-
-          // Payment proof upload
-          _DocumentUploadCard(
-            title: 'Payment Proof',
-            subtitle: 'Upload a screenshot of your successful transfer',
-            whatWeNeed: 'Screenshot must clearly show the amount ($_verificationFeeLabel), recipient name, and transaction status.',
-            icon: Icons.payment_outlined,
-            file: _paymentProofFile,
-            onTap: () => _pickDocument('paymentProof'),
-            onRemove: () => setState(() => _paymentProofFile = null),
-          ),
-
-          const SizedBox(height: 32),
-
-          // Privacy note
-          _buildPrivacyNote(),
-
-          const SizedBox(height: 24),
-
-          // Submit button
-          SizedBox(
+          child: SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _allRequiredDocsUploaded && !_isSubmitting ? _submitVerification : null,
+            child: ElevatedButton.icon(
+              onPressed: _allRequiredDocsUploaded && !_isSubmitting ? _payAndSubmitVerification : null,
+              icon: _isSubmitting
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.payment, color: Colors.white, size: 20),
+              label: Text(
+                _isSubmitting ? 'Submitting...' : 'Pay $_verificationFeeLabel & Submit',
+                style: AppTextStyles.labelLarge.copyWith(
+                  color: _allRequiredDocsUploaded ? Colors.white : AppColors.textHint,
+                ),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 disabledBackgroundColor: AppColors.border,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: _isSubmitting
-                  ? const SizedBox(width: 24, height: 24,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text('Submit for Verification',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: _allRequiredDocsUploaded ? Colors.white : AppColors.textHint)),
             ),
           ),
-
-          const SizedBox(height: 40),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -726,17 +802,23 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   List<Widget> _getPendingDocumentsList() {
     switch (_accountType) {
       case 'landlord': return [
-          _buildDocumentStatus('NIN/Government ID', true),
+          _buildDocumentStatus('NIN Number', true),
+          const SizedBox(height: 12),
+          _buildDocumentStatus('NIN Slip Photo', true),
           const SizedBox(height: 12),
           _buildDocumentStatus('Recent Utility Bill', true),
         ];
       case 'tenant': return [
-          _buildDocumentStatus('NIN/Government ID', true),
+          _buildDocumentStatus('NIN Number', true),
+          const SizedBox(height: 12),
+          _buildDocumentStatus('NIN Slip Photo', true),
           const SizedBox(height: 12),
           _buildDocumentStatus('Proof of Income', true),
         ];
       case 'agent': return [
-          _buildDocumentStatus('NIN/Government ID', true),
+          _buildDocumentStatus('NIN Number', true),
+          const SizedBox(height: 12),
+          _buildDocumentStatus('NIN Slip Photo', true),
           const SizedBox(height: 12),
           _buildDocumentStatus('Proof of Address', true),
           const SizedBox(height: 12),
@@ -757,12 +839,93 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     }
   }
 
+  /// NIN number input field — shared across all roles
+  Widget _buildNinNumberField() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.pin_outlined, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('NIN Number', style: AppTextStyles.labelLarge),
+                    Text('Enter your 11-digit National Identification Number',
+                        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+              if (_isNinNumberValid)
+                Icon(Icons.check_circle, color: AppColors.success, size: 22),
+            ],
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ninNumberController,
+            keyboardType: TextInputType.number,
+            maxLength: 11,
+            onChanged: (_) => setState(() {}),
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(11),
+            ],
+            decoration: InputDecoration(
+              hintText: 'e.g. 12345678901',
+              hintStyle: TextStyle(color: AppColors.textHint),
+              counterText: '${_ninNumberController.text.length}/11',
+              counterStyle: AppTextStyles.caption.copyWith(
+                color: _isNinNumberValid ? AppColors.success : AppColors.textHint,
+              ),
+              prefixIcon: Icon(Icons.numbers, color: AppColors.textHint),
+              filled: true,
+              fillColor: AppColors.background,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: _isNinNumberValid ? AppColors.success : AppColors.border,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildLandlordDocs() {
     return [
+      _buildNinNumberField(),
+      const SizedBox(height: 16),
       _DocumentUploadCard(
-        title: 'NIN or Government ID',
-        subtitle: 'Upload a clear photo of your National ID, Voter\'s Card, or Driver\'s License',
-        whatWeNeed: 'We need to see your full name, photo, and ID number clearly.',
+        title: 'NIN Slip Photo',
+        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
         icon: Icons.badge_outlined, file: _ninFile,
         onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
       ),
@@ -779,10 +942,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   List<Widget> _buildTenantDocs() {
     return [
+      _buildNinNumberField(),
+      const SizedBox(height: 16),
       _DocumentUploadCard(
-        title: 'NIN or Government ID',
-        subtitle: 'Upload a clear photo of your National ID, Voter\'s Card, or Driver\'s License',
-        whatWeNeed: 'We need to see your full name, photo, and ID number clearly.',
+        title: 'NIN Slip Photo',
+        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
         icon: Icons.badge_outlined, file: _ninFile,
         onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
       ),
@@ -799,10 +964,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   List<Widget> _buildAgentDocs() {
     return [
+      _buildNinNumberField(),
+      const SizedBox(height: 16),
       _DocumentUploadCard(
-        title: 'NIN or Government ID',
-        subtitle: 'Upload a clear photo of your National ID, Voter\'s Card, or Driver\'s License',
-        whatWeNeed: 'We need to see your full name, photo, and ID number clearly.',
+        title: 'NIN Slip Photo',
+        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
         icon: Icons.badge_outlined, file: _ninFile,
         onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
       ),
@@ -877,15 +1044,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
               hint: 'Enter their full name', icon: Icons.person_outline),
           const SizedBox(height: 12),
           _buildTextField(
-            controller: _guarantorPhoneController,
+            controller: _guarantorPhoneController, 
             label: 'Guarantor\'s Phone Number',
-            hint: '08012345678',
-            icon: Icons.phone_outlined,
+            hint: '08012345678', 
+            icon: Icons.phone_outlined, 
             keyboardType: TextInputType.phone,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(11),
-            ],
+            maxLength: 11,
           ),
           const SizedBox(height: 12),
           _buildTextField(controller: _guarantorAddressController, label: 'Guarantor\'s Address',
@@ -906,8 +1070,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   Widget _buildTextField({
     required TextEditingController controller, required String label,
     required String hint, required IconData icon,
-    TextInputType? keyboardType, int maxLines = 1,
-    List<TextInputFormatter>? inputFormatters,
+    TextInputType? keyboardType, int maxLines = 1, int? maxLength,  // Add maxLength
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -916,8 +1079,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         const SizedBox(height: 8),
         TextField(
           controller: controller, keyboardType: keyboardType, maxLines: maxLines,
-          textCapitalization: keyboardType == TextInputType.phone ? TextCapitalization.none : TextCapitalization.words,
-          inputFormatters: inputFormatters,
+          maxLength: maxLength,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
@@ -1044,7 +1206,7 @@ class _DocumentUploadCard extends StatelessWidget {
                   children: [
                     Icon(Icons.lightbulb_outline, size: 14, color: AppColors.info),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(whatWeNeed, style: AppTextStyles.caption.copyWith(color: AppColors.info, fontFamily: 'Roboto'))),
+                    Expanded(child: Text(whatWeNeed, style: AppTextStyles.caption.copyWith(color: AppColors.info))),
                   ],
                 ),
               ),
