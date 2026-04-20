@@ -10,6 +10,9 @@ class PropertyModel {
   final int bedrooms;
   final int bathrooms;
   final int toilets;
+  final int livingRooms;
+  final int guestRooms;
+  final int kitchens;
   final List<String> images;
   final String address;
   final String city;
@@ -53,6 +56,15 @@ class PropertyModel {
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
 
+  // Video tour
+  final String? videoUrl; // Cloudinary video URL
+
+  // Ceiling type
+  final String? ceilingType; // 'false_ceiling' | 'pvc' | 'concrete' | 'asbestos' | 'none'
+  
+  // Recurring dues (security, PSB, waste, etc.)
+  final List<Map<String, dynamic>> recurringDues;
+
   // Occupancy info (shown to tenants on property detail)
   final bool? landlordLivesOnPremises;
   final int? currentTenantsCount;
@@ -69,6 +81,9 @@ class PropertyModel {
     required this.bedrooms,
     required this.bathrooms,
     required this.toilets,
+    this.livingRooms = 1,
+    this.guestRooms = 0,
+    this.kitchens = 1,
     required this.images,
     required this.address,
     required this.city,
@@ -104,6 +119,9 @@ class PropertyModel {
     ],
     this.inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
     this.landlordLivesInProperty = false,
+    this.videoUrl,
+    this.ceilingType,
+    this.recurringDues = const [],
     this.landlordLivesOnPremises,
     this.currentTenantsCount,
     this.hasCaretaker,
@@ -148,6 +166,28 @@ class PropertyModel {
     return '₦${cautionDeposit.toStringAsFixed(0)}';
   }
 
+  /// Total recurring dues per year
+  double get totalRecurringDuesYearly {
+    double total = 0;
+    for (final due in recurringDues) {
+      final amount = (due['amount'] as num?)?.toDouble() ?? 0;
+      final freq = due['frequency'] as String? ?? 'yearly';
+      total += freq == 'monthly' ? amount * 12 : amount;
+    }
+    return total;
+  }
+
+  /// Format recurring dues total
+  String get formattedRecurringDues {
+    final total = totalRecurringDuesYearly;
+    if (total >= 1000000) {
+      return '₦${(total / 1000000).toStringAsFixed(1)}M';
+    } else if (total >= 1000) {
+      return '₦${(total / 1000).toStringAsFixed(0)}K';
+    }
+    return '₦${total.toStringAsFixed(0)}';
+  }
+
   /// Total Package = Rent + Agent Fee + Caution Deposit
   double get totalPackage => rent + agentFee + cautionDeposit;
 
@@ -178,6 +218,9 @@ class PropertyModel {
     int? bedrooms,
     int? bathrooms,
     int? toilets,
+    int? livingRooms,
+    int? guestRooms,
+    int? kitchens,
     List<String>? images,
     String? address,
     String? city,
@@ -214,6 +257,9 @@ class PropertyModel {
     String? ownershipDocType,
     String? ownershipDocStatus,
     String? ownershipDocRejectionReason,
+    String? videoUrl,
+    String? ceilingType,
+    List<Map<String, dynamic>>? recurringDues,
   }) {
     return PropertyModel(
       id: id ?? this.id,
@@ -225,6 +271,9 @@ class PropertyModel {
       bedrooms: bedrooms ?? this.bedrooms,
       bathrooms: bathrooms ?? this.bathrooms,
       toilets: toilets ?? this.toilets,
+      livingRooms: livingRooms ?? this.livingRooms,
+      guestRooms: guestRooms ?? this.guestRooms,
+      kitchens: kitchens ?? this.kitchens,
       images: images ?? this.images,
       address: address ?? this.address,
       city: city ?? this.city,
@@ -253,6 +302,9 @@ class PropertyModel {
       inspectionDays: inspectionDays ?? this.inspectionDays,
       inspectionTimeSlots: inspectionTimeSlots ?? this.inspectionTimeSlots,
       landlordLivesInProperty: landlordLivesInProperty ?? this.landlordLivesInProperty,
+      videoUrl: videoUrl ?? this.videoUrl,
+      ceilingType: ceilingType ?? this.ceilingType,
+      recurringDues: recurringDues ?? this.recurringDues,
       landlordLivesOnPremises: landlordLivesOnPremises ?? this.landlordLivesOnPremises,
       currentTenantsCount: currentTenantsCount ?? this.currentTenantsCount,
       hasCaretaker: hasCaretaker ?? this.hasCaretaker,
@@ -285,6 +337,9 @@ class PropertyModel {
       bedrooms: json['bedrooms'] ?? 0,
       bathrooms: json['bathrooms'] ?? 0,
       toilets: json['toilets'] ?? 0,
+      livingRooms: json['livingRooms'] ?? 1,
+      guestRooms: json['guestRooms'] ?? 0,
+      kitchens: json['kitchens'] ?? 1,
       images: List<String>.from(json['images'] ?? []),
       address: json['address'] ?? '',
       city: json['city'] ?? '',
@@ -327,6 +382,12 @@ class PropertyModel {
             ['morning', 'afternoon', 'late_afternoon'],
       ),
       landlordLivesInProperty: json['landlordLivesInProperty'] ?? false,
+      videoUrl: json['videoUrl'] as String?,
+      ceilingType: json['ceilingType'] as String?,
+      recurringDues: (json['recurringDues'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
       landlordLivesOnPremises: json['landlordLivesOnPremises'] as bool?,
       currentTenantsCount: (json['currentTenantsCount'] as num?)?.toInt(),
       hasCaretaker: json['hasCaretaker'] as bool?,
@@ -350,6 +411,9 @@ class PropertyModel {
       bedrooms: data['bedrooms'] ?? 0,
       bathrooms: data['bathrooms'] ?? 0,
       toilets: data['toilets'] ?? 0,
+      livingRooms: data['livingRooms'] ?? 1,
+      guestRooms: data['guestRooms'] ?? 0,
+      kitchens: data['kitchens'] ?? 1,
       images: List<String>.from(data['images'] ?? []),
       address: data['address'] ?? '',
       city: data['city'] ?? '',
@@ -391,6 +455,12 @@ class PropertyModel {
             ['morning', 'afternoon', 'late_afternoon'],
       ),
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
+      videoUrl: data['videoUrl'] as String?,
+      ceilingType: data['ceilingType'] as String?,
+      recurringDues: (data['recurringDues'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
       landlordLivesOnPremises: data['landlordLivesOnPremises'] as bool?,
       currentTenantsCount: (data['currentTenantsCount'] as num?)?.toInt(),
       hasCaretaker: data['hasCaretaker'] as bool?,
@@ -414,6 +484,9 @@ class PropertyModel {
       'bedrooms': bedrooms,
       'bathrooms': bathrooms,
       'toilets': toilets,
+      'livingRooms': livingRooms,
+      'guestRooms': guestRooms,
+      'kitchens': kitchens,
       'images': images,
       'address': address,
       'city': city,
@@ -442,6 +515,9 @@ class PropertyModel {
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,
+      if (videoUrl != null) 'videoUrl': videoUrl,
+      if (ceilingType != null) 'ceilingType': ceilingType,
+      if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
       'landlordLivesOnPremises': landlordLivesOnPremises,
       'currentTenantsCount': currentTenantsCount,
       'hasCaretaker': hasCaretaker,
@@ -464,6 +540,9 @@ class PropertyModel {
       'bedrooms': bedrooms,
       'bathrooms': bathrooms,
       'toilets': toilets,
+      'livingRooms': livingRooms,
+      'guestRooms': guestRooms,
+      'kitchens': kitchens,
       'images': images,
       'address': address,
       'city': city,
@@ -495,6 +574,9 @@ class PropertyModel {
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,
+      if (videoUrl != null) 'videoUrl': videoUrl,
+      if (ceilingType != null) 'ceilingType': ceilingType,
+      if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
       'landlordLivesOnPremises': landlordLivesOnPremises,
       'currentTenantsCount': currentTenantsCount,
       'hasCaretaker': hasCaretaker,

@@ -157,6 +157,31 @@ class RentalInterestService {
     }
   }
 
+  /// Mark rental interest as payment verified (called after Paystack success).
+  /// Skips the 'paymentUploaded' state — goes directly to 'paymentVerified'.
+  Future<bool> markPaymentVerified(
+    String rentalInterestId, {
+    String? paymentReference,
+  }) async {
+    try {
+      await _firestore.collection('rental_interests').doc(rentalInterestId).update({
+        'status': 'payment_verified',
+        'isPaymentVerified': true,
+        'paymentReference': paymentReference,
+        'paymentVerifiedAt': FieldValue.serverTimestamp(),
+        'paidAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Rental interest $rentalInterestId marked as paymentVerified',
+          name: 'RentalInterestService');
+      return true;
+    } catch (e) {
+      developer.log('❌ Error marking payment verified: $e',
+          name: 'RentalInterestService');
+      return false;
+    }
+  }
+
   /// Stream of pending rental payment verifications (admin screen)
   Stream<List<RentalInterest>> getPendingRentalVerifications() {
     return _firestore

@@ -6,7 +6,7 @@ import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
-import '../widgets/manual_payment_sheet.dart';
+import 'package:go_router/go_router.dart';
 
 class RequestInspectionSheet extends StatefulWidget {
   final PropertyModel property;
@@ -152,25 +152,27 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
             propertyCluster: 'maryland_ikeja',
           ));
 
+    final notes = _notesController.text.trim().isEmpty
+        ? null
+        : _notesController.text.trim();
+
+    // Save router before async gap
+    final router = GoRouter.of(context);
+
     // Close this sheet first
     Navigator.pop(context);
 
-    // Show the manual payment sheet for ALL inspection types
-    final result = await ManualPaymentSheet.show(
-      context,
-      property: widget.property,
-      selectedDate: _selectedDate!,
-      selectedTimeSlot: _selectedTimeSlot!,
-      notes: _notesController.text.trim().isEmpty
-          ? null
-          : _notesController.text.trim(),
-      feeBreakdown: feeBreakdown,
-    );
+    // Navigate to Paystack-powered inspection payment screen
+    router.push('/tenant/inspection-payment', extra: {
+      'property': widget.property,
+      'selectedDate': _selectedDate!,
+      'selectedTimeSlot': _selectedTimeSlot!,
+      'notes': notes,
+      'feeBreakdown': feeBreakdown,
+    });
 
-    // If payment was submitted successfully, trigger callback
-    if (result == true) {
-      widget.onRequestSent?.call();
-    }
+    // Callback will be triggered when user returns from payment screen
+    widget.onRequestSent?.call();
   }
 
   @override

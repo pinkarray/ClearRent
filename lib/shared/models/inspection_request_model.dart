@@ -101,11 +101,23 @@ class InspectionRequest {
   final bool agentConfirmedPayment;
   final DateTime? agentConfirmedAt;
 
+  // On-the-way tracking
+  final bool tenantOnTheWay;
+  final DateTime? tenantOnTheWayAt;
+  final bool handlerOnTheWay;
+  final DateTime? handlerOnTheWayAt;
+
   // Arrival tracking
   final bool tenantArrived;
   final DateTime? tenantArrivedAt;
   final bool handlerArrived;
   final DateTime? handlerArrivedAt;
+
+  // Location tracking (captured at on-the-way and arrival)
+  final double? tenantLatitude;
+  final double? tenantLongitude;
+  final double? handlerLatitude;
+  final double? handlerLongitude;
   
   // Timestamps
   final DateTime createdAt;
@@ -177,6 +189,14 @@ class InspectionRequest {
     this.tenantArrivedAt,
     this.handlerArrived = false,
     this.handlerArrivedAt,
+    this.tenantOnTheWay = false,
+    this.tenantOnTheWayAt,
+    this.handlerOnTheWay = false,
+    this.handlerOnTheWayAt,
+    this.tenantLatitude,
+    this.tenantLongitude,
+    this.handlerLatitude,
+    this.handlerLongitude,
     required this.createdAt,
     this.updatedAt,
   });
@@ -204,6 +224,13 @@ class InspectionRequest {
       ? completedByType == 'agent'
       : agentId != null && agentId!.isNotEmpty;
   bool get bothArrived => tenantArrived && handlerArrived;
+  bool get bothOnTheWay => tenantOnTheWay && handlerOnTheWay;
+  bool get isInspectionDay {
+    final now = DateTime.now();
+    return requestedDate.year == now.year &&
+        requestedDate.month == now.month &&
+        requestedDate.day == now.day;
+  }
 
   // Display status
   String get statusDisplay {
@@ -325,6 +352,14 @@ class InspectionRequest {
     DateTime? tenantArrivedAt,
     bool? handlerArrived,
     DateTime? handlerArrivedAt,
+    bool? tenantOnTheWay,
+    DateTime? tenantOnTheWayAt,
+    bool? handlerOnTheWay,
+    DateTime? handlerOnTheWayAt,
+    double? tenantLatitude,
+    double? tenantLongitude,
+    double? handlerLatitude,
+    double? handlerLongitude,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -394,6 +429,14 @@ class InspectionRequest {
       tenantArrivedAt: tenantArrivedAt ?? this.tenantArrivedAt,
       handlerArrived: handlerArrived ?? this.handlerArrived,
       handlerArrivedAt: handlerArrivedAt ?? this.handlerArrivedAt,
+      tenantOnTheWay: tenantOnTheWay ?? this.tenantOnTheWay,
+      tenantOnTheWayAt: tenantOnTheWayAt ?? this.tenantOnTheWayAt,
+      handlerOnTheWay: handlerOnTheWay ?? this.handlerOnTheWay,
+      handlerOnTheWayAt: handlerOnTheWayAt ?? this.handlerOnTheWayAt,
+      tenantLatitude: tenantLatitude ?? this.tenantLatitude,
+      tenantLongitude: tenantLongitude ?? this.tenantLongitude,
+      handlerLatitude: handlerLatitude ?? this.handlerLatitude,
+      handlerLongitude: handlerLongitude ?? this.handlerLongitude,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -470,6 +513,14 @@ class InspectionRequest {
       agentConfirmedAt: (data['agentConfirmedAt'] as Timestamp?)?.toDate(),
       tenantArrived: data['tenantArrived'] ?? false,
       tenantArrivedAt: (data['tenantArrivedAt'] as Timestamp?)?.toDate(),
+      tenantOnTheWay: data['tenantOnTheWay'] ?? false,
+      tenantOnTheWayAt: (data['tenantOnTheWayAt'] as Timestamp?)?.toDate(),
+      handlerOnTheWay: data['handlerOnTheWay'] ?? false,
+      handlerOnTheWayAt: (data['handlerOnTheWayAt'] as Timestamp?)?.toDate(),
+      tenantLatitude: (data['tenantLatitude'] as num?)?.toDouble(),
+      tenantLongitude: (data['tenantLongitude'] as num?)?.toDouble(),
+      handlerLatitude: (data['handlerLatitude'] as num?)?.toDouble(),
+      handlerLongitude: (data['handlerLongitude'] as num?)?.toDouble(),
       handlerArrived: data['handlerArrived'] ?? false,
       handlerArrivedAt: (data['handlerArrivedAt'] as Timestamp?)?.toDate(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -544,6 +595,14 @@ class InspectionRequest {
       'tenantArrivedAt': tenantArrivedAt != null ? Timestamp.fromDate(tenantArrivedAt!) : null,
       'handlerArrived': handlerArrived,
       'handlerArrivedAt': handlerArrivedAt != null ? Timestamp.fromDate(handlerArrivedAt!) : null,
+      'tenantOnTheWay': tenantOnTheWay,
+      'tenantOnTheWayAt': tenantOnTheWayAt != null ? Timestamp.fromDate(tenantOnTheWayAt!) : null,
+      'handlerOnTheWay': handlerOnTheWay,
+      'handlerOnTheWayAt': handlerOnTheWayAt != null ? Timestamp.fromDate(handlerOnTheWayAt!) : null,
+      'tenantLatitude': tenantLatitude,
+      'tenantLongitude': tenantLongitude,
+      'handlerLatitude': handlerLatitude,
+      'handlerLongitude': handlerLongitude,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
     };

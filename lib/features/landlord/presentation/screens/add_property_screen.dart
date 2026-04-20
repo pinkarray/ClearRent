@@ -1,19 +1,22 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 import '../widgets/clearrent_location_picker.dart';
+import '../../../../shared/widgets/area_dropdown.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/verification_service.dart';
-import '../../../../services/activity_service.dart';
 import '../../../../services/paystack_service.dart';
 import '../../../../services/agent_service.dart';
+import '../../../../services/property_draft_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
 
@@ -63,17 +66,23 @@ class AddPropertyScreen extends StatefulWidget {
   State<AddPropertyScreen> createState() => _AddPropertyScreenState();
 }
 
-class _AddPropertyScreenState extends State<AddPropertyScreen> {
+class _AddPropertyScreenState extends State<AddPropertyScreen>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   final PageController _pageController = PageController();
+  final ScrollController _pricingScrollController = ScrollController();
+  final ScrollController _detailsScrollController = ScrollController();
   final PropertyService _propertyService = PropertyService();
   final VerificationService _verificationService = VerificationService();
-  final ActivityService _activityService = ActivityService();
   final ImagePicker _imagePicker = ImagePicker();
 
   int _currentStep = 0;
   final int _totalSteps = 5;
   bool _isPublishing = false;
   bool _isCheckingVerification = true;
+  bool _isRestoringDraft = false;
+  Timer? _draftSaveTimer;
 
   // Listing fee state
   static const int _listingFeeAmount = 10000; 
@@ -82,6 +91,29 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   
   
   final List<File> _selectedImageFiles = [];
+  File? _selectedVideoFile;
+  VideoPlayerController? _videoPreviewController;
+  bool _isValidatingVideo = false;
+
+  // Ceiling type
+  String? _ceilingType;
+
+  // Recurring dues
+  final Map<String, TextEditingController> _duesControllers = {};
+  final Map<String, bool> _duesEnabled = {};
+  final Map<String, String> _duesFrequency = {};
+  final List<Map<String, String>> _customDues = []; // [{name: '', controllerId: 'custom_0'}]
+  int _customDueCounter = 0;
+
+  static const List<Map<String, String>> _predefinedDues = [
+    {'id': 'security', 'name': 'Security/CDA', 'icon': 'security'},
+    {'id': 'psb', 'name': 'PSB/Community', 'icon': 'groups'},
+    {'id': 'waste', 'name': 'Waste Management', 'icon': 'delete'},
+    {'id': 'light', 'name': 'Light/NEPA', 'icon': 'bolt'},
+    {'id': 'water', 'name': 'Water', 'icon': 'water_drop'},
+    {'id': 'estate', 'name': 'Estate Maintenance', 'icon': 'home_repair_service'},
+  ];
+
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
   final _stateController = TextEditingController();
@@ -99,14 +131,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   double? _latitude;
   double? _longitude;
 
-  String _propertyType = 'flat';
+  String _propertyType = '';
   int _bedrooms = 1;
   int _bathrooms = 1;
   int _toilets = 1;
+  int _livingRooms = 1;
+  int _guestRooms = 0;
+  int _kitchens = 1;
   int _maxTenants = 1;
   String _rentPeriod = 'yearly';
   final List<String> _selectedAmenities = [];
   final List<String> _selectedRules = [];
+
+  bool _titleManuallyEdited = false;
+  bool _descriptionManuallyEdited = false;
 
   // New inspection handling model
   String _inspectionHandler = 'self'; // 'self' or 'agent'
@@ -126,7 +164,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   // Landlord's residence location (if they live elsewhere)
   double? _landlordBaseLatitude;
   double? _landlordBaseLongitude;
-  String _landlordBaseLocationName = '';
+  String? _landlordBaseArea; // Selected from AreaDropdown
 
   // Inspection availability
   final List<String> _availableDays = [
@@ -140,7 +178,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final List<String> _availableTimeSlots = [
     'morning',
     'afternoon',
-    'late_afternoon',
   ];
 
   // Ownership document
@@ -179,7 +216,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     'CCTV',
     'Prepaid Meter',
     'Tiled Floor',
-    'POP Ceiling',
     'Wardrobe',
     'Kitchen Cabinets',
     'Water Heater',
@@ -208,11 +244,232 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _rentController.addListener(_onPriceFieldChanged);
     _agentFeeController.addListener(_onPriceFieldChanged);
     _cautionDepositController.addListener(_onPriceFieldChanged);
+    // Initialize dues controllers
+    for (final due in _predefinedDues) {
+      _duesControllers[due['id']!] = TextEditingController();
+      _duesEnabled[due['id']!] = false;
+      _duesFrequency[due['id']!] = 'yearly';
+    }
+    _checkForDraft();
   }
 
   void _onPriceFieldChanged() {
     // Trigger rebuild so the total package preview updates in real-time
     if (mounted) setState(() {});
+    _saveDraftDebounced();
+  }
+
+  /// Check if a draft exists and offer to restore it
+  Future<void> _checkForDraft() async {
+    final draft = await PropertyDraftService.loadDraft();
+    if (draft != null && mounted) {
+      _showDraftFoundDialog(draft);
+    }
+  }
+
+  void _showDraftFoundDialog(Map<String, dynamic> draft) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.restore, size: 40, color: AppColors.primary),
+            ),
+            const SizedBox(height: 24),
+            Text('Resume Draft?', style: AppTextStyles.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'You have an unfinished property listing. Would you like to continue where you left off?',
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                text: 'Continue Editing',
+                onPressed: () {
+                  Navigator.pop(context);
+                  _restoreDraft(draft);
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await PropertyDraftService.clearDraft();
+              },
+              child: Text(
+                'Start Fresh',
+                style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Serialize the current form state into a map
+  Map<String, dynamic> _collectFormState() {
+    return {
+      'step': _currentStep,
+      'propertyType': _propertyType,
+      'bedrooms': _bedrooms,
+      'bathrooms': _bathrooms,
+      'toilets': _toilets,
+      'livingRooms': _livingRooms,
+      'guestRooms': _guestRooms,
+      'kitchens': _kitchens,
+      'maxTenants': _maxTenants,
+      'rentPeriod': _rentPeriod,
+      'title': _titleController.text,
+      'description': _descriptionController.text,
+      'titleManuallyEdited': _titleManuallyEdited,
+      'descriptionManuallyEdited': _descriptionManuallyEdited,
+      'rent': _rentController.text,
+      'agentFee': _agentFeeController.text,
+      'cautionDeposit': _cautionDepositController.text,
+      'includeAgentFee': _includeAgentFee,
+      'address': _addressController.text,
+      'city': _cityController.text,
+      'state': _stateController.text,
+      'latitude': _latitude,
+      'longitude': _longitude,
+      'amenities': _selectedAmenities,
+      'rules': _selectedRules,
+      'inspectionHandler': _inspectionHandler,
+      'landlordLivesInProperty': _landlordLivesInProperty,
+      'landlordBaseArea': _landlordBaseArea,
+      'landlordCity': _landlordCityController.text,
+      'selectedAgentId': _selectedAgentId,
+      'selectedAgentName': _selectedAgentName,
+      'availableDays': _availableDays,
+      'availableTimeSlots': _availableTimeSlots,
+      'currentTenantsCount': _currentTenantsCount,
+      'hasCaretaker': _hasCaretaker,
+      'caretakerLivesOnPremises': _caretakerLivesOnPremises,
+      'ownershipDocType': _ownershipDocType,
+      'ceilingType': _ceilingType,
+      // Image paths (not the File objects)
+      'imagePaths': _selectedImageFiles.map((f) => f.path).toList(),
+      // Save timestamp so we can show "Draft from X minutes ago"
+      'savedAt': DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// Restore form state from a draft map
+  void _restoreDraft(Map<String, dynamic> draft) {
+    setState(() => _isRestoringDraft = true);
+
+    try {
+      // Text controllers
+      _titleController.text = draft['title'] ?? '';
+      _descriptionController.text = draft['description'] ?? '';
+      _rentController.text = draft['rent'] ?? '';
+      _agentFeeController.text = draft['agentFee'] ?? '';
+      _cautionDepositController.text = draft['cautionDeposit'] ?? '';
+      _addressController.text = draft['address'] ?? '';
+      _cityController.text = draft['city'] ?? '';
+      _stateController.text = draft['state'] ?? '';
+      _landlordCityController.text = draft['landlordCity'] ?? '';
+
+      // Booleans and values
+      _propertyType = draft['propertyType'] ?? '';
+      _bedrooms = draft['bedrooms'] ?? 1;
+      _bathrooms = draft['bathrooms'] ?? 1;
+      _toilets = draft['toilets'] ?? 1;
+      _livingRooms = draft['livingRooms'] ?? 1;
+      _guestRooms = draft['guestRooms'] ?? 0;
+      _kitchens = draft['kitchens'] ?? 1;
+      _maxTenants = draft['maxTenants'] ?? 1;
+      _rentPeriod = draft['rentPeriod'] ?? 'yearly';
+      _titleManuallyEdited = draft['titleManuallyEdited'] ?? false;
+      _descriptionManuallyEdited = draft['descriptionManuallyEdited'] ?? false;
+      _includeAgentFee = draft['includeAgentFee'] ?? false;
+      _inspectionHandler = draft['inspectionHandler'] ?? 'self';
+      _landlordLivesInProperty = draft['landlordLivesInProperty'] ?? false;
+      _landlordBaseArea = draft['landlordBaseArea'];
+      _selectedAgentId = draft['selectedAgentId'];
+      _selectedAgentName = draft['selectedAgentName'];
+      _currentTenantsCount = draft['currentTenantsCount'] ?? 0;
+      _hasCaretaker = draft['hasCaretaker'] ?? false;
+      _caretakerLivesOnPremises = draft['caretakerLivesOnPremises'] ?? false;
+      _ownershipDocType = draft['ownershipDocType'];
+      _ceilingType = draft['ceilingType'] as String?;
+      _latitude = draft['latitude'] as double?;
+      _longitude = draft['longitude'] as double?;
+
+      // Lists
+      _selectedAmenities.clear();
+      _selectedAmenities.addAll(
+        List<String>.from(draft['amenities'] ?? []),
+      );
+      _selectedRules.clear();
+      _selectedRules.addAll(
+        List<String>.from(draft['rules'] ?? []),
+      );
+      _availableDays.clear();
+      _availableDays.addAll(
+        List<String>.from(draft['availableDays'] ?? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']),
+      );
+      _availableTimeSlots.clear();
+      _availableTimeSlots.addAll(
+        List<String>.from(draft['availableTimeSlots'] ?? ['morning', 'afternoon']),
+      );
+
+      // Image file paths — only restore if files still exist
+      final imagePaths = List<String>.from(draft['imagePaths'] ?? []);
+      _selectedImageFiles.clear();
+      for (final path in imagePaths) {
+        final file = File(path);
+        if (file.existsSync()) {
+          _selectedImageFiles.add(file);
+        }
+      }
+
+      // Jump to the saved step
+      final savedStep = draft['step'] ?? 0;
+      _currentStep = savedStep;
+      // Use jumpToPage (not animateToPage) since we're in initState flow
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _pageController.jumpToPage(savedStep);
+        }
+      });
+    } catch (e) {
+      debugPrint('❌ Error restoring draft: $e');
+    }
+
+    setState(() => _isRestoringDraft = false);
+  }
+
+  /// Save draft with debounce (called on field changes)
+  void _saveDraftDebounced() {
+    if (_isRestoringDraft) return;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(seconds: 2), () {
+      PropertyDraftService.saveDraft(_collectFormState());
+    });
+  }
+
+  /// Save draft immediately (called on step changes)
+  void _saveDraftNow() {
+    if (_isRestoringDraft) return;
+    _draftSaveTimer?.cancel();
+    PropertyDraftService.saveDraft(_collectFormState());
   }
 
   /// Check if landlord is verified before allowing property listing,
@@ -477,7 +734,82 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _landlordAddressController.dispose();
     _landlordCityController.dispose();
     _landlordStateController.dispose();
+    _descriptionController.dispose();
+    _videoPreviewController?.dispose();
+    for (final controller in _duesControllers.values) {
+      controller.dispose();
+    }
+    _pricingScrollController.dispose();
+    _detailsScrollController.dispose();
+    _draftSaveTimer?.cancel();
     super.dispose();
+  }
+
+  /// Auto-generate title from property type + bedrooms
+  void _updateAutoTitle() {
+    if (_titleManuallyEdited) return;
+    if (_propertyType.isEmpty) return;
+
+    final typeLabels = {
+      'flat': 'Flat',
+      'duplex': 'Duplex',
+      'selfContain': 'Self Contain',
+      'bungalow': 'Bungalow',
+      'room': 'Room',
+      'shop': 'Shop',
+      'office': 'Office',
+    };
+
+    final label = typeLabels[_propertyType] ?? 'Property';
+
+    // Shop/Office don't need bedroom count
+    if (_propertyType == 'shop' || _propertyType == 'office') {
+      _titleController.text = label;
+    } else {
+      _titleController.text = '$_bedrooms Bedroom $label';
+    }
+  }
+
+  /// Auto-generate description from property type, bedrooms & amenities
+  void _updateAutoDescription() {
+    if (_descriptionManuallyEdited) return;
+    if (_propertyType.isEmpty) return;
+
+    final typeLabels = {
+      'flat': 'flat',
+      'duplex': 'duplex',
+      'selfContain': 'self contain',
+      'bungalow': 'bungalow',
+      'room': 'room',
+      'shop': 'shop',
+      'office': 'office space',
+    };
+
+    final label = typeLabels[_propertyType] ?? 'property';
+    final buffer = StringBuffer();
+
+    if (_propertyType == 'shop' || _propertyType == 'office') {
+      buffer.write('Well-maintained $label');
+    } else {
+      buffer.write('$_bedrooms bedroom $label');
+      if (_bathrooms > 0) {
+        buffer.write(' with $_bathrooms bathroom${_bathrooms > 1 ? 's' : ''}');
+      }
+    }
+
+    if (_selectedAmenities.isNotEmpty) {
+      buffer.write('. Features include ');
+      if (_selectedAmenities.length == 1) {
+        buffer.write(_selectedAmenities.first);
+      } else {
+        final last = _selectedAmenities.last;
+        final rest = _selectedAmenities.sublist(0, _selectedAmenities.length - 1);
+        buffer.write('${rest.join(', ')} and $last');
+      }
+    }
+
+    buffer.write('.');
+    _descriptionController.text = buffer.toString();
   }
 
   /// Parse rent amount by removing commas
@@ -495,6 +827,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+      _saveDraftNow();
     }
   }
 
@@ -505,6 +838,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+      _saveDraftNow();
     } else {
       _showExitConfirmation();
     }
@@ -667,6 +1001,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         return;
       }
 
+      // Step 1b: Upload video to Cloudinary if provided
+      String? videoUrl;
+      if (_selectedVideoFile != null) {
+        _updateUploadProgress('Uploading video tour...');
+        videoUrl = await _propertyService.uploadVideo(_selectedVideoFile!);
+        if (videoUrl == null) {
+          debugPrint('⚠️ Video upload failed, continuing without video');
+        }
+      }
+
+      if (!mounted) return;
+
       // Step 2: Upload ownership document if provided
       String? ownershipDocUrl;
       if (_ownershipDocFile != null) {
@@ -788,6 +1134,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         bedrooms: _bedrooms,
         bathrooms: _bathrooms,
         toilets: _toilets,
+        livingRooms: _livingRooms,
+        guestRooms: _guestRooms,
+        kitchens: _kitchens,
         imageUrls: imageUrls,
         address: _addressController.text.trim(),
         city: _cityController.text.trim(),
@@ -821,6 +1170,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         inspectionServiceFee: preCalcFee?.agentServiceFee != 0 ? preCalcFee?.agentServiceFee : preCalcFee?.tenantServiceCharge,
         inspectionAgentCluster: preCalcFee?.agentCluster,
         inspectionPropertyCluster: preCalcFee?.propertyCluster,
+        videoUrl: videoUrl,
+        ceilingType: _ceilingType,
+        recurringDues: _collectRecurringDues(),
       );
 
       if (!mounted) return;
@@ -854,11 +1206,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       await _propertyService.updateProperty(propertyId, reviewFields);
       debugPrint('⏳ Property marked as pending admin review (doc: ${hasDoc ? "uploaded" : "not uploaded"}, fee: ${_requiresListingFee ? "pending" : "n/a"})');
 
-      // Track activity — fire and forget
-      _activityService.trackPropertyAdded(
-        propertyId: propertyId,
-        propertyTitle: _titleController.text.trim(),
-      );
+      // Track activity — already handled inside PropertyService.createProperty()
+
+      // Clear the draft since we published successfully
+      await PropertyDraftService.clearDraft();
 
       // Always show the pending review dialog
       _showPendingReviewDialog(
@@ -1009,57 +1360,264 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   Future<void> _pickFromGallery() async {
     try {
-      debugPrint('📸 Opening gallery picker...');
+      final List<XFile> mediaFiles = await _imagePicker.pickMultipleMedia();
 
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
+      if (mediaFiles.isEmpty) return;
 
-      if (image != null) {
-        debugPrint('📸 Image selected: ${image.path}');
-        setState(() {
-          _selectedImageFiles.add(File(image.path));
-        });
-      } else {
-        debugPrint('📸 No image selected');
+      for (final media in mediaFiles) {
+        final path = media.path.toLowerCase();
+        final isVideo = path.endsWith('.mp4') ||
+            path.endsWith('.mov') ||
+            path.endsWith('.avi') ||
+            path.endsWith('.3gp') ||
+            path.endsWith('.mkv');
+
+        if (isVideo) {
+          await _handleVideoSelected(File(media.path));
+        } else {
+          // Image — temp-file workaround for Samsung/cloud-backed images
+          final bytes = await media.readAsBytes();
+          final tempDir = Directory.systemTemp;
+          final tempFile = File(
+            '${tempDir.path}/clearrent_${DateTime.now().millisecondsSinceEpoch}_${_selectedImageFiles.length}.jpg',
+          );
+          await tempFile.writeAsBytes(bytes);
+
+          setState(() {
+            _selectedImageFiles.add(tempFile);
+          });
+          _saveDraftDebounced();
+        }
       }
     } catch (e) {
-      debugPrint('❌ Gallery picker error: $e');
-      _showError('Failed to pick image. Please try again.');
+      debugPrint('❌ Gallery pick error: $e');
+      _showError('Failed to pick media. Please try again.');
     }
   }
 
-  // ============ FIXED: Direct camera capture ============
   Future<void> _takePhoto() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Camera', style: AppTextStyles.h4),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.photo_camera_outlined,
+                      color: AppColors.primary),
+                ),
+                title: Text('Take Photo', style: AppTextStyles.labelLarge),
+                subtitle: Text('Capture a photo of your property',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary)),
+                onTap: () => Navigator.pop(context, 'photo'),
+              ),
+              ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.videocam_outlined, color: AppColors.info),
+                ),
+                title: Text('Record Video', style: AppTextStyles.labelLarge),
+                subtitle: Text('Record a 1–3 minute video tour',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary)),
+                onTap: () => Navigator.pop(context, 'video'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (choice == null) return;
+
     try {
-      debugPrint('📷 Opening camera...');
-
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
-      );
-
-      if (image != null) {
-        debugPrint('📷 Photo taken: ${image.path}');
-        setState(() {
-          _selectedImageFiles.add(File(image.path));
-        });
+      if (choice == 'photo') {
+        final XFile? image = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+        );
+        if (image != null) {
+          final bytes = await image.readAsBytes();
+          final tempDir = Directory.systemTemp;
+          final tempFile = File(
+            '${tempDir.path}/clearrent_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          );
+          await tempFile.writeAsBytes(bytes);
+          setState(() {
+            _selectedImageFiles.add(tempFile);
+          });
+          _saveDraftDebounced();
+        }
       } else {
-        debugPrint('📷 Camera cancelled');
+        final XFile? video = await _imagePicker.pickVideo(
+          source: ImageSource.camera,
+          maxDuration: const Duration(minutes: 3),
+        );
+        if (video != null) {
+          await _handleVideoSelected(File(video.path));
+        }
       }
     } catch (e) {
       debugPrint('❌ Camera error: $e');
-      _showError('Failed to take photo. Please try again.');
+      _showError('Failed to capture. Please try again.');
     }
+  }
+
+  /// Validate and store a selected video file (2–5 min duration limit)
+  Future<void> _handleVideoSelected(File videoFile) async {
+    if (_selectedVideoFile != null) {
+      _showError('Only one video per property. Remove the current video first.');
+      return;
+    }
+
+    setState(() => _isValidatingVideo = true);
+    _saveDraftDebounced();
+
+    try {
+      // Check file size first (50MB max)
+      final fileSizeBytes = await videoFile.length();
+      final fileSizeMB = fileSizeBytes / (1024 * 1024);
+
+      if (fileSizeMB > 50) {
+        _showError(
+          'Video is too large (${fileSizeMB.toStringAsFixed(1)}MB). '
+          'Maximum is 50MB. Try recording at a lower quality or trimming the video.',
+        );
+        setState(() => _isValidatingVideo = false);
+        _saveDraftDebounced();
+        return;
+      }
+
+      // Check duration
+      final controller = VideoPlayerController.file(videoFile);
+      await controller.initialize();
+      final duration = controller.value.duration;
+      await controller.dispose();
+
+      if (duration.inSeconds < 60) {
+        _showError(
+          'Video is too short (${duration.inSeconds}s). Minimum is 1 minute.',
+        );
+        setState(() => _isValidatingVideo = false);
+        return;
+      }
+
+      if (duration.inSeconds > 180) {
+        _showError(
+          'Video is too long (${duration.inMinutes}m ${duration.inSeconds % 60}s). Maximum is 3 minutes.',
+        );
+        setState(() => _isValidatingVideo = false);
+        return;
+      }
+
+      // Initialize preview controller
+      _videoPreviewController?.dispose();
+      _videoPreviewController = VideoPlayerController.file(videoFile);
+      await _videoPreviewController!.initialize();
+      _videoPreviewController!.setLooping(false);
+      _videoPreviewController!.setVolume(0);
+
+      setState(() {
+        _selectedVideoFile = videoFile;
+        _isValidatingVideo = false;
+      });
+    } catch (e) {
+      debugPrint('❌ Video validation error: $e');
+      _showError('Could not process this video. Please try another one.');
+      setState(() => _isValidatingVideo = false);
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+  }
+
+  /// Collect all enabled dues into a list of maps for Firestore
+  List<Map<String, dynamic>> _collectRecurringDues() {
+    final List<Map<String, dynamic>> dues = [];
+
+    // Predefined dues
+    for (final due in _predefinedDues) {
+      final id = due['id']!;
+      if (_duesEnabled[id] == true) {
+        final amount = _parseAmountFromController(_duesControllers[id]!);
+        if (amount > 0) {
+          dues.add({
+            'id': id,
+            'name': due['name'],
+            'amount': amount,
+            'frequency': _duesFrequency[id] ?? 'yearly',
+          });
+        }
+      }
+    }
+
+    // Custom dues
+    for (final custom in _customDues) {
+      final controllerId = custom['controllerId']!;
+      final name = custom['name'] ?? '';
+      if (name.isNotEmpty && _duesControllers[controllerId] != null) {
+        final amount = _parseAmountFromController(_duesControllers[controllerId]!);
+        if (amount > 0) {
+          dues.add({
+            'id': controllerId,
+            'name': name,
+            'amount': amount,
+            'frequency': _duesFrequency[controllerId] ?? 'yearly',
+          });
+        }
+      }
+    }
+
+    return dues;
+  }
+
+  /// Calculate total annual dues for the preview
+  double _totalDuesYearly() {
+    double total = 0;
+    final dues = _collectRecurringDues();
+    for (final due in dues) {
+      final amount = (due['amount'] as num?)?.toDouble() ?? 0;
+      final freq = due['frequency'] as String? ?? 'yearly';
+      total += freq == 'monthly' ? amount * 12 : amount;
+    }
+    return total;
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
+
     // Show loading while checking verification
     if (_isCheckingVerification) {
       return Scaffold(
@@ -1171,7 +1729,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   String _getStepTitle(int step) {
     switch (step) {
       case 0:
-        return 'Photos';
+        return 'Photos & Video';
       case 1:
         return 'Location';
       case 2:
@@ -1300,18 +1858,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Add photo buttons - FIXED: Now directly call gallery/camera
+          // Add photo buttons — both styled equally (no pre-selected look)
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: _pickFromGallery, // Direct call to gallery
+                  onTap: _pickFromGallery,
                   child: Container(
                     height: 100,
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary, width: 1.5),
+                      border: Border.all(color: AppColors.border, width: 1.5),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1333,7 +1891,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         Text(
                           'Gallery',
                           style: AppTextStyles.labelMedium.copyWith(
-                            color: AppColors.primary,
+                            color: AppColors.textPrimary,
                           ),
                         ),
                       ],
@@ -1344,7 +1902,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: GestureDetector(
-                  onTap: _takePhoto, // Direct call to camera
+                  onTap: _takePhoto,
                   child: Container(
                     height: 100,
                     decoration: BoxDecoration(
@@ -1359,12 +1917,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: AppColors.textHint.withAlpha(26),
+                            color: AppColors.primary.withAlpha(26),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             Icons.camera_alt_outlined,
-                            color: AppColors.textSecondary,
+                            color: AppColors.primary,
                             size: 20,
                           ),
                         ),
@@ -1372,7 +1930,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         Text(
                           'Camera',
                           style: AppTextStyles.labelMedium.copyWith(
-                            color: AppColors.textSecondary,
+                            color: AppColors.textPrimary,
                           ),
                         ),
                       ],
@@ -1391,11 +1949,173 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               fontStyle: FontStyle.italic,
             ),
           ),
+
+          // ── Video Tour Section ──
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Icon(Icons.videocam_outlined, size: 20, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Text('Video Tour', style: AppTextStyles.labelLarge),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Optional',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.info,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Add a 1–3 minute walkthrough video (max 50MB). Properties with video get more inquiries.',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (_isValidatingVideo)
+            Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(
+                        strokeWidth: 2, color: AppColors.primary),
+                    const SizedBox(height: 12),
+                    Text('Checking video...',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+            )
+          else if (_selectedVideoFile != null &&
+              _videoPreviewController != null &&
+              _videoPreviewController!.value.isInitialized) ...[
+            // Video preview
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio:
+                        _videoPreviewController!.value.aspectRatio,
+                    child: VideoPlayer(_videoPreviewController!),
+                  ),
+                ),
+                // Play badge
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(128),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_arrow,
+                          color: Colors.white, size: 28),
+                    ),
+                  ),
+                ),
+                // Duration badge
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withAlpha(160),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _formatDuration(
+                          _videoPreviewController!.value.duration),
+                      style: AppTextStyles.caption
+                          .copyWith(color: Colors.white),
+                    ),
+                  ),
+                ),
+                // Remove button
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () {
+                      _videoPreviewController?.dispose();
+                      _videoPreviewController = null;
+                      setState(() => _selectedVideoFile = null);
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(128),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close,
+                          color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Video added! Tenants will see a muted preview when they view your listing.',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.success,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ] else
+            // No video yet — show hint
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.border, style: BorderStyle.solid),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 18, color: AppColors.textHint),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Use the Gallery or Camera button above to add a video tour.',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
-
+  
   Widget _buildLocationStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1423,6 +2143,22 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 _longitude = lng;
               });
             },
+            onUnknownAreaDetected: (rawName, lat, lng) async {
+              // Log to admin so the area can be added to the dropdown in future
+              try {
+                await FirebaseFirestore.instance.collection('admin_requests').add({
+                  'type': 'unknown_area',
+                  'rawName': rawName,
+                  'lat': lat,
+                  'lng': lng,
+                  'source': 'add_property',
+                  'status': 'pending',
+                  'createdAt': FieldValue.serverTimestamp(),
+                });
+              } catch (e) {
+                debugPrint('Failed to log unknown area: $e');
+              }
+            },
           ),
         ],
       ),
@@ -1431,6 +2167,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   Widget _buildDetailsStep() {
     return SingleChildScrollView(
+      controller: _detailsScrollController,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1444,6 +2181,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             hint: 'e.g. Spacious 3 Bedroom Flat',
             controller: _titleController,
             textCapitalization: TextCapitalization.words,
+            onChanged: (_) => _titleManuallyEdited = true,
           ),
           const SizedBox(height: 20),
 
@@ -1472,7 +2210,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 child: _buildCounter(
                   'Bedrooms',
                   _bedrooms,
-                  (v) => setState(() => _bedrooms = v),
+                  (v) => setState(() {
+                    _bedrooms = v;
+                    _updateAutoTitle();
+                    _updateAutoDescription();
+                  }),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1480,7 +2222,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 child: _buildCounter(
                   'Bathrooms',
                   _bathrooms,
-                  (v) => setState(() => _bathrooms = v),
+                  (v) => setState(() {
+                    _bathrooms = v;
+                    _updateAutoDescription();
+                  }),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1489,6 +2234,36 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   'Toilets',
                   _toilets,
                   (v) => setState(() => _toilets = v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Second row: Living Room, Guest Room, Kitchen
+          Row(
+            children: [
+              Expanded(
+                child: _buildCounter(
+                  'Living Room',
+                  _livingRooms,
+                  (v) => setState(() => _livingRooms = v),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildCounter(
+                  'Guest Room',
+                  _guestRooms,
+                  (v) => setState(() => _guestRooms = v),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildCounter(
+                  'Kitchen',
+                  _kitchens,
+                  (v) => setState(() => _kitchens = v),
                 ),
               ),
             ],
@@ -1509,6 +2284,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             (v) => setState(() => _maxTenants = v > 0 ? v : 1),
           ),
           const SizedBox(height: 24),
+
+          // ── Ceiling Type ──
+          Text('Ceiling Type', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'What type of ceiling does the property have?',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildCeilingChip('False Ceiling (POP)', 'false_ceiling'),
+              _buildCeilingChip('PVC', 'pvc'),
+              _buildCeilingChip('Concrete', 'concrete'),
+              _buildCeilingChip('Asbestos', 'asbestos'),
+              _buildCeilingChip('None', 'none'),
+            ],
+          ),
 
           const SizedBox(height: 24),
 
@@ -1625,6 +2422,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             controller: _descriptionController,
             maxLines: 4,
             textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) => _descriptionManuallyEdited = true,
           ),
           const SizedBox(height: 24),
 
@@ -1647,6 +2445,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                         } else {
                           _selectedAmenities.add(amenity);
                         }
+                        _updateAutoDescription();
                       });
                     },
                     backgroundColor: AppColors.surface,
@@ -1782,7 +2581,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Widget _buildTypeChip(String label, String value) {
     final isSelected = _propertyType == value;
     return GestureDetector(
-      onTap: () => setState(() => _propertyType = value),
+      onTap: () => setState(() {
+        _propertyType = value;
+        _updateAutoTitle();
+        _updateAutoDescription();
+      }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
@@ -1803,7 +2606,32 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  Widget _buildCounter(String label, int value, Function(int) onChanged) {
+  Widget _buildCeilingChip(String label, String value) {
+    final isSelected = _ceilingType == value;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _ceilingType = isSelected ? null : value; // Toggle off if already selected
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelMedium.copyWith(
+            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCounter(String label, int value, Function(int) onChanged, {int max = 20}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1817,7 +2645,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             border: Border.all(color: AppColors.border),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               GestureDetector(
                 onTap: () {
@@ -1833,20 +2660,33 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   child: const Icon(Icons.remove, size: 18),
                 ),
               ),
-              Text('$value', style: AppTextStyles.labelLarge),
+              Expanded(
+                child: Text(
+                  '$value',
+                  style: AppTextStyles.labelLarge,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               GestureDetector(
-                onTap: () => onChanged(value + 1),
+                onTap: () {
+                  if (value < max) onChanged(value + 1);
+                },
                 child: Container(
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(26),
+                    color: value < max
+                        ? AppColors.primary.withAlpha(26)
+                        : AppColors.background,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.add,
                     size: 18,
-                    color: AppColors.primary,
+                    color: value < max
+                        ? AppColors.primary
+                        : AppColors.textHint,
                   ),
                 ),
               ),
@@ -1859,6 +2699,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   Widget _buildPricingStep() {
     return SingleChildScrollView(
+      controller: _pricingScrollController,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1949,6 +2790,81 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             controller: _cautionDepositController,
             hintText: 'e.g. 150,000',
           ),
+          const SizedBox(height: 32),
+
+          // ── Recurring Dues Section ──
+          Row(
+            children: [
+              Text('Recurring Dues', style: AppTextStyles.h4),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Optional',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.info,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Does this property have any recurring charges? Toggle the ones that apply and enter the amount.',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Predefined dues
+          ..._predefinedDues.map((due) {
+            final id = due['id']!;
+            final isEnabled = _duesEnabled[id] ?? false;
+            return _buildDueTile(
+              id: id,
+              name: due['name']!,
+              icon: _dueIcon(due['icon']!),
+              isEnabled: isEnabled,
+              onToggle: (v) => setState(() => _duesEnabled[id] = v),
+            );
+          }),
+
+          // Custom dues
+          ..._customDues.map((custom) => _buildCustomDueTile(custom)),
+
+          const SizedBox(height: 8),
+
+          // Add custom due button
+          GestureDetector(
+            onTap: _addCustomDue,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Add other due',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           const SizedBox(height: 24),
 
           // ── Total Package preview ──
@@ -2024,7 +2940,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 Expanded(
                   child: Text(
                     _requiresListingFee
-                        ? 'This listing requires a ₦10,000 fee. Your property will go live after admin verifies payment.'
+                        ? 'This listing requires a ₦10,000 fee. Your property will go live after admin verifies it.'
                         : 'Your first listing is free!',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: _requiresListingFee
@@ -2082,6 +2998,300 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         ),
       ),
     );
+  }
+
+  IconData _dueIcon(String iconName) {
+    switch (iconName) {
+      case 'security': return Icons.security;
+      case 'groups': return Icons.groups_outlined;
+      case 'delete': return Icons.delete_outline;
+      case 'bolt': return Icons.bolt;
+      case 'water_drop': return Icons.water_drop_outlined;
+      case 'home_repair_service': return Icons.home_repair_service_outlined;
+      default: return Icons.receipt_outlined;
+    }
+  }
+
+  Widget _buildDueTile({
+    required String id,
+    required String name,
+    required IconData icon,
+    required bool isEnabled,
+    required ValueChanged<bool> onToggle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isEnabled ? AppColors.primary.withAlpha(8) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isEnabled ? AppColors.primary.withAlpha(60) : AppColors.border,
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: isEnabled ? AppColors.primary : AppColors.textHint),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: isEnabled ? AppColors.textPrimary : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: isEnabled,
+                  onChanged: onToggle,
+                  activeColor: AppColors.primary,
+                ),
+              ],
+            ),
+            if (isEnabled) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  // Amount field
+                  Expanded(
+                    flex: 3,
+                    child: SizedBox(
+                      height: 44,
+                      child: _buildNairaInput(
+                        controller: _duesControllers[id]!,
+                        hintText: 'Amount',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Frequency toggle
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _duesFrequency[id] = 'yearly'),
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _duesFrequency[id] == 'yearly'
+                                      ? AppColors.primary
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: Text(
+                                  '/yr',
+                                  style: AppTextStyles.labelSmall.copyWith(
+                                    color: _duesFrequency[id] == 'yearly'
+                                        ? Colors.white
+                                        : AppColors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _duesFrequency[id] = 'monthly'),
+                              child: Container(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _duesFrequency[id] == 'monthly'
+                                      ? AppColors.primary
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: Text(
+                                  '/mo',
+                                  style: AppTextStyles.labelSmall.copyWith(
+                                    color: _duesFrequency[id] == 'monthly'
+                                        ? Colors.white
+                                        : AppColors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomDueTile(Map<String, String> custom) {
+    final controllerId = custom['controllerId']!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withAlpha(8),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primary.withAlpha(60)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.receipt_outlined, size: 20, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    custom['name']?.isNotEmpty == true ? custom['name']! : 'Custom Due',
+                    style: AppTextStyles.labelMedium,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    _duesControllers[controllerId]?.dispose();
+                    _duesControllers.remove(controllerId);
+                    _duesFrequency.remove(controllerId);
+                    setState(() {
+                      _customDues.removeWhere((c) => c['controllerId'] == controllerId);
+                    });
+                  },
+                  child: Icon(Icons.close, size: 18, color: AppColors.error),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Name field
+            SizedBox(
+              height: 44,
+              child: TextField(
+                onChanged: (v) {
+                  final index = _customDues.indexWhere((c) => c['controllerId'] == controllerId);
+                  if (index >= 0) {
+                    setState(() => _customDues[index]['name'] = v);
+                  }
+                },
+                style: AppTextStyles.labelMedium,
+                decoration: InputDecoration(
+                  hintText: 'Due name (e.g. Gate Pass)',
+                  hintStyle: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: SizedBox(
+                    height: 44,
+                    child: _buildNairaInput(
+                      controller: _duesControllers[controllerId]!,
+                      hintText: 'Amount',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _duesFrequency[controllerId] = 'yearly'),
+                            child: Container(
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _duesFrequency[controllerId] == 'yearly'
+                                    ? AppColors.primary
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                '/yr',
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: _duesFrequency[controllerId] == 'yearly'
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _duesFrequency[controllerId] = 'monthly'),
+                            child: Container(
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _duesFrequency[controllerId] == 'monthly'
+                                    ? AppColors.primary
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                '/mo',
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: _duesFrequency[controllerId] == 'monthly'
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addCustomDue() {
+    final controllerId = 'custom_$_customDueCounter';
+    _duesControllers[controllerId] = TextEditingController();
+    _duesFrequency[controllerId] = 'yearly';
+    setState(() {
+      _customDues.add({'name': '', 'controllerId': controllerId});
+      _customDueCounter++;
+    });
   }
 
   /// Live Total Package breakdown shown in the pricing step
@@ -2144,6 +3354,57 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               fontStyle: FontStyle.italic,
             ),
           ),
+          // Recurring dues summary
+          if (_totalDuesYearly() > 0) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.repeat, size: 16, color: AppColors.info),
+                const SizedBox(width: 8),
+                Text(
+                  'Recurring Dues',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.info),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._collectRecurringDues().map((due) {
+              final amount = (due['amount'] as num?)?.toDouble() ?? 0;
+              final freq = due['frequency'] as String? ?? 'yearly';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      due['name'] as String,
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                    ),
+                    Text(
+                      '₦${_formatAmount(amount)}/${freq == 'monthly' ? 'mo' : 'yr'}',
+                      style: AppTextStyles.labelSmall.copyWith(fontFamily: 'Roboto'),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Total Dues', style: AppTextStyles.labelMedium),
+                Text(
+                  '₦${_formatAmount(_totalDuesYearly())}/yr',
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: AppColors.info,
+                    fontFamily: 'Roboto',
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -2381,179 +3642,46 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             ],
           ),
 
-          // Show location picker if landlord doesn't live in property
+          // Show AreaDropdown if landlord doesn't live in property
           if (!_landlordLivesInProperty) ...[
             const SizedBox(height: 16),
-            Text('Where do you live?', style: AppTextStyles.labelMedium),
-            const SizedBox(height: 8),
-            Text(
-              'We\'ll use this to calculate inspection fees based on distance to your property.',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.textSecondary,
-              ),
+            AreaDropdown(
+              label: 'Where do you live?',
+              helperText: 'We\'ll use this to calculate inspection fees based on travel distance.',
+              hint: 'Select your area',
+              selectedArea: _landlordBaseArea,
+              onSelected: (area) {
+                setState(() {
+                  _landlordBaseArea = area;
+                  _landlordCityController.text = area;
+                });
+              },
             ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _showLandlordLocationPicker,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
+            if (_landlordBaseArea != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withAlpha(13),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.success.withAlpha(50)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline, size: 16, color: AppColors.success),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Inspection fees will be calculated based on distance from $_landlordBaseArea to your property.',
+                        style: AppTextStyles.caption.copyWith(color: AppColors.success),
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          color:
-                              _landlordBaseLatitude != null
-                                  ? AppColors.primary
-                                  : AppColors.textSecondary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _landlordBaseLocationName.isEmpty
-                                ? 'Select your location'
-                                : _landlordBaseLocationName,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color:
-                                  _landlordBaseLatitude != null
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Icon(
-                          Icons.chevron_right,
-                          color: AppColors.textSecondary,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
+                  ],
                 ),
               ),
-            ),
+            ],
           ],
         ],
-      ),
-    );
-  }
-
-  Future<void> _showLandlordLocationPicker() async {
-    // Clear controllers so the picker starts fresh (preserving last selection if set)
-    if (_landlordBaseLocationName.isEmpty) {
-      _landlordAddressController.clear();
-      _landlordCityController.clear();
-      _landlordStateController.clear();
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(children: [
-            // Handle
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border, borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-              child: Row(children: [
-                Text('Where do you live?', style: AppTextStyles.h4),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close, color: AppColors.textSecondary),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ]),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Text(
-                'Your location helps calculate inspection fees based on travel distance.',
-                style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: LocationPickerWidget(
-                  addressController: _landlordAddressController,
-                  cityController: _landlordCityController,
-                  stateController: _landlordStateController,
-                  onLocationSelected: (lat, lng) {
-                    setState(() {
-                      _landlordBaseLatitude = lat;
-                      _landlordBaseLongitude = lng;
-                      // Build a readable name from the address/city fields
-                      final parts = [
-                        _landlordAddressController.text.trim(),
-                        _landlordCityController.text.trim(),
-                      ].where((s) => s.isNotEmpty).toList();
-                      _landlordBaseLocationName = parts.isNotEmpty
-                          ? parts.join(', ')
-                          : 'Location selected';
-                    });
-                  },
-                ),
-              ),
-            ),
-            // Confirm button
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(ctx).padding.bottom + 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _landlordBaseLatitude != null
-                      ? () => Navigator.pop(ctx)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: AppColors.border,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text(
-                    _landlordBaseLatitude != null ? 'Confirm Location' : 'Pin your location on the map',
-                    style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          ]),
-        ),
       ),
     );
   }
@@ -3385,6 +4513,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           _buildPreviewSection('Bedrooms', '$_bedrooms'),
           _buildPreviewSection('Bathrooms', '$_bathrooms'),
           _buildPreviewSection('Toilets', '$_toilets'),
+          if (_livingRooms > 0)
+            _buildPreviewSection('Living Rooms', '$_livingRooms'),
+          if (_guestRooms > 0)
+            _buildPreviewSection('Guest Rooms', '$_guestRooms'),
+          if (_kitchens > 0)
+            _buildPreviewSection('Kitchens', '$_kitchens'),
           _buildPreviewSection(
             'Inspections',
             _inspectionHandler == 'self' ? 'Handled by you' : 'Assigned agent',
@@ -3473,6 +4607,41 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 ],
                 const SizedBox(height: 8),
                 _buildFeeRow('Caution Deposit', _parseAmountFromController(_cautionDepositController)),
+                // Recurring dues in preview
+                if (_totalDuesYearly() > 0) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.repeat, size: 14, color: AppColors.info),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Recurring Dues',
+                        style: AppTextStyles.caption.copyWith(color: AppColors.info),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ..._collectRecurringDues().map((due) {
+                    final amount = (due['amount'] as num?)?.toDouble() ?? 0;
+                    final freq = due['frequency'] as String? ?? 'yearly';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '  ${due['name']}',
+                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                          ),
+                          Text(
+                            '₦${_formatAmount(amount)}/${freq == 'monthly' ? 'mo' : 'yr'}',
+                            style: AppTextStyles.caption.copyWith(fontFamily: 'Roboto'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Divider(),

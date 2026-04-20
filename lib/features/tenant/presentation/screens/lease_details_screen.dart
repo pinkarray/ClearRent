@@ -172,7 +172,14 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                       title: 'Report an Issue',
                       subtitle: 'Report maintenance or property issues',
                       color: AppColors.warning,
-                      onTap: () => context.push('/tenant/report-issue', extra: _rental),
+                      onTap: () => context.push('/tenant/report-issue', extra: {
+                        'propertyId': _rental.propertyId,
+                        'propertyTitle': _rental.propertyTitle,
+                        'tenantId': _rental.tenantId,
+                        'tenantName': _rental.tenantName,
+                        'landlordId': _rental.landlordId,
+                        'landlordName': _rental.landlordName,
+                      }),
                     ),
                     const SizedBox(height: 8),
                     _actionTile(

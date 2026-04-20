@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.clearrent"
+    namespace = "com.verealtytech.clearrent"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -38,7 +38,7 @@ android {
         //   3. Rename the folder at android/app/src/main/kotlin/com/example/clearrent
         //      to android/app/src/main/kotlin/com/verealtytech/clearrent
         //   4. Update the package declaration in MainActivity.kt
-        applicationId = "com.example.clearrent"
+        applicationId = "com.verealtytech.clearrent"
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

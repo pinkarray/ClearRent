@@ -41,7 +41,7 @@ class PropertyCard extends StatelessWidget {
                   child: CachedNetworkImage(
                     imageUrl: property.images.isNotEmpty
                         ? property.images.first
-                        : 'https://via.placeholder.com/400x200',
+                        : '',
                     height: 160,
                     width: double.infinity,
                     fit: BoxFit.cover,

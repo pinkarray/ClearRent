@@ -71,7 +71,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _LandlordPendingTab(inspectionService: _inspectionService),
+          _LandlordPendingTab(inspectionService: _inspectionService, tabController: _tabController),
           _LandlordUpcomingTab(inspectionService: _inspectionService),
           _LandlordHistoryTab(inspectionService: _inspectionService),
         ],
@@ -85,7 +85,8 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
 // ============================================================
 class _LandlordPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _LandlordPendingTab({required this.inspectionService});
+  final TabController tabController;
+  const _LandlordPendingTab({required this.inspectionService, required this.tabController});
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +123,7 @@ class _LandlordPendingTab extends StatelessWidget {
               (context, i) => _LandlordPendingCard(
                 request: pending[i],
                 inspectionService: inspectionService,
+                onApproved: () => tabController.animateTo(1),
               ),
         );
       },
@@ -132,9 +134,11 @@ class _LandlordPendingTab extends StatelessWidget {
 class _LandlordPendingCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
+  final VoidCallback? onApproved;
   const _LandlordPendingCard({
     required this.request,
     required this.inspectionService,
+    this.onApproved,
   });
 
   @override
@@ -155,6 +159,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
       ok ? 'Inspection approved! Tenant notified.' : 'Failed to approve.',
       ok ? AppColors.success : AppColors.error,
     );
+    if (ok) widget.onApproved?.call();
   }
 
   Future<void> _decline() async {
@@ -1420,8 +1425,8 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
           SnackBar(
             content: Text(
               agreementUrl != null
-                  ? 'ðŸŽ‰ Rental confirmed with agreement attached!'
-                  : 'ðŸŽ‰ Rental confirmed! You can upload the agreement later.',
+                  ? 'Rental confirmed with agreement attached!'
+                  : 'Rental confirmed! You can upload the agreement later.',
             ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
@@ -1915,19 +1920,19 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.pendingPayment:
         statusColor = AppColors.warning;
         statusIcon = Icons.payment;
-        title = 'Tenant Interested â€” Payment Pending';
+        title = 'Tenant Interested — Payment Pending';
         subtitle = '${interest.tenantName} wants to rent. Waiting for payment.';
         break;
       case RentalInterestStatus.paymentUploaded:
         statusColor = AppColors.info;
         statusIcon = Icons.hourglass_top;
-        title = 'Payment Uploaded â€” Verifying';
-        subtitle = 'Admin is verifying the tenant\'s payment.';
+        title = 'Payment Processing';
+        subtitle = 'The tenant\'s payment is being processed.';
         break;
       case RentalInterestStatus.paymentVerified:
         statusColor = AppColors.success;
         statusIcon = Icons.lock;
-        title = 'ðŸ”’ Payment Verified â€” Accept Rental';
+        title = 'Payment Verified — Accept Rental';
         subtitle =
             '${interest.tenantName}\'s payment has been confirmed. Accept below.';
         break;
@@ -1940,7 +1945,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
         statusIcon = Icons.celebration;
-        title = 'ðŸŽ‰ Rental Active';
+        title = 'Rental Active';
         subtitle = '${interest.tenantName} is now your tenant.';
         break;
     }

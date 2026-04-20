@@ -68,7 +68,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _AgentPendingTab(inspectionService: _inspectionService),
+          _AgentPendingTab(inspectionService: _inspectionService, tabController: _tabController),
           _AgentScheduledTab(inspectionService: _inspectionService),
           _AgentCompletedTab(inspectionService: _inspectionService),
         ],
@@ -80,8 +80,9 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
 // ============ PENDING REQUESTS TAB ============
 class _AgentPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
+  final TabController tabController;
 
-  const _AgentPendingTab({required this.inspectionService});
+  const _AgentPendingTab({required this.inspectionService, required this.tabController});
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +114,7 @@ class _AgentPendingTab extends StatelessWidget {
             return _AgentPendingCard(
               request: pendingRequests[index],
               inspectionService: inspectionService,
+              onApproved: () => tabController.animateTo(1),
             );
           },
         );
@@ -124,10 +126,12 @@ class _AgentPendingTab extends StatelessWidget {
 class _AgentPendingCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
+  final VoidCallback? onApproved;
 
   const _AgentPendingCard({
     required this.request,
     required this.inspectionService,
+    this.onApproved,
   });
 
   @override
@@ -160,6 +164,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
           ),
         ),
       );
+      widget.onApproved?.call();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

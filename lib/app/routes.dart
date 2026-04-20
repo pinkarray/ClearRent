@@ -28,7 +28,7 @@ import '../shared/screens/help_support_screen.dart';
 import '../shared/screens/about_screen.dart';
 import '../features/tenant/presentation/screens/rental_payment_screen.dart';
 import '../features/tenant/presentation/screens/my_rentals_screen.dart';
-import '../features/tenant/presentation/screens/payment_history_screen.dart';
+// payment_history_screen.dart is deprecated — route redirects to /tenant/documents
 import '../features/tenant/presentation/screens/documents_screen.dart';
 import '../features/tenant/presentation/screens/inspection_payment_screen.dart';
 import '../features/tenant/presentation/screens/lease_details_screen.dart';
@@ -127,7 +127,7 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/tenant/payment-history',
-      builder: (context, state) => const PaymentHistoryScreen(),
+      redirect: (context, state) => '/tenant/documents',
     ),
     GoRoute(
       path: '/tenant/documents',
@@ -289,6 +289,10 @@ final appRouter = GoRouter(
       path: '/landlord/agreements',
       builder: (context, state) => const LandlordAgreementsScreen(),
     ),
+    GoRoute(
+      path: '/landlord/documents',
+      builder: (context, state) => const DocumentsScreen(),
+    ),
 
     // ============ AGENT ROUTES ============
     GoRoute(
@@ -336,6 +340,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/agent/activities',
       builder: (context, state) => const RecentActivitiesScreen(),
+    ),
+    GoRoute(
+      path: '/agent/documents',
+      builder: (context, state) => const DocumentsScreen(),
     ),
 
     // ============ ADMIN ROUTES ============

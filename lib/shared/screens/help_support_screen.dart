@@ -14,7 +14,7 @@ class HelpSupportScreen extends StatefulWidget {
 class _HelpSupportScreenState extends State<HelpSupportScreen> {
   // Contact details
   static const String _phoneNumber = '09060237734';
-  static const String _email = 'oredugbayomide@gmail.com';
+  static const String _email = 'info@verealtytech.com';
   static const String _whatsappNumber = '2349060237734';
 
   // Track expanded FAQ

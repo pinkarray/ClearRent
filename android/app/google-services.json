@@ -32,6 +32,25 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:513996752248:android:ff5aa8a08f6f28a5dd348d",
+        "android_client_info": {
+          "package_name": "com.verealtytech.clearrent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0R1JqTg_Em4LNmY528sneUFk4VicAYcY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"

@@ -19,6 +19,7 @@ class ActivityService {
 
   /// Track when a landlord lists a property.
   /// [landlordId] is optional — falls back to the current user's uid.
+  /// Deduplicates: only one "propertyAdded" per propertyId per landlord.
   Future<void> trackPropertyAdded({
     String? landlordId,
     required String propertyId,
@@ -27,6 +28,22 @@ class ActivityService {
     final uid = landlordId ?? _currentUserId;
     if (uid == null) return;
     try {
+      // ── Dedup: skip if we already tracked this property listing ──
+      final existing = await _activitiesRef
+          .where('landlordId', isEqualTo: uid)
+          .where('propertyId', isEqualTo: propertyId)
+          .where('type', isEqualTo: 'propertyAdded')
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        AppLogger.i(
+          'Skipping duplicate propertyAdded for $propertyId',
+          name: _tag,
+        );
+        return;
+      }
+
       await _activitiesRef.add({
         'landlordId': uid,
         'type': 'propertyAdded',

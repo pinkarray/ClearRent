@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -59,18 +62,18 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
           tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Upcoming'),
-            Tab(text: 'History'),
+            Tab(text: 'Requests'),
+            Tab(text: 'Scheduled'),
+            Tab(text: 'Completed'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          _TenantPendingTab(inspectionService: _inspectionService),
-          _TenantUpcomingTab(inspectionService: _inspectionService),
-          _TenantHistoryTab(inspectionService: _inspectionService),
+          _TenantRequestsTab(inspectionService: _inspectionService),
+          _TenantScheduledTab(inspectionService: _inspectionService),
+          _TenantCompletedTab(inspectionService: _inspectionService),
         ],
       ),
     );
@@ -78,11 +81,11 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
 }
 
 // ============================================================
-// PENDING REQUESTS TAB
+// REQUESTS TAB (formerly Pending)
 // ============================================================
-class _TenantPendingTab extends StatelessWidget {
+class _TenantRequestsTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _TenantPendingTab({required this.inspectionService});
+  const _TenantRequestsTab({required this.inspectionService});
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +128,7 @@ class _TenantPendingTab extends StatelessWidget {
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: pending.length,
-          itemBuilder: (context, index) => _TenantPendingCard(
+          itemBuilder: (context, index) => _TenantRequestCard(
             request: pending[index],
             inspectionService: inspectionService,
           ),
@@ -135,17 +138,17 @@ class _TenantPendingTab extends StatelessWidget {
   }
 }
 
-class _TenantPendingCard extends StatefulWidget {
+class _TenantRequestCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _TenantPendingCard(
+  const _TenantRequestCard(
       {required this.request, required this.inspectionService});
 
   @override
-  State<_TenantPendingCard> createState() => _TenantPendingCardState();
+  State<_TenantRequestCard> createState() => _TenantRequestCardState();
 }
 
-class _TenantPendingCardState extends State<_TenantPendingCard> {
+class _TenantRequestCardState extends State<_TenantRequestCard> {
   final ConversationService _conversationService = ConversationService();
   bool _isLoading = false;
   bool _isMessageLoading = false;
@@ -401,7 +404,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                       width: 32,
                       height: 32,
                       child: Padding(
-                          padding: EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(8),
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: AppColors.primary)))
                   : Container(
@@ -461,9 +464,8 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               const SizedBox(width: 12),
               Expanded(
                 child: AppButton(
-                    text: 'Pay Now',
-                    onPressed: () =>
-                        context.push('/tenant/inspection-payment/${r.id}')),
+                    text: 'Verifying...',
+                    onPressed: null),
               ),
             ],
           ]),
@@ -480,11 +482,11 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
 }
 
 // ============================================================
-// UPCOMING TAB
+// SCHEDULED TAB (formerly Upcoming) — INSPECTION DAY FLOW
 // ============================================================
-class _TenantUpcomingTab extends StatelessWidget {
+class _TenantScheduledTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _TenantUpcomingTab({required this.inspectionService});
+  const _TenantScheduledTab({required this.inspectionService});
 
   @override
   Widget build(BuildContext context) {
@@ -496,38 +498,46 @@ class _TenantUpcomingTab extends StatelessWidget {
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         final all = snapshot.data ?? [];
-        final upcoming = all.where((r) => r.isApproved).toList()
+        final scheduled = all.where((r) => r.isApproved).toList()
           ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
 
-        if (upcoming.isEmpty) {
+        if (scheduled.isEmpty) {
           return const _EmptyState(
               icon: Icons.event_available_outlined,
-              title: 'No upcoming inspections',
+              title: 'No scheduled inspections',
               subtitle: 'Approved inspections will appear here');
         }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: upcoming.length,
-          itemBuilder: (context, i) =>
-              _TenantUpcomingCard(request: upcoming[i]),
+          itemCount: scheduled.length,
+          itemBuilder: (context, i) => _TenantScheduledCard(
+            request: scheduled[i],
+            inspectionService: inspectionService,
+          ),
         );
       },
     );
   }
 }
 
-class _TenantUpcomingCard extends StatefulWidget {
+class _TenantScheduledCard extends StatefulWidget {
   final InspectionRequest request;
-  const _TenantUpcomingCard({required this.request});
+  final InspectionService inspectionService;
+  const _TenantScheduledCard({
+    required this.request,
+    required this.inspectionService,
+  });
 
   @override
-  State<_TenantUpcomingCard> createState() => _TenantUpcomingCardState();
+  State<_TenantScheduledCard> createState() => _TenantScheduledCardState();
 }
 
-class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
+class _TenantScheduledCardState extends State<_TenantScheduledCard> {
   final ConversationService _conversationService = ConversationService();
   bool _isMessageLoading = false;
+  bool _isOnMyWayLoading = false;
+  bool _isArrivalLoading = false;
 
   bool _isToday(DateTime d) {
     final n = DateTime.now();
@@ -542,17 +552,146 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   String _monthAbbr(int m) =>
       const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
 
+  // ---- Location helpers ----
+  Future<Position?> _getCurrentPosition() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) _showSnack('Location permission denied', AppColors.error);
+          return null;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          _showSnack('Location permission permanently denied. Please enable in Settings.', AppColors.error);
+        }
+        return null;
+      }
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+    } catch (e) {
+      developer.log('❌ Error getting location: $e', name: 'TenantInspections');
+      return null;
+    }
+  }
+
+  // ---- Actions ----
+  Future<void> _markOnMyWay() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('On Your Way?'),
+        content: const Text(
+          'This will notify the agent/landlord that you\'re heading to the property. We\'ll share your approximate location so they know you\'re coming.',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Not Yet', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Yes, I\'m On My Way'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isOnMyWayLoading = true);
+    final position = await _getCurrentPosition();
+    final success = await widget.inspectionService.markTenantOnTheWay(
+      widget.request.id,
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+    );
+    if (!mounted) return;
+    setState(() => _isOnMyWayLoading = false);
+    _showSnack(
+      success ? 'Great! The handler has been notified you\'re on your way.' : 'Failed to update. Please try again.',
+      success ? AppColors.success : AppColors.error,
+    );
+  }
+
+  Future<void> _markArrived() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Arrival'),
+        content: const Text('Are you at the property? This will notify the agent/landlord that you\'ve arrived.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Not Yet', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Yes, I\'ve Arrived'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isArrivalLoading = true);
+    final position = await _getCurrentPosition();
+    // Update tenant location on the request doc before marking arrived
+    final success = await widget.inspectionService.markTenantArrived(
+      widget.request.id,
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+    );
+    if (!mounted) return;
+    setState(() => _isArrivalLoading = false);
+    _showSnack(
+      success ? 'You\'re checked in! Waiting for the inspection to begin.' : 'Failed to update. Please try again.',
+      success ? AppColors.success : AppColors.error,
+    );
+  }
+
+  Future<void> _navigateToProperty() async {
+    final r = widget.request;
+    final lat = r.propertyLatitude;
+    final lng = r.propertyLongitude;
+
+    if (lat == null || lng == null) {
+      // Fallback: try to open with address
+      final encodedAddr = Uri.encodeComponent(r.propertyAddress);
+      final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$encodedAddr');
+      if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   Future<void> _callHandler() async {
     final phone = widget.request.isAgentHandled
         ? widget.request.agentPhone
         : widget.request.landlordPhone;
     if (phone == null || phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Phone number not available'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+      _showSnack('Phone number not available', AppColors.error);
       return;
     }
     final uri = Uri.parse('tel:$phone');
@@ -580,8 +719,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         context.push('/chat', extra: {
           'conversationId': conv.id,
           'propertyTitle': r.propertyTitle,
-          'propertyImage':
-              r.propertyImage.isNotEmpty ? r.propertyImage : null,
+          'propertyImage': r.propertyImage.isNotEmpty ? r.propertyImage : null,
         });
       }
     } catch (e) {
@@ -590,52 +728,62 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     }
   }
 
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.request;
     final today = _isToday(r.requestedDate);
     final tomorrow = _isTomorrow(r.requestedDate);
+    final handlerName = r.isAgentHandled ? (r.agentName ?? 'Agent') : r.landlordName;
+    final handlerRole = r.isAgentHandled ? 'Agent' : 'Landlord';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-            color: today
-                ? AppColors.primary
-                : AppColors.success.withAlpha(77),
-            width: today ? 2 : 1),
+          color: today ? AppColors.primary : AppColors.success.withAlpha(77),
+          width: today ? 2 : 1,
+        ),
+        boxShadow: today
+            ? [BoxShadow(color: AppColors.primary.withAlpha(20), blurRadius: 12, offset: const Offset(0, 4))]
+            : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Date badges
+        // ---- Status badges ----
         Row(children: [
           if (today)
             _badge('TODAY', AppColors.primary, Icons.today)
           else if (tomorrow)
             _badge('TOMORROW', AppColors.info, Icons.upcoming),
-          _badge('Approved', AppColors.success, Icons.check_circle),
+          _badge('Scheduled', AppColors.success, Icons.check_circle),
         ]),
         const SizedBox(height: 12),
 
-        // Property + date
+        // ---- Property + date ----
         Row(children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: (today ? AppColors.primary : AppColors.success)
-                    .withAlpha(26),
+                color: (today ? AppColors.primary : AppColors.success).withAlpha(26),
                 borderRadius: BorderRadius.circular(10)),
             child: Column(children: [
               Text('${r.requestedDate.day}',
                   style: AppTextStyles.h3.copyWith(
-                      color:
-                          today ? AppColors.primary : AppColors.success)),
+                      color: today ? AppColors.primary : AppColors.success)),
               Text(_monthAbbr(r.requestedDate.month),
                   style: AppTextStyles.caption.copyWith(
-                      color:
-                          today ? AppColors.primary : AppColors.success)),
+                      color: today ? AppColors.primary : AppColors.success)),
             ]),
           ),
           const SizedBox(width: 12),
@@ -646,22 +794,18 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 Text(r.propertyTitle, style: AppTextStyles.labelLarge),
                 const SizedBox(height: 4),
                 Row(children: [
-                  Icon(Icons.access_time,
-                      size: 14, color: AppColors.textSecondary),
+                  Icon(Icons.access_time, size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Text(r.requestedTimeDisplay,
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.textSecondary)),
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
                 ]),
                 const SizedBox(height: 2),
                 Row(children: [
-                  Icon(Icons.location_on_outlined,
-                      size: 14, color: AppColors.textSecondary),
+                  Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Expanded(
                       child: Text(r.propertyAddress,
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.textSecondary),
+                          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis)),
                 ]),
@@ -671,7 +815,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         const Divider(height: 1),
         const SizedBox(height: 12),
 
-        // Handler contact
+        // ---- Handler contact ----
         Row(children: [
           CircleAvatar(
             radius: 20,
@@ -681,54 +825,372 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
             child: Icon(
                 r.isAgentHandled ? Icons.support_agent : Icons.person,
                 size: 20,
-                color: r.isAgentHandled
-                    ? AppColors.success
-                    : AppColors.primary),
+                color: r.isAgentHandled ? AppColors.success : AppColors.primary),
           ),
           const SizedBox(width: 12),
           Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(
-                    r.isAgentHandled
-                        ? (r.agentName ?? 'Agent')
-                        : r.landlordName,
-                    style: AppTextStyles.labelMedium),
-                Text(
-                    r.isAgentHandled
-                        ? 'Agent â€¢ Will show you the property'
-                        : 'Landlord',
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textSecondary)),
+                Text(handlerName, style: AppTextStyles.labelMedium),
+                Text('$handlerRole \u2022 Will show you the property',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
               ])),
           _iconBtn(Icons.chat_outlined, AppColors.primary,
               _isMessageLoading ? null : _messageHandler, _isMessageLoading),
-          _iconBtn(
-              Icons.phone, AppColors.success, _callHandler, false),
+          _iconBtn(Icons.phone, AppColors.success, _callHandler, false),
         ]),
 
-        // Tip for today
+        // ============================================================
+        // INSPECTION DAY FLOW — only shown on the day
+        // ============================================================
         if (today) ...[
           const SizedBox(height: 16),
+
+          // ---- Map section (show when property has coordinates) ----
+          if (r.propertyLatitude != null && r.propertyLongitude != null) ...[
+            _buildInspectionMap(r),
+            const SizedBox(height: 12),
+          ],
+
+          // ---- Navigate to Property button ----
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _navigateToProperty,
+              icon: Icon(Icons.directions, size: 20, color: AppColors.primary),
+              label: Text('Navigate to Property',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                side: BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ---- Step indicators ----
+          _buildProgressSteps(r),
+          const SizedBox(height: 12),
+
+          // ---- Status banners + action buttons ----
+          ..._buildInspectionDayActions(r, handlerName),
+        ],
+
+        // ---- Future date tip ----
+        if (!today && !tomorrow) ...[
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(13),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.primary.withAlpha(51))),
+                color: AppColors.success.withAlpha(13),
+                borderRadius: BorderRadius.circular(10)),
             child: Row(children: [
-              Icon(Icons.info_outline,
-                  size: 20, color: AppColors.primary),
+              Icon(Icons.event_available, size: 18, color: AppColors.success),
               const SizedBox(width: 10),
               Expanded(
-                  child: Text(
-                      'Remember to bring a valid ID and arrive 5 minutes early!',
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.primary))),
+                  child: Text('Your inspection is confirmed. We\'ll remind you on the day!',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.success))),
             ]),
           ),
         ],
+
+        // ---- Tomorrow reminder ----
+        if (tomorrow) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(13),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.info.withAlpha(51))),
+            child: Row(children: [
+              Icon(Icons.alarm, size: 18, color: AppColors.info),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text('Your inspection is tomorrow! Remember to bring a valid ID.',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.info))),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  // ---- Map widget ----
+  Widget _buildInspectionMap(InspectionRequest r) {
+    final propertyLatLng = LatLng(r.propertyLatitude!, r.propertyLongitude!);
+    final markers = <Marker>[
+      // Property pin
+      Marker(
+        point: propertyLatLng,
+        width: 40,
+        height: 40,
+        child: Icon(Icons.location_on, color: AppColors.error, size: 36),
+      ),
+    ];
+
+    // Handler location (if on the way or arrived)
+    final handlerLat = r.handlerLatitude;
+    final handlerLng = r.handlerLongitude;
+    if (handlerLat != null && handlerLng != null && (r.handlerOnTheWay || r.handlerArrived)) {
+      markers.add(Marker(
+        point: LatLng(handlerLat, handlerLng),
+        width: 36,
+        height: 36,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.success,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+          child: Icon(
+            r.isAgentHandled ? Icons.support_agent : Icons.person,
+            color: Colors.white,
+            size: 18,
+          ),
+        ),
+      ));
+    }
+
+    // Tenant location (if on the way or arrived)
+    final tenantLat = r.tenantLatitude;
+    final tenantLng = r.tenantLongitude;
+    if (tenantLat != null && tenantLng != null && (r.tenantOnTheWay || r.tenantArrived)) {
+      markers.add(Marker(
+        point: LatLng(tenantLat, tenantLng),
+        width: 36,
+        height: 36,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+          ),
+          child: const Icon(Icons.person, color: Colors.white, size: 18),
+        ),
+      ));
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 180,
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: propertyLatLng,
+            initialZoom: 14,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+            ),
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.verealtytech.clearrent',
+            ),
+            MarkerLayer(markers: markers),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Progress steps (On My Way → Arrived → Inspecting) ----
+  Widget _buildProgressSteps(InspectionRequest r) {
+    final step1Done = r.tenantOnTheWay || r.tenantArrived;
+    final step2Done = r.tenantArrived;
+    final step3Done = r.bothArrived;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        _stepDot(step1Done, '1'),
+        _stepLine(step1Done),
+        _stepDot(step2Done, '2'),
+        _stepLine(step2Done),
+        _stepDot(step3Done, '3'),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                !step1Done
+                    ? 'Tap "On My Way" when you leave'
+                    : !step2Done
+                        ? 'Heading there \u2022 Tap "Arrived" when you get there'
+                        : !step3Done
+                            ? 'You\'re here! Waiting for ${ r.isAgentHandled ? "the agent" : "the landlord" }'
+                            : 'Both arrived \u2022 Inspection in progress!',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: step3Done ? AppColors.success : AppColors.textSecondary,
+                  fontWeight: step3Done ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _stepDot(bool done, String label) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: done ? AppColors.success : AppColors.border,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: done
+            ? const Icon(Icons.check, color: Colors.white, size: 16)
+            : Text(label,
+                style: AppTextStyles.labelSmall.copyWith(color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _stepLine(bool done) {
+    return Container(
+      width: 24,
+      height: 3,
+      color: done ? AppColors.success : AppColors.border,
+    );
+  }
+
+  // ---- Inspection day action buttons and status banners ----
+  List<Widget> _buildInspectionDayActions(InspectionRequest r, String handlerName) {
+    final widgets = <Widget>[];
+
+    // Handler status banner
+    if (r.handlerArrived) {
+      widgets.add(_statusBanner(
+        '$handlerName has arrived at the property!',
+        AppColors.success,
+        Icons.check_circle,
+      ));
+    } else if (r.handlerOnTheWay) {
+      widgets.add(_statusBanner(
+        '$handlerName is on the way!',
+        AppColors.info,
+        Icons.directions_walk,
+      ));
+    }
+
+    // Both arrived banner
+    if (r.bothArrived) {
+      widgets.add(const SizedBox(height: 8));
+      widgets.add(Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.success.withAlpha(26),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.success),
+        ),
+        child: Row(children: [
+          Icon(Icons.handshake, size: 24, color: AppColors.success),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Inspection In Progress',
+                    style: AppTextStyles.labelLarge.copyWith(color: AppColors.success)),
+                const SizedBox(height: 2),
+                Text('The agent/landlord will mark it complete when done.',
+                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+        ]),
+      ));
+      return widgets;
+    }
+
+    // Tenant action buttons
+    if (!r.tenantOnTheWay) {
+      // Step 1: On My Way
+      widgets.add(const SizedBox(height: 8));
+      widgets.add(SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _isOnMyWayLoading ? null : _markOnMyWay,
+          icon: _isOnMyWayLoading
+              ? const SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.directions_walk, size: 20),
+          label: Text(_isOnMyWayLoading ? 'Updating...' : 'I\'m On My Way'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ));
+    } else if (!r.tenantArrived) {
+      // Step 2: Arrived
+      widgets.add(const SizedBox(height: 4));
+      widgets.add(_statusBanner(
+        'You\'re on your way',
+        AppColors.primary,
+        Icons.directions_walk,
+      ));
+      widgets.add(const SizedBox(height: 8));
+      widgets.add(SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _isArrivalLoading ? null : _markArrived,
+          icon: _isArrivalLoading
+              ? const SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.location_on, size: 20),
+          label: Text(_isArrivalLoading ? 'Confirming...' : 'I\'ve Arrived'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.success,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ));
+    } else {
+      // Tenant arrived, waiting for handler
+      widgets.add(const SizedBox(height: 4));
+      widgets.add(_statusBanner(
+        'You\'re here! Waiting for $handlerName to arrive...',
+        AppColors.info,
+        Icons.hourglass_top,
+      ));
+    }
+
+    return widgets;
+  }
+
+  Widget _statusBanner(String text, Color color, IconData icon) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withAlpha(26),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withAlpha(77)),
+      ),
+      child: Row(children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              style: AppTextStyles.bodySmall.copyWith(color: color, fontWeight: FontWeight.w600)),
+        ),
       ]),
     );
   }
@@ -737,13 +1199,10 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-            color: color == AppColors.success
-                ? color.withAlpha(26)
-                : color,
+            color: color == AppColors.success ? color.withAlpha(26) : color,
             borderRadius: BorderRadius.circular(8)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon,
-              size: 16,
+          Icon(icon, size: 16,
               color: color == AppColors.success ? color : Colors.white),
           const SizedBox(width: 6),
           Text(text,
@@ -753,18 +1212,15 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         ]),
       );
 
-  Widget _iconBtn(
-          IconData icon, Color color, VoidCallback? onTap, bool loading) =>
+  Widget _iconBtn(IconData icon, Color color, VoidCallback? onTap, bool loading) =>
       IconButton(
         onPressed: onTap,
         icon: loading
             ? SizedBox(
-                width: 34,
-                height: 34,
+                width: 34, height: 34,
                 child: Padding(
                     padding: const EdgeInsets.all(8),
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: color)))
+                    child: CircularProgressIndicator(strokeWidth: 2, color: color)))
             : Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -774,11 +1230,11 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
 }
 
 // ============================================================
-// HISTORY TAB â€” MANDATORY RATING + INTEREST FLOW
+// COMPLETED TAB (formerly History) — RATING + INTEREST FLOW
 // ============================================================
-class _TenantHistoryTab extends StatelessWidget {
+class _TenantCompletedTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _TenantHistoryTab({required this.inspectionService});
+  const _TenantCompletedTab({required this.inspectionService});
 
   @override
   Widget build(BuildContext context) {
@@ -790,7 +1246,7 @@ class _TenantHistoryTab extends StatelessWidget {
               child: CircularProgressIndicator(color: AppColors.primary));
         }
         final all = snapshot.data ?? [];
-        final history = all
+        final completed = all
             .where((r) =>
                 r.isCompleted ||
                 r.isDeclined ||
@@ -798,7 +1254,7 @@ class _TenantHistoryTab extends StatelessWidget {
                 r.isRefunded)
             .toList()
           ..sort((a, b) {
-            // Unrated completed first
+            // Unrated completed first (action required)
             if (a.isCompleted &&
                 !a.tenantRated &&
                 !(b.isCompleted && !b.tenantRated)) {
@@ -813,41 +1269,41 @@ class _TenantHistoryTab extends StatelessWidget {
                 .compareTo(a.completedAt ?? a.createdAt);
           });
 
-        if (history.isEmpty) {
+        if (completed.isEmpty) {
           return const _EmptyState(
               icon: Icons.history,
-              title: 'No history yet',
+              title: 'No completed inspections',
               subtitle: 'Your past inspections will appear here');
         }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: history.length,
-          itemBuilder: (context, i) => _TenantHistoryCard(
-              request: history[i], inspectionService: inspectionService),
+          itemCount: completed.length,
+          itemBuilder: (context, i) => _TenantCompletedCard(
+              request: completed[i], inspectionService: inspectionService),
         );
       },
     );
   }
 }
 
-class _TenantHistoryCard extends StatefulWidget {
+class _TenantCompletedCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _TenantHistoryCard(
+  const _TenantCompletedCard(
       {required this.request, required this.inspectionService});
 
   @override
-  State<_TenantHistoryCard> createState() => _TenantHistoryCardState();
+  State<_TenantCompletedCard> createState() => _TenantCompletedCardState();
 }
 
-class _TenantHistoryCardState extends State<_TenantHistoryCard> {
+class _TenantCompletedCardState extends State<_TenantCompletedCard> {
   final RentalInterestService _rentalInterestService =
       RentalInterestService();
   RentalInterest? _rentalInterest;
   bool _isLoadingInterest = false;
   bool _hasCheckedInterest = false;
-  bool _hasPassed = false; // true after tenant taps "I'll Keep Looking"
+  bool _hasPassed = false;
 
   @override
   void initState() {
@@ -871,7 +1327,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       }
     } catch (e) {
       developer.log('❌ Error loading rental interest: $e',
-          name: 'TenantHistory');
+          name: 'TenantCompleted');
       if (mounted) {
         setState(
             () { _isLoadingInterest = false; _hasCheckedInterest = true; });
@@ -928,7 +1384,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                 : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // âš¡ ACTION REQUIRED BANNER
+        // ACTION REQUIRED BANNER
         if (needsRating) ...[
           Container(
             width: double.infinity,
@@ -1034,7 +1490,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
           ),
         ],
 
-        // ============ RATING SECTION (ALL completed, not just agent-handled) ============
+        // ============ RATING SECTION ============
         if (r.isCompleted) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
@@ -1190,9 +1646,9 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       case RentalInterestStatus.paymentUploaded:
         statusColor = AppColors.info;
         statusIcon = Icons.hourglass_top;
-        title = 'Verifying Payment';
+        title = 'Payment Processing';
         subtitle =
-            'We\'re verifying your payment. This usually takes 24 hours.';
+            'Your payment is being processed. This should only take a moment.';
         action = null;
         break;
       case RentalInterestStatus.paymentVerified:
@@ -1200,7 +1656,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         statusIcon = Icons.verified;
         title = 'Payment Confirmed!';
         subtitle =
-            'Your payment has been verified. The landlord will finalize your rental shortly.';
+            'Your payment has been confirmed. The landlord can now accept your rental.';
         action = null;
         break;
       case RentalInterestStatus.rejected:
@@ -1222,7 +1678,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
         statusIcon = Icons.celebration;
-        title = 'ðŸŽ‰ Rental Confirmed!';
+        title = 'Rental Confirmed!';
         subtitle =
             'Welcome to your new home! Your dashboard has been updated.';
         action = SizedBox(
@@ -1322,7 +1778,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
               ),
             ),
           ]),
-          ), // SingleChildScrollView
+          ),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           actions: [
@@ -1385,7 +1841,6 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
 
   // ---- Express interest ----
   Future<void> _expressInterest() async {
-    // Fetch actual property rent before creating interest
     final property = await PropertyService().getProperty(
       widget.request.propertyId,
     );

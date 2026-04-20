@@ -150,6 +150,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         notes: widget.notes,
         feeBreakdown: _fee,
         paymentReference: _paymentReference,
+        paymentStatus: 'paid',
       );
 
       if (!mounted) return;
@@ -498,8 +499,8 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             _buildScheduleSummary(),
             const SizedBox(height: 24),
 
-            // Agent info
-            _buildAgentInfo(),
+            // Handler info (agent or landlord)
+            _buildHandlerInfo(),
             const SizedBox(height: 24),
 
             // Payment breakdown
@@ -735,7 +736,13 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
     );
   }
 
-  Widget _buildAgentInfo() {
+  Widget _buildHandlerInfo() {
+    final isAgent = widget.property.inspectionHandler == 'agent' &&
+        widget.property.assignedAgentId != null;
+    final handlerName = isAgent
+        ? (widget.property.assignedAgentName ?? 'Agent')
+        : (widget.property.landlordName ?? 'Landlord');
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -749,12 +756,14 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: AppColors.info.withAlpha(26),
+              color: isAgent
+                  ? AppColors.info.withAlpha(26)
+                  : AppColors.primary.withAlpha(26),
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.support_agent,
-              color: AppColors.info,
+              isAgent ? Icons.support_agent : Icons.person,
+              color: isAgent ? AppColors.info : AppColors.primary,
               size: 28,
             ),
           ),
@@ -763,50 +772,16 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        widget.property.assignedAgentName ?? 'Agent',
-                        style: AppTextStyles.labelLarge,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withAlpha(26),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.verified,
-                            size: 10,
-                            color: AppColors.success,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            'Verified',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(
+                  handlerName,
+                  style: AppTextStyles.labelLarge,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Will conduct your inspection',
+                  isAgent
+                      ? 'Agent will conduct your inspection'
+                      : 'Landlord will handle your inspection',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.textSecondary,
                   ),

@@ -18,6 +18,8 @@ import '../../../../services/tenancy_link_service.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../tenant/presentation/widgets/request_inspection_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 
 class PropertyDetailScreen extends StatefulWidget {
   final PropertyModel property;
@@ -32,6 +34,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   int _currentImageIndex = 0;
   bool _isSaved = false;
   final PageController _imageController = PageController();
+
+  // Video tour
+  VideoPlayerController? _videoController;
+  bool _videoInitialized = false;
+  final bool _videoMuted = true;
+  Duration _videoPosition = Duration.zero;
+  static const _previewDuration = Duration(seconds: 60);
 
   // Services
   late final PropertyService _propertyService;
@@ -72,12 +81,68 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     _checkExistingRequest();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
+    _initializeVideo();
   }
 
   @override
   void dispose() {
     _imageController.dispose();
+    _videoController?.removeListener(_onVideoProgress);
+    _videoController?.dispose();
     super.dispose();
+  }
+
+  /// Initialize the video player if property has a video
+  Future<void> _initializeVideo() async {
+    final videoUrl = widget.property.videoUrl;
+    if (videoUrl == null || videoUrl.isEmpty) return;
+
+    try {
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      await _videoController!.initialize();
+      _videoController!.setVolume(0); // Start muted
+      _videoController!.setLooping(false);
+      _videoController!.addListener(_onVideoProgress);
+
+      if (mounted) {
+        setState(() => _videoInitialized = true);
+        _videoController!.play(); // Autoplay muted
+      }
+    } catch (e) {
+      debugPrint('❌ Video init error: $e');
+    }
+  }
+
+  /// Pause at 60 seconds for the preview
+  void _onVideoProgress() {
+    if (_videoController == null) return;
+    final position = _videoController!.value.position;
+
+    if (mounted && position != _videoPosition) {
+      setState(() => _videoPosition = position);
+    }
+
+    // Auto-pause at 60s for the preview
+    if (position >= _previewDuration && _videoController!.value.isPlaying) {
+      _videoController!.pause();
+    }
+  }
+
+  /// Open fullscreen video with chewie (full controls, sound)
+  void _openFullscreenVideo() {
+    if (_videoController == null || !_videoInitialized) return;
+
+    // Reset to beginning for fullscreen viewing
+    _videoController!.seekTo(Duration.zero);
+    _videoController!.setVolume(1.0);
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _FullscreenVideoScreen(
+          videoUrl: widget.property.videoUrl!,
+        ),
+      ),
+    );
   }
 
   /// Determine if current user is the owner (landlord) or a tenant
@@ -599,6 +664,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               child: CustomScrollView(
                 slivers: [
                   SliverToBoxAdapter(child: _buildImageCarousel(property)),
+
+                  // Video preview (muted autoplay, 60s)
+                  if (_videoInitialized && _videoController != null)
+                    SliverToBoxAdapter(
+                      child: _buildVideoPreview(),
+                    ),
 
                   SliverToBoxAdapter(
                     child: Padding(
@@ -2300,9 +2371,79 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
             ),
           ],
+          // Recurring dues
+          if (property.recurringDues.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.repeat, size: 16, color: AppColors.warning),
+                const SizedBox(width: 8),
+                Text(
+                  'Recurring Dues',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.warning),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...property.recurringDues.map((due) {
+              final name = due['name'] as String? ?? '';
+              final amount = (due['amount'] as num?)?.toDouble() ?? 0;
+              final freq = due['frequency'] as String? ?? 'yearly';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(name, style: AppTextStyles.bodyMedium),
+                    Text(
+                      '₦${_formatDueAmount(amount)}/${freq == 'monthly' ? 'mo' : 'yr'}',
+                      style: AppTextStyles.labelMedium.copyWith(fontFamily: 'Roboto'),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(18),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Total Dues', style: AppTextStyles.labelMedium),
+                  Text(
+                    '${property.formattedRecurringDues}/yr',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.warning,
+                      fontFamily: 'Roboto',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _formatDueAmount(double amount) {
+    if (amount >= 1000000) {
+      return '${(amount / 1000000).toStringAsFixed(1)}M';
+    }
+    final formatted = amount.toStringAsFixed(0);
+    final chars = formatted.split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
   }
 
   Widget _buildTenantBottomBar() {
@@ -2564,30 +2705,230 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          if (property.bedrooms > 0)
-            _FeatureItem(
-              icon: Icons.bed_outlined,
-              value: '${property.bedrooms}',
-              label: 'Bedrooms',
+          // Primary row: bedrooms, bathrooms, toilets
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              if (property.bedrooms > 0)
+                _FeatureItem(
+                  icon: Icons.bed_outlined,
+                  value: '${property.bedrooms}',
+                  label: 'Bedrooms',
+                ),
+              if (property.bathrooms > 0)
+                _FeatureItem(
+                  icon: Icons.bathtub_outlined,
+                  value: '${property.bathrooms}',
+                  label: 'Bathrooms',
+                ),
+              if (property.toilets > 0)
+                _FeatureItem(
+                  icon: Icons.wc_outlined,
+                  value: '${property.toilets}',
+                  label: 'Toilets',
+                ),
+            ],
+          ),
+          // Secondary row: living room, guest room, kitchen (only if any > 0)
+          if (property.livingRooms > 0 || property.guestRooms > 0 || property.kitchens > 0) ...[
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                if (property.livingRooms > 0)
+                  _FeatureItem(
+                    icon: Icons.weekend_outlined,
+                    value: '${property.livingRooms}',
+                    label: 'Living Room',
+                  ),
+                if (property.guestRooms > 0)
+                  _FeatureItem(
+                    icon: Icons.meeting_room_outlined,
+                    value: '${property.guestRooms}',
+                    label: 'Guest Room',
+                  ),
+                if (property.kitchens > 0)
+                  _FeatureItem(
+                    icon: Icons.kitchen_outlined,
+                    value: '${property.kitchens}',
+                    label: 'Kitchen',
+                  ),
+              ],
             ),
-          if (property.bathrooms > 0)
-            _FeatureItem(
-              icon: Icons.bathtub_outlined,
-              value: '${property.bathrooms}',
-              label: 'Bathrooms',
+          ],
+          // Ceiling type row
+          if (property.ceilingType != null && property.ceilingType!.isNotEmpty && property.ceilingType != 'none') ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.roofing_outlined, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Ceiling: ${_ceilingTypeLabel(property.ceilingType!)}',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ),
-          if (property.toilets > 0)
-            _FeatureItem(
-              icon: Icons.wc_outlined,
-              value: '${property.toilets}',
-              label: 'Toilets',
-            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _ceilingTypeLabel(String type) {
+    switch (type) {
+      case 'false_ceiling':
+        return 'False Ceiling (POP)';
+      case 'pvc':
+        return 'PVC';
+      case 'concrete':
+        return 'Concrete';
+      case 'asbestos':
+        return 'Asbestos';
+      case 'none':
+        return 'None';
+      default:
+        return type;
+    }
+  }
+
+  Widget _buildVideoPreview() {
+    final controller = _videoController!;
+    final totalDuration = controller.value.duration;
+    final previewEnd = totalDuration > _previewDuration ? _previewDuration : totalDuration;
+    final progress = previewEnd.inMilliseconds > 0
+        ? (_videoPosition.inMilliseconds / previewEnd.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return GestureDetector(
+      onTap: _openFullscreenVideo,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.videocam_outlined, size: 18, color: Colors.white70),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Video Tour',
+                    style: AppTextStyles.labelMedium.copyWith(color: Colors.white),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(26),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _videoMuted ? Icons.volume_off : Icons.volume_up,
+                          size: 14,
+                          color: Colors.white70,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Tap to expand',
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Video
+            ClipRRect(
+              child: AspectRatio(
+                aspectRatio: controller.value.aspectRatio,
+                child: VideoPlayer(controller),
+              ),
+            ),
+
+            // Progress bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  backgroundColor: Colors.white.withAlpha(38),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
+              ),
+            ),
+
+            // Time and play/pause
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Row(
+                children: [
+                  Text(
+                    '${_formatVideoDuration(_videoPosition)} / ${_formatVideoDuration(previewEnd)}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (!controller.value.isPlaying && _videoPosition >= _previewDuration)
+                    Text(
+                      'Tap for full video',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontSize: 11,
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () {
+                        if (controller.value.isPlaying) {
+                          controller.pause();
+                        } else {
+                          if (_videoPosition >= _previewDuration) {
+                            controller.seekTo(Duration.zero);
+                          }
+                          controller.play();
+                        }
+                      },
+                      child: Icon(
+                        controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                        size: 20,
+                        color: Colors.white70,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatVideoDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildSection({required String title, required Widget child}) {
@@ -3891,4 +4232,78 @@ class _OccupancyRow {
     required this.value,
     this.valueColor,
   });
+}
+
+/// Fullscreen video player with chewie controls
+class _FullscreenVideoScreen extends StatefulWidget {
+  final String videoUrl;
+
+  const _FullscreenVideoScreen({required this.videoUrl});
+
+  @override
+  State<_FullscreenVideoScreen> createState() => _FullscreenVideoScreenState();
+}
+
+class _FullscreenVideoScreenState extends State<_FullscreenVideoScreen> {
+  late VideoPlayerController _controller;
+  ChewieController? _chewieController;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+    await _controller.initialize();
+
+    _chewieController = ChewieController(
+      videoPlayerController: _controller,
+      autoPlay: true,
+      looping: false,
+      allowFullScreen: true,
+      allowMuting: true,
+      showControlsOnInitialize: true,
+      materialProgressColors: ChewieProgressColors(
+        playedColor: AppColors.primary,
+        handleColor: AppColors.primary,
+        backgroundColor: Colors.white24,
+        bufferedColor: Colors.white38,
+      ),
+    );
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _chewieController?.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text('Video Tour', style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+        centerTitle: true,
+      ),
+      body: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          : Center(
+              child: Chewie(controller: _chewieController!),
+            ),
+    );
+  }
 }

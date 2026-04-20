@@ -49,6 +49,7 @@ class PaystackService {
   static const String typeVerification = 'verification';
   static const String typeInspection = 'inspection';
   static const String typeListing = 'listing';
+  static const String typeRent = 'rent';
 
   /// Generate a unique payment reference
   String _generateReference(String type) {
@@ -148,6 +149,40 @@ class PaystackService {
         success: false,
         error: 'Network error. Please check your connection.',
       );
+    }
+  }
+
+  /// Resolve account name using Paystack's Resolve Account API.
+  /// Returns the account name if successful, null otherwise.
+  Future<String?> resolveAccount({
+    required String accountNumber,
+    required String bankCode,
+  }) async {
+    try {
+      final uri = Uri.parse(
+        'https://api.paystack.co/bank/resolve'
+        '?account_number=$accountNumber'
+        '&bank_code=$bankCode',
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $secretKey',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == true && data['data'] != null) {
+          return data['data']['account_name'] as String?;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ Resolve account error: $e');
+      return null;
     }
   }
 

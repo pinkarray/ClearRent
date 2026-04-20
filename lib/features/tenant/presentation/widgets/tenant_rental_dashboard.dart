@@ -107,6 +107,32 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
   Future<void> _messageLandlord() async {
     setState(() => _isMessageLoading = true);
     try {
+      // First try to find an existing conversation (no verification check needed)
+      final existingQuery = await FirebaseFirestore.instance
+          .collection('conversations')
+          .where('propertyId', isEqualTo: rental.propertyId)
+          .where('tenantId', isEqualTo: rental.tenantId)
+          .where('landlordId', isEqualTo: rental.landlordId)
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+
+      if (existingQuery.docs.isNotEmpty) {
+        // Existing conversation found — go straight to chat
+        setState(() => _isMessageLoading = false);
+        context.push('/chat', extra: {
+          'conversationId': existingQuery.docs.first.id,
+          'propertyTitle': rental.propertyTitle,
+          'propertyImage':
+              rental.propertyImage.isNotEmpty ? rental.propertyImage : null,
+        });
+        return;
+      }
+
+      // No existing conversation — create one via service
+      // (This has verification checks, but for an active rental both
+      // parties should be verified anyway)
       final conv = await _conversationService.getOrCreateConversation(
         propertyId: rental.propertyId,
         propertyTitle: rental.propertyTitle,
@@ -116,8 +142,10 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         tenantId: rental.tenantId,
         tenantName: rental.tenantName,
       );
+
       if (!mounted) return;
       setState(() => _isMessageLoading = false);
+
       if (conv != null) {
         context.push('/chat', extra: {
           'conversationId': conv.id,
@@ -126,18 +154,82 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               rental.propertyImage.isNotEmpty ? rental.propertyImage : null,
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Could not start conversation'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ));
+        // Last resort — create conversation directly without verification
+        // since they're in an active rental
+        developer.log(
+          '⚠️ getOrCreateConversation returned null for active rental, creating directly',
+          name: 'RentalDashboard',
+        );
+        final directConv = await _createRentalConversation();
+        if (!mounted) return;
+        setState(() => _isMessageLoading = false);
+
+        if (directConv != null) {
+          context.push('/chat', extra: {
+            'conversationId': directConv,
+            'propertyTitle': rental.propertyTitle,
+            'propertyImage':
+                rental.propertyImage.isNotEmpty ? rental.propertyImage : null,
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Could not start conversation. Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ));
+        }
       }
     } catch (e) {
       developer.log('❌ Message error: $e', name: 'RentalDashboard');
       if (!mounted) return;
       setState(() => _isMessageLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error: ${e.toString()}'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
+  /// Create a conversation directly for an active rental — skips verification
+  /// since the rental itself proves both parties went through the full flow.
+  Future<String?> _createRentalConversation() async {
+    try {
+      final participants = [rental.tenantId, rental.landlordId];
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('conversations')
+          .add({
+        'propertyId': rental.propertyId,
+        'propertyTitle': rental.propertyTitle,
+        'propertyImage': rental.propertyImage,
+        'landlordId': rental.landlordId,
+        'landlordName': rental.landlordName,
+        'tenantId': rental.tenantId,
+        'tenantName': rental.tenantName,
+        'agentId': '',
+        'agentName': '',
+        'participants': participants,
+        'conversationType': 'property_rental',
+        'lastMessage': '',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastSenderId': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'unreadCount_${rental.tenantId}': 0,
+        'unreadCount_${rental.landlordId}': 0,
+      });
+
+      developer.log('✅ Created rental conversation directly: ${docRef.id}',
+          name: 'RentalDashboard');
+      return docRef.id;
+    } catch (e) {
+      developer.log('❌ Error creating rental conversation: $e',
+          name: 'RentalDashboard');
+      return null;
     }
   }
 
@@ -209,7 +301,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                           color: AppColors.border,
                           borderRadius: BorderRadius.circular(4)))
                           
-                  : Text('Welcome home, $_firstName 🏠',
+                  : Text('Welcome home, $_firstName',
                       style: AppTextStyles.h3
                           .copyWith(color: AppColors.textSecondary)),
               const SizedBox(height: 4),

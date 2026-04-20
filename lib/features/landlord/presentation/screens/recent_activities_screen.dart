@@ -7,6 +7,7 @@ import '../../../../shared/models/activity_model.dart';
 import '../../../../services/activity_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/conversation_service.dart';
 
 class RecentActivitiesScreen extends StatefulWidget {
   const RecentActivitiesScreen({super.key});
@@ -19,6 +20,7 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
   final ActivityService _activityService = ActivityService();
   final AuthService _authService = AuthService();
   final PropertyService _propertyService = PropertyService();
+  final ConversationService _conversationService = ConversationService();
 
   List<ActivityModel> _activities = [];
   List<Map<String, dynamic>> _announcements = [];
@@ -112,6 +114,14 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
+    // Property views and inquiries — show viewer info sheet (same as home screen)
+    if ((activity.type == ActivityType.propertyViewed ||
+            activity.type == ActivityType.inquiry) &&
+        activity.actorId != null) {
+      _showViewerSheet(activity);
+      return;
+    }
+
     if (activity.propertyId != null) {
       final property =
           await _propertyService.getProperty(activity.propertyId!);
@@ -119,6 +129,22 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
         context.push('/property-detail', extra: property);
       }
     }
+  }
+
+  void _showViewerSheet(ActivityModel activity) {
+    final currentUserId = _authService.currentUserId ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ViewerInfoSheet(
+        activity: activity,
+        landlordId: currentUserId,
+        conversationService: _conversationService,
+        propertyService: _propertyService,
+      ),
+    );
   }
 
   Future<void> _refresh() async {
@@ -623,5 +649,337 @@ class _ActivityCard extends StatelessWidget {
       case ActivityType.inspectionRated:     return AppColors.primary;
       case ActivityType.payoutReceived:      return AppColors.success;
     }
+  }
+}
+
+// ─── Viewer Info Sheet (matches landlord home screen behavior) ────────────────
+
+class _ViewerInfoSheet extends StatefulWidget {
+  final ActivityModel activity;
+  final String landlordId;
+  final ConversationService conversationService;
+  final PropertyService propertyService;
+
+  const _ViewerInfoSheet({
+    required this.activity,
+    required this.landlordId,
+    required this.conversationService,
+    required this.propertyService,
+  });
+
+  @override
+  State<_ViewerInfoSheet> createState() => _ViewerInfoSheetState();
+}
+
+class _ViewerInfoSheetState extends State<_ViewerInfoSheet> {
+  bool _isLoadingProfile = true;
+  bool _isMessaging = false;
+  Map<String, dynamic>? _viewerProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadViewerProfile();
+  }
+
+  Future<void> _loadViewerProfile() async {
+    if (widget.activity.actorId == null) {
+      setState(() => _isLoadingProfile = false);
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.activity.actorId)
+          .get();
+      if (mounted) {
+        setState(() {
+          _viewerProfile = doc.data();
+          _isLoadingProfile = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingProfile = false);
+    }
+  }
+
+  bool get _isVerified =>
+      _viewerProfile?['verificationStatus'] == 'verified';
+
+  Future<void> _startConversation() async {
+    if (widget.activity.propertyId == null) return;
+    setState(() => _isMessaging = true);
+    try {
+      final property = await widget.propertyService
+          .getProperty(widget.activity.propertyId!);
+      if (property == null || !mounted) {
+        setState(() => _isMessaging = false);
+        return;
+      }
+      final conv = await widget.conversationService.getOrCreateConversation(
+        propertyId: property.id,
+        propertyTitle: property.title,
+        propertyImage: property.images.isNotEmpty ? property.images.first : '',
+        landlordId: widget.landlordId,
+        landlordName: 'You',
+        tenantId: widget.activity.actorId!,
+        tenantName: widget.activity.actorName ?? 'Tenant',
+      );
+      if (!mounted) return;
+      Navigator.pop(context);
+      if (conv != null) {
+        context.push('/chat', extra: {
+          'conversationId': conv.id,
+          'propertyTitle': property.title,
+          'propertyImage':
+              property.images.isNotEmpty ? property.images.first : null,
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isMessaging = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        20, 20, 20, MediaQuery.of(context).padding.bottom + 20,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: _isLoadingProfile
+          ? SizedBox(
+              height: 120,
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              ),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+
+                // Header
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: AppColors.primary.withAlpha(26),
+                      child: Text(
+                        (widget.activity.actorName ?? 'U')[0].toUpperCase(),
+                        style: AppTextStyles.h4
+                            .copyWith(color: AppColors.primary),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.activity.actorName ?? 'Unknown',
+                            style: AppTextStyles.labelLarge,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              if (_isVerified)
+                                Row(children: [
+                                  Icon(Icons.verified,
+                                      size: 14, color: AppColors.success),
+                                  const SizedBox(width: 4),
+                                  Text('Verified',
+                                      style: AppTextStyles.caption
+                                          .copyWith(color: AppColors.success)),
+                                ])
+                              else
+                                Text('Not verified',
+                                    style: AppTextStyles.caption
+                                        .copyWith(color: AppColors.textHint)),
+                              const SizedBox(width: 8),
+                              Text('•',
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.textHint)),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  widget.activity.subtitle,
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.textSecondary),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Tenant details from profile
+                if (_viewerProfile != null) ...[
+                  const SizedBox(height: 16),
+                  _buildProfileDetails(),
+                ],
+
+                const SizedBox(height: 20),
+
+                // Message button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isMessaging ? null : _startConversation,
+                    icon: _isMessaging
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.chat_bubble_outline),
+                    label: Text(_isMessaging
+                        ? 'Opening chat...'
+                        : 'Message ${widget.activity.actorName ?? "Tenant"}'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildProfileDetails() {
+    final p = _viewerProfile!;
+    final occupation = p['occupation'] as String?;
+    final employer = p['employer'] as String?;
+    final workMode = p['workMode'] as String?;
+    final workplaceArea = p['workplaceArea'] as String?;
+    final budgetMin = (p['budgetMin'] as num?)?.toDouble();
+    final budgetMax = (p['budgetMax'] as num?)?.toDouble();
+    final preferredAreas = (p['preferredAreas'] as List?)?.cast<String>();
+
+    final hasDetails =
+        occupation != null || employer != null || budgetMin != null;
+    if (!hasDetails) return const SizedBox.shrink();
+
+    String? workModeLabel;
+    if (workMode != null) {
+      switch (workMode) {
+        case 'remote':
+          workModeLabel = 'Works remotely';
+        case 'commute':
+          workModeLabel = 'Commutes to work';
+        case 'hybrid':
+          workModeLabel = 'Hybrid (home & office)';
+        default:
+          workModeLabel = workMode;
+      }
+    }
+
+    String? budgetLabel;
+    if (budgetMin != null || budgetMax != null) {
+      final min = budgetMin != null ? '₦${_fmtAmt(budgetMin)}' : '';
+      final max = budgetMax != null ? '₦${_fmtAmt(budgetMax)}' : '';
+      if (min.isNotEmpty && max.isNotEmpty) {
+        budgetLabel = '$min – $max / year';
+      } else if (max.isNotEmpty) {
+        budgetLabel = 'Up to $max / year';
+      } else {
+        budgetLabel = 'From $min / year';
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Tenant Profile',
+              style: AppTextStyles.labelMedium
+                  .copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 10),
+          if (occupation != null)
+            _infoRow(Icons.work_outline, 'Occupation', occupation),
+          if (employer != null && employer.isNotEmpty)
+            _infoRow(Icons.business_outlined, 'Employer', employer),
+          if (workModeLabel != null)
+            _infoRow(
+                Icons.laptop_mac_outlined, 'Work Style', workModeLabel),
+          if (workplaceArea != null && workplaceArea.isNotEmpty)
+            _infoRow(
+                Icons.location_on_outlined, 'Workplace', workplaceArea),
+          if (budgetLabel != null)
+            _infoRow(Icons.account_balance_wallet_outlined, 'Budget',
+                budgetLabel),
+          if (preferredAreas != null && preferredAreas.isNotEmpty)
+            _infoRow(Icons.map_outlined, 'Preferred Areas',
+                preferredAreas.join(', ')),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: AppColors.textHint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textHint)),
+                const SizedBox(height: 2),
+                Text(value, style: AppTextStyles.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtAmt(double amount) {
+    final formatted = amount.toStringAsFixed(0);
+    final chars = formatted.split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
   }
 }

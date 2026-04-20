@@ -1890,6 +1890,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       subtitle: 'View and manage inspections',
                       onTap: () => context.push('/agent/inspections'),
                     ),
+                    _ProfileMenuItem(
+                      icon: Icons.receipt_long_outlined,
+                      title: 'Payments & Documents',
+                      subtitle: 'Receipts and payment history',
+                      onTap: () => context.push('/agent/documents'),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),

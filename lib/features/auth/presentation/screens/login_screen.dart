@@ -325,6 +325,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           if (!mounted) return;
           if (authResult.success) {
             await _biometricService.setOnboardingCompleted();
+            if (!mounted) return;
             if (authResult.isNewUser) {
               setState(() => _isLoading = false);
               context.go('/account-type');

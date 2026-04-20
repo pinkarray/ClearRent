@@ -9,9 +9,9 @@ class AboutScreen extends StatelessWidget {
 
   static const String _appVersion = '1.0.0';
   static const String _buildNumber = '1';
-  static const String _websiteUrl = 'https://clearrent.ng';
-  static const String _privacyUrl = 'https://clearrent.ng/privacy';
-  static const String _termsUrl = 'https://clearrent.ng/terms';
+  static const String _websiteUrl = 'https://www.verealtytech.com';
+  static const String _privacyUrl = 'https://www.verealtytech.com/privacy';
+  static const String _termsUrl = 'https://www.verealtytech.com/terms';
 
   Future<void> _launchUrl(BuildContext context, String url) async {
     final Uri uri = Uri.parse(url);
@@ -69,7 +69,7 @@ class AboutScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                'ClearRent is Nigeria\'s trusted rental marketplace that connects landlords directly with tenants. We eliminate rental fraud by verifying landlords and providing transparent, secure transactions.',
+                'ClearRent is Nigeria\'s verification-first rental platform that connects landlords directly with tenants. We eliminate rental fraud by verifying every user and providing transparent, secure transactions.',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: AppColors.textSecondary,
                   height: 1.6,
@@ -105,7 +105,7 @@ class AboutScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
-                '© ${DateTime.now().year} ClearRent. All rights reserved.',
+                '© ${DateTime.now().year} Verealty Technologies Ltd. All rights reserved.',
                 style: AppTextStyles.caption.copyWith(
                   color: AppColors.textHint,
                 ),
@@ -173,8 +173,8 @@ class AboutScreen extends StatelessWidget {
     final features = [
       _FeatureItem(
         icon: Icons.verified_user_outlined,
-        title: 'Verified Landlords',
-        description: 'All landlords go through identity verification',
+        title: 'Verified Users',
+        description: 'Every landlord, tenant, and agent is NIN-verified',
       ),
       _FeatureItem(
         icon: Icons.security_outlined,
@@ -266,7 +266,7 @@ class AboutScreen extends StatelessWidget {
             context: context,
             icon: Icons.language_outlined,
             title: 'Visit Website',
-            subtitle: 'clearrent.ng',
+            subtitle: 'verealtytech.com',
             onTap: () => _launchUrl(context, _websiteUrl),
           ),
           Divider(height: 1, color: AppColors.border, indent: 56),

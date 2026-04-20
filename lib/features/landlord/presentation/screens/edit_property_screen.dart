@@ -97,12 +97,16 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late int _bedrooms;
   late int _bathrooms;
   late int _toilets;
+  late int _livingRooms;
+  late int _guestRooms;
+  late int _kitchens;
   late String _rentPeriod;
   late List<String> _selectedAmenities;
   late List<String> _selectedRules;
   late bool _isAvailable;
   late String _inspectionHandler;
   late bool _includeAgentFee; // Agent fee is optional
+  String? _ceilingType;
 
   // Agent assignment
   String? _assignedAgentId;
@@ -135,7 +139,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     'CCTV',
     'Prepaid Meter',
     'Tiled Floor',
-    'POP Ceiling',
     'Wardrobe',
     'Kitchen Cabinets',
     'Water Heater',
@@ -181,6 +184,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _bedrooms = p.bedrooms;
     _bathrooms = p.bathrooms;
     _toilets = p.toilets;
+    _livingRooms = p.livingRooms;
+    _guestRooms = p.guestRooms;
+    _kitchens = p.kitchens;
     _rentPeriod = p.rentFrequency;
     _selectedAmenities = List.from(p.amenities);
     _selectedRules = List.from(p.rules);
@@ -195,6 +201,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     // Initialize ownership document
     _ownershipDocUrl = p.ownershipDocUrl;
     _ownershipDocType = p.ownershipDocType;
+    _ceilingType = p.ceilingType;
 
     // Listen for changes
     _titleController.addListener(_onFieldChanged);
@@ -540,6 +547,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'bedrooms': _bedrooms,
         'bathrooms': _bathrooms,
         'toilets': _toilets,
+        'livingRooms': _livingRooms,
+        'guestRooms': _guestRooms,
+        'kitchens': _kitchens,
         'images': allImageUrls,
         'address': _addressController.text.trim(),
         'city': _cityController.text.trim(),
@@ -549,6 +559,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
         'cautionDeposit': _parseAmountFromController(_cautionDepositController),
         'amenities': _selectedAmenities,
+        if (_ceilingType != null) 'ceilingType': _ceilingType,
         'rules': _selectedRules,
         'isAvailable': _isAvailable,
         'inspectionHandler': _inspectionHandler,
@@ -740,6 +751,27 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               _buildSectionTitle('Amenities'),
               const SizedBox(height: 12),
               _buildAmenitiesSection(),
+              const SizedBox(height: 24),
+
+              // Ceiling Type
+              _buildSectionTitle('Ceiling Type'),
+              const SizedBox(height: 4),
+              Text(
+                'What type of ceiling does the property have?',
+                style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildCeilingChip('False Ceiling (POP)', 'false_ceiling'),
+                  _buildCeilingChip('PVC', 'pvc'),
+                  _buildCeilingChip('Concrete', 'concrete'),
+                  _buildCeilingChip('Asbestos', 'asbestos'),
+                  _buildCeilingChip('None', 'none'),
+                ],
+              ),
               const SizedBox(height: 24),
 
               // House rules
@@ -1016,6 +1048,24 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             const SizedBox(width: 12),
             Expanded(child: _buildCounter('Toilets', _toilets, (v) {
               setState(() { _toilets = v; _hasChanges = true; });
+            })),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Second row: Living Room, Guest Room, Kitchen
+        Row(
+          children: [
+            Expanded(child: _buildCounter('Living Room', _livingRooms, (v) {
+              setState(() { _livingRooms = v; _hasChanges = true; });
+            })),
+            const SizedBox(width: 12),
+            Expanded(child: _buildCounter('Guest Room', _guestRooms, (v) {
+              setState(() { _guestRooms = v; _hasChanges = true; });
+            })),
+            const SizedBox(width: 12),
+            Expanded(child: _buildCounter('Kitchen', _kitchens, (v) {
+              setState(() { _kitchens = v; _hasChanges = true; });
             })),
           ],
         ),
@@ -1955,6 +2005,32 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildCeilingChip(String label, String value) {
+    final isSelected = _ceilingType == value;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _ceilingType = isSelected ? null : value;
+        _hasChanges = true;
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withAlpha(26) : AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelMedium.copyWith(
+            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 

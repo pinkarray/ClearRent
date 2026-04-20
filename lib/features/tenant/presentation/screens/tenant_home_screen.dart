@@ -481,12 +481,14 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     // ── TIER 3: Unlinked tenant — browse mode (with active rental if any) ─
     if (!_isLoadingRental && _activeRental != null && !_browsingFromDashboard) {
       if (_currentNavIndex == 0) {
-        return TenantRentalDashboard(
-          rental: _activeRental!,
-          userName: _userName,
-          userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
-          isLoadingProfile: _isLoadingProfile,
-          onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
+        return SafeArea(
+          child: TenantRentalDashboard(
+            rental: _activeRental!,
+            userName: _userName,
+            userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+            isLoadingProfile: _isLoadingProfile,
+            onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
+          ),
         );
       }
     }
@@ -1602,7 +1604,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _isLoadingProfile
               ? Container(width: 120, height: 16, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(4)))
-              : Text('Hello, $_firstName 👋', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+              : Text('Hello, $_firstName ', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 4),
           Text(
             _activeRental != null ? 'Browse more properties' : 'Find your perfect space',

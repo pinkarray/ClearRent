@@ -856,6 +856,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   Widget _buildPropertiesPreview() {
     if (_isLoadingProperties) {
       return Container(
+        width: double.infinity,
         padding: const EdgeInsets.all(40),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -870,6 +871,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
     if (_myProperties.isEmpty) {
       return Container(
+        width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -1353,6 +1355,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             const SizedBox(height: 24),
             _ProfileSection(title: 'Finances', items: [
               _ProfileMenuItem(icon: Icons.account_balance_wallet_outlined, title: 'Earnings & Transactions', subtitle: _totalEarnings > 0 ? '₦${(_totalEarnings / 1000000).toStringAsFixed(1)}M total' : 'View your earnings and payment history', onTap: () => context.push('/landlord/earnings')),
+              _ProfileMenuItem(icon: Icons.receipt_long_outlined, title: 'Payments & Documents', subtitle: 'Receipts and payment history', onTap: () => context.push('/landlord/documents')),
             ]),
             const SizedBox(height: 24),
             _ProfileSection(title: 'Preferences', items: [
@@ -1369,23 +1372,6 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 onTap: () => context.push('/about'),
               ),
             ]),
-            // Only show Admin section for your account
-            if (_authService.currentUser?.uid == 'hEKsYuKKdzLlPD0QWOP2CvAxYlq2') ...[
-              const SizedBox(height: 24),
-              _ProfileSection(title: 'Admin', items: [
-                _ProfileMenuItem(icon: Icons.admin_panel_settings_outlined, title: 'Review Verifications', subtitle: 'Approve or reject landlord verifications', onTap: () => context.push('/admin/verifications')),
-                _ProfileMenuItem(icon: Icons.pending_actions_outlined, title: 'Payment Verification', subtitle: 'View and manage all users', onTap: () => context.push('/admin/payment-verification')), 
-                _ProfileMenuItem(icon: Icons.pending_actions_outlined, title: 'Rent Verification', subtitle: 'Review Paid Rents', onTap: () => context.push('/admin/rental-verification')),
-                _ProfileMenuItem(
-                  icon: Icons.payments_outlined, 
-                  title: 'Agent Payouts', 
-                  subtitle: 'Pay agents for completed inspections', 
-                  onTap: () => context.push('/admin/agent-payouts'),
-                ),
-              ]),
-            ],
-            const SizedBox(height: 16),
-            Center(child: Text('Member since November 2024', style: AppTextStyles.caption.copyWith(color: AppColors.textHint))),
             const SizedBox(height: 20),
           ]),
         ),
@@ -1922,7 +1908,7 @@ class _LandlordPropertyCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Image.network(
-              property.images.isNotEmpty ? property.images.first : 'https://via.placeholder.com/100', 
+              property.images.isNotEmpty ? property.images.first : '', 
               width: 80, height: 80, fit: BoxFit.cover,
               errorBuilder: (c, e, s) => Container(width: 80, height: 80, color: AppColors.background, child: Icon(Icons.image_not_supported, color: AppColors.textHint)),
             ),

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+import 'dart:io';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/auth_service.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../services/property_service.dart';
+import '../../../../shared/widgets/area_dropdown.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String accountType;
@@ -42,7 +44,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   // Agent-specific fields
   String? _selectedBaseLocation;
   final List<String> _selectedServiceAreas = [];
-  bool _showCustomAreaInput = false;
 
   // Tenant-specific fields
   String? _selectedWorkMode;
@@ -50,69 +51,121 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String? _selectedIncomeRange;
   String? _selectedMaritalStatus;
   final List<String> _selectedPreferredAreas = [];
-  bool _showPreferredAreaCustomInput = false;
-  final _preferredAreaCustomController = TextEditingController();
 
   File? _profileImageFile;
   final PropertyService _profileUploadService = PropertyService();
-
-  static const List<String> _lagosAreas = [
-    'Victoria Island', 'Ikoyi', 'Lekki Phase 1', 'Lekki Phase 2', 'Lekki',
-    'Ajah', 'Sangotedo', 'Chevron', 'Ilasan', 'Oniru', 'Obalende', 'Marina',
-    'Lagos Island', 'Ibeju-Lekki', 'Epe',
-    'Ikeja', 'GRA Ikeja', 'Alausa', 'Oregun', 'Omole', 'Ojodu', 'Ogba',
-    'Berger', 'Isheri', 'Maryland', 'Anthony', 'Palmgrove', 'Gbagada', 'Ogudu',
-    'Yaba', 'Surulere', 'Bariga', 'Shomolu', 'Fadeyi', 'Mushin', 'Isolo',
-    'Ikotun', 'Egbeda', 'Alimosho', 'Oshodi', 'Mafoluku', 'Festac',
-    'Amuwo-Odofin', 'Apapa', 'Ajegunle',
-    'Ketu', 'Mile 12', 'Ojota', 'Agege', 'Magodo', 'Ifako-Ijaiye',
-    'Ikorodu', 'Badagry', 'Ojo',
-    'Other',
-  ];
 
   bool get _isLandlord => widget.accountType == 'landlord';
   bool get _isAgent => widget.accountType == 'agent';
   bool get _isTenant => widget.accountType == 'tenant';
 
-  List<String> get _selectableAreas =>
-      _lagosAreas.where((a) => a != 'Other').toList();
-
-  bool get _allSelected =>
-      _selectableAreas.every((a) => _selectedServiceAreas.contains(a));
-
-  void _toggleSelectAll() {
-    setState(() {
-      if (_allSelected) {
-        _selectedServiceAreas.clear();
-      } else {
-        _selectedServiceAreas.clear();
-        _selectedServiceAreas.addAll(_selectableAreas);
-      }
-    });
-  }
-
-  bool get _allPreferredSelected =>
-      _selectableAreas.every((a) => _selectedPreferredAreas.contains(a));
-
-  void _toggleSelectAllPreferred() {
-    setState(() {
-      if (_allPreferredSelected) {
-        _selectedPreferredAreas.clear();
-      } else {
-        _selectedPreferredAreas.clear();
-        _selectedPreferredAreas.addAll(_selectableAreas);
-      }
-    });
-  }
-
   @override
   void initState() {
     super.initState();
     _authService = AuthService();
+    _loadDraft();
+
+    // Auto-save draft when text fields lose focus
+    _nameController.addListener(_debounceSaveDraft);
+    _emailController.addListener(_debounceSaveDraft);
+    _occupationController.addListener(_debounceSaveDraft);
+    _employerController.addListener(_debounceSaveDraft);
+    _budgetMinController.addListener(_debounceSaveDraft);
+    _budgetMaxController.addListener(_debounceSaveDraft);
+  }
+
+  // Simple debounce: only save after user stops typing for 1.5s
+  Timer? _draftTimer;
+  void _debounceSaveDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 1500), _saveDraft);
+  }
+
+  /// Load any saved draft and pre-fill form fields.
+  Future<void> _loadDraft() async {
+    final draft = await _authService.getProfileDraft();
+    if (draft == null || !mounted) return;
+
+    setState(() {
+      // Common fields
+      if (draft['fullName'] != null) _nameController.text = draft['fullName'];
+      if (draft['email'] != null) _emailController.text = draft['email'];
+
+      // Agent fields
+      if (draft['baseLocation'] != null) _selectedBaseLocation = draft['baseLocation'];
+      if (draft['serviceAreas'] != null) {
+        _selectedServiceAreas.clear();
+        _selectedServiceAreas.addAll(List<String>.from(draft['serviceAreas']));
+      }
+
+      // Tenant fields
+      if (draft['occupation'] != null) _occupationController.text = draft['occupation'];
+      if (draft['employer'] != null) _employerController.text = draft['employer'];
+      if (draft['workMode'] != null) _selectedWorkMode = draft['workMode'];
+      if (draft['workplaceArea'] != null) _selectedWorkplaceArea = draft['workplaceArea'];
+      if (draft['incomeRange'] != null) _selectedIncomeRange = draft['incomeRange'];
+      if (draft['maritalStatus'] != null) _selectedMaritalStatus = draft['maritalStatus'];
+      if (draft['budgetMin'] != null && (draft['budgetMin'] as num) > 0) {
+        _budgetMinController.text = _formatDraftAmount(draft['budgetMin']);
+      }
+      if (draft['budgetMax'] != null && (draft['budgetMax'] as num) > 0) {
+        _budgetMaxController.text = _formatDraftAmount(draft['budgetMax']);
+      }
+      if (draft['preferredAreas'] != null) {
+        _selectedPreferredAreas.clear();
+        _selectedPreferredAreas.addAll(List<String>.from(draft['preferredAreas']));
+      }
+    });
+  }
+
+  String _formatDraftAmount(dynamic value) {
+    final amount = (value as num).toInt();
+    if (amount <= 0) return '';
+    final chars = amount.toString().split('').reversed.toList();
+    final result = <String>[];
+    for (var i = 0; i < chars.length; i++) {
+      if (i > 0 && i % 3 == 0) result.add(',');
+      result.add(chars[i]);
+    }
+    return result.reversed.join('');
+  }
+
+  /// Save current form state as a draft (fire-and-forget).
+  void _saveDraft() {
+    final draft = <String, dynamic>{
+      'fullName': _nameController.text.trim(),
+      'email': _emailController.text.trim(),
+    };
+
+    if (_isAgent) {
+      draft['baseLocation'] = _selectedBaseLocation;
+      draft['serviceAreas'] = _selectedServiceAreas;
+    }
+
+    if (_isTenant) {
+      draft['occupation'] = _occupationController.text.trim();
+      draft['employer'] = _employerController.text.trim();
+      draft['workMode'] = _selectedWorkMode;
+      draft['workplaceArea'] = _selectedWorkplaceArea;
+      draft['incomeRange'] = _selectedIncomeRange;
+      draft['maritalStatus'] = _selectedMaritalStatus;
+      draft['budgetMin'] = _parseBudgetAmount(_budgetMinController);
+      draft['budgetMax'] = _parseBudgetAmount(_budgetMaxController);
+      draft['preferredAreas'] = _selectedPreferredAreas;
+    }
+
+    _authService.saveProfileDraft(draft);
   }
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
+    _nameController.removeListener(_debounceSaveDraft);
+    _emailController.removeListener(_debounceSaveDraft);
+    _occupationController.removeListener(_debounceSaveDraft);
+    _employerController.removeListener(_debounceSaveDraft);
+    _budgetMinController.removeListener(_debounceSaveDraft);
+    _budgetMaxController.removeListener(_debounceSaveDraft);
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -122,7 +175,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     _employerController.dispose();
     _budgetMinController.dispose();
     _budgetMaxController.dispose();
-    _preferredAreaCustomController.dispose();
     super.dispose();
   }
 
@@ -149,31 +201,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     if (value == null || value.isEmpty) return 'Please confirm your password';
     if (value != _passwordController.text) return 'Passwords do not match';
     return null;
-  }
-
-  void _toggleServiceArea(String area) {
-    setState(() {
-      if (area == 'Other') {
-        _showCustomAreaInput = !_showCustomAreaInput;
-        if (!_showCustomAreaInput) _customAreaController.clear();
-      } else {
-        if (_selectedServiceAreas.contains(area)) {
-          _selectedServiceAreas.remove(area);
-        } else {
-          _selectedServiceAreas.add(area);
-        }
-      }
-    });
-  }
-
-  void _addCustomArea() {
-    final customArea = _customAreaController.text.trim();
-    if (customArea.isNotEmpty && !_selectedServiceAreas.contains(customArea)) {
-      setState(() {
-        _selectedServiceAreas.add(customArea);
-        _customAreaController.clear();
-      });
-    }
   }
 
   Future<void> _pickProfileImage() async {
@@ -317,6 +344,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     setState(() => _isLoading = false);
     if (!mounted) return;
+
+    // Clear draft after successful completion
+    _authService.clearProfileDraft();
 
     switch (widget.accountType) {
       case 'landlord': context.go('/landlord/home'); break;
@@ -491,25 +521,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     return double.tryParse(cleanedText) ?? 0;
   }
 
-  void _togglePreferredArea(String area) {
-    setState(() {
-      if (area == 'Other') {
-        _showPreferredAreaCustomInput = !_showPreferredAreaCustomInput;
-        if (!_showPreferredAreaCustomInput) _preferredAreaCustomController.clear();
-      } else {
-        if (_selectedPreferredAreas.contains(area)) { _selectedPreferredAreas.remove(area); }
-        else { _selectedPreferredAreas.add(area); }
-      }
-    });
-  }
-
-  void _addPreferredCustomArea() {
-    final customArea = _preferredAreaCustomController.text.trim();
-    if (customArea.isNotEmpty && !_selectedPreferredAreas.contains(customArea)) {
-      setState(() { _selectedPreferredAreas.add(customArea); _preferredAreaCustomController.clear(); });
-    }
-  }
-
   Widget _buildTenantSectionHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -553,7 +564,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Widget _buildWorkModeChip(String label, String value, IconData icon) {
     final isSelected = _selectedWorkMode == value;
     return Expanded(child: GestureDetector(
-      onTap: () => setState(() => _selectedWorkMode = value),
+      onTap: () { setState(() => _selectedWorkMode = value); _saveDraft(); },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
@@ -571,24 +582,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     ));
   }
 
-  Widget _buildWorkplaceAreaSelector() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text('Where do you work?', style: AppTextStyles.labelMedium), const SizedBox(height: 4),
-    Text('This helps match you with properties near your workplace.',
-      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-    const SizedBox(height: 8),
-    Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border)),
-      child: DropdownButtonHideUnderline(child: DropdownButton<String>(
-        value: _selectedWorkplaceArea,
-        hint: Text('Select your workplace area', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
-        isExpanded: true, icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-        items: _selectableAreas.map((area) => DropdownMenuItem(value: area, child: Text(area, style: AppTextStyles.bodyMedium))).toList(),
-        onChanged: (value) => setState(() => _selectedWorkplaceArea = value),
-      )),
-    ),
-  ]);
+  Widget _buildWorkplaceAreaSelector() => AreaDropdown(
+    label: 'Where do you work?',
+    helperText: 'This helps match you with properties near your workplace.',
+    hint: 'Select your workplace area',
+    selectedArea: _selectedWorkplaceArea,
+    onSelected: (value) { setState(() => _selectedWorkplaceArea = value); _saveDraft(); },
+  );
 
   Widget _buildMaritalStatusSelector() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Text('Marital Status', style: AppTextStyles.labelMedium), const SizedBox(height: 8),
@@ -602,7 +602,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   Widget _buildMaritalChip(String label, String value) {
     final isSelected = _selectedMaritalStatus == value;
     return Expanded(child: GestureDetector(
-      onTap: () => setState(() => _selectedMaritalStatus = value),
+      onTap: () { setState(() => _selectedMaritalStatus = value); _saveDraft(); },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
@@ -624,7 +624,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     Wrap(spacing: 8, runSpacing: 8, children: _incomeRanges.map((range) {
       final isSelected = _selectedIncomeRange == range['id'];
       return GestureDetector(
-        onTap: () => setState(() => _selectedIncomeRange = range['id']),
+        onTap: () { setState(() => _selectedIncomeRange = range['id']); _saveDraft(); },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
@@ -669,119 +669,39 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     ]),
   ]);
 
-  Widget _buildPreferredAreasSelector() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text('Preferred Areas', style: AppTextStyles.labelMedium), const SizedBox(height: 4),
-    Text('Where are you looking to rent? Select all areas that interest you.',
-      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-    const SizedBox(height: 12),
-    Container(
-      padding: const EdgeInsets.all(16), constraints: const BoxConstraints(maxHeight: 300),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-      child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text('Tap to select areas:', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-          const Spacer(),
-          GestureDetector(onTap: _toggleSelectAllPreferred, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _allPreferredSelected ? AppColors.error.withAlpha(26) : AppColors.primary.withAlpha(26),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _allPreferredSelected ? AppColors.error.withAlpha(77) : AppColors.primary.withAlpha(77))),
-            child: Text(_allPreferredSelected ? 'Clear All' : 'Select All',
-              style: AppTextStyles.labelSmall.copyWith(
-                color: _allPreferredSelected ? AppColors.error : AppColors.primary, fontWeight: FontWeight.w600)))),
-        ]),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: _lagosAreas.map((area) {
-          final isSelected = _selectedPreferredAreas.contains(area) || (area == 'Other' && _showPreferredAreaCustomInput);
-          return GestureDetector(onTap: () => _togglePreferredArea(area), child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary : AppColors.background, borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isSelected ? AppColors.primary : AppColors.border)),
-            child: Text(area, style: AppTextStyles.bodySmall.copyWith(color: isSelected ? Colors.white : AppColors.textPrimary))));
-        }).toList()),
-      ])),
-    ),
-    if (_showPreferredAreaCustomInput) ...[
-      const SizedBox(height: 12),
-      Row(children: [
-        Expanded(child: AppTextField(label: 'Other Area', hint: 'Enter area name',
-          controller: _preferredAreaCustomController, textCapitalization: TextCapitalization.words,
-          textInputAction: TextInputAction.done, onSubmitted: (_) => _addPreferredCustomArea())),
-        const SizedBox(width: 12),
-        Padding(padding: const EdgeInsets.only(top: 24),
-          child: IconButton(onPressed: _addPreferredCustomArea, icon: Icon(Icons.add_circle, color: AppColors.primary, size: 32))),
-      ]),
-    ],
-  ]);
+  Widget _buildPreferredAreasSelector() => AreaMultiSelect(
+    label: 'Preferred Areas',
+    helperText: 'Where are you looking to rent? Select all areas that interest you.',
+    selectedAreas: _selectedPreferredAreas,
+    onChanged: (areas) {
+      setState(() {
+        _selectedPreferredAreas.clear();
+        _selectedPreferredAreas.addAll(areas);
+      });
+      _saveDraft();
+    },
+  );
 
-  Widget _buildBaseLocationSelector() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text('Base Location', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textPrimary)),
-    const SizedBox(height: 4),
-    Text('Where are you based? This helps us calculate inspection distances.',
-      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-    const SizedBox(height: 12),
-    Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-      child: DropdownButtonHideUnderline(child: DropdownButton<String>(
-        value: _selectedBaseLocation,
-        hint: Text('Select your area', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
-        isExpanded: true, icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-        items: _selectableAreas.map((area) => DropdownMenuItem(value: area, child: Text(area, style: AppTextStyles.bodyMedium))).toList(),
-        onChanged: (value) => setState(() => _selectedBaseLocation = value),
-      )),
-    ),
-  ]);
+  Widget _buildBaseLocationSelector() => AreaDropdown(
+    label: 'Base Location',
+    helperText: 'Where are you based? This helps us calculate inspection distances.',
+    hint: 'Select your area',
+    selectedArea: _selectedBaseLocation,
+    onSelected: (value) { setState(() => _selectedBaseLocation = value); _saveDraft(); },
+  );
 
-  Widget _buildServiceAreasSelector() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text('Service Areas', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textPrimary)),
-    const SizedBox(height: 4),
-    Text('Which areas can you cover for inspections? Select all that apply.',
-      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-    const SizedBox(height: 12),
-    Container(
-      padding: const EdgeInsets.all(16), constraints: const BoxConstraints(maxHeight: 300),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-      child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text('Tap to select areas:', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-          const Spacer(),
-          GestureDetector(onTap: _toggleSelectAll, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _allSelected ? AppColors.error.withAlpha(26) : AppColors.primary.withAlpha(26),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _allSelected ? AppColors.error.withAlpha(77) : AppColors.primary.withAlpha(77))),
-            child: Text(_allSelected ? 'Clear All' : 'Select All',
-              style: AppTextStyles.labelSmall.copyWith(
-                color: _allSelected ? AppColors.error : AppColors.primary, fontWeight: FontWeight.w600)))),
-        ]),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: _lagosAreas.map((area) {
-          final isSelected = _selectedServiceAreas.contains(area) || (area == 'Other' && _showCustomAreaInput);
-          return GestureDetector(onTap: () => _toggleServiceArea(area), child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary : AppColors.background, borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isSelected ? AppColors.primary : AppColors.border)),
-            child: Text(area, style: AppTextStyles.bodySmall.copyWith(color: isSelected ? Colors.white : AppColors.textPrimary))));
-        }).toList()),
-      ])),
-    ),
-    if (_showCustomAreaInput) ...[
-      const SizedBox(height: 16),
-      Row(children: [
-        Expanded(child: AppTextField(label: 'Other Area', hint: 'Enter area name',
-          controller: _customAreaController, textCapitalization: TextCapitalization.words,
-          textInputAction: TextInputAction.done, onSubmitted: (_) => _addCustomArea())),
-        const SizedBox(width: 12),
-        Padding(padding: const EdgeInsets.only(top: 24),
-          child: IconButton(onPressed: _addCustomArea, icon: Icon(Icons.add_circle, color: AppColors.primary, size: 32))),
-      ]),
-    ],
-  ]);
+  Widget _buildServiceAreasSelector() => AreaMultiSelect(
+    label: 'Service Areas',
+    helperText: 'Which areas can you cover for inspections? Select all that apply.',
+    selectedAreas: _selectedServiceAreas,
+    onChanged: (areas) {
+      setState(() {
+        _selectedServiceAreas.clear();
+        _selectedServiceAreas.addAll(areas);
+      });
+      _saveDraft();
+    },
+  );
 }
 
 class _ThousandsSeparator extends TextInputFormatter {

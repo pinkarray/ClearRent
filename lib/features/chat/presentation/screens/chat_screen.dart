@@ -296,6 +296,8 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Get role badge color
   Color _getRoleBadgeColor(String role) {
     switch (role.toLowerCase()) {
+      case 'system':
+        return AppColors.textHint;
       case 'landlord':
         return const Color(0xFF6366F1); // Indigo
       case 'agent':
@@ -310,6 +312,8 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Get role badge label
   String _getRoleBadgeLabel(String role) {
     switch (role.toLowerCase()) {
+      case 'system':
+        return 'System';
       case 'landlord':
         return 'Landlord';
       case 'agent':
@@ -499,7 +503,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     return Column(
                       children: [
                         if (showDate) _buildDateDivider(message.timestamp),
-                        _buildMessageBubble(message, isMe, isFirstInGroup),
+                        message.isSystemMessage
+                            ? _buildSystemMessage(message)
+                            : _buildMessageBubble(message, isMe, isFirstInGroup),
                       ],
                     );
                   },
@@ -704,6 +710,30 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const Expanded(child: Divider()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSystemMessage(MessageData message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Text(
+            message.text,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+              fontStyle: FontStyle.italic,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
       ),
     );
   }

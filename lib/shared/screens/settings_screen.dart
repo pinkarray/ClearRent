@@ -280,6 +280,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  bool _isDeletingAccount = false;
+
   void _showDeleteAccountDialog() {
     showDialog(
       context: context,
@@ -301,14 +303,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 12),
             _buildDeleteItem('Your profile information'),
-            _buildDeleteItem('Your saved properties'),
+            _buildDeleteItem('Your properties and listings'),
             _buildDeleteItem('Your rental history'),
+            _buildDeleteItem('Inspection requests'),
             _buildDeleteItem('Message history'),
+            _buildDeleteItem('Payment records'),
             const SizedBox(height: 16),
             Text(
-              'To delete your account, please contact support.',
+              'Are you sure you want to permanently delete your account?',
               style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -327,12 +332,203 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _contactSupport();
+              _confirmDeleteAccount();
             },
             child: Text(
-              'Contact Support',
-              style: TextStyle(color: AppColors.error),
+              'Delete My Account',
+              style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount() {
+    // Second confirmation with typed input
+    final confirmController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Type DELETE to confirm', style: AppTextStyles.h4.copyWith(color: AppColors.error)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'This is your last chance. Type DELETE below to permanently remove your account.',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: confirmController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                hintText: 'Type DELETE',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.error),
+                ),
+              ),
+            ),
+          ],
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              if (confirmController.text.trim().toUpperCase() == 'DELETE') {
+                Navigator.pop(ctx);
+                _executeDeleteAccount();
+              }
+            },
+            child: Text('Delete Forever', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _executeDeleteAccount() async {
+    if (_isDeletingAccount) return;
+    setState(() => _isDeletingAccount = true);
+
+    // Save context refs before async
+    final router = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Show loading overlay
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppColors.error),
+                const SizedBox(height: 20),
+                Text('Deleting your account...', style: AppTextStyles.labelLarge),
+                const SizedBox(height: 8),
+                Text('This may take a moment', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final error = await _authService.deleteAccount();
+
+    if (!mounted) return;
+
+    // Dismiss loading overlay
+    Navigator.of(context, rootNavigator: true).pop();
+    setState(() => _isDeletingAccount = false);
+
+    if (error == null) {
+      // Success — navigate to login
+      router.go('/');
+    } else if (error == 'requires-recent-login') {
+      // Need re-authentication
+      _showReauthDialog();
+    } else {
+      messenger.showSnackBar(SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(error)),
+          ],
+        ),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
+  void _showReauthDialog() {
+    final passwordController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Re-authenticate', style: AppTextStyles.h4),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'For security, please enter your password to confirm account deletion.',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Your password',
+                prefixIcon: Icon(Icons.lock_outline, color: AppColors.textSecondary),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ),
+          ],
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final password = passwordController.text.trim();
+              if (password.isEmpty) return;
+
+              Navigator.pop(ctx);
+
+              try {
+                final user = FirebaseAuth.instance.currentUser;
+                if (user?.email != null) {
+                  final credential = EmailAuthProvider.credential(
+                    email: user!.email!,
+                    password: password,
+                  );
+                  await user.reauthenticateWithCredential(credential);
+                  // Now retry deletion
+                  _executeDeleteAccount();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: const Text('Incorrect password. Please try again.'),
+                    backgroundColor: AppColors.error,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ));
+                }
+              }
+            },
+            child: Text('Confirm', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -357,10 +553,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }
-
-  void _contactSupport() {
-    _showSuccess('Please email support@clearrent.ng to delete your account');
   }
 
   void _showSuccess(String message) {

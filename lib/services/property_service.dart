@@ -66,6 +66,32 @@ class PropertyService {
     return urls;
   }
 
+  /// Upload a video to Cloudinary
+  Future<String?> uploadVideo(File videoFile) async {
+    try {
+      final response = await _cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          videoFile.path,
+          folder: 'clearrent/properties/$_currentUserId/videos',
+          resourceType: CloudinaryResourceType.Video,
+        ),
+      );
+      developer.log(
+        '✅ Video uploaded: ${response.secureUrl}',
+        name: 'PropertyService',
+      );
+      return response.secureUrl;
+    } catch (e) {
+      developer.log(
+        '❌ Video upload failed: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return null;
+    }
+  }
+
   /// Create a new property in Firestore
   Future<String?> createProperty({
     required String title,
@@ -74,6 +100,9 @@ class PropertyService {
     required int bedrooms,
     required int bathrooms,
     required int toilets,
+    int livingRooms = 1,
+    int guestRooms = 0,
+    int kitchens = 1,
     required List<String> imageUrls,
     required String address,
     required String city,
@@ -119,6 +148,9 @@ class PropertyService {
     double? inspectionServiceFee,
     String? inspectionAgentCluster,
     String? inspectionPropertyCluster,
+    String? videoUrl,
+    String? ceilingType,
+    List<Map<String, dynamic>> recurringDues = const [],
   }) async {
     try {
       if (_currentUserId == null) {
@@ -171,6 +203,9 @@ class PropertyService {
         'bedrooms': bedrooms,
         'bathrooms': bathrooms,
         'toilets': toilets,
+        'livingRooms': livingRooms,
+        'guestRooms': guestRooms,
+        'kitchens': kitchens,
         'images': imageUrls,
         'address': address,
         'city': city,
@@ -199,6 +234,9 @@ class PropertyService {
         'inquiryCount': 0,
         'savedCount': 0,
         'landlordLivesInProperty': landlordLivesInProperty,
+        if (videoUrl != null) 'videoUrl': videoUrl,
+        if (ceilingType != null) 'ceilingType': ceilingType,
+        if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
         'landlordLivesOnPremises': landlordLivesOnPremises,
         'currentTenantsCount': currentTenantsCount,
         'hasCaretaker': hasCaretaker,

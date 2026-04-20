@@ -80,7 +80,7 @@ Download ClearRent to view more: https://clearrent.app''';
                   child: Image.network(
                     property.images.isNotEmpty
                         ? property.images.first
-                        : 'https://via.placeholder.com/60',
+                        : '',
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,

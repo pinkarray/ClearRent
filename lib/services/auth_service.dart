@@ -471,6 +471,58 @@ class AuthService {
     }
   }
 
+  // ============ PROFILE DRAFT (onboarding persistence) ============
+
+  /// Save partial profile setup progress so the user can resume after
+  /// app restart, incoming call, etc. Stored on the user doc under
+  /// `profileDraft`. Only saved when `profileCompleted` is still false.
+  Future<void> saveProfileDraft(Map<String, dynamic> draft) async {
+    try {
+      if (currentUser == null) return;
+      await _firestore.collection('users').doc(currentUser!.uid).set({
+        'profileDraft': {
+          ...draft,
+          'savedAt': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+      developer.log('💾 Profile draft saved', name: 'AuthService');
+    } catch (e) {
+      developer.log('⚠️ saveProfileDraft failed: $e', name: 'AuthService');
+    }
+  }
+
+  /// Load a previously saved profile draft (returns null if none).
+  Future<Map<String, dynamic>?> getProfileDraft() async {
+    try {
+      if (currentUser == null) return null;
+      final doc = await _firestore
+          .collection('users')
+          .doc(currentUser!.uid)
+          .get();
+      final data = doc.data();
+      if (data == null) return null;
+      // Only return draft if profile isn't completed yet
+      if (data['profileCompleted'] == true) return null;
+      return data['profileDraft'] as Map<String, dynamic>?;
+    } catch (e) {
+      developer.log('⚠️ getProfileDraft failed: $e', name: 'AuthService');
+      return null;
+    }
+  }
+
+  /// Clear the draft after successful profile completion.
+  Future<void> clearProfileDraft() async {
+    try {
+      if (currentUser == null) return;
+      await _firestore.collection('users').doc(currentUser!.uid).update({
+        'profileDraft': FieldValue.delete(),
+      });
+      developer.log('🗑️ Profile draft cleared', name: 'AuthService');
+    } catch (e) {
+      developer.log('⚠️ clearProfileDraft failed: $e', name: 'AuthService');
+    }
+  }
+
   // Save user profile to Firestore
   Future<bool> saveUserProfile({
     required String fullName,
@@ -806,6 +858,167 @@ class AuthService {
         return 'Too many attempts. Please try again later.';
       default:
         return 'An error occurred. Please try again.';
+    }
+  }
+  // ============ DELETE ACCOUNT ============
+
+  /// Permanently deletes the current user's account and all associated data.
+  /// Returns an error message on failure, or null on success.
+  Future<String?> deleteAccount() async {
+    final uid = currentUserId;
+    if (uid == null) return 'Not logged in';
+
+    try {
+      developer.log('🗑️ Starting account deletion for $uid', name: 'AuthService');
+
+      // 1. Delete user's properties
+      final propertiesSnap = await _firestore
+          .collection('properties')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in propertiesSnap.docs) {
+        await doc.reference.delete();
+      }
+
+      // 2. Delete activities (both userId and landlordId fields)
+      final activitiesSnap1 = await _firestore
+          .collection('activities')
+          .where('userId', isEqualTo: uid)
+          .get();
+      for (final doc in activitiesSnap1.docs) {
+        await doc.reference.delete();
+      }
+      final activitiesSnap2 = await _firestore
+          .collection('activities')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in activitiesSnap2.docs) {
+        await doc.reference.delete();
+      }
+
+      // 3. Delete active rentals
+      final rentalsSnap1 = await _firestore
+          .collection('active_rentals')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in rentalsSnap1.docs) {
+        await doc.reference.delete();
+      }
+      final rentalsSnap2 = await _firestore
+          .collection('active_rentals')
+          .where('tenantId', isEqualTo: uid)
+          .get();
+      for (final doc in rentalsSnap2.docs) {
+        await doc.reference.delete();
+      }
+
+      // 4. Delete tenancy links
+      final linksSnap1 = await _firestore
+          .collection('tenancy_links')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in linksSnap1.docs) {
+        await doc.reference.delete();
+      }
+      final linksSnap2 = await _firestore
+          .collection('tenancy_links')
+          .where('tenantId', isEqualTo: uid)
+          .get();
+      for (final doc in linksSnap2.docs) {
+        await doc.reference.delete();
+      }
+
+      // 5. Delete verification requests
+      final verSnap = await _firestore
+          .collection('verification_requests')
+          .where('userId', isEqualTo: uid)
+          .get();
+      for (final doc in verSnap.docs) {
+        await doc.reference.delete();
+      }
+
+      // 6. Delete inspection requests (as tenant or landlord)
+      final inspSnap1 = await _firestore
+          .collection('inspection_requests')
+          .where('tenantId', isEqualTo: uid)
+          .get();
+      for (final doc in inspSnap1.docs) {
+        await doc.reference.delete();
+      }
+      final inspSnap2 = await _firestore
+          .collection('inspection_requests')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in inspSnap2.docs) {
+        await doc.reference.delete();
+      }
+
+      // 7. Delete conversations and their messages
+      final convSnap = await _firestore
+          .collection('conversations')
+          .where('participants', arrayContains: uid)
+          .get();
+      for (final doc in convSnap.docs) {
+        final messagesSnap = await doc.reference.collection('messages').get();
+        for (final msgDoc in messagesSnap.docs) {
+          await msgDoc.reference.delete();
+        }
+        await doc.reference.delete();
+      }
+
+      // 8. Delete payments
+      final paySnap = await _firestore
+          .collection('payments')
+          .where('userId', isEqualTo: uid)
+          .get();
+      for (final doc in paySnap.docs) {
+        await doc.reference.delete();
+      }
+
+      // 9. Delete issues
+      final issuesSnap1 = await _firestore
+          .collection('issues')
+          .where('tenantId', isEqualTo: uid)
+          .get();
+      for (final doc in issuesSnap1.docs) {
+        await doc.reference.delete();
+      }
+      final issuesSnap2 = await _firestore
+          .collection('issues')
+          .where('landlordId', isEqualTo: uid)
+          .get();
+      for (final doc in issuesSnap2.docs) {
+        await doc.reference.delete();
+      }
+
+      // 10. Delete notifications
+      final notifSnap = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: uid)
+          .get();
+      for (final doc in notifSnap.docs) {
+        await doc.reference.delete();
+      }
+
+      // 11. Delete the user document itself
+      await _firestore.collection('users').doc(uid).delete();
+
+      developer.log('✅ All Firestore data deleted for $uid', name: 'AuthService');
+
+      // 12. Delete Firebase Auth account (must be last)
+      await _auth.currentUser?.delete();
+
+      developer.log('✅ Firebase Auth account deleted for $uid', name: 'AuthService');
+      return null; // Success
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        return 'requires-recent-login';
+      }
+      developer.log('❌ Auth error deleting account: ${e.code}', name: 'AuthService');
+      return 'Failed to delete account: ${e.message}';
+    } catch (e) {
+      developer.log('❌ Error deleting account: $e', name: 'AuthService');
+      return 'Failed to delete account. Please try again.';
     }
   }
 }

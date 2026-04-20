@@ -1,17 +1,16 @@
-/// ClearRent Zone-Based Inspection Pricing
+/// ClearRent LGA-Based Inspection Pricing
 ///
-/// Lagos transport clusters with real fare data.
-/// Pricing uses cluster-to-cluster lookups instead of GPS distance.
+/// Lagos Local Government Area (LGA) pricing with real transport fare data.
+/// Each area maps to an LGA, and fares are defined between LGA hubs.
 ///
 /// HOW TO UPDATE FARES:
-/// 1. Find the route in [_clusterFares] (keys are alphabetically sorted pairs)
+/// 1. Find the route in [_lgaFares] (keys are alphabetically sorted pairs)
 /// 2. Update the one-way fare value
-/// 3. For sub-area overrides, update [_subAreaFares]
-/// 4. Fares marked with // TODO: verify fare need real data
+/// 3. Done — calculateFee() picks it up automatically
 ///
 /// HOW IT WORKS:
-/// - Each Lagos area maps to a cluster via [_areaToCluster]
-/// - Fee = round-trip cluster fare + ₦1,000 last-mile buffer
+/// - Each Lagos area maps to an LGA via [_areaToLGA]
+/// - Fee = round-trip LGA fare + ₦1,000 last-mile buffer
 /// - Tenant pays: transport + ₦10,000 agent service fee + ₦3,000 service charge
 /// - Agent gets: transport + ₦10,000 service fee − ₦3,000 ClearRent cut = transport + ₦7,000
 /// - ClearRent earns: ₦6,000 (₦3K tenant charge + ₦3K agent deduction)
@@ -38,366 +37,478 @@ class InspectionPricing {
   static const double minTenantFee = 13000.0;
 
   /// Booking fee for self-handled inspections (prevents abuse)
-  /// Tenant always pays this even when landlord lives in property
   static const double selfHandledBookingFee = 10000.0;
 
-  /// Same-zone base fare (when agent and property are in the same cluster)
-  static const double sameZoneFare = 500.0;
-
   // ══════════════════════════════════════════════
-  //  CLUSTER DEFINITIONS
+  //  LGA DEFINITIONS
   // ══════════════════════════════════════════════
 
-  /// The 11 Lagos transport clusters.
-  /// Each cluster groups areas that share similar transport hub access.
-  static const List<String> clusters = [
-    'ikorodu_inner',    // Ikorodu town, Benson, Itamaga
-    'ikorodu_outer',    // Igbogbo, Ijede, Imota, Bayeku
-    'ketu_ojota',       // Ketu, Ojota, Mile 12, Alapere
-    'mainland_east',    // Shomolu, Bariga, Gbagada, Ogudu
-    'maryland_ikeja',   // Maryland, Ikeja, Ikeja GRA, Anthony, Magodo, Ogba, Ojodu, Omole, Oregun, Alausa
-    'yaba_surulere',    // Yaba, Surulere, Ebute Metta, Obalende, Palmgrove
-    'berger_north',     // Berger, Mowe, Ibafo, Arepo, Isheri
-    'oshodi_central',   // Oshodi, Mushin, Isolo, Ikotun, Egbeda, Alimosho, Agege, Ifako-Ijaiye
-    'island',           // Victoria Island, Ikoyi, Lagos Island
-    'lekki',            // Lekki Phase 1 & 2, Ajah, Sangotedo, Chevron, Jakande
-    'apapa_west',       // Apapa, Festac, Amuwo Odofin
+  /// All Lagos LGAs used in the system.
+  static const List<String> lgas = [
+    'ikorodu',
+    'kosofe',
+    'shomolu',
+    'ikeja',
+    'ojodu_lcda',
+    'agege',
+    'ifako_ijaiye',
+    'alimosho',
+    'oshodi_isolo',
+    'mushin',
+    'surulere',
+    'yaba_mainland',
+    'eti_osa',
+    'lagos_island',
+    'apapa',
+    'amuwo_odofin',
+    'ojo',
+    'ajeromi_ifelodun',
+    'obafemi_owode',
   ];
 
-  /// Outer/long-distance cluster (Epe, Badagry, Sango)
-  /// Used for routes that go outside the core Lagos clusters.
-  static const String outerCluster = 'outer';
+  /// Outer/long-distance LGA (Epe, Badagry, Sango, Ibeju-Lekki)
+  static const String outerLGA = 'outer';
 
   // ══════════════════════════════════════════════
-  //  AREA → CLUSTER MAPPING
+  //  SAME-LGA FARES
   // ══════════════════════════════════════════════
 
-  /// Maps a Lagos area name (lowercase) to its cluster.
-  /// Used to resolve both property and agent locations.
-  ///
+  /// Fares for travel within the same LGA.
+  /// Compact LGAs = ₦600, spread-out LGAs = ₦1,000.
+  static const Map<String, double> _sameLGAFares = {
+    // Compact LGAs — ₦600
+    'shomolu': 600,
+    'mushin': 600,
+    'agege': 600,
+    'lagos_island': 600,
+    'apapa': 600,
+    'ajeromi_ifelodun': 600,
+    'ikeja': 600,
+    'surulere': 600,
+    'yaba_mainland': 600,
+    'kosofe': 600,
+    'ojodu_lcda': 600,
+    'ifako_ijaiye': 600,
+    // Spread-out LGAs — ₦1,000
+    'ikorodu': 1000,
+    'alimosho': 1000,
+    'eti_osa': 1000,
+    'ojo': 1000,
+    'obafemi_owode': 1000,
+    'oshodi_isolo': 800,
+    'amuwo_odofin': 800,
+    'outer': 1500,
+  };
+
+  /// Default same-LGA fare when not specified
+  static const double defaultSameLGAFare = 600.0;
+
+  // ══════════════════════════════════════════════
+  //  AREA → LGA MAPPING
+  // ══════════════════════════════════════════════
+
+  /// Maps a Lagos area name (lowercase) to its LGA.
   /// To add a new area: just add the mapping here.
-  static const Map<String, String> _areaToCluster = {
-    // ── Ikorodu Inner ──
-    'ikorodu': 'ikorodu_inner',
-    'ikorodu town': 'ikorodu_inner',
-    'benson': 'ikorodu_inner',
-    'itamaga': 'ikorodu_inner',
-    'odogunyan': 'ikorodu_inner',
-    'agric': 'ikorodu_inner',
-    'owutu': 'ikorodu_inner',
+  static const Map<String, String> _areaToLGA = {
+    // ── Ikorodu LGA ──
+    'ikorodu': 'ikorodu',
+    'ikorodu town': 'ikorodu',
+    'benson': 'ikorodu',
+    'itamaga': 'ikorodu',
+    'odogunyan': 'ikorodu',
+    'agric': 'ikorodu',
+    'owutu': 'ikorodu',
+    'igbogbo': 'ikorodu',
+    'ijede': 'ikorodu',
+    'imota': 'ikorodu',
+    'bayeku': 'ikorodu',
+    'ibeshe': 'ikorodu',
+    'erikorodo': 'ikorodu',
+    'agura': 'ikorodu',
+    'isiu': 'ikorodu',
+    'ebute': 'ikorodu',
+    'aga': 'ikorodu',
+    'ishawo': 'ikorodu',
+    'oke-eletu': 'ikorodu',
+    'oreta': 'ikorodu',
+    'ofin': 'ikorodu',
 
-    // ── Ikorodu Outer ──
-    'igbogbo': 'ikorodu_outer',
-    'ijede': 'ikorodu_outer',
-    'imota': 'ikorodu_outer',
-    'bayeku': 'ikorodu_outer',
-    'ibeshe': 'ikorodu_outer',
-    'erikorodo': 'ikorodu_outer',
+    // ── Kosofe LGA ──
+    'ketu': 'kosofe',
+    'ojota': 'kosofe',
+    'mile 12': 'kosofe',
+    'alapere': 'kosofe',
+    'ogudu-orioke': 'kosofe',
+    'kosofe': 'kosofe',
+    'ogudu': 'kosofe',
+    'anthony': 'kosofe',
+    'anthony village': 'kosofe',
+    'magodo': 'kosofe',
+    'maryland': 'kosofe',
+    'mende': 'kosofe',
+    'shangisha': 'kosofe',
+    'isheri-olowo-ira': 'kosofe',
 
-    // ── Ketu / Ojota ──
-    'ketu': 'ketu_ojota',
-    'ojota': 'ketu_ojota',
-    'mile 12': 'ketu_ojota',
-    'alapere': 'ketu_ojota',
-    'ogudu-orioke': 'ketu_ojota',
-    'kosofe': 'ketu_ojota',
+    // ── Shomolu LGA ──
+    'shomolu': 'shomolu',
+    'somolu': 'shomolu',
+    'bariga': 'shomolu',
+    'gbagada': 'shomolu',
+    'pedro': 'shomolu',
+    'onipanu': 'shomolu',
+    'fadeyi': 'shomolu',
+    'palmgrove': 'shomolu',
+    'akoka': 'shomolu',
 
-    // ── Mainland East ──
-    'shomolu': 'mainland_east',
-    'somolu': 'mainland_east',
-    'bariga': 'mainland_east',
-    'gbagada': 'mainland_east',
-    'ogudu': 'mainland_east',
-    'pedro': 'mainland_east',
-    'onipanu': 'mainland_east',
-    'fadeyi': 'mainland_east',
+    // ── Ikeja LGA ──
+    'ikeja': 'ikeja',
+    'ikeja gra': 'ikeja',
+    'alausa': 'ikeja',
+    'opebi': 'ikeja',
+    'adeniyi jones': 'ikeja',
+    'allen': 'ikeja',
+    'toyin street': 'ikeja',
+    'computer village': 'ikeja',
+    'oregun': 'ikeja',
+    'ogba': 'ikeja',
 
-    // ── Maryland / Ikeja ──
-    'maryland': 'maryland_ikeja',
-    'ikeja': 'maryland_ikeja',
-    'ikeja gra': 'maryland_ikeja',
-    'anthony': 'maryland_ikeja',
-    'anthony village': 'maryland_ikeja',
-    'magodo': 'maryland_ikeja',
-    'ogba': 'maryland_ikeja',
-    'ojodu': 'maryland_ikeja',
-    'omole': 'maryland_ikeja',
-    'oregun': 'maryland_ikeja',
-    'alausa': 'maryland_ikeja',
-    'opebi': 'maryland_ikeja',
-    'adeniyi jones': 'maryland_ikeja',
-    'allen': 'maryland_ikeja',
-    'toyin street': 'maryland_ikeja',
-    'computer village': 'maryland_ikeja',
+    // ── Ojodu LCDA ──
+    'ojodu': 'ojodu_lcda',
+    'ojodu berger': 'ojodu_lcda',
+    'berger': 'ojodu_lcda',
+    'omole': 'ojodu_lcda',
+    'onigbongbo': 'ojodu_lcda',
+    'agidingbi': 'ojodu_lcda',
 
-    // ── Yaba / Surulere ──
-    'yaba': 'yaba_surulere',
-    'surulere': 'yaba_surulere',
-    'ebute metta': 'yaba_surulere',
-    'obalende': 'yaba_surulere',
-    'palmgrove': 'yaba_surulere',
-    'jibowu': 'yaba_surulere',
-    'lawanson': 'yaba_surulere',
-    'itire': 'yaba_surulere',
-    'ijeshatedo': 'yaba_surulere',
-    'ojuelegba': 'yaba_surulere',
-    'alagomeji': 'yaba_surulere',
+    // ── Agege LGA ──
+    'agege': 'agege',
+    'dopemu': 'agege',
 
-    // ── Berger / North ──
-    'berger': 'berger_north',
-    'mowe': 'berger_north',
-    'ibafo': 'berger_north',
-    'arepo': 'berger_north',
-    'isheri': 'berger_north',
-    'magboro': 'berger_north',
-    'ojodu berger': 'berger_north',
+    // ── Ifako-Ijaiye LGA ──
+    'ifako-ijaiye': 'ifako_ijaiye',
+    'ifako': 'ifako_ijaiye',
+    'ijaiye': 'ifako_ijaiye',
+    'oko-oba': 'ifako_ijaiye',
+    'pen cinema': 'ifako_ijaiye',
+    'tabon-tabon': 'ifako_ijaiye',
+    'iju': 'ifako_ijaiye',
+    'markaz': 'ifako_ijaiye',
 
-    // ── Oshodi / Central ──
-    'oshodi': 'oshodi_central',
-    'mushin': 'oshodi_central',
-    'isolo': 'oshodi_central',
-    'ikotun': 'oshodi_central',
-    'egbeda': 'oshodi_central',
-    'alimosho': 'oshodi_central',
-    'agege': 'oshodi_central',
-    'ifako-ijaiye': 'oshodi_central',
-    'ifako': 'oshodi_central',
-    'ijaiye': 'oshodi_central',
-    'idimu': 'oshodi_central',
-    'ejigbo': 'oshodi_central',
-    'igando': 'oshodi_central',
-    'akowonjo': 'oshodi_central',
-    'dopemu': 'oshodi_central',
-    'cement': 'oshodi_central',
+    // ── Alimosho LGA ──
+    'alimosho': 'alimosho',
+    'egbeda': 'alimosho',
+    'ikotun': 'alimosho',
+    'idimu': 'alimosho',
+    'igando': 'alimosho',
+    'akowonjo': 'alimosho',
+    'shasha': 'alimosho',
+    'alakuko': 'alimosho',
+    'kollinton': 'alimosho',
+    'ikola': 'alimosho',
+    'ijegun': 'alimosho',
+    'aboru': 'alimosho',
+    'abesan': 'alimosho',
 
-    // ── Island ──
-    'victoria island': 'island',
-    'vi': 'island',
-    'ikoyi': 'island',
-    'lagos island': 'island',
-    'marina': 'island',
-    'oniru': 'island',
-    'eko atlantic': 'island',
-    'banana island': 'island',
+    // ── Oshodi-Isolo LGA ──
+    'oshodi': 'oshodi_isolo',
+    'isolo': 'oshodi_isolo',
+    'ejigbo': 'oshodi_isolo',
+    'cement': 'oshodi_isolo',
+    'okota': 'oshodi_isolo',
+    'ilasa': 'oshodi_isolo',
+    'oke-afa': 'oshodi_isolo',
 
-    // ── Lekki ──
-    'lekki': 'lekki',
-    'lekki phase 1': 'lekki',
-    'lekki phase 2': 'lekki',
-    'ajah': 'lekki',
-    'sangotedo': 'lekki',
-    'chevron': 'lekki',
-    'jakande': 'lekki',
-    'ikota': 'lekki',
-    'agungi': 'lekki',
-    'osapa': 'lekki',
-    'idado': 'lekki',
-    'vgc': 'lekki',
-    'abraham adesanya': 'lekki',
+    // ── Mushin LGA ──
+    'mushin': 'mushin',
+    'papa-ajao': 'mushin',
+    'idi-araba': 'mushin',
 
-    // ── Apapa / West ──
-    'apapa': 'apapa_west',
-    'festac': 'apapa_west',
-    'amuwo odofin': 'apapa_west',
-    'mile 2': 'apapa_west',
-    'orile': 'apapa_west',
-    'ajegunle': 'apapa_west',
-    'satellite town': 'apapa_west',
+    // ── Surulere LGA ──
+    'surulere': 'surulere',
+    'lawanson': 'surulere',
+    'itire': 'surulere',
+    'ijeshatedo': 'surulere',
+    'ojuelegba': 'surulere',
+    'aguda': 'surulere',
+    'shitta': 'surulere',
 
-    // ── Outer ──
+    // ── Yaba / Mainland LGA ──
+    'yaba': 'yaba_mainland',
+    'ebute metta': 'yaba_mainland',
+    'jibowu': 'yaba_mainland',
+    'alagomeji': 'yaba_mainland',
+    'obalende': 'yaba_mainland',
+    'oto': 'yaba_mainland',
+    'iwaya': 'yaba_mainland',
+    'abule-oja': 'yaba_mainland',
+    'sabo': 'yaba_mainland',
+    'makoko': 'yaba_mainland',
+
+    // ── Eti-Osa LGA ──
+    'victoria island': 'eti_osa',
+    'vi': 'eti_osa',
+    'ikoyi': 'eti_osa',
+    'oniru': 'eti_osa',
+    'eko atlantic': 'eti_osa',
+    'banana island': 'eti_osa',
+    'lekki': 'eti_osa',
+    'lekki phase 1': 'eti_osa',
+    'lekki phase 2': 'eti_osa',
+    'ajah': 'eti_osa',
+    'sangotedo': 'eti_osa',
+    'chevron': 'eti_osa',
+    'jakande': 'eti_osa',
+    'ikota': 'eti_osa',
+    'agungi': 'eti_osa',
+    'osapa': 'eti_osa',
+    'idado': 'eti_osa',
+    'vgc': 'eti_osa',
+    'abraham adesanya': 'eti_osa',
+    'langbasa': 'eti_osa',
+    'ogombo': 'eti_osa',
+    'badore': 'eti_osa',
+
+    // ── Lagos Island LGA ──
+    'lagos island': 'lagos_island',
+    'marina': 'lagos_island',
+    'isale-eko': 'lagos_island',
+    'ologbowo': 'lagos_island',
+    'idumota': 'lagos_island',
+
+    // ── Apapa LGA ──
+    'apapa': 'apapa',
+    'ajegunle': 'apapa',
+    'marine beach': 'apapa',
+    'tincan': 'apapa',
+
+    // ── Amuwo-Odofin LGA ──
+    'festac': 'amuwo_odofin',
+    'amuwo odofin': 'amuwo_odofin',
+    'mile 2': 'amuwo_odofin',
+    'satellite town': 'amuwo_odofin',
+
+    // ── Ojo LGA ──
+    'ojo': 'ojo',
+    'okokomaiko': 'ojo',
+    'ajangbadi': 'ojo',
+    'ijanikin': 'ojo',
+    'lasu': 'ojo',
+
+    // ── Ajeromi-Ifelodun LGA ──
+    'orile': 'ajeromi_ifelodun',
+    'mosafejo': 'ajeromi_ifelodun',
+    'amukoko': 'ajeromi_ifelodun',
+
+    // ── Obafemi-Owode LGA (Ogun) ──
+    'mowe': 'obafemi_owode',
+    'ibafo': 'obafemi_owode',
+    'arepo': 'obafemi_owode',
+    'magboro': 'obafemi_owode',
+    'isheri': 'obafemi_owode',
+
+    // ── Outer Lagos ──
     'epe': 'outer',
     'badagry': 'outer',
     'sango': 'outer',
     'sango ota': 'outer',
     'ibeju-lekki': 'outer',
     'ibeju lekki': 'outer',
-    'ojo': 'outer',
-    'lasu': 'outer',
   };
 
   // ══════════════════════════════════════════════
-  //  CLUSTER-TO-CLUSTER FARES (ONE-WAY, NAIRA)
+  //  LGA-TO-LGA FARES (ONE-WAY, NAIRA)
   // ══════════════════════════════════════════════
 
-  /// One-way transport fares between clusters.
-  /// Keys are sorted alphabetically: 'clusterA:clusterB' where A < B.
+  /// One-way transport fares between LGA hubs.
+  /// Keys are sorted alphabetically: 'lgaA:lgaB' where A < B.
   ///
-  /// For clusters with sub-area price variation, we use the HIGHEST
-  /// known sub-area fare (safest for agents). See [_subAreaFares]
-  /// for per-sub-area overrides.
-  ///
-  /// To update: change the value and remove the TODO comment.
-  static const Map<String, double> _clusterFares = {
-    // ── Ikorodu Inner routes ──
-    'ikorodu_inner:ikorodu_outer': 700,
-    'ikorodu_inner:ketu_ojota': 1900,
-    'ikorodu_inner:mainland_east': 3500,        // highest: Gbagada 3500
-    'ikorodu_inner:maryland_ikeja': 2200,
-    'ikorodu_inner:yaba_surulere': 3200,        // highest: Obalende 3200
-    'ikorodu_inner:berger_north': 4700,
-    'ikorodu_inner:oshodi_central': 3200,       // highest: Mushin 3200 (Isolo pending)
-    'ikorodu_inner:island': 4000,
-    'ikorodu_inner:lekki': 4500,
-    'ikorodu_inner:apapa_west': 3500,           // highest: Apapa 3500
-    'ikorodu_inner:outer': 1200,
+  /// To update a fare: find the pair and change the number.
+  /// To add a new route: add a new entry with sorted key.
+  static const Map<String, double> _lgaFares = {
+    // ── From Ikorodu ──
+    'ikorodu:kosofe': 1200, // Ikorodu garage → Ojota/Ketu
+    'ikorodu:shomolu': 2200, // via Maryland (1500) + Maryland→Shomolu (700)
+    'ikorodu:ikeja': 2000, // via Maryland (1500) + Maryland→Ikeja (500)
+    'ikorodu:ojodu_lcda': 3000, // Ikorodu → Maryland (1500) + Maryland→Ikeja (500) + Ikeja→Ojodu (1500) — but direct is ~3000
+    'ikorodu:yaba_mainland': 2500, // via Maryland (1500) + Maryland→Yaba (1000)
+    'ikorodu:lagos_island': 2700, // via Maryland (1500) + Maryland→CMS (1200)
+    'ikorodu:eti_osa': 3700, // via CMS chain
+    'ikorodu:oshodi_isolo': 2500, // via Ikeja chain
+    'ikorodu:agege': 2500, // via Ikeja chain
+    'ikorodu:mushin': 2500, // via Oshodi chain
+    'ikorodu:surulere': 3000, // long route
+    'ikorodu:alimosho': 3300, // via Oshodi chain
+    'ikorodu:apapa': 3500, // long route
+    'ikorodu:amuwo_odofin': 4000, // long route
+    'ikorodu:ifako_ijaiye': 2500, // via Ikeja chain
+    'ikorodu:obafemi_owode': 3500, // Ikorodu → Berger corridor
+    'ikorodu:outer': 3500, // Epe direct or long haul
+    'ikorodu:ojo': 4500, // very long route
+    'ikorodu:ajeromi_ifelodun': 3500, // via Apapa chain
 
-    // ── Ikorodu Outer routes ──
-    'ikorodu_outer:ketu_ojota': 1200,
-    'ikorodu_outer:mainland_east': 2800,        // highest: Gbagada 2800
-    'ikorodu_outer:maryland_ikeja': 2500,       // highest: Ikeja 2500
-    'ikorodu_outer:yaba_surulere': 2500,        // highest: Obalende 2500
-    'ikorodu_outer:berger_north': 3500,
-    'ikorodu_outer:oshodi_central': 3500,       // highest: Isolo/Ikotun axis 3500
-    'ikorodu_outer:island': 3000,
-    'ikorodu_outer:lekki': 3500,
-    'ikorodu_outer:apapa_west': 2800,           // highest: Apapa 2800
-    'ikorodu_outer:outer': 3500,                // TODO: verify fare (Epe, Badagry, Sango unknown)
+    // ── From Kosofe (Maryland/Ojota hub) ──
+    'ikeja:kosofe': 500, // Maryland → Ikeja under bridge
+    'kosofe:shomolu': 700, // Maryland → Shomolu
+    'kosofe:yaba_mainland': 1000, // Maryland → Tejuosho/Yaba
+    'kosofe:lagos_island': 1200, // Maryland → CMS
+    'kosofe:eti_osa': 2200, // Maryland → CMS (1200) + CMS → Lekki (1000)
+    'kosofe:oshodi_isolo': 1000, // Maryland → Ikeja (500) + Ikeja → Oshodi (500)
+    'kosofe:agege': 1000, // Maryland → Ikeja (500) + Ikeja → Agege (500)
+    'kosofe:mushin': 1500, // via Oshodi
+    'kosofe:surulere': 1500, // via Yaba or Oshodi
+    'kosofe:alimosho': 1800, // via Oshodi chain
+    'kosofe:apapa': 2000, // long route
+    'kosofe:amuwo_odofin': 2500, // via Oshodi/Apapa
+    'kosofe:ifako_ijaiye': 1000, // via Ikeja
+    'kosofe:ojodu_lcda': 1500, // Maryland → Ikeja (500) + Ikeja → Berger
+    'kosofe:obafemi_owode': 2200, // via Berger
+    'kosofe:outer': 3000, // long haul
+    'kosofe:ojo': 3000, // via Apapa/Mile 2
+    'kosofe:ajeromi_ifelodun': 2000, // via Apapa
 
-    // ── Ketu / Ojota routes ──
-    'ketu_ojota:mainland_east': 800,            // highest: Shomolu 800, Bariga 800 (Gbagada, Ogudu pending)
-    'ketu_ojota:maryland_ikeja': 300,
-    'ketu_ojota:yaba_surulere': 1000,
-    'ketu_ojota:berger_north': 600,
-    'ketu_ojota:oshodi_central': 600,
-    'ketu_ojota:island': 1800,
-    'ketu_ojota:lekki': 3800,
-    'ketu_ojota:apapa_west': 1500,
-    'ketu_ojota:outer': 3500,
+    // ── From Ikeja ──
+    'ikeja:shomolu': 1200, // Ikeja → Maryland (500) + Maryland → Shomolu (700)
+    'ikeja:yaba_mainland': 1500, // Ikeja → Yaba
+    'ikeja:oshodi_isolo': 500, // Ikeja → Oshodi
+    'ikeja:agege': 500, // Ikeja → Agege
+    'ikeja:ifako_ijaiye': 500, // Ikeja → Pen Cinema/Iju
+    'ikeja:ojodu_lcda': 1500, // Ikeja → Ojodu Berger
+    'ikeja:mushin': 1000, // via Oshodi
+    'ikeja:surulere': 1300, // via Oshodi → Ojuelegba
+    'ikeja:lagos_island': 1700, // Ikeja → Maryland (500) + Maryland → CMS (1200)
+    'ikeja:eti_osa': 2700, // via CMS chain
+    'ikeja:alimosho': 1300, // via Oshodi → Egbeda
+    'ikeja:apapa': 1700, // via Oshodi → Apapa
+    'ikeja:amuwo_odofin': 2000, // via Oshodi chain
+    'ikeja:obafemi_owode': 700, // Ikeja → Berger/Mowe
+    'ikeja:outer': 3000, // long haul
+    'ikeja:ojo': 2500, // via Mile 2
+    'ikeja:ajeromi_ifelodun': 1700, // via Oshodi/Apapa
 
-    // ── Mainland East routes ──
-    'mainland_east:maryland_ikeja': 600,
-    'mainland_east:yaba_surulere': 500,
-    'mainland_east:berger_north': 1200,
-    'mainland_east:oshodi_central': 800,
-    'mainland_east:island': 1500,
-    'mainland_east:lekki': 4000,
-    'mainland_east:apapa_west': 1500,
-    'mainland_east:outer': 3500,
+    // ── From Shomolu ──
+    'shomolu:yaba_mainland': 500, // Bariga/Gbagada → Yaba (short)
+    'shomolu:lagos_island': 1500, // via Yaba → CMS
+    'shomolu:eti_osa': 2500, // via CMS chain
+    'shomolu:oshodi_isolo': 1700, // via Ikeja
+    'shomolu:surulere': 1200, // via Yaba
+    'shomolu:mushin': 1500, // via Yaba/Oshodi
 
-    // ── Maryland / Ikeja routes ──
-    'maryland_ikeja:yaba_surulere': 1300,
-    'maryland_ikeja:berger_north': 800,
-    'maryland_ikeja:oshodi_central': 400,
-    'maryland_ikeja:island': 1800,
-    'maryland_ikeja:lekki': 3500,
-    'maryland_ikeja:apapa_west': 1200,
-    'maryland_ikeja:outer': 3000,
+    // ── From Yaba/Mainland ──
+    'lagos_island:yaba_mainland': 700, // Sabo/Yaba → CMS
+    'eti_osa:yaba_mainland': 1700, // Yaba → CMS (700) + CMS → Lekki (1000)
+    'oshodi_isolo:yaba_mainland': 1500, // Yaba → Oshodi
+    'surulere:yaba_mainland': 600, // Yaba → Ojuelegba (short)
+    'mushin:yaba_mainland': 1000, // Yaba → Mushin
 
-    // ── Yaba / Surulere routes ──
-    'yaba_surulere:berger_north': 1800,
-    'yaba_surulere:oshodi_central': 800,
-    'yaba_surulere:island': 800,
-    'yaba_surulere:lekki': 3000,
-    'yaba_surulere:apapa_west': 1000,
-    'yaba_surulere:outer': 3500,
+    // ── From Lagos Island ──
+    'eti_osa:lagos_island': 1000, // CMS → Lekki corridor
+    'lagos_island:surulere': 800, // CMS → Ojuelegba
+    'lagos_island:oshodi_isolo': 1500, // CMS → Oshodi
 
-    // ── Berger / North routes ──
-    'berger_north:oshodi_central': 1500,
-    'berger_north:island': 2500,
-    'berger_north:lekki': 4500,
-    'berger_north:apapa_west': 2000,
-    'berger_north:outer': 3500,
+    // ── From Oshodi-Isolo ──
+    'alimosho:oshodi_isolo': 800, // Oshodi → Ikotun/Egbeda
+    'mushin:oshodi_isolo': 500, // Oshodi → Mushin (very short)
+    'oshodi_isolo:surulere': 800, // Oshodi → Ojuelegba
+    'apapa:oshodi_isolo': 1200, // Oshodi → Apapa
+    'amuwo_odofin:oshodi_isolo': 1500, // via Mile 2
+    'ojo:oshodi_isolo': 2000, // via Mile 2 chain
+    'ajeromi_ifelodun:oshodi_isolo': 1200, // via Apapa/Orile
+    'obafemi_owode:oshodi_isolo': 1700, // via Ikeja → Berger
 
-    // ── Oshodi / Central routes ──
-    'oshodi_central:island': 1500,
-    'oshodi_central:lekki': 3000,
-    'oshodi_central:apapa_west': 800,
-    'oshodi_central:outer': 3000,
+    // ── From Agege ──
+    'agege:ifako_ijaiye': 500, // adjacent LGAs
+    'agege:ojodu_lcda': 1000, // via Ikeja corridor
+    'agege:alimosho': 800, // Agege → Egbeda/Akowonjo
+    'agege:mushin': 800, // via Oshodi
+    'agege:oshodi_isolo': 1000, // Agege → Oshodi
+    'agege:obafemi_owode': 1200, // Agege → Berger
 
-    // ── Island routes ──
-    'island:lekki': 1500,
-    'island:apapa_west': 1000,
-    'island:outer': 4000,
+    // ── From Ifako-Ijaiye ──
+    'ifako_ijaiye:ojodu_lcda': 800, // adjacent
+    'ifako_ijaiye:alimosho': 1000, // via Agege
+    'ifako_ijaiye:obafemi_owode': 1000, // towards Berger
 
-    // ── Lekki routes ──
-    'lekki:apapa_west': 4000,
-    'lekki:outer': 3000,
+    // ── From Ojodu LCDA ──
+    'obafemi_owode:ojodu_lcda': 500, // Ojodu Berger → Mowe (short)
+    'ojodu_lcda:alimosho': 1500, // via Ikeja/Oshodi
 
-    // ── Apapa / West routes ──
-    'apapa_west:outer': 2500,
+    // ── From Surulere ──
+    'mushin:surulere': 400, // very short trip
+    'apapa:surulere': 1000, // Ojuelegba → Apapa
+    'ajeromi_ifelodun:surulere': 800, // via Orile
+
+    // ── From Mushin ──
+    'apapa:mushin': 1200, // via Oshodi
+    'alimosho:mushin': 1300, // via Oshodi
+
+    // ── From Apapa ──
+    'amuwo_odofin:apapa': 2000, // Apapa → Mile 2/Festac
+    'apapa:ojo': 2750, // Apapa → Okokomaiko (avg of 2500-3000)
+    'ajeromi_ifelodun:apapa': 1200, // Apapa → Orile
+
+    // ── From Amuwo-Odofin ──
+    'amuwo_odofin:ojo': 1000, // Mile 2 → Okokomaiko
+    'ajeromi_ifelodun:amuwo_odofin': 1500, // Orile → Festac
+
+    // ── From Ojo ──
+    'ojo:outer': 2000, // Ojo → Badagry (avg of 1500-2500)
+    'ajeromi_ifelodun:ojo': 2000, // Orile → Okokomaiko
+
+    // ── From Alimosho ──
+    'alimosho:apapa': 2000, // via Oshodi chain
+    'alimosho:amuwo_odofin': 1800, // via Mile 2
+
+    // ── Outer routes ──
+    
+    'eti_osa:outer': 2500, // Lekki → Ibeju-Lekki / Epe
+   
+    'obafemi_owode:outer': 2000, // Mowe → Sango
   };
 
   // ══════════════════════════════════════════════
-  //  SUB-AREA FARE OVERRIDES
+  //  LGA LABELS (for display)
   // ══════════════════════════════════════════════
 
-  /// Per-sub-area fare overrides for routes with known variation.
-  /// Key format: 'fromCluster:toCluster:subArea' (subArea is lowercase).
-  /// The sub-area refers to the destination within the target cluster.
-  ///
-  /// When a specific sub-area is known (from property address), this
-  /// takes precedence over the cluster-level fare.
-  static const Map<String, double> _subAreaFares = {
-    // ── Ikorodu Inner → Mainland East (sub-areas) ──
-    'ikorodu_inner:mainland_east:shomolu': 2800,
-    'ikorodu_inner:mainland_east:bariga': 3000,
-    'ikorodu_inner:mainland_east:gbagada': 3500,
-    'ikorodu_inner:mainland_east:ogudu': 3400,
-
-    // ── Ikorodu Inner → Yaba/Surulere (sub-areas) ──
-    'ikorodu_inner:yaba_surulere:yaba': 2700,
-    'ikorodu_inner:yaba_surulere:surulere': 2700,
-    'ikorodu_inner:yaba_surulere:obalende': 3200,
-
-    // ── Ikorodu Inner → Oshodi/Central (sub-areas) ──
-    'ikorodu_inner:oshodi_central:oshodi': 2700,
-    'ikorodu_inner:oshodi_central:mushin': 3200,
-    // 'ikorodu_inner:oshodi_central:isolo': TODO,
-
-    // ── Ikorodu Inner → Apapa/West (sub-areas) ──
-    'ikorodu_inner:apapa_west:apapa': 3500,
-    'ikorodu_inner:apapa_west:festac': 2800,
-
-    // ── Ikorodu Outer → Mainland East (sub-areas) ──
-    'ikorodu_outer:mainland_east:shomolu': 2100,
-    'ikorodu_outer:mainland_east:bariga': 2300,
-    'ikorodu_outer:mainland_east:gbagada': 2800,
-    'ikorodu_outer:mainland_east:ogudu': 2700,
-
-    // ── Ikorodu Outer → Maryland/Ikeja (sub-areas) ──
-    'ikorodu_outer:maryland_ikeja:maryland': 1500,
-    'ikorodu_outer:maryland_ikeja:ikeja': 2500,
-    'ikorodu_outer:maryland_ikeja:ikeja gra': 2000,
-
-    // ── Ikorodu Outer → Yaba/Surulere (sub-areas) ──
-    'ikorodu_outer:yaba_surulere:yaba': 2000,
-    'ikorodu_outer:yaba_surulere:surulere': 2000,
-    'ikorodu_outer:yaba_surulere:obalende': 2500,
-
-    // ── Ikorodu Outer → Oshodi/Central (sub-areas) ──
-    'ikorodu_outer:oshodi_central:oshodi': 2000,
-    'ikorodu_outer:oshodi_central:mushin': 2500,
-    'ikorodu_outer:oshodi_central:isolo': 3500,  // Ikotun axis
-    // 'ikorodu_outer:oshodi_central:egbeda': TODO,
-
-    // ── Ikorodu Outer → Apapa/West (sub-areas) ──
-    'ikorodu_outer:apapa_west:apapa': 2800,
-    'ikorodu_outer:apapa_west:festac': 2100,
-
-    // ── Ketu/Ojota → Mainland East (sub-areas) ──
-    'ketu_ojota:mainland_east:shomolu': 800,
-    'ketu_ojota:mainland_east:bariga': 800,
-    // 'ketu_ojota:mainland_east:gbagada': TODO,
-    // 'ketu_ojota:mainland_east:ogudu': TODO,
+  static const Map<String, String> _lgaLabels = {
+    'ikorodu': 'Ikorodu LGA',
+    'kosofe': 'Kosofe LGA',
+    'shomolu': 'Shomolu LGA',
+    'ikeja': 'Ikeja LGA',
+    'ojodu_lcda': 'Ojodu LCDA',
+    'agege': 'Agege LGA',
+    'ifako_ijaiye': 'Ifako-Ijaiye LGA',
+    'alimosho': 'Alimosho LGA',
+    'oshodi_isolo': 'Oshodi-Isolo LGA',
+    'mushin': 'Mushin LGA',
+    'surulere': 'Surulere LGA',
+    'yaba_mainland': 'Yaba / Mainland LGA',
+    'eti_osa': 'Eti-Osa LGA',
+    'lagos_island': 'Lagos Island LGA',
+    'apapa': 'Apapa LGA',
+    'amuwo_odofin': 'Amuwo-Odofin LGA',
+    'ojo': 'Ojo LGA',
+    'ajeromi_ifelodun': 'Ajeromi-Ifelodun LGA',
+    'obafemi_owode': 'Obafemi-Owode LGA (Ogun)',
+    'outer': 'Outer Lagos',
   };
 
   // ══════════════════════════════════════════════
-  //  PUBLIC API
+  //  LOOKUP METHODS
   // ══════════════════════════════════════════════
 
-  /// Resolve an area name (e.g. "Gbagada", "Lekki Phase 1") to its cluster.
+  /// Resolve an area name to its LGA.
   /// Returns null if the area is not recognized.
-  static String? getClusterForArea(String area) {
+  static String? getLGAForArea(String area) {
     if (area.isEmpty) return null;
     final normalized = area.trim().toLowerCase();
 
     // Direct match
-    if (_areaToCluster.containsKey(normalized)) {
-      return _areaToCluster[normalized];
+    if (_areaToLGA.containsKey(normalized)) {
+      return _areaToLGA[normalized];
     }
 
-    // Partial match — check if input contains a known area name
-    for (final entry in _areaToCluster.entries) {
+    // Partial match
+    for (final entry in _areaToLGA.entries) {
       if (normalized.contains(entry.key) || entry.key.contains(normalized)) {
         return entry.value;
       }
@@ -406,76 +517,124 @@ class InspectionPricing {
     return null;
   }
 
-  /// Get the one-way fare between two clusters.
-  /// Returns [sameZoneFare] if both are in the same cluster.
-  /// Returns null if either cluster is invalid or no route exists.
-  static double? getOneWayFare(String clusterA, String clusterB) {
-    if (clusterA == clusterB) return sameZoneFare;
+  /// Backward-compatible alias for [getLGAForArea].
+  /// Used by existing code that calls getClusterForArea.
+  static String? getClusterForArea(String area) => getLGAForArea(area);
 
-    // Keys are alphabetically sorted
-    final sorted = [clusterA, clusterB]..sort();
+  /// Get the one-way fare between two LGAs.
+  static double? getOneWayFare(String lgaA, String lgaB) {
+    if (lgaA == lgaB) return _sameLGAFares[lgaA] ?? defaultSameLGAFare;
+
+    final sorted = [lgaA, lgaB]..sort();
     final key = '${sorted[0]}:${sorted[1]}';
 
-    return _clusterFares[key];
+    return _lgaFares[key];
   }
 
-  /// Get a sub-area-specific fare if available.
-  /// [fromCluster] is where the agent/landlord is.
-  /// [toCluster] is where the property is.
-  /// [subArea] is the specific area within the destination cluster.
-  static double? getSubAreaFare(
-    String fromCluster,
-    String toCluster,
-    String subArea,
-  ) {
-    if (fromCluster == toCluster) return sameZoneFare;
-
-    final normalizedSubArea = subArea.trim().toLowerCase();
-
-    // Try both orderings since the sub-area could be in either cluster
-    final key1 = '$fromCluster:$toCluster:$normalizedSubArea';
-    final key2 = '$toCluster:$fromCluster:$normalizedSubArea';
-
-    return _subAreaFares[key1] ?? _subAreaFares[key2];
+  /// Get human-readable label for an LGA.
+  static String getLGALabel(String lga) {
+    return _lgaLabels[lga] ?? lga;
   }
 
-  /// Calculate the full inspection fee from cluster names.
-  ///
-  /// [agentCluster] — the cluster where the agent/landlord is based.
-  /// [propertyCluster] — the cluster where the property is.
-  /// [propertyArea] — optional specific area for sub-area pricing.
-  static InspectionFeeBreakdown calculateFee({
-    required String agentCluster,
-    required String propertyCluster,
-    String? propertyArea,
-  }) {
-    // Try sub-area fare first, fall back to cluster fare
-    double? oneWayFare;
+  /// Backward-compatible alias for [getLGALabel].
+  static String getClusterLabel(String lga) => getLGALabel(lga);
 
-    if (propertyArea != null && propertyArea.isNotEmpty) {
-      oneWayFare = getSubAreaFare(agentCluster, propertyCluster, propertyArea);
+  /// Get all areas that belong to a given LGA.
+  static List<String> getAreasForLGA(String lga) {
+    return _areaToLGA.entries
+        .where((e) => e.value == lga)
+        .map((e) => e.key)
+        .toList()
+      ..sort();
+  }
+
+  /// Backward-compatible alias for [getAreasForLGA].
+  static List<String> getAreasForCluster(String lga) => getAreasForLGA(lga);
+
+  /// Get all LGA names (for dropdowns, etc.)
+  static List<String> get allLGAs => [...lgas, outerLGA];
+
+  /// Backward-compatible alias.
+  static List<String> get allClusters => allLGAs;
+
+  /// Get all recognized area names as Title Case, sorted alphabetically.
+  static List<String> getAllAreas() {
+    final areas = _areaToLGA.keys.toSet().toList();
+    areas.sort();
+    return areas.map((a) => _titleCase(a)).toList();
+  }
+
+  /// Get all areas grouped by LGA, with LGA labels as headers.
+  static List<Map<String, dynamic>> getAreasGroupedByLGA() {
+    final groups = <Map<String, dynamic>>[];
+    for (final lga in allLGAs) {
+      final areas = getAreasForLGA(lga);
+      if (areas.isNotEmpty) {
+        groups.add({
+          'cluster': lga, // keep key name for backward compat with AreaDropdown
+          'label': getLGALabel(lga),
+          'areas': areas.map((a) => _titleCase(a)).toList()..sort(),
+        });
+      }
+    }
+    return groups;
+  }
+
+  /// Backward-compatible alias.
+  static List<Map<String, dynamic>> getAreasGroupedByCluster() =>
+      getAreasGroupedByLGA();
+
+  /// Try to fuzzy-match a geocoded city name to a known area.
+  /// Handles diacritics (Ìkòròdú → Ikorodu) and LGA suffixes.
+  static String? findMatchingArea(String rawCityName) {
+    if (rawCityName.isEmpty) return null;
+
+    // Strip diacritics
+    final stripped = _stripDiacritics(rawCityName.trim().toLowerCase());
+
+    // Direct match
+    if (_areaToLGA.containsKey(stripped)) {
+      return _titleCase(stripped);
     }
 
-    oneWayFare ??= getOneWayFare(agentCluster, propertyCluster);
+    // Try removing common suffixes
+    for (final suffix in [' lga', ' lcda', ' local government', ' area']) {
+      final withoutSuffix = stripped.replaceAll(suffix, '').trim();
+      if (_areaToLGA.containsKey(withoutSuffix)) {
+        return _titleCase(withoutSuffix);
+      }
+    }
 
-    // If no fare found (unknown route), use a safe fallback
-    oneWayFare ??= 3000.0; // Safe middle-ground for unknown routes
+    // Partial match
+    for (final key in _areaToLGA.keys) {
+      if (stripped.contains(key) || key.contains(stripped)) {
+        return _titleCase(key);
+      }
+    }
 
-    // Round-trip transport + last-mile buffer
+    return null;
+  }
+
+  // ══════════════════════════════════════════════
+  //  FEE CALCULATION
+  // ══════════════════════════════════════════════
+
+  /// Calculate the full inspection fee from LGA names.
+  static InspectionFeeBreakdown calculateFee({
+    required String agentCluster, // actually LGA — kept for backward compat
+    required String propertyCluster, // actually LGA
+    String? propertyArea,
+  }) {
+    double? oneWayFare = getOneWayFare(agentCluster, propertyCluster);
+
+    // Unknown route fallback
+    oneWayFare ??= 3000.0;
+
     final transportFee = (oneWayFare * 2) + (lastMileBuffer * 2);
-
-    // What the tenant pays
     final tenantTotal = transportFee + tenantServiceCharge + agentServiceFee;
-
-    // Enforce minimum
     final adjustedTenantTotal =
         tenantTotal < minTenantFee ? minTenantFee : tenantTotal;
-
-    // Agent earnings = transport + service fee - ClearRent's cut
-    final agentEarnings =
-        transportFee + agentServiceFee - clearrentAgentCut;
-
-    // ClearRent total = tenant service charge + agent deduction
+    final agentEarnings = transportFee + agentServiceFee - clearrentAgentCut;
     final clearrentEarnings = tenantServiceCharge + clearrentAgentCut;
 
     return InspectionFeeBreakdown(
@@ -492,30 +651,24 @@ class InspectionPricing {
     );
   }
 
-  /// Calculate fee from area names (resolves clusters automatically).
-  /// Returns null if either area cannot be resolved to a cluster.
+  /// Calculate fee from area names (resolves LGAs automatically).
   static InspectionFeeBreakdown? calculateFeeFromAreas({
     required String agentArea,
     required String propertyArea,
   }) {
-    final agentCluster = getClusterForArea(agentArea);
-    final propertyCluster = getClusterForArea(propertyArea);
+    final agentLGA = getLGAForArea(agentArea);
+    final propertyLGA = getLGAForArea(propertyArea);
 
-    if (agentCluster == null || propertyCluster == null) return null;
+    if (agentLGA == null || propertyLGA == null) return null;
 
     return calculateFee(
-      agentCluster: agentCluster,
-      propertyCluster: propertyCluster,
+      agentCluster: agentLGA,
+      propertyCluster: propertyLGA,
       propertyArea: propertyArea,
     );
   }
 
-  /// Calculate fee for self-handled inspections (landlord conducts it).
-  ///
-  /// [landlordLivesInProperty] — if true, no transport cost.
-  /// [landlordCluster] — where the landlord lives (if not in property).
-  /// [propertyCluster] — where the property is.
-  /// [propertyArea] — optional specific area for sub-area pricing.
+  /// Calculate fee for self-handled inspections.
   static InspectionFeeBreakdown calculateSelfHandledFee({
     required bool landlordLivesInProperty,
     required String propertyCluster,
@@ -524,31 +677,21 @@ class InspectionPricing {
   }) {
     double transportFee = 0;
     double oneWayFare = 0;
-    final effectiveLandlordCluster = landlordCluster ?? propertyCluster;
+    final effectiveLandlordLGA = landlordCluster ?? propertyCluster;
 
     if (!landlordLivesInProperty && landlordCluster != null) {
-      // Landlord travels — calculate transport
-      double? fare;
-      if (propertyArea != null && propertyArea.isNotEmpty) {
-        fare = getSubAreaFare(landlordCluster, propertyCluster, propertyArea);
-      }
-      fare ??= getOneWayFare(landlordCluster, propertyCluster);
+      double? fare = getOneWayFare(landlordCluster, propertyCluster);
       fare ??= 3000.0;
       oneWayFare = fare;
       transportFee = (fare * 2) + (lastMileBuffer * 2);
     }
 
-    // Tenant pays: transport (if any) + booking fee
     final tenantTotal = transportFee + selfHandledBookingFee;
-
-    // Landlord gets the transport money
     final landlordEarnings = transportFee;
-
-    // ClearRent keeps the booking fee
     final clearrentEarnings = selfHandledBookingFee;
 
     return InspectionFeeBreakdown(
-      agentCluster: effectiveLandlordCluster,
+      agentCluster: effectiveLandlordLGA,
       propertyCluster: propertyCluster,
       propertyArea: propertyArea,
       oneWayFare: oneWayFare,
@@ -561,74 +704,66 @@ class InspectionPricing {
     );
   }
 
-  /// Get all available cluster names (for dropdowns, etc.)
-  static List<String> get allClusters => [...clusters, outerCluster];
-
-  /// Get human-readable label for a cluster.
-  static String getClusterLabel(String cluster) {
-    return _clusterLabels[cluster] ?? cluster;
-  }
-
-  /// Get all areas that belong to a given cluster.
-  static List<String> getAreasForCluster(String cluster) {
-    return _areaToCluster.entries
-        .where((e) => e.value == cluster)
-        .map((e) => e.key)
-        .toList()
-      ..sort();
-  }
-
-  static const Map<String, String> _clusterLabels = {
-    'ikorodu_inner': 'Ikorodu (Inner)',
-    'ikorodu_outer': 'Ikorodu (Outer)',
-    'ketu_ojota': 'Ketu / Ojota',
-    'mainland_east': 'Mainland East',
-    'maryland_ikeja': 'Maryland / Ikeja',
-    'yaba_surulere': 'Yaba / Surulere',
-    'berger_north': 'Berger / North',
-    'oshodi_central': 'Oshodi / Central',
-    'island': 'Island (VI / Ikoyi)',
-    'lekki': 'Lekki / Ajah',
-    'apapa_west': 'Apapa / Festac',
-    'outer': 'Outer Lagos',
-  };
-
   // ══════════════════════════════════════════════
   //  FORMATTING HELPERS
   // ══════════════════════════════════════════════
 
-  /// Format amount with commas
   static String formatAmount(double amount) {
     final formatted = amount.toStringAsFixed(0);
     final chars = formatted.split('').reversed.toList();
     final result = <String>[];
     for (var i = 0; i < chars.length; i++) {
-      if (i > 0 && i % 3 == 0) {
-        result.add(',');
-      }
+      if (i > 0 && i % 3 == 0) result.add(',');
       result.add(chars[i]);
     }
     return result.reversed.join('');
   }
 
-  /// Format as Naira
   static String formatNaira(double amount) {
     return '₦${formatAmount(amount)}';
+  }
+
+  static String _titleCase(String input) {
+    if (input.isEmpty) return input;
+    return input.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      if ({'vi', 'vgc', 'gra', 'bq', 'lasu', 'cms'}.contains(word.toLowerCase())) {
+        return word.toUpperCase();
+      }
+      return '${word[0].toUpperCase()}${word.substring(1)}';
+    }).join(' ');
+  }
+
+  static String normalizeAreaName(String displayName) {
+    return displayName.trim().toLowerCase();
+  }
+
+  /// Strip common diacritics from Yoruba text for matching.
+  static String _stripDiacritics(String input) {
+    const diacriticMap = {
+      'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a',
+      'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
+      'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+      'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
+      'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
+      'ṣ': 's', 'ẹ': 'e', 'ọ': 'o',
+    };
+    return input.split('').map((c) => diacriticMap[c] ?? c).join('');
   }
 }
 
 /// Fee breakdown result
 class InspectionFeeBreakdown {
-  /// The cluster the agent/landlord is in
+  /// The LGA the agent/landlord is in (named agentCluster for backward compat)
   final String agentCluster;
 
-  /// The cluster the property is in
+  /// The LGA the property is in (named propertyCluster for backward compat)
   final String propertyCluster;
 
-  /// The specific area within the property's cluster (if known)
+  /// The specific area within the property's LGA (if known)
   final String? propertyArea;
 
-  /// One-way fare between the two clusters
+  /// One-way fare between the two LGAs
   final double oneWayFare;
 
   /// Round-trip transport fee (fare × 2 + last-mile buffer × 2)
@@ -649,14 +784,18 @@ class InspectionFeeBreakdown {
   /// What ClearRent earns
   final double clearrentEarnings;
 
-  /// Alias for UI — same as [clearrentEarnings]
+  /// Alias for UI
   double get clearrentFee => clearrentEarnings;
+
+  /// Convenient LGA label accessors
+  String get agentLGALabel => InspectionPricing.getLGALabel(agentCluster);
+  String get propertyLGALabel => InspectionPricing.getLGALabel(propertyCluster);
 
   const InspectionFeeBreakdown({
     required this.agentCluster,
     required this.propertyCluster,
     this.propertyArea,
-    required this.oneWayFare,
+    this.oneWayFare = 0,
     required this.transportFee,
     required this.agentServiceFee,
     required this.tenantServiceCharge,
@@ -699,7 +838,7 @@ class InspectionFeeBreakdown {
   String toString() {
     return '''
 Inspection Fee Breakdown:
-  Route: ${InspectionPricing.getClusterLabel(agentCluster)} → ${InspectionPricing.getClusterLabel(propertyCluster)}${propertyArea != null ? ' ($propertyArea)' : ''}
+  Route: ${InspectionPricing.getLGALabel(agentCluster)} → ${InspectionPricing.getLGALabel(propertyCluster)}${propertyArea != null ? ' ($propertyArea)' : ''}
   One-way fare: ${InspectionPricing.formatNaira(oneWayFare)}
   Transport (round trip + buffer): ${InspectionPricing.formatNaira(transportFee)}
   Agent Service Fee: ${InspectionPricing.formatNaira(agentServiceFee)}
