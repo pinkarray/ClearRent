@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'services/connectivity_service.dart';
+import 'services/notification_service.dart';
+
 import 'app/app.dart';
 
 // Global flag to check if Firebase is initialized
@@ -19,6 +21,7 @@ void main() async {
       androidProvider: AndroidProvider.debug,
     );
     firebaseInitialized = true;
+    await NotificationService.instance.init();
     debugPrint('✅ Firebase initialized successfully');
   } catch (e) {
     firebaseInitialized = false;
