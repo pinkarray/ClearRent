@@ -28,6 +28,15 @@ class ActiveRental {
   final double inspectionFeeCredit;
   final String rentFrequency;
   
+  // Payout details
+  final double landlordPayout;
+  final double agentPayout;
+  final double clearrentEarnings;
+  final String landlordPayoutStatus;  // pending | paid | not_applicable
+  final String agentPayoutStatus;     // pending | paid | not_applicable
+  final DateTime? landlordPaidAt;
+  final DateTime? agentPaidAt;
+  
   // Lease details
   final DateTime leaseStartDate;
   final DateTime leaseEndDate;
@@ -67,6 +76,13 @@ class ActiveRental {
     required this.totalPaid,
     this.inspectionFeeCredit = 5000,
     this.rentFrequency = 'yearly',
+    this.landlordPayout = 0,
+    this.agentPayout = 0,
+    this.clearrentEarnings = 0,
+    this.landlordPayoutStatus = 'pending',
+    this.agentPayoutStatus = 'not_applicable',
+    this.landlordPaidAt,
+    this.agentPaidAt,
     required this.leaseStartDate,
     required this.leaseEndDate,
     required this.nextPaymentDue,
@@ -179,6 +195,15 @@ class ActiveRental {
       totalPaid: (data['totalPaid'] ?? 0).toDouble(),
       inspectionFeeCredit: (data['inspectionFeeCredit'] ?? 5000).toDouble(),
       rentFrequency: data['rentFrequency'] ?? 'yearly',
+      landlordPayout: (data['landlordPayout'] ?? 0).toDouble(),
+      agentPayout: (data['agentPayout'] ?? 0).toDouble(),
+      clearrentEarnings: (data['clearrentEarnings'] ?? 0).toDouble(),
+      landlordPayoutStatus: data['landlordPayoutStatus'] ?? 'pending',
+      agentPayoutStatus: data['agentPayoutStatus'] ?? 'not_applicable',
+      landlordPaidAt: data['landlordPaidAt'] != null
+          ? (data['landlordPaidAt'] as Timestamp).toDate() : null,
+      agentPaidAt: data['agentPaidAt'] != null
+          ? (data['agentPaidAt'] as Timestamp).toDate() : null,
       leaseStartDate: (data['leaseStartDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       leaseEndDate: (data['leaseEndDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       nextPaymentDue: (data['nextPaymentDue'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -216,6 +241,13 @@ class ActiveRental {
       'totalPaid': totalPaid,
       'inspectionFeeCredit': inspectionFeeCredit,
       'rentFrequency': rentFrequency,
+      'landlordPayout': landlordPayout,
+      'agentPayout': agentPayout,
+      'clearrentEarnings': clearrentEarnings,
+      'landlordPayoutStatus': landlordPayoutStatus,
+      'agentPayoutStatus': agentPayoutStatus,
+      if (landlordPaidAt != null) 'landlordPaidAt': Timestamp.fromDate(landlordPaidAt!),
+      if (agentPaidAt != null) 'agentPaidAt': Timestamp.fromDate(agentPaidAt!),
       'leaseStartDate': Timestamp.fromDate(leaseStartDate),
       'leaseEndDate': Timestamp.fromDate(leaseEndDate),
       'nextPaymentDue': Timestamp.fromDate(nextPaymentDue),
@@ -239,6 +271,9 @@ class ActiveRental {
     String? tenantName, String? landlordName, String? landlordPhone,
     double? rentAmount, double? agentFee, double? totalPaid,
     double? inspectionFeeCredit, String? rentFrequency,
+    double? landlordPayout, double? agentPayout, double? clearrentEarnings,
+    String? landlordPayoutStatus, String? agentPayoutStatus,
+    DateTime? landlordPaidAt, DateTime? agentPaidAt,
     DateTime? leaseStartDate, DateTime? leaseEndDate, DateTime? nextPaymentDue,
     String? agreementUrl, DateTime? agreementUploadedAt,
     AgreementStatus? agreementStatus, DateTime? tenantAcceptedAt,
@@ -264,6 +299,13 @@ class ActiveRental {
       totalPaid: totalPaid ?? this.totalPaid,
       inspectionFeeCredit: inspectionFeeCredit ?? this.inspectionFeeCredit,
       rentFrequency: rentFrequency ?? this.rentFrequency,
+      landlordPayout: landlordPayout ?? this.landlordPayout,
+      agentPayout: agentPayout ?? this.agentPayout,
+      clearrentEarnings: clearrentEarnings ?? this.clearrentEarnings,
+      landlordPayoutStatus: landlordPayoutStatus ?? this.landlordPayoutStatus,
+      agentPayoutStatus: agentPayoutStatus ?? this.agentPayoutStatus,
+      landlordPaidAt: landlordPaidAt ?? this.landlordPaidAt,
+      agentPaidAt: agentPaidAt ?? this.agentPaidAt,
       leaseStartDate: leaseStartDate ?? this.leaseStartDate,
       leaseEndDate: leaseEndDate ?? this.leaseEndDate,
       nextPaymentDue: nextPaymentDue ?? this.nextPaymentDue,

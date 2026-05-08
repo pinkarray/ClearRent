@@ -200,13 +200,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
-          TextButton.icon(
-            onPressed: () => context.go('/tenant/home'),
-            icon: const Icon(Icons.search, size: 16),
-            label: const Text('Browse Properties'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.primary),
-          ),
         ]),
       ),
     );
@@ -845,6 +838,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return 'Listing Fee';
       case 'rent':
         return 'Rent Payment';
+      case 'rent_payout':
+        return 'Rent Payout';
       default:
         return 'Payment';
     }
@@ -860,6 +855,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
         return Icons.add_home_outlined;
       case 'rent':
         return Icons.payments_outlined;
+      case 'rent_payout':
+        return Icons.account_balance_wallet_outlined;
       default:
         return Icons.payment;
     }
@@ -874,6 +871,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       case 'listing':
         return AppColors.warning;
       case 'rent':
+        return AppColors.success;
+      case 'rent_payout':
         return AppColors.success;
       default:
         return AppColors.textSecondary;

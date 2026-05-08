@@ -14,6 +14,8 @@ class RentalInterestService {
   Future<RentalInterest?> createRentalInterest({
     required InspectionRequest inspectionRequest,
     required double paymentAmount,
+    required double rentAmount,
+    required double agentFee,
   }) async {
     try {
       final currentUserId = _authService.currentUserId;
@@ -37,6 +39,14 @@ class RentalInterestService {
         return existing; // Already created
       }
 
+      // Calculate deal completion fees
+      const double dealFee = 5000;
+      final bool hasAgent = inspectionRequest.agentId != null &&
+          inspectionRequest.agentId!.isNotEmpty;
+      final double landlordPayout = rentAmount - dealFee;
+      final double agentPayout = hasAgent ? agentFee - dealFee : 0;
+      final double clearrentEarnings = dealFee + dealFee + (hasAgent ? dealFee : 0);
+
       final interestData = {
         'inspectionRequestId': inspectionRequest.id,
         'propertyId': inspectionRequest.propertyId,
@@ -51,6 +61,14 @@ class RentalInterestService {
         'agentName': inspectionRequest.agentName,
         'status': 'pending_payment',
         'paymentAmount': paymentAmount,
+        'rentAmount': rentAmount,
+        'agentFee': agentFee,
+        'tenantDealFee': dealFee,
+        'landlordDealFee': dealFee,
+        'agentDealFee': hasAgent ? dealFee : 0,
+        'landlordPayout': landlordPayout,
+        'agentPayout': agentPayout,
+        'clearrentEarnings': clearrentEarnings,
         'paymentReceiptUrl': null,
         'paymentUploadedAt': null,
         'paymentVerifiedAt': null,

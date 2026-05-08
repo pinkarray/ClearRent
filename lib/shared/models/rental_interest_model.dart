@@ -25,6 +25,14 @@ class RentalInterest {
   
   // Payment details
   final double paymentAmount;
+  final double rentAmount;
+  final double agentFee;
+  final double tenantDealFee;
+  final double landlordDealFee;
+  final double agentDealFee;
+  final double landlordPayout;   // rent - landlordDealFee
+  final double agentPayout;      // agentFee - agentDealFee
+  final double clearrentEarnings; // sum of all deal fees
   final String? paymentReceiptUrl;
   final DateTime? paymentUploadedAt;
   final DateTime? paymentVerifiedAt;
@@ -50,6 +58,14 @@ class RentalInterest {
     this.agentName,
     required this.status,
     required this.paymentAmount,
+    this.rentAmount = 0,
+    this.agentFee = 0,
+    this.tenantDealFee = 5000,
+    this.landlordDealFee = 5000,
+    this.agentDealFee = 5000,
+    this.landlordPayout = 0,
+    this.agentPayout = 0,
+    this.clearrentEarnings = 0,
     this.paymentReceiptUrl,
     this.paymentUploadedAt,
     this.paymentVerifiedAt,
@@ -98,6 +114,14 @@ class RentalInterest {
       agentName: data['agentName'],
       status: _statusFromString(data['status'] ?? 'pending_payment'),
       paymentAmount: (data['paymentAmount'] ?? 0).toDouble(),
+      rentAmount: (data['rentAmount'] ?? 0).toDouble(),
+      agentFee: (data['agentFee'] ?? 0).toDouble(),
+      tenantDealFee: (data['tenantDealFee'] ?? 5000).toDouble(),
+      landlordDealFee: (data['landlordDealFee'] ?? 5000).toDouble(),
+      agentDealFee: (data['agentDealFee'] ?? 5000).toDouble(),
+      landlordPayout: (data['landlordPayout'] ?? 0).toDouble(),
+      agentPayout: (data['agentPayout'] ?? 0).toDouble(),
+      clearrentEarnings: (data['clearrentEarnings'] ?? 0).toDouble(),
       paymentReceiptUrl: data['paymentReceiptUrl'],
       paymentUploadedAt: (data['paymentUploadedAt'] as Timestamp?)?.toDate(),
       paymentVerifiedAt: (data['paymentVerifiedAt'] as Timestamp?)?.toDate(),
@@ -124,6 +148,14 @@ class RentalInterest {
       'agentName': agentName,
       'status': _statusToString(status),
       'paymentAmount': paymentAmount,
+      'rentAmount': rentAmount,
+      'agentFee': agentFee,
+      'tenantDealFee': tenantDealFee,
+      'landlordDealFee': landlordDealFee,
+      'agentDealFee': agentDealFee,
+      'landlordPayout': landlordPayout,
+      'agentPayout': agentPayout,
+      'clearrentEarnings': clearrentEarnings,
       'paymentReceiptUrl': paymentReceiptUrl,
       'paymentUploadedAt': paymentUploadedAt != null 
           ? Timestamp.fromDate(paymentUploadedAt!) 
@@ -154,6 +186,14 @@ class RentalInterest {
     String? agentName,
     RentalInterestStatus? status,
     double? paymentAmount,
+    double? rentAmount,
+    double? agentFee,
+    double? tenantDealFee,
+    double? landlordDealFee,
+    double? agentDealFee,
+    double? landlordPayout,
+    double? agentPayout,
+    double? clearrentEarnings,
     String? paymentReceiptUrl,
     DateTime? paymentUploadedAt,
     DateTime? paymentVerifiedAt,
@@ -177,6 +217,14 @@ class RentalInterest {
       agentName: agentName ?? this.agentName,
       status: status ?? this.status,
       paymentAmount: paymentAmount ?? this.paymentAmount,
+      rentAmount: rentAmount ?? this.rentAmount,
+      agentFee: agentFee ?? this.agentFee,
+      tenantDealFee: tenantDealFee ?? this.tenantDealFee,
+      landlordDealFee: landlordDealFee ?? this.landlordDealFee,
+      agentDealFee: agentDealFee ?? this.agentDealFee,
+      landlordPayout: landlordPayout ?? this.landlordPayout,
+      agentPayout: agentPayout ?? this.agentPayout,
+      clearrentEarnings: clearrentEarnings ?? this.clearrentEarnings,
       paymentReceiptUrl: paymentReceiptUrl ?? this.paymentReceiptUrl,
       paymentUploadedAt: paymentUploadedAt ?? this.paymentUploadedAt,
       paymentVerifiedAt: paymentVerifiedAt ?? this.paymentVerifiedAt,

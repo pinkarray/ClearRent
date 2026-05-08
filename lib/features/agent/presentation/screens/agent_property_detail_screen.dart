@@ -716,13 +716,176 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
     );
   }
 
+  /// Open the edit-schedule bottom sheet for the assigned agent.
+  /// Lets agent change inspection days and time slots, then prompts to
+  /// message the landlord with a pre-filled draft.
+  Future<void> _openEditScheduleSheet(PropertyModel property) async {
+    final result = await showModalBottomSheet<_ScheduleEditResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _EditScheduleSheet(
+        initialDays: property.inspectionDays,
+        initialTimeSlots: property.inspectionTimeSlots,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    // Save changes
+    final ok = await _propertyService.updateProperty(property.id, {
+      'inspectionDays': result.days,
+      'inspectionTimeSlots': result.timeSlots,
+    });
+
+    if (!mounted) return;
+
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not save changes. Please try again.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    // Refresh local property state immediately
+    setState(() {
+      _property = property.copyWith(
+        inspectionDays: result.days,
+        inspectionTimeSlots: result.timeSlots,
+      );
+    });
+
+    // Open landlord chat with a pre-filled draft about the change
+    await _messageLandlordAboutScheduleChange(
+      property: _property!,
+      newDays: result.days,
+      newTimeSlots: result.timeSlots,
+    );
+  }
+
+  /// Build a draft message and open the agent-landlord chat with it
+  /// pre-filled (not auto-sent — agent reviews before sending).
+  Future<void> _messageLandlordAboutScheduleChange({
+    required PropertyModel property,
+    required List<String> newDays,
+    required List<String> newTimeSlots,
+  }) async {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    // Show loading indicator while we get/create the conversation
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
+    );
+
+    try {
+      final conversationId =
+          await _conversationService.getOrCreateAgentLandlordConversation(
+        propertyId: property.id,
+        landlordId: property.landlordId,
+        agentId: currentUserId,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+
+      if (conversationId == null) {
+        // Schedule was saved but we couldn't open chat — non-fatal.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Schedule updated. Couldn\'t open chat — please message the landlord directly.',
+            ),
+            backgroundColor: AppColors.warning,
+          ),
+        );
+        return;
+      }
+
+      // Build a friendly draft summarizing the change
+      final dayList = newDays.isEmpty ? 'none set' : newDays.join(', ');
+      final timeList = newTimeSlots.isEmpty
+          ? 'none set'
+          : newTimeSlots.map(_humanTimeSlot).join(', ');
+      final draft =
+          'Hi, I\'ve updated the inspection schedule for "${property.title}".\n\n'
+          'New days: $dayList\n'
+          'New times: $timeList\n\n'
+          'Let me know if this works for you.';
+
+      context.push('/chat', extra: {
+        'conversationId': conversationId,
+        'propertyTitle': property.title,
+        'propertyImage':
+            property.images.isNotEmpty ? property.images.first : null,
+        'initialDraft': draft,
+      });
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Schedule updated, but the chat failed to open.',
+          ),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+    }
+  }
+
+  String _humanTimeSlot(String id) {
+    switch (id) {
+      case 'morning':
+        return 'Morning';
+      case 'afternoon':
+        return 'Afternoon';
+      case 'late_afternoon':
+        return 'Late Afternoon';
+      case 'evening':
+        return 'Evening';
+      default:
+        return id;
+    }
+  }
+
   Widget _buildInspectionSchedule(PropertyModel property) {
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Inspection Schedule', style: AppTextStyles.h4),
+          Row(
+            children: [
+              Text('Inspection Schedule', style: AppTextStyles.h4),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _openEditScheduleSheet(property),
+                icon: Icon(Icons.edit, size: 18, color: AppColors.primary),
+                label: Text(
+                  'Edit',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
@@ -983,6 +1146,285 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   }
 }
 
+/// Result returned from the edit-schedule bottom sheet.
+class _ScheduleEditResult {
+  final List<String> days;
+  final List<String> timeSlots;
+  const _ScheduleEditResult({required this.days, required this.timeSlots});
+}
+
+/// Bottom sheet UI matching the landlord's edit-property inspection section.
+/// Pops a [_ScheduleEditResult] on save, or null on cancel.
+class _EditScheduleSheet extends StatefulWidget {
+  final List<String> initialDays;
+  final List<String> initialTimeSlots;
+
+  const _EditScheduleSheet({
+    required this.initialDays,
+    required this.initialTimeSlots,
+  });
+
+  @override
+  State<_EditScheduleSheet> createState() => _EditScheduleSheetState();
+}
+
+class _EditScheduleSheetState extends State<_EditScheduleSheet> {
+  static const List<String> _weekDays = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  static const List<Map<String, String>> _timeSlotOptions = [
+    {'id': 'morning', 'label': 'Morning', 'time': '9:00 AM - 12:00 PM'},
+    {'id': 'afternoon', 'label': 'Afternoon', 'time': '12:00 PM - 3:00 PM'},
+    {
+      'id': 'late_afternoon',
+      'label': 'Late Afternoon',
+      'time': '3:00 PM - 6:00 PM'
+    },
+    {'id': 'evening', 'label': 'Evening', 'time': '6:00 PM - 8:00 PM'},
+  ];
+
+  late List<String> _days;
+  late List<String> _slots;
+
+  @override
+  void initState() {
+    super.initState();
+    _days = List.from(widget.initialDays);
+    _slots = List.from(widget.initialTimeSlots);
+  }
+
+  void _save() {
+    if (_days.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please select at least one day'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    if (_slots.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please select at least one time slot'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(
+      _ScheduleEditResult(days: _days, timeSlots: _slots),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    return Padding(
+      padding: EdgeInsets.only(bottom: viewInsets.bottom),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text('Edit Inspection Schedule', style: AppTextStyles.h3),
+              const SizedBox(height: 4),
+              Text(
+                'The landlord will be notified about this change.',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Available days
+              Text('Available Days', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _weekDays.map((day) {
+                  final isSelected = _days.contains(day);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _days.remove(day);
+                        } else {
+                          _days.add(day);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary.withAlpha(26)
+                            : AppColors.background,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        day.substring(0, 3),
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 24),
+
+              // Time slots
+              Text('Available Time Slots', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 12),
+              ..._timeSlotOptions.map((slot) {
+                final id = slot['id']!;
+                final isSelected = _slots.contains(id);
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _slots.remove(id);
+                      } else {
+                        _slots.add(id);
+                      }
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary.withAlpha(13)
+                          : AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                              width: 2,
+                            ),
+                          ),
+                          child: isSelected
+                              ? Icon(Icons.check,
+                                  size: 14, color: AppColors.surface)
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(slot['label']!,
+                                  style: AppTextStyles.labelMedium),
+                              const SizedBox(height: 2),
+                              Text(
+                                slot['time']!,
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 24),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: AppColors.border),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        'Save Changes',
+                        style: AppTextStyles.labelLarge.copyWith(
+                          color: AppColors.surface,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ============ SHARE PROPERTY SHEET ============
 class _SharePropertySheet extends StatelessWidget {
   final PropertyModel property;
@@ -993,7 +1435,7 @@ class _SharePropertySheet extends StatelessWidget {
     final buffer = StringBuffer();
     buffer.writeln('🏠 ${property.title}');
     buffer.writeln('');
-    buffer.writeln('📍 ${property.address}, ${property.city}, ${property.state}');
+    buffer.writeln('📍 ${property.publicLocation}');
     buffer.writeln('💰 ${property.formattedRent}');
     buffer.writeln('');
     buffer.writeln('🛏️ ${property.bedrooms} Bedroom(s) | 🚿 ${property.bathrooms} Bathroom(s)');

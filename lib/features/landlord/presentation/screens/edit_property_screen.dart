@@ -1175,7 +1175,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Changing the address updates the map location shown to tenants. Only do this to correct a typo — not to move the property to a different place.',
+                'Your exact address is hidden from tenants until their inspection is approved. Only edit this to correct a typo — not to move the property to a different place.',
                 style: AppTextStyles.caption.copyWith(color: AppColors.info, height: 1.5),
               ),
             ),

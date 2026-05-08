@@ -17,7 +17,13 @@ import '../../../../services/rental_interest_service.dart';
 import '../../../../services/active_rental_service.dart';
 
 class LandlordInspectionsScreen extends StatefulWidget {
-  const LandlordInspectionsScreen({super.key});
+  /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
+  /// When null, the screen picks the most relevant tab automatically based on
+  /// the landlord's data. Pass an explicit value when deep-linking from a
+  /// notification or home-screen card that already knows which tab is right.
+  final int? initialTab;
+
+  const LandlordInspectionsScreen({super.key, this.initialTab});
 
   @override
   State<LandlordInspectionsScreen> createState() =>
@@ -33,6 +39,50 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    // If an explicit tab was passed (e.g. from a notification deep-link),
+    // respect it. Otherwise let the smart logic pick.
+    if (widget.initialTab != null) {
+      _tabController.index = widget.initialTab!.clamp(0, 2);
+    } else {
+      _selectInitialTab();
+    }
+  }
+
+  /// Picks the most relevant tab for the landlord based on what's actually
+  /// in their data. Landlord priority: Requests > Scheduled > Completed.
+  /// Pending requests need the landlord's action; that's where they should
+  /// land first. Falls back to Requests when everything is empty.
+  ///
+  /// The filter conditions here MUST mirror each tab's own filter exactly,
+  /// otherwise we'd land on a tab that turns out empty.
+  Future<void> _selectInitialTab() async {
+    try {
+      final all = await _inspectionService.getLandlordRequests().first;
+      if (!mounted) return;
+
+      final hasRequests =
+          all.any((r) => r.isPending || r.isDeclinedByAgent);
+      final hasScheduled = all.any((r) => r.isApproved);
+      final hasCompleted = all.any(
+        (r) => r.isCompleted || r.isDeclined || r.isCancelled,
+      );
+
+      int target = 0; // default to Requests for empty state
+      if (hasRequests) {
+        target = 0;
+      } else if (hasScheduled) {
+        target = 1;
+      } else if (hasCompleted) {
+        target = 2;
+      }
+
+      if (mounted && _tabController.index != target) {
+        _tabController.animateTo(target);
+      }
+    } catch (_) {
+      // Non-fatal — keep default Requests tab.
+    }
   }
 
   @override

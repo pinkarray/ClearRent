@@ -80,6 +80,12 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
         extra: {
           'rentalInterestId': widget.rentalInterest.id,
           'propertyId': widget.rentalInterest.propertyId,
+          'rentAmount': widget.rentalInterest.rentAmount,
+          'agentFee': widget.rentalInterest.agentFee,
+          'tenantDealFee': widget.rentalInterest.tenantDealFee,
+          'landlordPayout': widget.rentalInterest.landlordPayout,
+          'agentPayout': widget.rentalInterest.agentPayout,
+          'clearrentEarnings': widget.rentalInterest.clearrentEarnings,
         },
       );
 
@@ -416,6 +422,12 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
   }
 
   Widget _buildPaymentBreakdown() {
+    final interest = widget.rentalInterest;
+    final rentAmount = interest.rentAmount > 0 ? interest.rentAmount : _amount;
+    final agentFee = interest.agentFee;
+    final dealFee = interest.tenantDealFee > 0 ? interest.tenantDealFee : 5000.0;
+    final hasAgent = agentFee > 0;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -434,9 +446,25 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _paymentRow('Rent Amount', _formattedAmount),
+          _paymentRow('Rent Amount', '₦${NumberFormat('#,###').format(rentAmount)}'),
+          if (hasAgent) ...[
+            const SizedBox(height: 8),
+            _paymentRow('Agent Fee', '₦${NumberFormat('#,###').format(agentFee)}'),
+          ],
           const SizedBox(height: 8),
-          _paymentRow('Deal Completion Fee', '₦${NumberFormat('#,###').format(5000)}'),
+          _paymentRow('Deal Completion Fee', '₦${NumberFormat('#,###').format(dealFee)}'),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              'Unlocks maintenance & issue reporting services',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textHint,
+                fontSize: 10,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(height: 1),

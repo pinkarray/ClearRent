@@ -58,6 +58,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   bool _hasExistingRequest = false;
   bool _isCheckingRequest = true;
 
+  // Whether the current tenant has an approved/completed inspection on this
+  // property. Gates exact-address reveal in the detail screen.
+  bool _hasApprovedInspection = false;
+
   // Verification status
   bool _isCurrentUserVerified = false;
   bool _isLandlordVerified = false;
@@ -79,6 +83,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     _tenancyLinkService = TenancyLinkService();
     _determineUserContext();
     _checkExistingRequest();
+    _checkApprovedInspection();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
     _initializeVideo();
@@ -257,6 +262,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       setState(() {
         _hasExistingRequest = hasRequest;
         _isCheckingRequest = false;
+      });
+    }
+  }
+
+  Future<void> _checkApprovedInspection() async {
+    final inspectionService = InspectionService();
+    final hasApproved = await inspectionService.hasApprovedInspection(
+      widget.property.id,
+    );
+    debugPrint(
+      '🏠 _checkApprovedInspection: property=${widget.property.id} → $hasApproved',
+    );
+    if (mounted) {
+      setState(() {
+        _hasApprovedInspection = hasApproved;
       });
     }
   }
@@ -687,6 +707,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           const SizedBox(height: 8),
 
+                          Builder(builder: (_) {
+                            debugPrint(
+                              '🏠 RENDER property=${property.id} _isOwner=$_isOwner '
+                              '_hasApprovedInspection=$_hasApprovedInspection',
+                            );
+                            return const SizedBox.shrink();
+                          }),
+
                           Row(
                             children: [
                               Icon(
@@ -697,7 +725,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  '${property.address}, ${property.city}, ${property.state}',
+                                  (_isOwner || _hasApprovedInspection)
+                                      ? property.fullLocation
+                                      : property.publicLocation,
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.textSecondary,
                                   ),
@@ -705,6 +735,29 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               ),
                             ],
                           ),
+
+                          if (!_isOwner && !_hasApprovedInspection) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.lock_outline,
+                                  size: 14,
+                                  color: AppColors.textHint,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'Exact address shared after inspection is confirmed',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.textHint,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
 
                           const SizedBox(height: 20),
 

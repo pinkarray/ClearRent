@@ -51,6 +51,7 @@ import '../features/admin/presentation/screens/admin_property_docs_screen.dart';
 import '../features/admin/presentation/screens/admin_users_screen.dart';
 import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
 import '../features/admin/presentation/screens/admin_agent_payouts_screen.dart';
+import '../features/admin/presentation/screens/admin_rent_payouts_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
@@ -168,7 +169,12 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/tenant/inspections',
-      builder: (context, state) => const TenantInspectionsScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return TenantInspectionsScreen(
+          initialTab: extra?['initialTab'] as int?,
+        );
+      },
     ),
     GoRoute(
       path: '/tenant/tenancy-requests',
@@ -264,7 +270,12 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/landlord/inspections',
-      builder: (context, state) => const LandlordInspectionsScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return LandlordInspectionsScreen(
+          initialTab: extra?['initialTab'] as int?,
+        );
+      },
     ),
     GoRoute(
       path: '/landlord/issues',
@@ -333,7 +344,7 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>?;
         return AgentInspectionsScreen(
-          initialTab: extra?['initialTab'] ?? 0,
+          initialTab: extra?['initialTab'] as int?,
         );
       },
     ),
@@ -364,6 +375,10 @@ final appRouter = GoRouter(
       builder: (context, state) => const AdminAgentPayoutsScreen(),
     ),
     GoRoute(
+      path: '/admin/rent-payouts',
+      builder: (context, state) => const AdminRentPayoutsScreen(),
+    ),
+    GoRoute(
       path: '/admin/property-docs',
       builder: (context, state) => const AdminPropertyDocsScreen(),
     ),
@@ -387,10 +402,12 @@ final appRouter = GoRouter(
         final conversationId = extra['conversationId'] as String;
         final propertyTitle = extra['propertyTitle'] as String?;
         final propertyImage = extra['propertyImage'] as String?;
+        final initialDraft = extra['initialDraft'] as String?;
         return ChatScreen(
           conversationId: conversationId,
           propertyTitle: propertyTitle,
           propertyImage: propertyImage,
+          initialDraft: initialDraft,
         );
       },
     ),

@@ -12,12 +12,17 @@ class ChatScreen extends StatefulWidget {
   final String conversationId;
   final String? propertyTitle;
   final String? propertyImage;
+  /// Optional pre-filled message text. The user can edit or discard before
+  /// sending — we never auto-send. Used by features like agent reschedule
+  /// that want to draft a message for the user.
+  final String? initialDraft;
 
   const ChatScreen({
     super.key,
     required this.conversationId,
     this.propertyTitle,
     this.propertyImage,
+    this.initialDraft,
   });
 
   @override
@@ -51,6 +56,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _currentUserId = _authService.currentUser?.uid;
+    if (widget.initialDraft != null && widget.initialDraft!.isNotEmpty) {
+      _messageController.text = widget.initialDraft!;
+    }
     _loadData();
   }
 

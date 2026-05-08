@@ -10,8 +10,12 @@ import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 
 class AgentInspectionsScreen extends StatefulWidget {
-  final int initialTab;
-  const AgentInspectionsScreen({super.key, this.initialTab = 0});
+  /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
+  /// When null, the screen picks the most relevant tab automatically based on
+  /// the agent's data. Pass an explicit value when deep-linking from a
+  /// notification or home-screen card that already knows which tab is right.
+  final int? initialTab;
+  const AgentInspectionsScreen({super.key, this.initialTab});
 
   @override
   State<AgentInspectionsScreen> createState() => _AgentInspectionsScreenState();
@@ -25,13 +29,62 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: 3, 
-      vsync: this, 
-      initialIndex: widget.initialTab,
-    );
+    _tabController = TabController(length: 3, vsync: this);
+
+    // If an explicit tab was passed (e.g. from the agent home screen's
+    // "today's inspection" card or a notification deep-link), respect it.
+    // Otherwise let the smart logic pick.
+    if (widget.initialTab != null) {
+      _tabController.index = widget.initialTab!.clamp(0, 2);
+    } else {
+      _selectInitialTab();
+    }
   }
 
+  /// Picks the most relevant tab for the agent based on what's actually
+  /// in their data. Agent priority: Requests > Scheduled > Completed.
+  /// Pending requests need the agent to accept/decline; that's where they
+  /// should land first. Falls back to Requests when everything is empty.
+  ///
+  /// The filter conditions here MUST mirror each tab's own filter exactly,
+  /// otherwise we'd land on a tab that turns out empty. Note Scheduled
+  /// excludes past-dated approved inspections (matching the tab filter).
+  Future<void> _selectInitialTab() async {
+    try {
+      final all = await _inspectionService.getAgentRequests().first;
+      if (!mounted) return;
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      final hasRequests = all.any((r) => r.isPending);
+      final hasScheduled = all.any((r) {
+        final requestDay = DateTime(
+          r.requestedDate.year,
+          r.requestedDate.month,
+          r.requestedDate.day,
+        );
+        return r.isApproved && !requestDay.isBefore(today);
+      });
+      final hasCompleted = all.any((r) => r.isCompleted);
+
+      int target = 0; // default to Requests for empty state
+      if (hasRequests) {
+        target = 0;
+      } else if (hasScheduled) {
+        target = 1;
+      } else if (hasCompleted) {
+        target = 2;
+      }
+
+      if (mounted && _tabController.index != target) {
+        _tabController.animateTo(target);
+      }
+    } catch (_) {
+      // Non-fatal — keep default Requests tab.
+    }
+  }
+  
   @override
   void dispose() {
     _tabController.dispose();

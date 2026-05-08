@@ -207,6 +207,29 @@ class PropertyModel {
   // Check if has agent
   bool get hasAgent => agentId != null && agentId!.isNotEmpty;
 
+  // ── Location helpers ──
+
+  /// Public location shown to tenants browsing and unassigned agents.
+  /// Hides the exact street address until an inspection is approved
+  /// or the agent is assigned.
+  String get publicLocation {
+    final parts = <String>[];
+    if (city.isNotEmpty) parts.add(city);
+    if (state.isNotEmpty) parts.add(state);
+    return parts.isEmpty ? 'Lagos' : parts.join(', ');
+  }
+
+  /// Full location including the street address. Shown only to the owner,
+  /// the assigned agent, and tenants whose inspection on this property
+  /// has reached `approved` status or beyond.
+  String get fullLocation {
+    final parts = <String>[];
+    if (address.isNotEmpty) parts.add(address);
+    if (city.isNotEmpty) parts.add(city);
+    if (state.isNotEmpty) parts.add(state);
+    return parts.isEmpty ? 'Lagos' : parts.join(', ');
+  }
+
   // Copy with
   PropertyModel copyWith({
     String? id,
