@@ -17,7 +17,7 @@ import '../../../../services/activity_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
-
+import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
@@ -505,15 +505,17 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     ],
                   ),
                 ),
-                    GestureDetector(
-                      onTap: () => setState(() => _currentNavIndex = 3),
-                      child: UserAvatar(
-                        name: _userName,
-                        imageUrl: _profileImageUrl,
-                        imageFile: _localProfileImage,
-                        size: 48,
-                      ),
-                    ),
+                NotificationBell(userId: _authService.currentUserId ?? ''),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => setState(() => _currentNavIndex = 3),
+                  child: UserAvatar(
+                    name: _userName,
+                    imageUrl: _profileImageUrl,
+                    imageFile: _localProfileImage,
+                    size: 48,
+                  ),
+                ),
               ],
             ),
 
@@ -526,7 +528,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
               accountType: 'landlord',
-              notificationsRoute: '/landlord/activities',
+              notificationsRoute: '/notifications',
             ),
             const SizedBox(height: 8),
 

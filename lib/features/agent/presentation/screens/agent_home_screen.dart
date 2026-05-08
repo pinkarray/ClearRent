@@ -10,6 +10,7 @@ import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../shared/models/inspection_request_model.dart';
+import '../../../../shared/widgets/notification_bell.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../widgets/agent_assigned_properties_tab.dart';
 import 'dart:io';
@@ -384,7 +385,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             child: AnnouncementsBanner(
               userId: _auth.currentUser?.uid ?? '',
               accountType: 'agent',
-              notificationsRoute: '/agent/activities',
+              notificationsRoute: '/notifications',
             ),
           ),
         ),
@@ -455,27 +456,8 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
               ],
             ),
           ),
-          IconButton(
-            onPressed: () => context.push('/agent/activities'),
-            icon: Stack(
-              children: [
-                const Icon(Icons.notifications_outlined),
-                if (_unreadCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          NotificationBell(userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
+          const SizedBox(width: 4),
           IconButton(
             onPressed: () => setState(() => _currentNavIndex = 4),
             icon: const Icon(Icons.menu),

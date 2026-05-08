@@ -11,6 +11,7 @@ import '../features/landlord/presentation/screens/landlord_home_screen.dart';
 import '../features/landlord/presentation/screens/add_property_screen.dart';
 import '../features/landlord/presentation/screens/verification_center_screen.dart';
 import '../features/landlord/presentation/screens/admin_verification_screen.dart';
+import '../features/notifications/presentation/screens/notifications_screen.dart';
 import '../features/property/presentation/screens/property_detail_screen.dart';
 import '../features/chat/presentation/screens/chat_screen.dart';
 import '../shared/models/property_model.dart';
@@ -116,6 +117,11 @@ final appRouter = GoRouter(
       path: '/verification',
       builder: (context, state) => const VerificationCenterScreen(),
     ),
+    GoRoute(
+      path: '/notifications',
+      builder: (context, state) => const NotificationsScreen(),
+    ),
+    
 
     // ============ TENANT ROUTES ============
     GoRoute(

@@ -21,6 +21,7 @@ import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/widgets/verification_badge.dart';
+import '../../../../shared/widgets/notification_bell.dart';
 import '../widgets/tenant_rental_dashboard.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
 import 'dart:io';
@@ -1409,7 +1410,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           child: AnnouncementsBanner(
             userId: _authService.currentUserId ?? '',
             accountType: 'tenant',
-            notificationsRoute: '/tenant/activities',
+            notificationsRoute: '/notifications',
           ),
         ),
         // Back to dashboard banner when browsing from rental dashboard
@@ -1611,18 +1612,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             style: AppTextStyles.h3,
           ),
         ])),
-        GestureDetector(
-          onTap: () => context.push('/tenant/activities'),
-          child: Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-            child: Stack(children: [
-              Center(child: Icon(Icons.notifications_outlined, color: AppColors.textPrimary)),
-              if (_unreadCount > 0)
-                Positioned(top: 8, right: 8, child: Container(width: 10, height: 10, decoration: BoxDecoration(color: AppColors.error, shape: BoxShape.circle))),
-            ]),
-          ),
-        ),
+        NotificationBell(userId: _authService.currentUserId ?? ''),
       ]),
     );
   }
