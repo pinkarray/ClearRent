@@ -488,6 +488,31 @@ class InspectionService {
         );
   }
 
+  /// Returns inspection requests for this tenant that are in any
+  /// "needs awareness" state (pending payment, awaiting verification,
+  /// awaiting landlord/agent response, or declined by agent).
+  Stream<List<InspectionRequest>> getTenantPendingRequests() {
+    if (_currentUserId == null) return Stream.value([]);
+
+    return _firestore
+        .collection('inspection_requests')
+        .where('tenantId', isEqualTo: _currentUserId)
+        .where('status', whereIn: [
+          'pendingPayment',
+          'pendingVerification',
+          'pending',
+          'declinedByAgent',
+        ])
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) =>
+                  InspectionRequest.fromFirestore(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
   Stream<List<InspectionRequest>> getAgentRequests() {
     if (_currentUserId == null) return Stream.value([]);
 

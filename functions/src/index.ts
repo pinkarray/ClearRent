@@ -66,6 +66,10 @@ export const onNotificationCreated = onDocumentCreated(
       }
     }
 
+    // Include the notification doc ID so the client can mark it read
+    // when the user taps it.
+    data.notificationId = event.params.notificationId;
+
     const response = await getMessaging().sendEachForMulticast({
       tokens,
       notification: {title, body},

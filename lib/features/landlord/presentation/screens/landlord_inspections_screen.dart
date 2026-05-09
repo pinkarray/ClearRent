@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +11,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/tab_with_dot.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -33,12 +35,19 @@ class LandlordInspectionsScreen extends StatefulWidget {
 class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  StreamSubscription? _pendingDotSub;
+  bool _hasPendingDot = false;
   final InspectionService _inspectionService = InspectionService();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    _pendingDotSub = _inspectionService.getLandlordPendingRequests().listen((list) {
+      if (!mounted) return;
+      setState(() => _hasPendingDot = list.isNotEmpty);
+    });
 
     // If an explicit tab was passed (e.g. from a notification deep-link),
     // respect it. Otherwise let the smart logic pick.
@@ -87,6 +96,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
 
   @override
   void dispose() {
+    _pendingDotSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -111,10 +121,10 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
           indicatorColor: AppColors.primary,
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
-          tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Upcoming'),
-            Tab(text: 'History'),
+          tabs: [
+            Tab(child: TabWithDot(label: 'Pending', showDot: _hasPendingDot)),
+            const Tab(text: 'Upcoming'),
+            const Tab(text: 'History'),
           ],
         ),
       ),

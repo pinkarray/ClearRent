@@ -3,19 +3,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../app/routes.dart';
 import '../core/utils/app_logger.dart';
+import 'route_observer_service.dart';
 
-/// Handles FCM token lifecycle and foreground display of push notifications.
+/// Handles FCM token lifecycle, foreground display, and notification taps.
 ///
 /// Wiring:
 ///   - Call [init] once from main.dart after Firebase init.
 ///   - Listens to FirebaseAuth state changes and manages tokens automatically.
 ///   - Renders foreground messages via flutter_local_notifications.
-///
-/// What this class does NOT do (intentionally, deferred to later steps):
-///   - Handle notification taps (deep linking).
-///   - Track which screen the user is on (route-aware suppression).
-///   - Re-prompt the user if they deny permission.
+///   - Suppresses foreground display if the user is already on the
+///     notification's target screen (per RouteObserverService).
+///   - Handles taps in foreground / background / terminated states.
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
@@ -32,8 +32,6 @@ class NotificationService {
 
   bool _initialized = false;
 
-  /// Tracks the currently-registered (uid, token) pair so we can clean up
-  /// on logout or token rotation.
   String? _trackedUid;
   String? _trackedToken;
 
@@ -46,6 +44,8 @@ class NotificationService {
     _listenToAuthChanges();
     _listenToTokenRefresh();
     _listenToForegroundMessages();
+    _listenToBackgroundTaps();
+    await _handleInitialMessage();
 
     AppLogger.i('NotificationService initialized', name: 'NotificationService');
   }
@@ -55,10 +55,11 @@ class NotificationService {
   Future<void> _setupLocalNotifications() async {
     const androidInit = AndroidInitializationSettings('ic_notification');
     const initSettings = InitializationSettings(android: androidInit);
-    await _localNotifs.initialize(initSettings);
+    await _localNotifs.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: _onLocalNotifTap,
+    );
 
-    // Create the notification channel referenced by AndroidManifest.xml.
-    // Idempotent — safe to call on every app start.
     const channel = AndroidNotificationChannel(
       _channelId,
       _channelName,
@@ -69,6 +70,7 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+        
   }
 
   // ─── Auth state lifecycle ─────────────────────────────────────────────────
@@ -145,7 +147,6 @@ class NotificationService {
 
       try {
         final docRef = _firestore.collection('users').doc(uid);
-        // Remove the old token, add the new one.
         if (_trackedToken != null) {
           await docRef.update({
             'fcmTokens': FieldValue.arrayRemove([_trackedToken]),
@@ -164,12 +165,21 @@ class NotificationService {
     });
   }
 
-  // ─── Foreground display ───────────────────────────────────────────────────
+  // ─── Foreground display + suppression ─────────────────────────────────────
 
   void _listenToForegroundMessages() {
     FirebaseMessaging.onMessage.listen((message) {
       final notif = message.notification;
       if (notif == null) return;
+
+      // Suppress if user is already on the target screen.
+      if (_isOnTargetScreen(message.data)) {
+        AppLogger.i(
+          'Suppressing foreground notif: user already on target screen',
+          name: 'NotificationService',
+        );
+        return;
+      }
 
       _localNotifs.show(
         message.hashCode,
@@ -185,7 +195,102 @@ class NotificationService {
             icon: 'ic_notification',
           ),
         ),
+        payload: _encodePayload(message.data),
       );
     });
+  }
+
+  bool _isOnTargetScreen(Map<String, dynamic> data) {
+    final route = data['route'] as String?;
+    if (route == null) return false;
+
+    // Build a match-params map from any data fields whose key starts
+    // with 'param_'. Server-side: send `param_conversationId: 'abc'`.
+    final matchParams = <String, String>{};
+    for (final entry in data.entries) {
+      if (entry.key.startsWith('param_')) {
+        matchParams[entry.key.substring(6)] = entry.value.toString();
+      }
+    }
+
+    return RouteObserverService.instance.isOnRoute(
+      route,
+      matchParams: matchParams.isEmpty ? null : matchParams,
+    );
+  }
+
+  // ─── Tap handling (3 paths converge here) ─────────────────────────────────
+
+  Future<void> _handleInitialMessage() async {
+    final initial = await _fcm.getInitialMessage();
+    if (initial != null) {
+      AppLogger.i('Tap from terminated state', name: 'NotificationService');
+      _handleNotificationTap(initial.data);
+    }
+  }
+
+  void _listenToBackgroundTaps() {
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      AppLogger.i('Tap from background state', name: 'NotificationService');
+      _handleNotificationTap(message.data);
+    });
+  }
+
+  void _onLocalNotifTap(NotificationResponse response) {
+    AppLogger.i('Tap from foreground state', name: 'NotificationService');
+    final payload = response.payload;
+    if (payload == null) return;
+    _handleNotificationTap(_decodePayload(payload));
+  }
+
+  Future<void> _handleNotificationTap(Map<String, dynamic> data) async {
+    // Mark the underlying notification doc read, if we have its id.
+    final notifId = data['notificationId'] as String?;
+    if (notifId != null) {
+      try {
+        await _firestore.collection('notifications').doc(notifId).update({
+          'read': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        AppLogger.e('Failed to mark notification read on tap',
+            error: e, name: 'NotificationService');
+      }
+    }
+
+    // Navigate to the deep-link target.
+    final route = data['route'] as String?;
+    if (route == null) return;
+
+    try {
+      // Pass the entire data map as `extra` so target screens can pluck
+      // whatever fields they need.
+      appRouter.push(route, extra: Map<String, dynamic>.from(data));
+    } catch (e) {
+      AppLogger.e('Failed to navigate to notification target',
+          error: e, name: 'NotificationService');
+    }
+  }
+
+  // ─── Payload encoding for local-notif (string-only constraint) ────────────
+
+  String _encodePayload(Map<String, dynamic> data) {
+    // FCM data values are already strings server-side. Encode as URL-style.
+    return data.entries
+        .map((e) => '${Uri.encodeComponent(e.key)}='
+            '${Uri.encodeComponent(e.value.toString())}')
+        .join('&');
+  }
+
+  Map<String, dynamic> _decodePayload(String payload) {
+    final result = <String, dynamic>{};
+    for (final part in payload.split('&')) {
+      final eq = part.indexOf('=');
+      if (eq < 0) continue;
+      final k = Uri.decodeComponent(part.substring(0, eq));
+      final v = Uri.decodeComponent(part.substring(eq + 1));
+      result[k] = v;
+    }
+    return result;
   }
 }

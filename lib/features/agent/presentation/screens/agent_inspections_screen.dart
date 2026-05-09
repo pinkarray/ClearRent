@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/tab_with_dot.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 
@@ -24,12 +26,19 @@ class AgentInspectionsScreen extends StatefulWidget {
 class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  StreamSubscription? _pendingDotSub;
+  bool _hasPendingDot = false;
   final InspectionService _inspectionService = InspectionService();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    _pendingDotSub = _inspectionService.getAgentPendingRequests().listen((list) {
+      if (!mounted) return;
+      setState(() => _hasPendingDot = list.isNotEmpty);
+    });
 
     // If an explicit tab was passed (e.g. from the agent home screen's
     // "today's inspection" card or a notification deep-link), respect it.
@@ -87,6 +96,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
   
   @override
   void dispose() {
+    _pendingDotSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -111,10 +121,10 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
           indicatorColor: AppColors.primary,
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
-          tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Scheduled'),
-            Tab(text: 'Completed'),
+          tabs: [
+            Tab(child: TabWithDot(label: 'Pending', showDot: _hasPendingDot)),
+            const Tab(text: 'Scheduled'),
+            const Tab(text: 'Completed'),
           ],
         ),
       ),

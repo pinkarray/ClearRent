@@ -53,9 +53,11 @@ import '../features/admin/presentation/screens/admin_users_screen.dart';
 import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
 import '../features/admin/presentation/screens/admin_agent_payouts_screen.dart';
 import '../features/admin/presentation/screens/admin_rent_payouts_screen.dart';
+import '../services/route_observer_service.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
+  observers: [RouteObserverService.instance],
   routes: [
     // ============ SPLASH / AUTH CHECK ============
     GoRoute(
