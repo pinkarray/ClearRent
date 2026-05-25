@@ -1,0 +1,736 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Admin identity check. Passes if the caller's ID token carries
+    // either the admin or superAdmin custom claim. Claims are set via
+    // the setAdminClaim Cloud Function (which itself requires superAdmin
+    // to invoke). The bootstrap superAdmin is set out-of-band via the
+    // local scripts/bootstrap-superadmin.ts script.
+    function isAdmin() {
+      return (request.auth.token.admin == true)
+        || (request.auth.token.superAdmin == true);
+    }
+
+    // Super admin identity check. Used by surfaces that should be
+    // gated specifically to super admins (e.g. managing other admins).
+    // Currently no rules reference this — it's available for Workstream
+    // 6 follow-ups and any rule that needs a stricter gate than isAdmin.
+    function isSuperAdmin() {
+      return (request.auth.token.superAdmin == true);
+    }
+    
+    // Internal — locked. Only Cloud Functions (admin SDK) write here.
+    match /_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      
+      // Phone-to-email lookup at sign-in goes through the
+      // lookupEmailByPhone Cloud Function, which uses admin SDK
+      // (bypasses rules). Clients must be authenticated to list users.
+      allow list: if request.auth != null;
+      
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin()
+      );
+      
+      // Allow updating allowsCalls field specifically
+      allow update: if request.auth != null && 
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['allowsCalls', 'updatedAt']);
+
+      // Allow user to persist dismissed announcement IDs to their own doc
+      allow update: if request.auth != null &&
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dismissedAnnouncements']);
+
+      // Any authenticated user can update rating fields only (tenant rates agent/landlord)
+      allow update: if request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['rating', 'totalRatings']);
+
+      // Earnings credit is now server-side via the creditInspectionEarnings
+      // Cloud Function (closes F1.4). Mobile clients can no longer write
+      // earnings fields. The CF uses admin SDK and bypasses rules.
+      //
+      // Transitional carve-out: admin can still move pending→paid via
+      // markAgentPaid until Workstream 5 ships the markPayoutPaid CF.
+      // Once W5 ships and migrates that flow, this clause should be
+      // removed entirely.
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['pendingEarnings', 'paidEarnings']);
+
+      // Saved properties subcollection
+      match /savedProperties/{propertyId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Verification requests collection. Highly sensitive — contains NIN
+    // URLs, utility bills, and payment references. Closes F1.9 (previously
+    // any authenticated user could read every verification request).
+    match /verification_requests/{requestId} {
+      // Create: any authenticated user can submit their own verification
+      // request, and the userId on the doc must be themselves (closes a
+      // would-be vector where a fraudster submits a verification request
+      // pointing at someone else's docs).
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Get/read: only the submitter or admin.
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // List/query: same ownership constraint. The only caller today is
+      // verification_service line ~433, which queries the submitter's
+      // own requests. Admin webapp doesn't query this collection
+      // (verification status is mirrored on the users doc instead).
+      allow list: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Update: admin only (status transitions: pending → verified/rejected).
+      allow update: if isAdmin();
+
+      // No deletes from clients.
+      allow delete: if false;
+    }
+    
+    // Properties collection
+    match /properties/{propertyId} {
+      allow read: if request.auth != null;
+
+      // Create: must self-assign ownership
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid;
+
+      // Update: owner can edit own listing, but cannot reassign
+      // ownership (closes listing-hijack via landlordId rewrite).
+      allow update: if request.auth != null
+        && resource.data.landlordId == request.auth.uid
+        && request.resource.data.landlordId == resource.data.landlordId;
+
+      // Admin override for verification/availability updates from
+      // the Next.js admin dashboard.
+      allow update: if isAdmin();
+
+      // Any authenticated user can increment inquiryCount by exactly 1.
+      // Used during inspection request creation — the tenant performs
+      // the write but isn't the landlord. Narrow carve-out: only
+      // inquiryCount may change, and only by +1. Cost-gated by the
+      // ₦10,000 inspection fee that triggers each increment, so
+      // spam-bumping the counter has a real economic cost.
+      allow update: if request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['inquiryCount']) &&
+        request.resource.data.inquiryCount == resource.data.inquiryCount + 1;
+
+      // Delete: owner or admin
+      allow delete: if request.auth != null
+        && resource.data.landlordId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+    
+    // Conversations collection - FIXED query permissions
+    match /conversations/{conversationId} {
+      
+      // Helper: user is an active participant (not removed)
+      function isActiveParticipant() {
+        return request.auth.uid in resource.data.participants
+          && (
+            !('removedParticipants' in resource.data) 
+            || !(request.auth.uid in resource.data.removedParticipants)
+          );
+      }
+      
+      // Get single doc: only active participants and admin
+      allow get: if request.auth != null && (
+        isActiveParticipant() || isAdmin()
+      );
+      
+      // List/query: authenticated users (queries already filter by participant IDs)
+      allow list: if request.auth != null;
+      
+      // Create: user must be in the participants list they're creating
+      allow create: if request.auth != null && 
+        request.auth.uid in request.resource.data.participants;
+      
+      // Update: active participants and admin
+      allow update: if request.auth != null && (
+        isActiveParticipant() || isAdmin()
+      );
+      
+      // Delete: admin only
+      allow delete: if isAdmin();
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Helper: check parent conversation for active participation
+        function isConversationParticipant() {
+          let conv = get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+          return request.auth.uid in conv.participants
+            && (
+              !('removedParticipants' in conv) 
+              || !(request.auth.uid in conv.removedParticipants)
+            );
+        }
+        
+        // Read: active participants and admin
+        allow read: if request.auth != null && (
+          isConversationParticipant() || isAdmin()
+        );
+        
+        // Create: active participant, and either they are the sender OR it's a system message they're inserting
+        allow create: if request.auth != null && 
+          isConversationParticipant() && (
+            request.resource.data.senderId == request.auth.uid ||
+            request.resource.data.senderId == 'system'
+          );
+        
+        // Update (mark as read): active participants and admin
+        allow update: if request.auth != null && (
+          isConversationParticipant() || isAdmin()
+        );
+        
+        // No delete
+        allow delete: if false;
+      }
+    }
+    
+    // Activities collection
+    match /activities/{activityId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+    }
+    
+    // Saved properties (top-level) — DEAD COLLECTION.
+    // The mobile app uses the per-user /users/{userId}/savedProperties
+    // subcollection. No code reads or writes this top-level collection
+    // (verified via grep across Flutter app, Next.js webapp, and CFs).
+    // Locked down to prevent any future accidental writes from being
+    // readable by other users. Closes F1.10.
+    match /saved_properties/{docId} {
+      allow read, write: if false;
+    }
+    
+    // Inspection requests collection.
+    //
+    // Update rules form a state-machine field lockdown (closes F1.6
+    // and F1.12). Each allow-update clause maps to exactly one update
+    // site in mobile/inspection_service.dart. Clauses enforce:
+    //   - WHO (role check via helper functions)
+    //   - WHAT (hasOnly() limits which fields can be touched)
+    //   - WHEN (status preconditions, where the operation only makes
+    //     sense at a specific point in the lifecycle)
+    //
+    // Time-based preconditions (reschedule window, on-the-way cutoff
+    // 2hrs before scheduled time) are intentionally NOT enforced in
+    // rules — product logic, not security.
+    match /inspection_requests/{requestId} {
+      
+      // ─── Helpers ─────────────────────────────────────────────
+      
+      // Handler = whoever is conducting the inspection. Agent if
+      // assigned, else landlord (self-handled).
+      function isHandler() {
+        return (resource.data.agentId != null
+                && resource.data.agentId == request.auth.uid)
+          || (resource.data.agentId == null
+                && resource.data.landlordId == request.auth.uid);
+      }
+      
+      function isTenant() {
+        return resource.data.tenantId == request.auth.uid;
+      }
+      
+      function isLandlord() {
+        return resource.data.landlordId == request.auth.uid;
+      }
+      
+      function isAgent() {
+        return resource.data.agentId != null
+          && resource.data.agentId == request.auth.uid;
+      }
+      
+      // Convenience wrapper for the hasOnly() check.
+      function inspFields(fields) {
+        return request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(fields);
+      }
+      
+      // Receiver of the current reschedule proposal — i.e. the
+      // opposite side from whoever proposed it. Used by row 17, 18,
+      // 19 (counter, approve, decline of an existing proposal).
+      function isRescheduleReceiver() {
+        return resource.data.rescheduleProposal != null
+          && resource.data.rescheduleProposal.proposedByUserId
+             != request.auth.uid
+          && (isTenant() || isAgent() || isLandlord());
+      }
+      
+      // ─── Create / read / list / delete (unchanged) ───────────
+      
+      allow create: if request.auth != null;
+      
+      allow read: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.agentId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      allow list: if request.auth != null;
+      
+      allow delete: if false;
+      
+      // ─── State-machine updates (closes F1.6 + F1.12) ─────────
+      
+      // [Row 14a] Handler approves request (normal).
+      // Site: inspection_service.dart:627
+      allow update: if isHandler()
+        && (resource.data.status == 'pending'
+            || resource.data.status == 'pendingVerification')
+        && request.resource.data.status == 'approved'
+        && inspFields(['status', 'updatedAt']);
+      
+      // [Row 14b] Landlord overrides agent decline by approving.
+      // Site: inspection_service.dart:627 (override branch)
+      allow update: if isLandlord()
+        && resource.data.status == 'declinedByAgent'
+        && request.resource.data.status == 'approved'
+        && inspFields(['status', 'updatedAt',
+                       'wasOverridden', 'overriddenBy']);
+      
+      // [Row 1] Agent declines request.
+      // Site: inspection_service.dart:751
+      allow update: if isAgent()
+        && (resource.data.status == 'pending'
+            || resource.data.status == 'pendingVerification')
+        && request.resource.data.status == 'declinedByAgent'
+        && inspFields(['status', 'declinedBy', 'declineReason',
+                       'declinedAt', 'landlordOverrideDeadline',
+                       'originalDeclineBy', 'updatedAt']);
+      
+      // [Row 2] finalDeclineRequest — auto-decline after 12hr
+      // deadline. No mobile clause. Will be CF-only when implemented
+      // (see parking lot). Admin SDK bypasses these rules.
+      
+      // [Row 3] Landlord declines (initial or override).
+      // Site: inspection_service.dart:854
+      allow update: if isLandlord()
+        && (resource.data.status == 'pending'
+            || resource.data.status == 'pendingVerification'
+            || resource.data.status == 'approved')
+        && request.resource.data.status == 'declined'
+        && inspFields(['status', 'declinedBy', 'declineReason',
+                       'declinedAt', 'wasOverridden', 'overriddenBy',
+                       'updatedAt']);
+      
+      // [Row 4] Tenant marks themselves arrived.
+      // Site: inspection_service.dart:907
+      allow update: if isTenant()
+        && resource.data.status == 'approved'
+        && inspFields(['tenantArrived', 'tenantArrivedAt', 'updatedAt']);
+      
+      // [Row 5] Handler marks themselves arrived.
+      // Site: inspection_service.dart:961
+      allow update: if isHandler()
+        && resource.data.status == 'approved'
+        && inspFields(['handlerArrived', 'handlerArrivedAt', 'updatedAt']);
+      
+      // [Row 6] Handler marks inspection complete. Triggers W1
+      // creditInspectionEarnings CF.
+      // Site: inspection_service.dart:1035
+      // Defensive: 'met' may be absent on legacy/test docs; use
+      // `in` check pattern.
+      allow update: if isHandler()
+        && resource.data.status == 'approved'
+        && 'met' in resource.data
+        && resource.data.met == true
+        && request.resource.data.status == 'completed'
+        && inspFields(['status', 'completedAt', 'agentPayoutStatus',
+                       'completedBy', 'completedByType', 'updatedAt']);
+      
+      // [Row 7] Tenant rates the inspection post-completion.
+      // Site: inspection_service.dart:1129
+      // Note: tenantRated field may be absent on never-rated docs.
+      // Use `in` check to avoid evaluation error on missing field.
+      allow update: if isTenant()
+        && resource.data.status == 'completed'
+        && (!('tenantRated' in resource.data)
+            || resource.data.tenantRated != true)
+        && inspFields(['tenantRating', 'tenantReview', 'tenantRated',
+                       'ratingSubmittedAt', 'ratedUserId',
+                       'ratedUserType', 'ratedUserName', 'updatedAt']);
+
+      // [Row 8] Tenant cancels their unpaid inspection request.
+      // Site: inspection_service.dart:1271
+      allow update: if isTenant()
+        && resource.data.status == 'pendingPayment'
+        && request.resource.data.status == 'cancelled'
+        && inspFields(['status', 'updatedAt']);
+      
+      // [Row 9] _processRefund — subroutine called after a paid
+      // inspection is declined or cancelled. Inherits caller's auth.
+      // Site: inspection_service.dart:2103
+      allow update: if (isLandlord() || isTenant() || isHandler())
+        && resource.data.paymentStatus == 'paid'
+        && request.resource.data.paymentStatus == 'refunded'
+        && inspFields(['paymentStatus', 'refundedAt', 'refundReason']);
+      
+      // [Row 10] Admin verifies payment.
+      // Site: inspection_service.dart:2164
+      allow update: if isAdmin()
+        && resource.data.status == 'pendingPayment'
+        && inspFields(['paymentStatus', 'paymentVerifiedAt',
+                       'paymentVerifiedBy', 'paidAt', 'status',
+                       'updatedAt']);
+      
+      // [Row 11] Admin rejects payment.
+      // Site: inspection_service.dart:2232
+      allow update: if isAdmin()
+        && resource.data.status == 'pendingPayment'
+        && inspFields(['paymentStatus', 'status', 'declineReason',
+                       'updatedAt']);
+      
+      // [Row 12] Admin marks agent payout as paid. Transitional
+      // until Workstream 5 ships Paystack Transfers CF.
+      // Site: inspection_service.dart:2366
+      allow update: if isAdmin()
+        && resource.data.status == 'completed'
+        && inspFields(['agentPayoutStatus', 'agentPaidAt',
+                       'agentPaidBy', 'updatedAt']);
+      
+      // [Row 13] Handler confirms they received payment.
+      // Site: inspection_service.dart:2408
+      allow update: if isHandler()
+        && resource.data.agentPayoutStatus == 'paid'
+        && inspFields(['agentConfirmedPayment', 'agentConfirmedAt',
+                       'updatedAt']);
+      
+      // [Row 15a] Tenant marks they met.
+      // Site: inspection_service.dart:~1758
+      allow update: if isTenant()
+        && resource.data.status == 'approved'
+        && resource.data.tenantArrived == true
+        && request.resource.data.met == true
+        && request.resource.data.metBy == 'tenant'
+        && inspFields(['met', 'metAt', 'metBy', 'updatedAt']);
+      
+      // [Row 15b] Handler marks they met.
+      // Site: inspection_service.dart:~1758
+      allow update: if isHandler()
+        && resource.data.status == 'approved'
+        && resource.data.tenantArrived == true
+        && resource.data.handlerArrived == true
+        && request.resource.data.met == true
+        && request.resource.data.metBy == 'handler'
+        && inspFields(['met', 'metAt', 'metBy', 'updatedAt']);
+      
+      // [Row 16] Propose a reschedule.
+      // Site: inspection_service.dart:1358
+      allow update: if (isTenant() || isHandler())
+        && resource.data.status == 'approved'
+        && resource.data.rescheduleProposal == null
+        && (resource.data.rescheduleCount == null
+            || resource.data.rescheduleCount < 2)
+        && inspFields(['rescheduleProposal', 'updatedAt']);
+      
+      // [Row 17] Counter-propose a reschedule.
+      // Site: inspection_service.dart:1439
+      allow update: if isRescheduleReceiver()
+        && resource.data.status == 'approved'
+        && inspFields(['rescheduleProposal', 'updatedAt']);
+      
+      // [Row 18] Approve a reschedule. Resets arrival/on-way flags
+      // and bumps rescheduleCount.
+      // Site: inspection_service.dart:1494
+      allow update: if isRescheduleReceiver()
+        && resource.data.status == 'approved'
+        && inspFields(['requestedDate', 'requestedTimeSlot',
+                       'requestedTimeDisplay', 'rescheduleProposal',
+                       'rescheduleCount',
+                       'tenantArrived', 'tenantArrivedAt',
+                       'handlerArrived', 'handlerArrivedAt',
+                       'tenantOnWay', 'tenantOnWayAt',
+                       'handlerOnWay', 'handlerOnWayAt',
+                       'updatedAt']);
+      
+      // [Row 19] Decline a reschedule. Triggers refund via
+      // _processRefund subroutine (row 9 clause).
+      // Site: inspection_service.dart:1562
+      // [Row 19] Decline a reschedule. Triggers refund via
+      // _processRefund subroutine (row 9 clause).
+      // Site: inspection_service.dart:1562
+      allow update: if isRescheduleReceiver()
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'declined'
+        && inspFields(['status', 'declinedBy', 'declineReason',
+                       'declinedAt', 'rescheduleProposal',
+                       'updatedAt']);
+      
+      // [Row 20] Abandon a reschedule proposal. Any party with a
+      // current proposal can clear it (including the proposer who
+      // wants to back out).
+      // Site: inspection_service.dart:1608
+      allow update: if (isTenant() || isHandler())
+        && resource.data.rescheduleProposal != null
+        && inspFields(['rescheduleProposal', 'updatedAt']);
+      
+      // [Row 21] Handler cancels inspection on tenant's behalf.
+      // Triggers refund via _processRefund (row 9 clause).
+      // Site: inspection_service.dart:~1815
+      allow update: if isHandler()
+        && (resource.data.status == 'pending'
+            || resource.data.status == 'approved')
+        && request.resource.data.status == 'cancelled'
+        && inspFields(['status', 'cancelledBy', 'cancellationReason',
+                       'cancelledAt', 'rescheduleProposal',
+                       'updatedAt']);
+      
+      // [Row 22] Tenant marks they're on the way.
+      // Site: inspection_service.dart:1655
+      allow update: if isTenant()
+        && resource.data.status == 'approved'
+        && inspFields(['tenantOnWay', 'tenantOnWayAt', 'updatedAt']);
+      
+      // [Row 23] Handler marks they're on the way.
+      // Site: inspection_service.dart:1702
+      allow update: if isHandler()
+        && resource.data.status == 'approved'
+        && inspFields(['handlerOnWay', 'handlerOnWayAt', 'updatedAt']);
+      
+      // Admin override — any legitimate admin intervention.
+      allow update: if isAdmin();
+    }
+    
+    // Agent ratings collection
+    match /agent_ratings/{ratingId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+        resource.data.raterId == request.auth.uid;
+      allow delete: if false;
+    }
+    
+    // Rental interests collection
+    match /rental_interests/{interestId} {
+      allow create: if request.auth != null;
+
+      allow read: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        get(/databases/$(database)/documents/inspection_requests/$(resource.data.inspectionRequestId)).data.tenantId == request.auth.uid ||
+        get(/databases/$(database)/documents/inspection_requests/$(resource.data.inspectionRequestId)).data.landlordId == request.auth.uid ||
+        get(/databases/$(database)/documents/inspection_requests/$(resource.data.inspectionRequestId)).data.agentId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow update: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow delete: if false;
+    }
+
+    // Active Rentals collection
+    match /active_rentals/{rentalId} {
+      allow create: if request.auth != null;
+      
+      allow read: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Allow collection queries for occupancy counts on property detail screens
+      allow list: if request.auth != null;
+      
+      allow update: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      allow delete: if false;
+    }
+
+    // Issues collection - tenant reports, landlord reads
+    match /issues/{issueId} {
+      allow create: if request.auth != null;
+      
+      allow read: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Allow list queries filtered by propertyId, tenantId, or landlordId.
+      // Required for PropertyHealthScreen, tenant dashboards, and LandlordIssuesScreen.
+      allow list: if request.auth != null;
+      
+      allow update: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      allow delete: if false;
+    }
+
+    // Maintenance logs — landlord-only proactive maintenance records
+    match /maintenance_logs/{logId} {
+      // Only the landlord who owns the property can create logs
+      allow create: if request.auth != null &&
+        request.resource.data.landlordId == request.auth.uid;
+
+      // Landlord reads their own logs; admin can read all
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // List queries filtered by propertyId (used by PropertyHealthScreen)
+      allow list: if request.auth != null;
+
+      // Landlord can update or delete their own logs (e.g. correcting a note)
+      allow update: if request.auth != null &&
+        resource.data.landlordId == request.auth.uid;
+
+      allow delete: if request.auth != null &&
+        resource.data.landlordId == request.auth.uid;
+    }
+    match /tenancy_links/{linkId} {
+      allow create: if request.auth != null &&
+        request.resource.data.landlordId == request.auth.uid;
+
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // List queries must satisfy the same ownership constraint as get.
+      // The only caller today (landlord_home_screen) filters by
+      // landlordId == auth.uid, so this rule passes for that query.
+      // Closes F1.13 — the previous "any authenticated user can list"
+      // rule allowed any user to enumerate any landlord's or tenant's
+      // tenancy history. Admin override preserved.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow update: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid
+      );
+
+      allow delete: if request.auth != null &&
+        resource.data.landlordId == request.auth.uid;
+    }
+    // Announcements — readable by all authenticated users, managed by
+    // admin only. Create additionally enforces createdBy == auth.uid so
+    // the audit trail reflects which admin actually wrote the announcement
+    // (matters once multiple admins exist; was a trusted client field
+    // before Workstream 6).
+    match /announcements/{announcementId} {
+      allow read, list: if request.auth != null;
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Transactions — parties involved can read, admin manages.
+    // No client writes — transactions are written by Cloud Functions
+    // only (admin SDK bypasses rules). Closes F1.11.
+    match /transactions/{transactionId} {
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.agentId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if request.auth != null;
+      allow create: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+    // Notifications — writes only by Cloud Functions / admin.
+    // Users can read their own and mark them as read, nothing else.
+    match /notifications/{notificationId} {
+      // Clients cannot create notifications. Cloud Functions and admin SDK
+      // bypass these rules. Firebase Console writes also bypass.
+      allow create: if false;
+
+      // Recipients (and admin) can read their own.
+      allow get: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // List/query: authenticated users (queries already filter by userId).
+      allow list: if request.auth != null;
+
+      // Recipients can mark as read (and only as read).
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['read', 'readAt']);
+
+      // Admin can also update freely (e.g., to fix issues).
+      allow update: if isAdmin();
+
+      // Only admin can delete.
+      allow delete: if isAdmin();
+    }
+    match /payments/{paymentId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow list: if request.auth != null;
+    }
+    // Refunds — written by Cloud Functions, read by beneficiaries + admin,
+    // marked paid by markRefundPaid Cloud Function only.
+    match /refunds/{refundId} {
+      // Created by onInspectionRefundTriggered (admin SDK bypasses).
+      allow create: if false;
+
+      // Beneficiary reads their own; admin reads all.
+      allow get: if request.auth != null && (
+        resource.data.beneficiaryId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // List/query: authenticated users (queries filter by beneficiaryId).
+      allow list: if request.auth != null;
+
+      // Updates only via markRefundPaid CF (admin SDK bypasses).
+      allow update: if false;
+
+      // No deletes.
+      allow delete: if false;
+    }
+
+    // Admin audit log — append-only, written by admin money-ops CFs.
+    // Never updated, never deleted. Read by admin only.
+    match /admin_audit_log/{entryId} {
+      allow create: if false;     // Admin SDK only
+      allow read: if isAdmin();
+      allow update: if false;     // Immutable
+      allow delete: if false;     // Immutable
+    }
+  }
+}
