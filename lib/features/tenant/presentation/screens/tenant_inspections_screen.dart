@@ -10,10 +10,14 @@ import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/tab_with_dot.dart';
+import '../../../../shared/widgets/reschedule_proposal_panel.dart';
+import '../../../../shared/widgets/reschedule_propose_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/rental_interest_service.dart';
+import '../../../../services/refund_service.dart';
+import '../../../../shared/models/refund_model.dart';
 
 class TenantInspectionsScreen extends StatefulWidget {
   /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
@@ -32,6 +36,7 @@ class TenantInspectionsScreen extends StatefulWidget {
 class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  // ignore: unused_field
   StreamSubscription? _pendingDotSub;
   bool _hasPendingDot = false;
   final InspectionService _inspectionService = InspectionService();
@@ -92,13 +97,6 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
     } catch (_) {
       // Non-fatal — keep default Requests tab.
     }
-  }
-
-  @override
-  void dispose() {
-    _pendingDotSub?.cancel();
-    _tabController.dispose();
-    super.dispose();
   }
 
   @override
@@ -498,37 +496,38 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                   ]),
             ),
           ],
-          const SizedBox(height: 16),
-
-          // Actions
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _cancelRequest,
-                style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: BorderSide(color: AppColors.border),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10))),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text('Cancel Request',
-                        style: AppTextStyles.labelMedium
-                            .copyWith(color: AppColors.textSecondary)),
+          // Actions — only when there's payment in flight (cancel
+          // request and verifying badge). Paid requests must go
+          // through handler-cancel instead.
+          if (r.isPendingPayment) ...[
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : _cancelRequest,
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: AppColors.border),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10))),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Cancel Request',
+                          style: AppTextStyles.labelMedium
+                              .copyWith(color: AppColors.textSecondary)),
+                ),
               ),
-            ),
-            if (r.isPendingPayment) ...[
               const SizedBox(width: 12),
               Expanded(
                 child: AppButton(
                     text: 'Verifying...',
                     onPressed: null),
               ),
-            ],
-          ]),
+            ]),
+          ],
         ],
       ),
     );
@@ -589,6 +588,7 @@ class _TenantUpcomingCard extends StatefulWidget {
 
 class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   final ConversationService _conversationService = ConversationService();
+  final InspectionService _inspectionService = InspectionService();
   bool _isMessageLoading = false;
 
   bool _isToday(DateTime d) {
@@ -652,6 +652,79 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     }
   }
 
+  Future<void> _markOnWay() async {
+    final ok =
+        await _inspectionService.markTenantOnWay(widget.request.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markArrived() async {
+    final ok =
+        await _inspectionService.markTenantArrived(widget.request.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markMet() async {
+    final ok =
+        await _inspectionService.markMet(widget.request.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _proposeReschedule() async {
+    final payload = await ReschedulePropoSheet.show(
+      context,
+      widget.request,
+    );
+    if (payload == null || !mounted) return;
+
+    final ok = await _inspectionService.proposeReschedule(
+      requestId: widget.request.id,
+      newDate: payload.date,
+      newTimeSlot: payload.timeSlot,
+      reason: payload.reason,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Reschedule proposal sent'
+              : 'Couldn\'t send proposal, try again',
+        ),
+        backgroundColor:
+            ok ? AppColors.textPrimary : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.request;
@@ -680,6 +753,13 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           _badge('Approved', AppColors.success, Icons.check_circle),
         ]),
         const SizedBox(height: 12),
+
+        // Reschedule proposal panel (only when a proposal is active)
+        if (r.hasPendingReschedule)
+          RescheduleProposalPanel(
+            request: r,
+            currentUserId: r.tenantId,
+          ),
 
         // Property + date
         Row(children: [
@@ -759,7 +839,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                     style: AppTextStyles.labelMedium),
                 Text(
                     r.isAgentHandled
-                        ? 'Agent â€¢ Will show you the property'
+                        ? 'Agent Will show you the property'
                         : 'Landlord',
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.textSecondary)),
@@ -789,6 +869,81 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                       style: AppTextStyles.bodySmall
                           .copyWith(color: AppColors.primary))),
             ]),
+          ),
+        ],
+
+        // On Way / Arrived / Met — single-slot cascade that
+        // progresses through the inspection-day state machine
+        if (r.canTenantMarkOnWay) ...[
+          const SizedBox(height: 12),
+          AppButton(
+            text: 'I\'m on my way',
+            onPressed: _markOnWay,
+          ),
+        ] else if (r.tenantOnWay && !r.tenantArrived) ...[
+          const SizedBox(height: 12),
+          AppButton(
+            text: 'I\'ve Arrived',
+            onPressed: _markArrived,
+          ),
+        ] else if (r.canTenantMarkMet) ...[
+          const SizedBox(height: 12),
+          AppButton(
+            text: (r.agentId != null && r.agentId!.isNotEmpty)
+                ? 'I\'ve met the agent'
+                : 'I\'ve met the landlord',
+            onPressed: _markMet,
+          ),
+        ] else if (r.met) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              vertical: 12, horizontal: 12),
+            decoration: BoxDecoration(
+              color: AppColors.success.withAlpha(26),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.success.withAlpha(77),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle,
+                    size: 18, color: AppColors.success),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    'Inspection in progress',
+                    style: AppTextStyles.labelMedium
+                        .copyWith(color: AppColors.success),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Reschedule button (hidden when a proposal is pending or
+        // we're past the 2h cutoff or cap is reached)
+        if (r.canInitiateReschedule) ...[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _proposeReschedule,
+            icon: Icon(Icons.event_repeat, size: 18,
+                color: AppColors.primary),
+            label: Text('Reschedule',
+                style: AppTextStyles.labelMedium
+                    .copyWith(color: AppColors.primary)),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: const Size(double.infinity, 0),
+            ),
           ),
         ],
       ]),
@@ -836,7 +991,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
 }
 
 // ============================================================
-// HISTORY TAB â€” MANDATORY RATING + INTEREST FLOW
+// HISTORY TAB MANDATORY RATING + INTEREST FLOW
 // ============================================================
 class _TenantHistoryTab extends StatelessWidget {
   final InspectionService inspectionService;
@@ -911,12 +1066,37 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
   bool _hasCheckedInterest = false;
   bool _hasPassed = false; // true after tenant taps "I'll Keep Looking"
 
+  final RefundService _refundService = RefundService();
+  StreamSubscription<Refund?>? _refundSub;
+  Refund? _refund;
+
   @override
   void initState() {
     super.initState();
     if (widget.request.isCompleted && widget.request.tenantRated) {
       _loadRentalInterest();
     }
+    if (widget.request.isRefunded) {
+      _refundSub = _refundService
+          .streamForInspection(widget.request.id)
+          .listen((refund) {
+        if (mounted) setState(() => _refund = refund);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _refundSub?.cancel();
+    super.dispose();
+  }
+
+  String _formatPaidDate(DateTime dt) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 
   Future<void> _loadRentalInterest() async {
@@ -1092,6 +1272,66 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                       child: Text(r.declineReason!,
                           style: AppTextStyles.caption
                               .copyWith(color: AppColors.error))),
+                ]),
+          ),
+        ],
+
+        // Refund status (shown only when refund doc has been created)
+        if (_refund != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(13),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: AppColors.info.withAlpha(51))),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.replay,
+                        size: 16, color: AppColors.info),
+                    const SizedBox(width: 8),
+                    Text('Refund',
+                        style: AppTextStyles.labelMedium.copyWith(
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: _refund!.isPaid
+                              ? AppColors.success.withAlpha(26)
+                              : AppColors.warning.withAlpha(26),
+                          borderRadius: BorderRadius.circular(6)),
+                      child: Text(
+                          _refund!.isPaid ? 'Paid' : 'Processing',
+                          style: AppTextStyles.labelSmall.copyWith(
+                              color: _refund!.isPaid
+                                  ? AppColors.success
+                                  : AppColors.warning,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text(
+                      '₦${_refund!.amount.toStringAsFixed(0)}',
+                      style: AppTextStyles.naira(AppTextStyles.bodyLarge
+                          .copyWith(fontWeight: FontWeight.w700))),
+                  const SizedBox(height: 4),
+                  Text(_refund!.reason,
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary)),
+                  if (_refund!.isPaid && _refund!.paidAt != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                        'Paid on ${_formatPaidDate(_refund!.paidAt!)}',
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic)),
+                  ],
                 ]),
           ),
         ],
