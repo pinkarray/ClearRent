@@ -273,7 +273,8 @@ service cloud.firestore {
       // opposite side from whoever proposed it. Used by row 17, 18,
       // 19 (counter, approve, decline of an existing proposal).
       function isRescheduleReceiver() {
-        return resource.data.rescheduleProposal != null
+        return 'rescheduleProposal' in resource.data
+          && resource.data.rescheduleProposal != null
           && resource.data.rescheduleProposal.proposedByUserId
              != request.auth.uid
           && (isTenant() || isAgent() || isLandlord());
@@ -442,8 +443,9 @@ service cloud.firestore {
       // Site: inspection_service.dart:1358
       allow update: if (isTenant() || isHandler())
         && resource.data.status == 'approved'
-        && resource.data.rescheduleProposal == null
-        && (resource.data.rescheduleCount == null
+        && (!('rescheduleProposal' in resource.data)
+            || resource.data.rescheduleProposal == null)
+        && (!('rescheduleCount' in resource.data)
             || resource.data.rescheduleCount < 2)
         && inspFields(['rescheduleProposal', 'updatedAt']);
       
@@ -485,6 +487,7 @@ service cloud.firestore {
       // wants to back out).
       // Site: inspection_service.dart:1608
       allow update: if (isTenant() || isHandler())
+        && 'rescheduleProposal' in resource.data
         && resource.data.rescheduleProposal != null
         && inspFields(['rescheduleProposal', 'updatedAt']);
       
