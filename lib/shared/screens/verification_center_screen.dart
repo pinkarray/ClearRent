@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../../core/constants/colors.dart';
-import '../../../../core/constants/text_styles.dart';
-import '../../../../core/utils/app_logger.dart';
-import '../../../../services/verification_service.dart';
-import '../../../../services/auth_service.dart';
-import '../../../../services/paystack_service.dart';
-import '../../../../shared/screens/paystack_checkout_screen.dart';
+import '../../core/constants/colors.dart';
+import '../../core/constants/text_styles.dart';
+import '../../core/utils/app_logger.dart';
+import '../../services/verification_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/paystack_service.dart';
+import 'paystack_checkout_screen.dart';
 
 class VerificationCenterScreen extends StatefulWidget {
   const VerificationCenterScreen({super.key});
@@ -244,9 +244,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = true);
 
-    // Save NIN number to user profile
+    // Encrypt + store NIN via Cloud Function (never plaintext).
     final ninNumber = _ninNumberController.text.trim();
-    await _authService.updateUserProfile({'nin': ninNumber});
+    final ninStored = await _verificationService.submitNin(ninNumber);
 
     VerificationResult result;
 
@@ -289,7 +289,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       reference: paymentResult.reference,
       type: PaystackService.typeVerification,
       amount: paymentResult.amountPaid ?? _verificationFee,
-      status: result.success ? 'completed' : 'docs_upload_failed',
+      status: result.success && ninStored
+          ? 'completed'
+          : 'docs_upload_failed',
       extra: {'accountType': _accountType},
     );
 

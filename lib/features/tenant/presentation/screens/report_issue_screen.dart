@@ -8,6 +8,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../shared/widgets/what_happens_now_hint.dart';
 
 /// Report an issue screen for tenants.
 /// Creates a document in 'issues' collection in Firestore.
@@ -343,6 +344,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _titleController,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'e.g. Leaking kitchen faucet',
                   filled: true,
@@ -368,6 +370,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
               TextFormField(
                 controller: _descriptionController,
                 maxLines: 5,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText:
                       'Describe the issue in detail. When did it start? How bad is it?',
@@ -525,7 +528,17 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                 ],
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+
+              // What happens after submitting — sets expectations before they tap.
+              const WhatHappensNowHint(
+                text:
+                    'Your landlord is notified right away. You can track repair '
+                    'progress in your Issue History, and you\'ll be asked to '
+                    'confirm once it\'s marked fixed.',
+              ),
+
+              const SizedBox(height: 24),
 
               // ── Submit ──
               SizedBox(

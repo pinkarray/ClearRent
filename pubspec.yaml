@@ -38,6 +38,7 @@ dependencies:
 
   # Image handling (Cloudinary free tier)
   cloudinary_public: ^0.23.1
+  firebase_storage: ^12.3.0
   image_picker: ^1.1.2
 
   # Local Storage
@@ -54,9 +55,9 @@ dependencies:
   webview_flutter: ^4.10.0
   video_player: ^2.9.2
   chewie: ^1.8.5
-  geolocator: ^13.0.2
   firebase_messaging: ^15.2.10
   flutter_local_notifications: ^19.5.0
+  cloud_functions: ^5.6.2
 
 dev_dependencies:
   flutter_test:
@@ -76,7 +77,6 @@ flutter:
 
   assets:
     - assets/images/app_icon.png
-    - assets/icons/
 
   fonts:
     - family: Outfit

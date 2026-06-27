@@ -7,9 +7,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
+import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/tenancy_link_service.dart';
+import '../../../../services/agreement_access_service.dart';
 import '../../../../core/utils/app_logger.dart';
 
 /// Shows tenant's documents: tenancy agreements and payment history.
@@ -24,10 +28,20 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ActiveRentalService _rentalService = ActiveRentalService();
+  final TenancyLinkService _linkService = TenancyLinkService();
+  final AgreementAccessService _agreementAccess = AgreementAccessService();
 
   List<ActiveRental> _rentals = [];
+  // A landlord-linked tenancy with an attached agreement, surfaced alongside
+  // active-rental agreements so linked tenants see their agreement here too.
+  TenancyLinkModel? _link;
   List<Map<String, dynamic>> _payments = [];
   bool _isLoading = true;
+
+  // Number of agreement entries shown in the Agreements tab.
+  int get _agreementCount =>
+      _rentals.length +
+      ((_link?.agreementUrl?.isNotEmpty ?? false) ? 1 : 0);
 
   @override
   void initState() {
@@ -45,11 +59,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   Future<void> _loadData() async {
     try {
       final rentals = await _rentalService.getTenantRentals();
+      final link = await _linkService.getTenantActiveLink();
       final payments = await _loadPaystackPayments();
 
       if (mounted) {
         setState(() {
           _rentals = rentals;
+          _link = link;
           _payments = payments;
           _isLoading = false;
         });
@@ -66,17 +82,30 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return [];
 
+      // Query by userId only (auto-indexed) and sort client-side. A
+      // server-side orderBy('createdAt') alongside the where would require a
+      // composite index that isn't provisioned — when it's missing Firestore
+      // throws and the catch below silently returns [], which showed up as a
+      // permanently-empty Payments tab. Matches the client-sort pattern used
+      // by earnings_screen / landlord_issues / activity_service.
       final snapshot = await FirebaseFirestore.instance
           .collection('payments')
           .where('userId', isEqualTo: uid)
-          .orderBy('createdAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final payments = snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
         return data;
       }).toList();
+
+      DateTime ts(Map<String, dynamic> d) {
+        final v = d['createdAt'];
+        return v is Timestamp ? v.toDate() : DateTime(1970);
+      }
+
+      payments.sort((a, b) => ts(b).compareTo(ts(a)));
+      return payments;
     } catch (e) {
       AppLogger.e('Error loading payments: $e', name: 'DocumentsScreen');
       return [];
@@ -114,7 +143,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           tabs: [
             Tab(
                 text:
-                    'Agreements${_rentals.isNotEmpty ? ' (${_rentals.length})' : ''}'),
+                    'Agreements${_agreementCount > 0 ? ' ($_agreementCount)' : ''}'),
             Tab(
                 text:
                     'Payments${_payments.isNotEmpty ? ' (${_payments.length})' : ''}'),
@@ -127,8 +156,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               controller: _tabController,
               children: [
                 // ── Agreements Tab ──
-                _rentals.isEmpty
-                    ? _buildEmptyState(
+                _agreementCount == 0
+                    ? const GuidanceEmptyState(
                         icon: Icons.description_outlined,
                         title: 'No Agreements Yet',
                         subtitle:
@@ -137,17 +166,19 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                     : RefreshIndicator(
                         onRefresh: _loadData,
                         color: AppColors.primary,
-                        child: ListView.builder(
+                        child: ListView(
                           padding: const EdgeInsets.all(20),
-                          itemCount: _rentals.length,
-                          itemBuilder: (_, i) =>
-                              _buildAgreementCard(_rentals[i]),
+                          children: [
+                            if (_link?.agreementUrl?.isNotEmpty ?? false)
+                              _buildLinkedAgreementCard(_link!),
+                            ..._rentals.map(_buildAgreementCard),
+                          ],
                         ),
                       ),
 
                 // ── Payments Tab ──
                 _payments.isEmpty
-                    ? _buildEmptyState(
+                    ? const GuidanceEmptyState(
                         icon: Icons.payment_outlined,
                         title: 'No Payments Yet',
                         subtitle:
@@ -173,37 +204,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   // ────────────────────────────────────────────────────────────────────
   // SHARED WIDGETS
   // ────────────────────────────────────────────────────────────────────
-
-  Widget _buildEmptyState({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(40),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(26),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 48, color: AppColors.primary),
-          ),
-          const SizedBox(height: 24),
-          Text(title, style: AppTextStyles.h4),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style:
-                AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-        ]),
-      ),
-    );
-  }
 
   // ────────────────────────────────────────────────────────────────────
   // AGREEMENTS TAB
@@ -333,7 +333,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             Row(children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _openDocument(rental.agreementUrl!),
+                  onPressed: () => _viewAgreement('active_rentals', rental.id),
                   icon: const Icon(Icons.visibility_outlined, size: 16),
                   label: const Text('View'),
                   style: OutlinedButton.styleFrom(
@@ -349,9 +349,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _shareDocument(
-                    url: rental.agreementUrl!,
-                    title: 'Tenancy Agreement – ${rental.propertyTitle}',
+                  onPressed: () => _shareAgreement(
+                    'active_rentals', rental.id,
+                    'Tenancy Agreement – ${rental.propertyTitle}',
                   ),
                   icon: const Icon(Icons.share_outlined, size: 16),
                   label: const Text('Share'),
@@ -367,7 +367,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => _downloadDocument(rental.agreementUrl!),
+                onTap: () => _viewAgreement('active_rentals', rental.id),
                 child: Container(
                   width: 40,
                   height: 40,
@@ -400,6 +400,139 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 ),
               ]),
             ),
+        ]),
+      ),
+    );
+  }
+
+  // Agreement card for a landlord-linked tenancy. Links don't run the full
+  // accept/dispute review lifecycle (that happens on promotion to an active
+  // rental), so this is a simpler view: the document with View/Share/Download.
+  Widget _buildLinkedAgreementCard(TenancyLinkModel link) {
+    final hasLeaseTerm = link.leaseStartDate != null && link.leaseEndDate != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.description_outlined,
+                  color: AppColors.info, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Tenancy Agreement', style: AppTextStyles.labelMedium),
+                const SizedBox(height: 2),
+                Text(link.propertyTitle,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ]),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.success.withAlpha(26),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text('Linked',
+                  style: AppTextStyles.caption.copyWith(
+                      color: AppColors.success,
+                      fontWeight: FontWeight.w600, fontSize: 10)),
+            ),
+          ]),
+
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+
+          Row(children: [
+            if (hasLeaseTerm)
+              Expanded(
+                child: _buildDetail(
+                  Icons.calendar_today_outlined,
+                  'Lease Period',
+                  '${_formatDate(link.leaseStartDate!)} – ${_formatDate(link.leaseEndDate!)}',
+                ),
+              ),
+            Expanded(
+              child: _buildDetail(
+                Icons.person_outline,
+                'Landlord',
+                link.landlordName,
+              ),
+            ),
+          ]),
+
+          const SizedBox(height: 12),
+          _buildDetail(
+            Icons.payments_outlined,
+            'Rent',
+            '₦${_formatAmount(link.rentAmount)}/${link.rentFrequency == 'yearly' ? 'yr' : 'mo'}',
+          ),
+          const SizedBox(height: 12),
+
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _viewAgreement('tenancy_links', link.id),
+                icon: const Icon(Icons.visibility_outlined, size: 16),
+                label: const Text('View'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: BorderSide(color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _shareAgreement(
+                  'tenancy_links', link.id,
+                  'Tenancy Agreement – ${link.propertyTitle}',
+                ),
+                icon: const Icon(Icons.share_outlined, size: 16),
+                label: const Text('Share'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: BorderSide(color: AppColors.border),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _viewAgreement('tenancy_links', link.id),
+              child: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Icon(Icons.download_outlined,
+                    size: 18, color: AppColors.textSecondary),
+              ),
+            ),
+          ]),
         ]),
       ),
     );
@@ -883,6 +1016,39 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   // DOCUMENT ACTIONS
   // ────────────────────────────────────────────────────────────────────
 
+  // Agreements are private — resolve a short-lived signed URL via the CF
+  // (which authorizes the caller as a party) before opening/sharing.
+  Future<void> _viewAgreement(String collection, String docId) async {
+    final url = await _agreementAccess.resolveUrl(
+      collection: collection,
+      docId: docId,
+    );
+    if (!mounted) return;
+    if (url != null) {
+      await _openDocument(url);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Could not open the agreement'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
+  Future<void> _shareAgreement(
+    String collection,
+    String docId,
+    String title,
+  ) async {
+    final url = await _agreementAccess.resolveUrl(
+      collection: collection,
+      docId: docId,
+    );
+    if (!mounted || url == null) return;
+    await _shareDocument(url: url, title: title);
+  }
+
   Future<void> _openDocument(String url) async {
     final uri = Uri.parse(url);
     try {
@@ -902,10 +1068,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     } catch (e) {
       AppLogger.e('Error opening document: $e', name: 'DocumentsScreen');
     }
-  }
-
-  Future<void> _downloadDocument(String url) async {
-    await _openDocument(url);
   }
 
   Future<void> _shareDocument({

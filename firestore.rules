@@ -55,21 +55,27 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['rating', 'totalRatings']);
 
-      // Earnings credit is now server-side via the creditInspectionEarnings
-      // Cloud Function (closes F1.4). Mobile clients can no longer write
-      // earnings fields. The CF uses admin SDK and bypasses rules.
-      //
-      // Transitional carve-out: admin can still move pending→paid via
-      // markAgentPaid until Workstream 5 ships the markPayoutPaid CF.
-      // Once W5 ships and migrates that flow, this clause should be
-      // removed entirely.
-      allow update: if isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['pendingEarnings', 'paidEarnings']);
+      // Earnings fields (pendingEarnings, paidEarnings) are written
+      // exclusively by Cloud Functions using admin SDK — the W1
+      // creditInspectionEarnings CF credits, the W5 markInspection
+      // AgentPayoutPaid CF shifts pending→paid. Admin SDK bypasses
+      // these rules, so no allow-update clause is needed for them.
 
       // Saved properties subcollection
       match /savedProperties/{propertyId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Private subcollection (C1) — sensitive data that must NOT live on the
+      // user doc (which is readable by any authenticated user). Holds
+      // `private/bank` (account number/name/bank). Readable only by the owner
+      // and admin (payout pages); writable only by the owner. Cloud Functions
+      // use the admin SDK and bypass these rules.
+      match /private/{docId} {
+        allow read: if request.auth != null && (
+          request.auth.uid == userId || isAdmin()
+        );
+        allow write: if request.auth != null && request.auth.uid == userId;
       }
     }
     
@@ -110,37 +116,122 @@ service cloud.firestore {
     match /properties/{propertyId} {
       allow read: if request.auth != null;
 
-      // Create: must self-assign ownership
+      // A unit may only reference a building the SAME landlord owns — otherwise
+      // a modified client could borrow another owner's verified C of O by
+      // setting their buildingId. True when no building is referenced.
+      function buildingOwnedByCaller() {
+        return !('buildingId' in request.resource.data)
+          || request.resource.data.buildingId == null
+          || (
+            exists(/databases/$(database)/documents/buildings/$(request.resource.data.buildingId))
+            && get(/databases/$(database)/documents/buildings/$(request.resource.data.buildingId)).data.landlordId == request.auth.uid
+          );
+      }
+
+      // Create: must self-assign ownership AND be a verified landlord.
+      // The get() reads the user doc (source of truth) rather than the
+      // client-supplied isVerified field, which a modified client could fake.
       allow create: if request.auth != null
-        && request.resource.data.landlordId == request.auth.uid;
+        && request.resource.data.landlordId == request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verificationStatus == 'verified'
+        && buildingOwnedByCaller();
 
       // Update: owner can edit own listing, but cannot reassign
-      // ownership (closes listing-hijack via landlordId rewrite).
+      // ownership (closes listing-hijack via landlordId rewrite) and cannot
+      // attach a building they don't own.
       allow update: if request.auth != null
         && resource.data.landlordId == request.auth.uid
-        && request.resource.data.landlordId == resource.data.landlordId;
+        && request.resource.data.landlordId == resource.data.landlordId
+        && buildingOwnedByCaller()
+        // Owner may move the doc back to review ('pending'/'not_uploaded' on
+        // re-upload) but may NOT self-verify or self-reject — those are
+        // admin-only (the admin clause below bypasses this). Mirrors buildings.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownershipDocStatus'])
+          || !(request.resource.data.ownershipDocStatus in ['verified', 'rejected'])
+        )
+        && (
+          (resource.data.get('currentTenantsCount', 0) <= 0)
+          || (
+            request.resource.data.rent == resource.data.rent
+            && request.resource.data.agentFee == resource.data.agentFee
+            && request.resource.data.cautionDeposit == resource.data.cautionDeposit
+          )
+        );
 
       // Admin override for verification/availability updates from
       // the Next.js admin dashboard.
       allow update: if isAdmin();
 
-      // Any authenticated user can increment inquiryCount by exactly 1.
-      // Used during inspection request creation — the tenant performs
-      // the write but isn't the landlord. Narrow carve-out: only
-      // inquiryCount may change, and only by +1. Cost-gated by the
-      // ₦10,000 inspection fee that triggers each increment, so
-      // spam-bumping the counter has a real economic cost.
+      // Any authenticated user can update the engagement counters
+      // (inquiryCount, viewCount, savedCount) on a property they
+      // don't own. These are bumped by non-owners during normal use:
+      // viewCount on open, savedCount on save/unsave, inquiryCount on
+      // inspection request. Field-scoped — only these three keys may
+      // change through this clause, so ownership-sensitive fields
+      // (rent, landlordId, isAvailable, etc.) remain protected.
+      // Values are not delta-checked: these are cosmetic metrics and
+      // delta enforcement added fragility without protecting anything
+      // of value. (Reviewed and chosen deliberately, not an oversight.)
       allow update: if request.auth != null &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['inquiryCount']) &&
-        request.resource.data.inquiryCount == resource.data.inquiryCount + 1;
+          .hasOnly(['inquiryCount', 'viewCount', 'savedCount']);
 
       // Delete: owner or admin
       allow delete: if request.auth != null
         && resource.data.landlordId == request.auth.uid;
       allow delete: if isAdmin();
     }
-    
+
+    // Buildings — group multiple unit listings of one landlord so a single
+    // ownership document (C of O / deed) is verified ONCE and covers every
+    // unit. Units reference buildingId and inherit the building's
+    // ownershipDocStatus. A standalone listing has no building.
+    match /buildings/{buildingId} {
+      // Landlord creates their own building; the doc must start unverified
+      // (can't self-assign 'verified'/'rejected').
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid
+        && (request.resource.data.ownershipDocStatus == 'none'
+            || request.resource.data.ownershipDocStatus == 'pending');
+
+      // Readable by any authenticated user — a prospective tenant viewing a
+      // unit needs the building's doc status for the inspection gate (mirrors
+      // properties being readable; the C of O URL is no more sensitive than the
+      // per-property ownershipDocUrl already is).
+      allow get: if request.auth != null;
+
+      // List: the owner (add-property "join a building" picker) or admin (the
+      // grouped approval queue). Ownership-constrained to satisfy query safety.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid || isAdmin()
+      );
+
+      // Admin verifies / rejects the shared ownership doc.
+      allow update: if isAdmin();
+
+      // Owner may edit building details and (re)upload the doc, but may NOT
+      // self-verify: ownershipDocStatus may only be set to 'pending' (resubmit
+      // after rejection), never 'verified'/'rejected', and the rejection reason
+      // is admin-only. landlordId is immutable.
+      allow update: if request.auth != null
+        && resource.data.landlordId == request.auth.uid
+        && request.resource.data.landlordId == resource.data.landlordId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'name', 'address', 'ownershipDocUrl', 'ownershipDocType',
+              'ownershipDocStatus', 'updatedAt',
+            ])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocStatus'])
+          || request.resource.data.ownershipDocStatus == 'pending'
+        );
+
+      // No client deletes — a building may have units; admin SDK handles cleanup.
+      allow delete: if isAdmin();
+    }
+
     // Conversations collection - FIXED query permissions
     match /conversations/{conversationId} {
       
@@ -158,8 +249,19 @@ service cloud.firestore {
         isActiveParticipant() || isAdmin()
       );
       
-      // List/query: authenticated users (queries already filter by participant IDs)
-      allow list: if request.auth != null;
+      // List/query (M3): the caller must be a party to every matched doc —
+      // a participant, or the landlord/tenant/agent named on it, or admin.
+      // Hardened: was `if request.auth != null`, which let any authed user
+      // enumerate every conversation. Live queries scope by
+      // `participants array-contains uid` (inbox + the agent-path dedup) or by
+      // landlordId/tenantId/agentId == uid (the party-initiated dedup checks).
+      allow list: if request.auth != null && (
+        request.auth.uid in resource.data.participants ||
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.agentId == request.auth.uid ||
+        isAdmin()
+      );
       
       // Create: user must be in the participants list they're creating
       allow create: if request.auth != null && 
@@ -171,7 +273,10 @@ service cloud.firestore {
       );
       
       // Delete: admin only
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        || (request.auth != null
+            && request.auth.uid in resource.data.participants
+            && resource.data.lastMessage == '');
       
       // Messages subcollection
       match /messages/{messageId} {
@@ -209,9 +314,30 @@ service cloud.firestore {
     
     // Activities collection
     match /activities/{activityId} {
-      allow read: if request.auth != null;
+      // Read/list (M1): the landlord whose feed it is, the actor who generated
+      // it, or admin. Hardened — was `if request.auth != null`, which let any
+      // authed user enumerate the entire activity feed (who viewed/inquired on
+      // which property, landlord ids, payment events). Live queries scope by
+      // landlordId == uid (the landlord's feed) or actorId == uid (the
+      // view/inquiry dedup checks). landlordId is checked first so the feed
+      // query short-circuits before touching actorId (absent on some docs).
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.actorId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Create: any authed user logs an activity. The actor/landlord shapes
+      // vary across call sites (some omit actorId), and the sensitive exposure
+      // was the read above — so create stays auth-gated, not field-constrained.
       allow create: if request.auth != null;
-      allow update: if request.auth != null;
+
+      // Update (M1): only the feed owner, and only to mark an item read
+      // (markAsRead — the sole update site, activity_service.dart).
+      allow update: if request.auth != null
+        && resource.data.landlordId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isRead']);
     }
     
     // Saved properties (top-level) — DEAD COLLECTION.
@@ -290,9 +416,18 @@ service cloud.firestore {
         resource.data.agentId == request.auth.uid ||
         isAdmin()
       );
-      
-      allow list: if request.auth != null;
-      
+
+      // List/query: a party to the inspection (tenant/landlord/agent), or
+      // admin. Hardened (H1): was `if request.auth != null`, which let any
+      // authed user enumerate every inspection request. Every live client
+      // query scopes by tenantId/landlordId/agentId == uid.
+      allow list: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.agentId == request.auth.uid ||
+        isAdmin()
+      );
+
       allow delete: if false;
       
       // ─── State-machine updates (closes F1.6 + F1.12) ─────────
@@ -404,15 +539,7 @@ service cloud.firestore {
         && resource.data.status == 'pendingPayment'
         && inspFields(['paymentStatus', 'status', 'declineReason',
                        'updatedAt']);
-      
-      // [Row 12] Admin marks agent payout as paid. Transitional
-      // until Workstream 5 ships Paystack Transfers CF.
-      // Site: inspection_service.dart:2366
-      allow update: if isAdmin()
-        && resource.data.status == 'completed'
-        && inspFields(['agentPayoutStatus', 'agentPaidAt',
-                       'agentPaidBy', 'updatedAt']);
-      
+            
       // [Row 13] Handler confirms they received payment.
       // Site: inspection_service.dart:2408
       allow update: if isHandler()
@@ -514,10 +641,37 @@ service cloud.firestore {
         && resource.data.status == 'approved'
         && inspFields(['handlerOnWay', 'handlerOnWayAt', 'updatedAt']);
       
+      // [Row 24] Tenant passes on renting after a completed inspection.
+      // Re-locks the exact address back to approximate.
+      // Site: inspection_service.dart markTenantPassed
+      allow update: if isTenant()
+        && resource.data.status == 'completed'
+        && request.resource.data.tenantPassed == true
+        && inspFields(['tenantPassed', 'updatedAt']);
+      
+      // [Row 25] Tenant reschedules an inspection that expired unapproved —
+      // re-enters the approval queue with a new date (payment is kept).
+      // Site: inspection_service.dart rescheduleExpiredInspection
+      allow update: if isTenant()
+        && resource.data.status == 'expiredUnapproved'
+        && request.resource.data.status == 'pending'
+        && inspFields(['status', 'requestedDate', 'requestedTimeSlot',
+            'updatedAt']);
+
+      // [Row 26] Tenant takes the refund instead of rescheduling an
+      // expired-unapproved inspection.
+      // Site: inspection_service.dart refundExpiredInspection
+      allow update: if isTenant()
+        && resource.data.status == 'expiredUnapproved'
+        && request.resource.data.status == 'refunded'
+        && request.resource.data.paymentStatus == 'refunded'
+        && inspFields(['status', 'paymentStatus', 'refundReason',
+            'refundedAt', 'updatedAt']);
+
       // Admin override — any legitimate admin intervention.
       allow update: if isAdmin();
     }
-    
+
     // Agent ratings collection
     match /agent_ratings/{ratingId} {
       allow read: if request.auth != null;
@@ -529,7 +683,16 @@ service cloud.firestore {
     
     // Rental interests collection
     match /rental_interests/{interestId} {
-      allow create: if request.auth != null;
+      // Create (H2): the tenant files their own interest, and it must START
+      // unpaid. A modified client can no longer mint an already
+      // 'payment_verified'/'accepted' interest out of thin air — the payment
+      // and acceptance state machine is driven by later updates (and admin).
+      // NOTE: payout figures are still client-denormalized here; making them
+      // server-authoritative requires the Paystack-verification CF (tracked
+      // separately, see HANDOVER H2).
+      allow create: if request.auth != null
+        && request.resource.data.tenantId == request.auth.uid
+        && request.resource.data.status == 'pending_payment';
 
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
@@ -540,37 +703,126 @@ service cloud.firestore {
         isAdmin()
       );
 
-      allow update: if request.auth != null && (
-        resource.data.tenantId == request.auth.uid ||
-        resource.data.landlordId == request.auth.uid ||
-        isAdmin()
-      );
+      // Update (M2): parties may drive the payment + acceptance lifecycle, but
+      // the financial and identity fields are IMMUTABLE post-create — payouts,
+      // amounts, fees, and the tenant/landlord/agent/property ids can't be
+      // rewritten by a client. This is an ALLOWLIST of exactly the fields the
+      // live update sites in rental_interest_service.dart touch (upload proof,
+      // reject, mark verified, accept). Was: no field-allowlist (M2 hole).
+      // Admin (below) updates freely.
+      allow update: if request.auth != null
+        && (resource.data.tenantId == request.auth.uid
+            || resource.data.landlordId == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'paymentReceiptUrl', 'paymentUploadedAt',
+              'paymentRejectionReason', 'isPaymentVerified', 'paymentReference',
+              'paymentVerifiedAt', 'paidAt', 'acceptedAt', 'updatedAt',
+            ]);
+      allow update: if isAdmin();
 
       allow delete: if false;
     }
 
     // Active Rentals collection
     match /active_rentals/{rentalId} {
-      allow create: if request.auth != null;
-      
+      // Create (H2): only the landlord, finalizing a tenant, and only from a
+      // real rental_interest they own that has reached payment_verified/
+      // accepted. A modified client can no longer fabricate an active rental
+      // (and its landlord/agent payout rows) out of thin air — it must be
+      // backed by a verified interest. Financial fields are still
+      // client-denormalized from that interest; fully server-authoritative
+      // figures require the Paystack-verification CF (tracked separately).
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid
+        && request.resource.data.rentalInterestId is string
+        && exists(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId))
+        && get(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId)).data.landlordId == request.auth.uid
+        && get(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId)).data.status in ['payment_verified', 'accepted'];
+
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         isAdmin()
       );
 
-      // Allow collection queries for occupancy counts on property detail screens
-      allow list: if request.auth != null;
-      
-      allow update: if request.auth != null && (
+      // List/query: tenant or landlord on the rental, or admin. Hardened (H1):
+      // was `if request.auth != null`, which let any authed user enumerate
+      // every active rental. Tenant dashboards scope by tenantId; landlord
+      // screens + the owner-only occupancy/management queries scope by
+      // landlordId. The tenant-facing occupancy card now reads the property's
+      // server-maintained currentTenantsCount instead of listing this.
+      allow list: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         isAdmin()
       );
-      
+
+      // Admin can update freely (e.g. set pendingRentForRenewal after
+      // approving a rent-review request).
+      allow update: if isAdmin();
+
+      // Tenant/landlord may update their own rental, but ONLY the fields the
+      // client app legitimately writes (agreement workflow, payment reminder,
+      // and the status / move-out / contest lifecycle). This is an ALLOWLIST,
+      // not a blocklist: every financial and lease field — rentAmount,
+      // pendingRentForRenewal, pendingRentEffectiveDate, agentFee, totalPaid,
+      // all payout amounts/statuses, leaseStartDate/EndDate, nextPaymentDue —
+      // is excluded, so a landlord (or tenant) cannot self-apply a rent change
+      // or otherwise bypass the admin-approved rent-review / renewal flow. Those
+      // fields are written only by Cloud Functions via the admin SDK, which
+      // bypasses these rules. (The previous rule blocked just one field, which
+      // left rentAmount and every payout field client-writable.)
+      // NOTE: `status` is intentionally allowed (terminate / move-out /
+      // expiry transitions are client-driven); value-level status-transition
+      // locking is a separate state-machine hardening, not done here.
+      allow update: if request.auth != null
+        && (resource.data.tenantId == request.auth.uid
+            || resource.data.landlordId == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'agreementUrl', 'agreementUploadedAt', 'agreementStatus',
+              'tenantDisputeReason', 'tenantAcceptedAt', 'landlordFinalizedAt',
+              'hasPaymentReminder',
+              'status', 'endReason', 'endedBy', 'endedAt',
+              'tenantContested', 'tenantContestStatement', 'contestedAt',
+              'updatedAt',
+            ]);
+
       allow delete: if false;
     }
+    // Rent-review requests — a landlord files to raise rent at renewal.
+    // Eligibility (rental ownership + within 6 months of leaseEndDate) is
+    // enforced in the mobile form and the CF; rules only ensure the filer
+    // owns the request and can't self-approve. Admin decides; on approval
+    // the admin CF writes pendingRentForRenewal onto the active_rental.
+    match /rent_review_requests/{requestId} {
+      // Landlord files for themselves; status must start as 'pending'.
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid
+        && request.resource.data.status == 'pending';
 
+      // The filing landlord, the tenant on the rental, or admin can read.
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Queries filter by landlordId / tenantId (parties) or status (admin).
+      // Hardened: was `if request.auth != null`, which let any authed user
+      // enumerate every rent-review request.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Only admin decides (approve/reject + decisionReason). The filing
+      // landlord cannot edit after submitting.
+      allow update: if request.auth != null && isAdmin();
+
+      allow delete: if false;
+    }
+    
     // Issues collection - tenant reports, landlord reads
     match /issues/{issueId} {
       allow create: if request.auth != null;
@@ -581,16 +833,23 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // Allow list queries filtered by propertyId, tenantId, or landlordId.
-      // Required for PropertyHealthScreen, tenant dashboards, and LandlordIssuesScreen.
-      allow list: if request.auth != null;
-      
+      // List/query: parties only (tenant or landlord on the issue), or admin.
+      // Hardened (H1): was `if request.auth != null`, which let any authed
+      // user enumerate every issue. Every caller scopes by their own id —
+      // tenant dashboards by tenantId, LandlordIssuesScreen + PropertyHealth
+      // by landlordId (PropertyHealth client-filters propertyId).
+      allow list: if request.auth != null && (
+        resource.data.tenantId == request.auth.uid ||
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
+
       allow update: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         isAdmin()
       );
-      
+
       allow delete: if false;
     }
 
@@ -606,8 +865,14 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // List queries filtered by propertyId (used by PropertyHealthScreen)
-      allow list: if request.auth != null;
+      // List/query: the owning landlord only, or admin. Hardened (H1): was
+      // `if request.auth != null`, which let any authed user enumerate every
+      // maintenance log. PropertyHealthScreen now scopes by landlordId and
+      // client-filters propertyId.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        isAdmin()
+      );
 
       // Landlord can update or delete their own logs (e.g. correcting a note)
       allow update: if request.auth != null &&
@@ -638,10 +903,21 @@ service cloud.firestore {
         isAdmin()
       );
 
-      allow update: if request.auth != null && (
-        resource.data.landlordId == request.auth.uid ||
-        resource.data.tenantId == request.auth.uid
-      );
+      // Allowlist (parity with active_rentals): clients drive only the link
+      // lifecycle — accept / reject / remove. Every term + financial field
+      // (rentAmount, leaseStart/EndDate, rentDue*, rentFrequency) and the
+      // admin-only pendingRent* / agreementUrl / promoted* fields are excluded,
+      // so a landlord can't self-apply a rent change to a link and bypass the
+      // admin-approved rent-review path. Those move only via Cloud Functions
+      // (admin SDK, which bypasses these rules).
+      // NOTE: `status` value transitions aren't locked here (a separate
+      // state-machine hardening, as with active_rentals).
+      allow update: if request.auth != null
+        && (resource.data.landlordId == request.auth.uid
+            || resource.data.tenantId == request.auth.uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'acceptedAt', 'rejectedAt', 'removedAt',
+            ]);
 
       allow delete: if request.auth != null &&
         resource.data.landlordId == request.auth.uid;
@@ -668,7 +944,15 @@ service cloud.firestore {
         resource.data.agentId == request.auth.uid ||
         isAdmin()
       );
-      allow list: if request.auth != null;
+      // Hardened: was `if request.auth != null`, which let any authenticated
+      // user query ALL transactions. Parties query their own row
+      // (where landlordId|agentId|tenantId == uid); admin reads via the claim.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.agentId == request.auth.uid ||
+        resource.data.tenantId == request.auth.uid ||
+        isAdmin()
+      );
       allow create: if false;
       allow update: if isAdmin();
       allow delete: if false;
@@ -686,8 +970,11 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // List/query: authenticated users (queries already filter by userId).
-      allow list: if request.auth != null;
+      // List/query: own notifications only (queries filter by userId).
+      // Hardened: was `if request.auth != null`, which let any authenticated
+      // user query ALL notifications.
+      allow list: if request.auth != null &&
+        (resource.data.userId == request.auth.uid || isAdmin());
 
       // Recipients can mark as read (and only as read).
       allow update: if request.auth != null &&
@@ -703,7 +990,23 @@ service cloud.firestore {
     }
     match /payments/{paymentId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow list: if request.auth != null;
+      // Hardened: was `if request.auth != null`, which let any authenticated
+      // user query ALL payment records. Clients query their own
+      // (where userId == uid); admin reads collection-wide via the claim.
+      allow list: if request.auth != null &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      // A user can create a payment record attributed to themselves
+      // only (userId must match the writer).
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Owner can update their own payment record (status transitions
+      // written client-side during checkout/refund).
+      allow update: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+
+      allow delete: if false;
     }
     // Refunds — written by Cloud Functions, read by beneficiaries + admin,
     // marked paid by markRefundPaid Cloud Function only.
@@ -717,8 +1020,11 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // List/query: authenticated users (queries filter by beneficiaryId).
-      allow list: if request.auth != null;
+      // List/query: own refunds only (tenant uses a doc-get; only admin
+      // lists collection-wide on the Refunds queue). Hardened: was
+      // `if request.auth != null`, which exposed ALL refund records.
+      allow list: if request.auth != null &&
+        (resource.data.beneficiaryId == request.auth.uid || isAdmin());
 
       // Updates only via markRefundPaid CF (admin SDK bypasses).
       allow update: if false;

@@ -1,42 +1,44 @@
-/// ClearRent LGA-Based Inspection Pricing
+/// ClearRent Inspection Pricing
 ///
-/// Lagos Local Government Area (LGA) pricing with real transport fare data.
-/// Each area maps to an LGA, and fares are defined between LGA hubs.
+/// FLAT-FEE MODEL (off-platform transport):
+/// - Tenant pays a flat ₦10,000 inspection booking fee.
+/// - Handler (agent OR landlord) earns ₦7,000.
+/// - ClearRent earns ₦3,000.
+/// - Transport is arranged DIRECTLY between tenant and handler.
+///   ClearRent does not collect or remit transport money.
 ///
-/// HOW TO UPDATE FARES:
-/// 1. Find the route in [_lgaFares] (keys are alphabetically sorted pairs)
-/// 2. Update the one-way fare value
-/// 3. Done — calculateFee() picks it up automatically
-///
-/// HOW IT WORKS:
-/// - Each Lagos area maps to an LGA via [_areaToLGA]
-/// - Fee = round-trip LGA fare + ₦1,000 last-mile buffer
-/// - Tenant pays: transport + ₦10,000 agent service fee + ₦3,000 service charge
-/// - Agent gets: transport + ₦10,000 service fee − ₦3,000 ClearRent cut = transport + ₦7,000
-/// - ClearRent earns: ₦6,000 (₦3K tenant charge + ₦3K agent deduction)
+/// The LGA list and area-to-LGA helpers below remain in use for
+/// area categorization (dropdowns, filtering, display labels), but
+/// no longer drive any fee calculation.
 library;
 
 class InspectionPricing {
   // ══════════════════════════════════════════════
-  //  FEE CONSTANTS
+  //  FEE CONSTANTS (FLAT-FEE MODEL)
   // ══════════════════════════════════════════════
 
-  /// Last-mile buffer added to each leg (one-way), so ₦1,000 round trip
+  /// Total inspection booking fee the tenant pays.
+  static const double inspectionBookingFee = 10000.0;
+
+  /// Handler's earnings per inspection (agent or landlord).
+  static const double handlerEarnings = 7000.0;
+
+  /// ClearRent's take per inspection.
+  static const double clearrentTake = 3000.0;
+
+  // ── Legacy constants (kept for back-compat) ──
+  // These no longer drive new fee calculations. The
+  // InspectionFeeBreakdown still surfaces them so existing UI and
+  // model code keeps compiling; new code should reference the three
+  // constants above. Existing inspection docs in Firestore that
+  // were written under the transport-included model will still
+  // deserialize correctly because the field names are unchanged.
+
   static const double lastMileBuffer = 500.0;
-
-  /// ClearRent's service charge added to tenant's bill
   static const double tenantServiceCharge = 3000.0;
-
-  /// Agent's flat service fee per inspection
   static const double agentServiceFee = 10000.0;
-
-  /// ClearRent's deduction from agent's service fee
   static const double clearrentAgentCut = 3000.0;
-
-  /// Minimum total fee the tenant can pay
   static const double minTenantFee = 13000.0;
-
-  /// Booking fee for self-handled inspections (prevents abuse)
   static const double selfHandledBookingFee = 10000.0;
 
   // ══════════════════════════════════════════════
@@ -68,40 +70,6 @@ class InspectionPricing {
 
   /// Outer/long-distance LGA (Epe, Badagry, Sango, Ibeju-Lekki)
   static const String outerLGA = 'outer';
-
-  // ══════════════════════════════════════════════
-  //  SAME-LGA FARES
-  // ══════════════════════════════════════════════
-
-  /// Fares for travel within the same LGA.
-  /// Compact LGAs = ₦600, spread-out LGAs = ₦1,000.
-  static const Map<String, double> _sameLGAFares = {
-    // Compact LGAs — ₦600
-    'shomolu': 600,
-    'mushin': 600,
-    'agege': 600,
-    'lagos_island': 600,
-    'apapa': 600,
-    'ajeromi_ifelodun': 600,
-    'ikeja': 600,
-    'surulere': 600,
-    'yaba_mainland': 600,
-    'kosofe': 600,
-    'ojodu_lcda': 600,
-    'ifako_ijaiye': 600,
-    // Spread-out LGAs — ₦1,000
-    'ikorodu': 1000,
-    'alimosho': 1000,
-    'eti_osa': 1000,
-    'ojo': 1000,
-    'obafemi_owode': 1000,
-    'oshodi_isolo': 800,
-    'amuwo_odofin': 800,
-    'outer': 1500,
-  };
-
-  /// Default same-LGA fare when not specified
-  static const double defaultSameLGAFare = 600.0;
 
   // ══════════════════════════════════════════════
   //  AREA → LGA MAPPING
@@ -316,156 +284,6 @@ class InspectionPricing {
   };
 
   // ══════════════════════════════════════════════
-  //  LGA-TO-LGA FARES (ONE-WAY, NAIRA)
-  // ══════════════════════════════════════════════
-
-  /// One-way transport fares between LGA hubs.
-  /// Keys are sorted alphabetically: 'lgaA:lgaB' where A < B.
-  ///
-  /// To update a fare: find the pair and change the number.
-  /// To add a new route: add a new entry with sorted key.
-  static const Map<String, double> _lgaFares = {
-    // ── From Ikorodu ──
-    'ikorodu:kosofe': 1200, // Ikorodu garage → Ojota/Ketu
-    'ikorodu:shomolu': 2200, // via Maryland (1500) + Maryland→Shomolu (700)
-    'ikorodu:ikeja': 2000, // via Maryland (1500) + Maryland→Ikeja (500)
-    'ikorodu:ojodu_lcda': 3000, // Ikorodu → Maryland (1500) + Maryland→Ikeja (500) + Ikeja→Ojodu (1500) — but direct is ~3000
-    'ikorodu:yaba_mainland': 2500, // via Maryland (1500) + Maryland→Yaba (1000)
-    'ikorodu:lagos_island': 2700, // via Maryland (1500) + Maryland→CMS (1200)
-    'ikorodu:eti_osa': 3700, // via CMS chain
-    'ikorodu:oshodi_isolo': 2500, // via Ikeja chain
-    'ikorodu:agege': 2500, // via Ikeja chain
-    'ikorodu:mushin': 2500, // via Oshodi chain
-    'ikorodu:surulere': 3000, // long route
-    'ikorodu:alimosho': 3300, // via Oshodi chain
-    'ikorodu:apapa': 3500, // long route
-    'ikorodu:amuwo_odofin': 4000, // long route
-    'ikorodu:ifako_ijaiye': 2500, // via Ikeja chain
-    'ikorodu:obafemi_owode': 3500, // Ikorodu → Berger corridor
-    'ikorodu:outer': 3500, // Epe direct or long haul
-    'ikorodu:ojo': 4500, // very long route
-    'ikorodu:ajeromi_ifelodun': 3500, // via Apapa chain
-
-    // ── From Kosofe (Maryland/Ojota hub) ──
-    'ikeja:kosofe': 500, // Maryland → Ikeja under bridge
-    'kosofe:shomolu': 700, // Maryland → Shomolu
-    'kosofe:yaba_mainland': 1000, // Maryland → Tejuosho/Yaba
-    'kosofe:lagos_island': 1200, // Maryland → CMS
-    'kosofe:eti_osa': 2200, // Maryland → CMS (1200) + CMS → Lekki (1000)
-    'kosofe:oshodi_isolo': 1000, // Maryland → Ikeja (500) + Ikeja → Oshodi (500)
-    'kosofe:agege': 1000, // Maryland → Ikeja (500) + Ikeja → Agege (500)
-    'kosofe:mushin': 1500, // via Oshodi
-    'kosofe:surulere': 1500, // via Yaba or Oshodi
-    'kosofe:alimosho': 1800, // via Oshodi chain
-    'kosofe:apapa': 2000, // long route
-    'kosofe:amuwo_odofin': 2500, // via Oshodi/Apapa
-    'kosofe:ifako_ijaiye': 1000, // via Ikeja
-    'kosofe:ojodu_lcda': 1500, // Maryland → Ikeja (500) + Ikeja → Berger
-    'kosofe:obafemi_owode': 2200, // via Berger
-    'kosofe:outer': 3000, // long haul
-    'kosofe:ojo': 3000, // via Apapa/Mile 2
-    'kosofe:ajeromi_ifelodun': 2000, // via Apapa
-
-    // ── From Ikeja ──
-    'ikeja:shomolu': 1200, // Ikeja → Maryland (500) + Maryland → Shomolu (700)
-    'ikeja:yaba_mainland': 1500, // Ikeja → Yaba
-    'ikeja:oshodi_isolo': 500, // Ikeja → Oshodi
-    'ikeja:agege': 500, // Ikeja → Agege
-    'ikeja:ifako_ijaiye': 500, // Ikeja → Pen Cinema/Iju
-    'ikeja:ojodu_lcda': 1500, // Ikeja → Ojodu Berger
-    'ikeja:mushin': 1000, // via Oshodi
-    'ikeja:surulere': 1300, // via Oshodi → Ojuelegba
-    'ikeja:lagos_island': 1700, // Ikeja → Maryland (500) + Maryland → CMS (1200)
-    'ikeja:eti_osa': 2700, // via CMS chain
-    'ikeja:alimosho': 1300, // via Oshodi → Egbeda
-    'ikeja:apapa': 1700, // via Oshodi → Apapa
-    'ikeja:amuwo_odofin': 2000, // via Oshodi chain
-    'ikeja:obafemi_owode': 700, // Ikeja → Berger/Mowe
-    'ikeja:outer': 3000, // long haul
-    'ikeja:ojo': 2500, // via Mile 2
-    'ikeja:ajeromi_ifelodun': 1700, // via Oshodi/Apapa
-
-    // ── From Shomolu ──
-    'shomolu:yaba_mainland': 500, // Bariga/Gbagada → Yaba (short)
-    'shomolu:lagos_island': 1500, // via Yaba → CMS
-    'shomolu:eti_osa': 2500, // via CMS chain
-    'shomolu:oshodi_isolo': 1700, // via Ikeja
-    'shomolu:surulere': 1200, // via Yaba
-    'shomolu:mushin': 1500, // via Yaba/Oshodi
-
-    // ── From Yaba/Mainland ──
-    'lagos_island:yaba_mainland': 700, // Sabo/Yaba → CMS
-    'eti_osa:yaba_mainland': 1700, // Yaba → CMS (700) + CMS → Lekki (1000)
-    'oshodi_isolo:yaba_mainland': 1500, // Yaba → Oshodi
-    'surulere:yaba_mainland': 600, // Yaba → Ojuelegba (short)
-    'mushin:yaba_mainland': 1000, // Yaba → Mushin
-
-    // ── From Lagos Island ──
-    'eti_osa:lagos_island': 1000, // CMS → Lekki corridor
-    'lagos_island:surulere': 800, // CMS → Ojuelegba
-    'lagos_island:oshodi_isolo': 1500, // CMS → Oshodi
-
-    // ── From Oshodi-Isolo ──
-    'alimosho:oshodi_isolo': 800, // Oshodi → Ikotun/Egbeda
-    'mushin:oshodi_isolo': 500, // Oshodi → Mushin (very short)
-    'oshodi_isolo:surulere': 800, // Oshodi → Ojuelegba
-    'apapa:oshodi_isolo': 1200, // Oshodi → Apapa
-    'amuwo_odofin:oshodi_isolo': 1500, // via Mile 2
-    'ojo:oshodi_isolo': 2000, // via Mile 2 chain
-    'ajeromi_ifelodun:oshodi_isolo': 1200, // via Apapa/Orile
-    'obafemi_owode:oshodi_isolo': 1700, // via Ikeja → Berger
-
-    // ── From Agege ──
-    'agege:ifako_ijaiye': 500, // adjacent LGAs
-    'agege:ojodu_lcda': 1000, // via Ikeja corridor
-    'agege:alimosho': 800, // Agege → Egbeda/Akowonjo
-    'agege:mushin': 800, // via Oshodi
-    'agege:oshodi_isolo': 1000, // Agege → Oshodi
-    'agege:obafemi_owode': 1200, // Agege → Berger
-
-    // ── From Ifako-Ijaiye ──
-    'ifako_ijaiye:ojodu_lcda': 800, // adjacent
-    'ifako_ijaiye:alimosho': 1000, // via Agege
-    'ifako_ijaiye:obafemi_owode': 1000, // towards Berger
-
-    // ── From Ojodu LCDA ──
-    'obafemi_owode:ojodu_lcda': 500, // Ojodu Berger → Mowe (short)
-    'ojodu_lcda:alimosho': 1500, // via Ikeja/Oshodi
-
-    // ── From Surulere ──
-    'mushin:surulere': 400, // very short trip
-    'apapa:surulere': 1000, // Ojuelegba → Apapa
-    'ajeromi_ifelodun:surulere': 800, // via Orile
-
-    // ── From Mushin ──
-    'apapa:mushin': 1200, // via Oshodi
-    'alimosho:mushin': 1300, // via Oshodi
-
-    // ── From Apapa ──
-    'amuwo_odofin:apapa': 2000, // Apapa → Mile 2/Festac
-    'apapa:ojo': 2750, // Apapa → Okokomaiko (avg of 2500-3000)
-    'ajeromi_ifelodun:apapa': 1200, // Apapa → Orile
-
-    // ── From Amuwo-Odofin ──
-    'amuwo_odofin:ojo': 1000, // Mile 2 → Okokomaiko
-    'ajeromi_ifelodun:amuwo_odofin': 1500, // Orile → Festac
-
-    // ── From Ojo ──
-    'ojo:outer': 2000, // Ojo → Badagry (avg of 1500-2500)
-    'ajeromi_ifelodun:ojo': 2000, // Orile → Okokomaiko
-
-    // ── From Alimosho ──
-    'alimosho:apapa': 2000, // via Oshodi chain
-    'alimosho:amuwo_odofin': 1800, // via Mile 2
-
-    // ── Outer routes ──
-    
-    'eti_osa:outer': 2500, // Lekki → Ibeju-Lekki / Epe
-   
-    'obafemi_owode:outer': 2000, // Mowe → Sango
-  };
-
-  // ══════════════════════════════════════════════
   //  LGA LABELS (for display)
   // ══════════════════════════════════════════════
 
@@ -520,16 +338,6 @@ class InspectionPricing {
   /// Backward-compatible alias for [getLGAForArea].
   /// Used by existing code that calls getClusterForArea.
   static String? getClusterForArea(String area) => getLGAForArea(area);
-
-  /// Get the one-way fare between two LGAs.
-  static double? getOneWayFare(String lgaA, String lgaB) {
-    if (lgaA == lgaB) return _sameLGAFares[lgaA] ?? defaultSameLGAFare;
-
-    final sorted = [lgaA, lgaB]..sort();
-    final key = '${sorted[0]}:${sorted[1]}';
-
-    return _lgaFares[key];
-  }
 
   /// Get human-readable label for an LGA.
   static String getLGALabel(String lga) {
@@ -619,35 +427,31 @@ class InspectionPricing {
   //  FEE CALCULATION
   // ══════════════════════════════════════════════
 
-  /// Calculate the full inspection fee from LGA names.
+  /// Calculate the inspection fee.
+  ///
+  /// FLAT-FEE MODEL: tenant always pays [inspectionBookingFee] (₦10,000).
+  /// Handler always earns [handlerEarnings] (₦7,000). ClearRent always
+  /// keeps [clearrentTake] (₦3,000). Transport is arranged off-platform.
+  ///
+  /// The [agentCluster] and [propertyCluster] inputs are still recorded
+  /// on the resulting breakdown for context/display, but they no longer
+  /// affect the amounts.
   static InspectionFeeBreakdown calculateFee({
-    required String agentCluster, // actually LGA — kept for backward compat
-    required String propertyCluster, // actually LGA
+    required String agentCluster, // recorded for context, not used in math
+    required String propertyCluster,
     String? propertyArea,
   }) {
-    double? oneWayFare = getOneWayFare(agentCluster, propertyCluster);
-
-    // Unknown route fallback
-    oneWayFare ??= 3000.0;
-
-    final transportFee = (oneWayFare * 2) + (lastMileBuffer * 2);
-    final tenantTotal = transportFee + tenantServiceCharge + agentServiceFee;
-    final adjustedTenantTotal =
-        tenantTotal < minTenantFee ? minTenantFee : tenantTotal;
-    final agentEarnings = transportFee + agentServiceFee - clearrentAgentCut;
-    final clearrentEarnings = tenantServiceCharge + clearrentAgentCut;
-
     return InspectionFeeBreakdown(
       agentCluster: agentCluster,
       propertyCluster: propertyCluster,
       propertyArea: propertyArea,
-      oneWayFare: oneWayFare,
-      transportFee: transportFee,
-      agentServiceFee: agentServiceFee,
-      tenantServiceCharge: tenantServiceCharge,
-      totalFee: adjustedTenantTotal,
-      agentEarnings: agentEarnings,
-      clearrentEarnings: clearrentEarnings,
+      oneWayFare: 0,
+      transportFee: 0,
+      agentServiceFee: handlerEarnings,
+      tenantServiceCharge: clearrentTake,
+      totalFee: inspectionBookingFee,
+      agentEarnings: handlerEarnings,
+      clearrentEarnings: clearrentTake,
     );
   }
 
@@ -668,39 +472,33 @@ class InspectionPricing {
     );
   }
 
-  /// Calculate fee for self-handled inspections.
+  /// Calculate the fee for a self-handled inspection (landlord shows
+  /// the property themselves).
+  ///
+  /// FLAT-FEE MODEL: identical to [calculateFee]. Tenant pays ₦10,000,
+  /// landlord earns ₦7,000, ClearRent keeps ₦3,000. The
+  /// [landlordLivesInProperty] flag no longer affects the fee — it is
+  /// still accepted for API stability and used elsewhere (e.g. to
+  /// decide whether to post the transport-coordination chat message
+  /// when the landlord accepts).
   static InspectionFeeBreakdown calculateSelfHandledFee({
     required bool landlordLivesInProperty,
     required String propertyCluster,
     String? landlordCluster,
     String? propertyArea,
   }) {
-    double transportFee = 0;
-    double oneWayFare = 0;
     final effectiveLandlordLGA = landlordCluster ?? propertyCluster;
-
-    if (!landlordLivesInProperty && landlordCluster != null) {
-      double? fare = getOneWayFare(landlordCluster, propertyCluster);
-      fare ??= 3000.0;
-      oneWayFare = fare;
-      transportFee = (fare * 2) + (lastMileBuffer * 2);
-    }
-
-    final tenantTotal = transportFee + selfHandledBookingFee;
-    final landlordEarnings = transportFee;
-    final clearrentEarnings = selfHandledBookingFee;
-
     return InspectionFeeBreakdown(
       agentCluster: effectiveLandlordLGA,
       propertyCluster: propertyCluster,
       propertyArea: propertyArea,
-      oneWayFare: oneWayFare,
-      transportFee: transportFee,
-      agentServiceFee: 0,
-      tenantServiceCharge: selfHandledBookingFee,
-      totalFee: tenantTotal,
-      agentEarnings: landlordEarnings,
-      clearrentEarnings: clearrentEarnings,
+      oneWayFare: 0,
+      transportFee: 0,
+      agentServiceFee: handlerEarnings,
+      tenantServiceCharge: clearrentTake,
+      totalFee: inspectionBookingFee,
+      agentEarnings: handlerEarnings,
+      clearrentEarnings: clearrentTake,
     );
   }
 
@@ -826,11 +624,17 @@ class InspectionFeeBreakdown {
       propertyArea: map['propertyArea'],
       oneWayFare: (map['oneWayFare'] ?? 0).toDouble(),
       transportFee: (map['transportFee'] ?? 0).toDouble(),
-      agentServiceFee: (map['agentServiceFee'] ?? 5000).toDouble(),
-      tenantServiceCharge: (map['tenantServiceCharge'] ?? 2000).toDouble(),
+      agentServiceFee:
+          (map['agentServiceFee'] ?? InspectionPricing.handlerEarnings)
+              .toDouble(),
+      tenantServiceCharge:
+          (map['tenantServiceCharge'] ?? InspectionPricing.clearrentTake)
+              .toDouble(),
       totalFee: (map['totalFee'] ?? 0).toDouble(),
       agentEarnings: (map['agentEarnings'] ?? 0).toDouble(),
-      clearrentEarnings: (map['clearrentEarnings'] ?? 4000).toDouble(),
+      clearrentEarnings:
+          (map['clearrentEarnings'] ?? InspectionPricing.clearrentTake)
+              .toDouble(),
     );
   }
 

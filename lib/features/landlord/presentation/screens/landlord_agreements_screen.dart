@@ -6,10 +6,12 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
 
 /// Landlord screen to manage tenancy agreements for all active rentals.
@@ -72,7 +74,12 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _rentals.isEmpty
-              ? _buildEmptyState()
+              ? const GuidanceEmptyState(
+                  icon: Icons.description_outlined,
+                  title: 'No Active Rentals',
+                  subtitle:
+                      'Agreements will appear here once you have active tenants.',
+                )
               : RefreshIndicator(
                   onRefresh: _loadRentals,
                   color: AppColors.primary,
@@ -88,32 +95,6 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.description_outlined, size: 40, color: AppColors.primary),
-            ),
-            const SizedBox(height: 24),
-            Text('No Active Rentals', style: AppTextStyles.h4, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text('Agreements will appear here once you have active tenants.',
-                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _AgreementCard extends StatefulWidget {
@@ -128,6 +109,7 @@ class _AgreementCard extends StatefulWidget {
 class _AgreementCardState extends State<_AgreementCard> {
   final ActiveRentalService _rentalService = ActiveRentalService();
   final PropertyService _propertyService = PropertyService();
+  final AgreementAccessService _agreementAccess = AgreementAccessService();
   final ConversationService _conversationService = ConversationService();
   bool _isUploading = false;
   bool _isFinalizing = false;
@@ -171,7 +153,8 @@ class _AgreementCardState extends State<_AgreementCard> {
 
     setState(() => _isUploading = true);
     try {
-      final url = await _propertyService.uploadImage(File(image.path));
+      // Private Storage (not Cloudinary) — agreements are sensitive PII.
+      final url = await _propertyService.uploadAgreementDoc(File(image.path));
       if (url == null || url.isEmpty) throw Exception('Upload failed');
 
       bool success;
@@ -556,9 +539,18 @@ class _AgreementCardState extends State<_AgreementCard> {
     }
   }
 
-  void _viewAgreement() {
-    if (r.agreementUrl != null) {
-      launchUrl(Uri.parse(r.agreementUrl!), mode: LaunchMode.externalApplication);
+  // Agreements are private — resolve a short-lived signed URL via the CF
+  // (which authorizes this landlord as a party) before opening.
+  Future<void> _viewAgreement() async {
+    if (r.agreementUrl == null) return;
+    final url = await _agreementAccess.resolveUrl(
+      collection: 'active_rentals',
+      docId: r.id,
+    );
+    if (!mounted || url == null) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 

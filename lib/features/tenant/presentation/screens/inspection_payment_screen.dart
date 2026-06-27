@@ -44,11 +44,11 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         propertyCluster: 'maryland_ikeja',
         oneWayFare: 0,
         transportFee: 0,
-        agentServiceFee: 10000,
+        agentServiceFee: 7000,
         tenantServiceCharge: 3000,
-        totalFee: 13000,
+        totalFee: 10000,
         agentEarnings: 7000,
-        clearrentEarnings: 6000,
+        clearrentEarnings: 3000,
       );
 
   String get _formattedDate {
@@ -808,18 +808,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
           Text('Payment Breakdown', style: AppTextStyles.labelLarge),
           const SizedBox(height: 16),
 
-          _buildPaymentRow('Agent Service Fee', _fee.agentServiceFee),
-          const SizedBox(height: 8),
-          _buildPaymentRow(
-            'Transport Fee',
-            _fee.transportFee,
-            subtitle:
-                _fee.agentCluster != _fee.propertyCluster
-                    ? '${InspectionPricing.getClusterLabel(_fee.agentCluster)} → ${InspectionPricing.getClusterLabel(_fee.propertyCluster)}'
-                    : 'Same zone',
-          ),
-          const SizedBox(height: 8),
-          _buildPaymentRow('Platform Fee', _fee.clearrentFee),
+          _buildPaymentRow('Inspection fee', _fee.totalFee),
 
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
@@ -835,6 +824,40 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                 style: AppTextStyles.naira(AppTextStyles.h3).copyWith(color: AppColors.primary),
               ),
             ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Transport advisory
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.warning.withAlpha(64)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.directions_car_outlined,
+                  size: 16,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Transport to and from the property is arranged '
+                    'directly with the agent or landlord. ClearRent does '
+                    'not collect transport money.',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

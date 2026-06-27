@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../services/agent_service.dart';
 import '../../../../services/property_service.dart';
 
@@ -132,8 +133,8 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
               child: AppButton(
                 text: 'Done',
                 onPressed: () {
-                  Navigator.pop(context);
-                  context.go('/landlord/home');
+                  Navigator.pop(context); // close dialog
+                  context.pop(true); // return to the edit screen with the result
                 },
               ),
             ),
@@ -168,32 +169,18 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.support_agent_outlined, size: 80, color: AppColors.textSecondary.withAlpha(128)),
-            const SizedBox(height: 24),
-            Text('No Verified Agents Available', style: AppTextStyles.h4, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(
-              'There are no verified agents in your area yet. You can handle inspections yourself for now.',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            AppButton(
-              text: 'I\'ll Handle Inspections',
-              onPressed: () async {
-                await _propertyService.updateInspectionHandler(widget.propertyId, 'self');
-                if (mounted) context.go('/landlord/home');
-              },
-            ),
-          ],
-        ),
-      ),
+    return GuidanceEmptyState(
+      icon: Icons.support_agent_outlined,
+      title: 'No Verified Agents Available',
+      subtitle:
+          'There are no verified agents in your area yet. You can handle '
+          'inspections yourself for now.',
+      actionLabel: 'I\'ll Handle Inspections',
+      actionIcon: Icons.person_outline,
+      onAction: () async {
+        await _propertyService.updateInspectionHandler(widget.propertyId, 'self');
+        if (mounted) context.go('/landlord/home');
+      },
     );
   }
 

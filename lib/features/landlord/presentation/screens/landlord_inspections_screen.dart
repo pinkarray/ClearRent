@@ -11,7 +11,12 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
-import '../../../../shared/widgets/tab_with_dot.dart';
+import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
+import '../../../../shared/widgets/reschedule_proposal_panel.dart';
+import '../../../../shared/widgets/reschedule_propose_sheet.dart';
+import 'package:intl/intl.dart';
+import '../../../../shared/widgets/refund_confirm_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -36,7 +41,9 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   StreamSubscription? _pendingDotSub;
-  bool _hasPendingDot = false;
+  StreamSubscription? _upcomingSub;
+  int _pendingCount = 0;
+  int _upcomingCount = 0;
   final InspectionService _inspectionService = InspectionService();
 
   @override
@@ -44,9 +51,20 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
 
-    _pendingDotSub = _inspectionService.getLandlordPendingRequests().listen((list) {
+    _pendingDotSub = _inspectionService.getLandlordPendingRequests().listen((
+      list,
+    ) {
       if (!mounted) return;
-      setState(() => _hasPendingDot = list.isNotEmpty);
+      setState(() => _pendingCount = list.length);
+    });
+
+    // Count of approved (upcoming) inspections — drives the Upcoming tab's
+    // attention badge, so a newly-approved inspection lights the dot even
+    // without tapping the push. Mirrors the Upcoming tab's filter.
+    _upcomingSub = _inspectionService.getLandlordRequests().listen((list) {
+      if (!mounted) return;
+      setState(() =>
+          _upcomingCount = list.where((r) => r.isApproved).length);
     });
 
     // If an explicit tab was passed (e.g. from a notification deep-link),
@@ -67,11 +85,10 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
   /// otherwise we'd land on a tab that turns out empty.
   Future<void> _selectInitialTab() async {
     try {
-      final all = await _inspectionService.getLandlordRequests().first;
+      final all = await _inspectionService.getLandlordRequestsOnce();
       if (!mounted) return;
 
-      final hasRequests =
-          all.any((r) => r.isPending || r.isDeclinedByAgent);
+      final hasRequests = all.any((r) => r.isPending || r.isDeclinedByAgent);
       final hasScheduled = all.any((r) => r.isApproved);
       final hasCompleted = all.any(
         (r) => r.isCompleted || r.isDeclined || r.isCancelled,
@@ -97,6 +114,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
   @override
   void dispose() {
     _pendingDotSub?.cancel();
+    _upcomingSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -122,8 +140,8 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
           tabs: [
-            Tab(child: TabWithDot(label: 'Pending', showDot: _hasPendingDot)),
-            const Tab(text: 'Upcoming'),
+            Tab(child: TabBadge(label: 'Pending', count: _pendingCount)),
+            Tab(child: TabBadge(label: 'Upcoming', count: _upcomingCount)),
             const Tab(text: 'History'),
           ],
         ),
@@ -131,7 +149,10 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _LandlordPendingTab(inspectionService: _inspectionService, tabController: _tabController),
+          _LandlordPendingTab(
+            inspectionService: _inspectionService,
+            tabController: _tabController,
+          ),
           _LandlordUpcomingTab(inspectionService: _inspectionService),
           _LandlordHistoryTab(inspectionService: _inspectionService),
         ],
@@ -146,7 +167,10 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
 class _LandlordPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
   final TabController tabController;
-  const _LandlordPendingTab({required this.inspectionService, required this.tabController});
+  const _LandlordPendingTab({
+    required this.inspectionService,
+    required this.tabController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +183,7 @@ class _LandlordPendingTab extends StatelessWidget {
           );
         }
         if (snapshot.hasError) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.error_outline,
             title: 'Error loading',
             subtitle: 'Please try again later',
@@ -170,7 +194,7 @@ class _LandlordPendingTab extends StatelessWidget {
                 .where((r) => r.isPending || r.isDeclinedByAgent)
                 .toList();
         if (pending.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.inbox_outlined,
             title: 'No pending requests',
             subtitle: 'Inspection requests from tenants will appear here',
@@ -614,7 +638,7 @@ class _LandlordUpcomingTab extends StatelessWidget {
             all.where((r) => r.isApproved).toList()
               ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
         if (upcoming.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.event_available_outlined,
             title: 'No upcoming inspections',
             subtitle: 'Approved inspections will appear here',
@@ -815,6 +839,92 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     }
   }
 
+  Future<void> _markOnWay() async {
+    final ok = await widget.inspectionService.markHandlerOnWay(
+      widget.request.id,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markMet() async {
+    final ok =
+        await widget.inspectionService.markMet(widget.request.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _proposeReschedule() async {
+    final payload = await ReschedulePropoSheet.show(context, widget.request);
+    if (payload == null || !mounted) return;
+
+    final ok = await widget.inspectionService.proposeReschedule(
+      requestId: widget.request.id,
+      newDate: payload.date,
+      newTimeSlot: payload.timeSlot,
+      reason: payload.reason,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Reschedule proposal sent'
+              : 'Couldn\'t send proposal, try again',
+        ),
+        backgroundColor: ok ? AppColors.textPrimary : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _cancelInspection() async {
+    final r = widget.request;
+    final feeText = NumberFormat('#,###').format(r.totalFee);
+    final reason = await RefundConfirmSheet.show(
+      context,
+      title: 'Cancel Inspection',
+      warningMessage:
+          'Cancelling will end this inspection for '
+          '${r.propertyTitle} and refund ₦$feeText to the tenant.',
+      confirmButtonText: 'Cancel & Refund',
+    );
+    if (reason == null || !mounted) return;
+
+    final ok = await widget.inspectionService.handlerCancelRequest(
+      requestId: widget.request.id,
+      reason: reason,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Inspection cancelled. Refund processing.'
+              : 'Couldn\'t cancel, try again',
+        ),
+        backgroundColor: ok ? AppColors.textPrimary : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = widget.request;
@@ -896,6 +1006,10 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             ],
           ),
           if (today || isAgent) const SizedBox(height: 12),
+
+          // Reschedule proposal panel (only when a proposal is active)
+          if (r.hasPendingReschedule)
+            RescheduleProposalPanel(request: r, currentUserId: r.landlordId),
 
           // Date + property
           Row(
@@ -1013,11 +1127,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     color: AppColors.success.withAlpha(26),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.phone,
-                    color: AppColors.success,
-                    size: 18,
-                  ),
+                  child: Icon(Icons.phone, color: AppColors.success, size: 18),
                 ),
               ),
             ],
@@ -1030,7 +1140,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
 
             // Show arrival status
             if (!r.handlerArrived) ...[
-              // Landlord hasn't arrived yet â€” show arrival button
+              // Landlord hasn't arrived yet show arrival button
               if (r.tenantArrived) ...[
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -1059,14 +1169,47 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     ],
                   ),
                 ),
+              ] else if (r.tenantOnWay) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.directions_walk,
+                        size: 18,
+                        color: AppColors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${r.tenantName} is on the way.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isArrivalLoading ? null : _markArrived,
-                  icon:
-                      _isArrivalLoading
-                          ? const SizedBox(
+              if (r.canHandlerMarkOnWay) ...[
+                AppButton(
+                  text: 'I\'m on my way',
+                  onPressed: _markOnWay,
+                ),
+              ] else if (r.handlerOnWay) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isArrivalLoading ? null : _markArrived,
+                    icon: _isArrivalLoading
+                        ? const SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
@@ -1074,24 +1217,24 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                               color: Colors.white,
                             ),
                           )
-                          : const Icon(Icons.location_on, size: 18),
-                  label: Text(
-                    _isArrivalLoading
-                        ? 'Confirming...'
-                        : 'I\'ve Arrived at Property',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                        : const Icon(Icons.location_on, size: 18),
+                    label: Text(
+                      _isArrivalLoading
+                          ? 'Confirming...'
+                          : 'I\'ve Arrived at Property',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ] else ...[
-              // Landlord arrived â€” show status + complete button
+              ] else ...[
+              // Landlord arrived — show status + met/complete cascade
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -1110,9 +1253,11 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        r.tenantArrived
-                            ? 'Both arrived â€” ready to inspect!'
-                            : 'You\'re here. Waiting for tenant...',
+                        !r.tenantArrived
+                            ? 'You\'re here. Waiting for tenant...'
+                            : r.met
+                                ? 'Inspection in progress'
+                                : 'Both arrived — ready to inspect!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.success,
                         ),
@@ -1121,8 +1266,40 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ],
                 ),
               ),
-              // Only show complete when BOTH arrived
-              if (r.bothArrived)
+              // Prompt the tenant to confirm meeting. Met state
+              // unlocks Mark as Completed.
+              if (r.canHandlerMarkMet) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 18, color: AppColors.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ask the tenant to confirm they\'ve seen '
+                          'you so you can complete the inspection.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'I\'ve met the tenant',
+                    onPressed: _markMet,
+                  ),
+                ),
+              ] else if (r.canMarkComplete)
                 SizedBox(
                   width: double.infinity,
                   child: AppButton(
@@ -1189,38 +1366,41 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ),
               ],
             ),
-            // Fallback complete â€” landlord can always complete as property owner
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: _isLoading ? null : _markComplete,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: BorderSide(color: AppColors.border),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+           // Fallback complete — landlord can override complete an
+            // agent-handled inspection, but only after met state.
+            if (r.canMarkComplete) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : _markComplete,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                ),
-                child:
-                    _isLoading
-                        ? const SizedBox(
+                  child: _isLoading
+                      ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2),
                         )
-                        : Text(
+                      : Text(
                           'Mark as Completed',
                           style: AppTextStyles.labelMedium.copyWith(
                             color: AppColors.textSecondary,
                           ),
                         ),
+                ),
               ),
-            ),
+            ],
           ],
 
-          // Self-handled complete button
-          if (!isAgent) ...[
+          // Self-handled complete button — only when met confirmed
+          if (!isAgent && r.canMarkComplete) ...[
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -1231,14 +1411,61 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               ),
             ),
           ],
+
+          // Reschedule button (hidden when proposal pending, past 2h
+          // cutoff, or cap reached)
+          if (r.canInitiateReschedule) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _proposeReschedule,
+              icon: Icon(
+                Icons.event_repeat,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              label: Text(
+                'Reschedule',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.primary,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+          ],
+
+          // Cancel & Refund (handler exit ramp for the tenant)
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _cancelInspection,
+            icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
+            label: Text(
+              'Cancel & Refund',
+              style: AppTextStyles.labelMedium.copyWith(color: AppColors.error),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.error),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: const Size(double.infinity, 0),
+            ),
+          ),
         ],
-      ),
+      ]),
     );
   }
 }
 
 // ============================================================
-// HISTORY TAB â€” WITH RENTAL INTEREST TRACKING
+// HISTORY TAB WITH RENTAL INTEREST TRACKING
 // ============================================================
 class _LandlordHistoryTab extends StatelessWidget {
   final InspectionService inspectionService;
@@ -1266,7 +1493,7 @@ class _LandlordHistoryTab extends StatelessWidget {
               );
 
         if (history.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.history,
             title: 'No history yet',
             subtitle: 'Completed inspections will appear here',
@@ -1435,6 +1662,11 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
     if (confirm != true) return;
 
+    // (Multi-rental enabled) A tenant may hold more than one active rental,
+    // so there's no longer a one-rental-per-tenant guard here — a paid
+    // application always becomes a real rental rather than being blocked
+    // after the tenant has already paid.
+
     // Step 2: Ask to upload agreement (optional)
     String? agreementUrl;
     if (mounted) {
@@ -1470,12 +1702,36 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         inspectionRequest: widget.request,
       );
 
+      // createActiveRental swallows its errors and returns null on failure.
+      // The interest is already flipped to 'accepted' above, so a null here
+      // means a paid+accepted tenant with NO active_rental — dashboard,
+      // issues, health and documents would all be empty. Surface it instead
+      // of showing a false "confirmed".
+      if (rental == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Tenant accepted, but we couldn\'t set up the rental '
+                'record. Please contact support before proceeding.',
+              ),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       // If landlord uploaded agreement, attach it
-      if (rental != null && agreementUrl != null && agreementUrl.isNotEmpty) {
+      if (agreementUrl != null && agreementUrl.isNotEmpty) {
         await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
       }
 
-      // Reload interest BEFORE showing success â€” await it
+      // Reload interest BEFORE showing success await it
       if (mounted) {
         await _loadInterest();
       }
@@ -1530,10 +1786,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                 (ctx, setDialogState) => AlertDialog(
                   title: Row(
                     children: [
-                      Icon(
-                        Icons.description_outlined,
-                        color: AppColors.info,
-                      ),
+                      Icon(Icons.description_outlined, color: AppColors.info),
                       const SizedBox(width: 8),
                       const Expanded(child: Text('Tenancy Agreement')),
                     ],
@@ -1609,9 +1862,10 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
                                       setDialogState(() => isUploading = true);
                                       try {
-                                        // Use PropertyService.uploadImage
+                                        // Private Storage (not Cloudinary) —
+                                        // agreements are sensitive PII.
                                         final url = await propertyService
-                                            .uploadImage(File(image.path));
+                                            .uploadAgreementDoc(File(image.path));
                                         if (url != null) {
                                           setDialogState(() {
                                             uploadedUrl = url;
@@ -1759,7 +2013,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'PAYMENT CONFIRMED â€” LOCKED IN',
+                          'PAYMENT CONFIRMED LOCKED IN',
                           style: AppTextStyles.labelSmall.copyWith(
                             color: AppColors.success,
                             fontWeight: FontWeight.w700,
@@ -1927,11 +2181,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Icon(
-                  Icons.hourglass_top,
-                  size: 16,
-                  color: AppColors.textHint,
-                ),
+                Icon(Icons.hourglass_top, size: 16, color: AppColors.textHint),
                 const SizedBox(width: 8),
                 Text(
                   'Waiting for tenant to rate...',
@@ -2007,6 +2257,14 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         statusIcon = Icons.celebration;
         title = 'Rental Active';
         subtitle = '${interest.tenantName} is now your tenant.';
+        break;
+      case RentalInterestStatus.lostToOther:
+        statusColor = AppColors.textSecondary;
+        statusIcon = Icons.history;
+        title = 'Not Selected';
+        subtitle =
+            '${interest.tenantName} was refunded because you accepted '
+            'another applicant for this property.';
         break;
     }
 
@@ -2120,47 +2378,3 @@ Widget _messageButton({required bool loading, required VoidCallback onTap}) =>
                 ),
               ),
     );
-
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 40, color: AppColors.primary),
-            ),
-            const SizedBox(height: 24),
-            Text(title, style: AppTextStyles.h4, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

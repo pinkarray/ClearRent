@@ -23,6 +23,8 @@ class ActiveRental {
   
   // Financial details
   final double rentAmount;
+  final double? pendingRentForRenewal;
+  final DateTime? pendingRentEffectiveDate;
   final double agentFee;
   final double totalPaid;
   final double inspectionFeeCredit;
@@ -50,6 +52,17 @@ class ActiveRental {
   final String? tenantDisputeReason;
   final DateTime? landlordFinalizedAt;
   
+  // End / move-out / contest (System G)
+  final String? endReason;
+  final String? endedBy;            // 'tenant' | 'landlord'
+  final DateTime? endedAt;
+  final bool tenantContested;
+  final String? tenantContestStatement;
+  final DateTime? contestedAt;
+
+  // Provenance (set on promoted rentals, null otherwise)
+  final String? sourceLinkId;
+  
   // Status
   final ActiveRentalStatus status;
   final bool hasPaymentReminder;
@@ -72,6 +85,8 @@ class ActiveRental {
     required this.landlordName,
     this.landlordPhone,
     required this.rentAmount,
+    this.pendingRentForRenewal,
+    this.pendingRentEffectiveDate,
     required this.agentFee,
     required this.totalPaid,
     this.inspectionFeeCredit = 5000,
@@ -92,6 +107,13 @@ class ActiveRental {
     this.tenantAcceptedAt,
     this.tenantDisputeReason,
     this.landlordFinalizedAt,
+    this.endReason,
+    this.endedBy,
+    this.endedAt,
+    this.tenantContested = false,
+    this.tenantContestStatement,
+    this.contestedAt,
+    this.sourceLinkId,
     this.status = ActiveRentalStatus.active,
     this.hasPaymentReminder = false,
     required this.createdAt,
@@ -101,9 +123,13 @@ class ActiveRental {
   // Status helpers
   bool get isActive => status == ActiveRentalStatus.active;
   bool get isExpiringSoon => status == ActiveRentalStatus.expiringSoon;
+  bool get isGraceLocked => status == ActiveRentalStatus.graceLocked;
   bool get isExpired => status == ActiveRentalStatus.expired;
   bool get isTerminated => status == ActiveRentalStatus.terminated;
-  
+  bool get isEndedByTenant => status == ActiveRentalStatus.endedByTenant;
+  bool get isEndedByLandlord => status == ActiveRentalStatus.endedByLandlord;
+  bool get isEnded => isEndedByTenant || isEndedByLandlord;
+
   // Agreement helpers
   bool get hasAgreement => agreementUrl != null && agreementUrl!.isNotEmpty;
   bool get isAgreementPendingReview => agreementStatus == AgreementStatus.pendingReview;
@@ -131,8 +157,11 @@ class ActiveRental {
     switch (status) {
       case ActiveRentalStatus.active: return 'Active';
       case ActiveRentalStatus.expiringSoon: return 'Expiring Soon';
+      case ActiveRentalStatus.graceLocked: return 'Renewal Due';
       case ActiveRentalStatus.expired: return 'Expired';
       case ActiveRentalStatus.terminated: return 'Terminated';
+      case ActiveRentalStatus.endedByTenant: return 'Ended';
+      case ActiveRentalStatus.endedByLandlord: return 'Ended';
     }
   }
   
@@ -191,6 +220,9 @@ class ActiveRental {
       landlordName: data['landlordName'] ?? '',
       landlordPhone: data['landlordPhone'],
       rentAmount: (data['rentAmount'] ?? 0).toDouble(),
+      pendingRentForRenewal: (data['pendingRentForRenewal'] as num?)?.toDouble(),
+      pendingRentEffectiveDate: data['pendingRentEffectiveDate'] != null
+          ? (data['pendingRentEffectiveDate'] as Timestamp).toDate() : null,
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       totalPaid: (data['totalPaid'] ?? 0).toDouble(),
       inspectionFeeCredit: (data['inspectionFeeCredit'] ?? 5000).toDouble(),
@@ -216,6 +248,15 @@ class ActiveRental {
       tenantDisputeReason: data['tenantDisputeReason'] as String?,
       landlordFinalizedAt: data['landlordFinalizedAt'] != null
           ? (data['landlordFinalizedAt'] as Timestamp).toDate() : null,
+      endReason: data['endReason'] as String?,
+      endedBy: data['endedBy'] as String?,
+      endedAt: data['endedAt'] != null
+          ? (data['endedAt'] as Timestamp).toDate() : null,
+      tenantContested: data['tenantContested'] ?? false,
+      tenantContestStatement: data['tenantContestStatement'] as String?,
+      contestedAt: data['contestedAt'] != null
+          ? (data['contestedAt'] as Timestamp).toDate() : null,
+      sourceLinkId: data['sourceLinkId'] as String?,
       status: _statusFromString(data['status'] ?? 'active'),
       hasPaymentReminder: data['hasPaymentReminder'] ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -237,6 +278,9 @@ class ActiveRental {
       'landlordName': landlordName,
       'landlordPhone': landlordPhone,
       'rentAmount': rentAmount,
+      if (pendingRentForRenewal != null) 'pendingRentForRenewal': pendingRentForRenewal,
+      if (pendingRentEffectiveDate != null)
+        'pendingRentEffectiveDate': Timestamp.fromDate(pendingRentEffectiveDate!),
       'agentFee': agentFee,
       'totalPaid': totalPaid,
       'inspectionFeeCredit': inspectionFeeCredit,
@@ -257,6 +301,13 @@ class ActiveRental {
       if (tenantAcceptedAt != null) 'tenantAcceptedAt': Timestamp.fromDate(tenantAcceptedAt!),
       if (tenantDisputeReason != null) 'tenantDisputeReason': tenantDisputeReason,
       if (landlordFinalizedAt != null) 'landlordFinalizedAt': Timestamp.fromDate(landlordFinalizedAt!),
+      if (endReason != null) 'endReason': endReason,
+      if (endedBy != null) 'endedBy': endedBy,
+      if (endedAt != null) 'endedAt': Timestamp.fromDate(endedAt!),
+      'tenantContested': tenantContested,
+      if (tenantContestStatement != null) 'tenantContestStatement': tenantContestStatement,
+      if (contestedAt != null) 'contestedAt': Timestamp.fromDate(contestedAt!),
+      if (sourceLinkId != null) 'sourceLinkId': sourceLinkId,
       'status': _statusToString(status),
       'hasPaymentReminder': hasPaymentReminder,
       'createdAt': Timestamp.fromDate(createdAt),
@@ -278,6 +329,9 @@ class ActiveRental {
     String? agreementUrl, DateTime? agreementUploadedAt,
     AgreementStatus? agreementStatus, DateTime? tenantAcceptedAt,
     String? tenantDisputeReason, DateTime? landlordFinalizedAt,
+    String? endReason, String? endedBy, DateTime? endedAt,
+    bool? tenantContested, String? tenantContestStatement, DateTime? contestedAt,
+    String? sourceLinkId,
     ActiveRentalStatus? status, bool? hasPaymentReminder,
     DateTime? createdAt, DateTime? updatedAt,
   }) {
@@ -315,6 +369,13 @@ class ActiveRental {
       tenantAcceptedAt: tenantAcceptedAt ?? this.tenantAcceptedAt,
       tenantDisputeReason: tenantDisputeReason ?? this.tenantDisputeReason,
       landlordFinalizedAt: landlordFinalizedAt ?? this.landlordFinalizedAt,
+      endReason: endReason ?? this.endReason,
+      endedBy: endedBy ?? this.endedBy,
+      endedAt: endedAt ?? this.endedAt,
+      tenantContested: tenantContested ?? this.tenantContested,
+      tenantContestStatement: tenantContestStatement ?? this.tenantContestStatement,
+      contestedAt: contestedAt ?? this.contestedAt,
+      sourceLinkId: sourceLinkId ?? this.sourceLinkId,
       status: status ?? this.status,
       hasPaymentReminder: hasPaymentReminder ?? this.hasPaymentReminder,
       createdAt: createdAt ?? this.createdAt,
@@ -326,8 +387,11 @@ class ActiveRental {
     switch (s) {
       case 'active': return ActiveRentalStatus.active;
       case 'expiring_soon': return ActiveRentalStatus.expiringSoon;
+      case 'grace_locked': return ActiveRentalStatus.graceLocked;
       case 'expired': return ActiveRentalStatus.expired;
       case 'terminated': return ActiveRentalStatus.terminated;
+      case 'ended_by_tenant': return ActiveRentalStatus.endedByTenant;
+      case 'ended_by_landlord': return ActiveRentalStatus.endedByLandlord;
       default: return ActiveRentalStatus.active;
     }
   }
@@ -336,8 +400,11 @@ class ActiveRental {
     switch (s) {
       case ActiveRentalStatus.active: return 'active';
       case ActiveRentalStatus.expiringSoon: return 'expiring_soon';
+      case ActiveRentalStatus.graceLocked: return 'grace_locked';
       case ActiveRentalStatus.expired: return 'expired';
       case ActiveRentalStatus.terminated: return 'terminated';
+      case ActiveRentalStatus.endedByTenant: return 'ended_by_tenant';
+      case ActiveRentalStatus.endedByLandlord: return 'ended_by_landlord';
     }
   }
   
@@ -362,7 +429,7 @@ class ActiveRental {
   }
 }
 
-enum ActiveRentalStatus { active, expiringSoon, expired, terminated }
+enum ActiveRentalStatus { active, expiringSoon, graceLocked, expired, terminated, endedByTenant, endedByLandlord}
 
 enum AgreementStatus {
   none,            // No agreement uploaded yet

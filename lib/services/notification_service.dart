@@ -119,6 +119,14 @@ class NotificationService {
     }
   }
 
+  /// Public hook to remove this device's FCM token from the
+  /// currently-tracked user's doc. Must be called *before* signing
+  /// the user out — Firestore rules deny the write once auth is
+  /// cleared.
+  Future<void> removeTokenBeforeLogout() async {
+    await _unregisterPreviousUser();
+  }
+
   Future<void> _unregisterPreviousUser() async {
     final uid = _trackedUid;
     final token = _trackedToken;
@@ -200,22 +208,38 @@ class NotificationService {
     });
   }
 
+  /// Routes that participate in identity-based foreground
+  /// suppression. Maps the route name to the payload field used as
+  /// the identity matcher. If a push arrives for a route in this
+  /// map and the matcher value matches what the active screen
+  /// registered, the system banner is suppressed.
+  ///
+  /// Other routes (most notifications) don't need identity
+  /// suppression — being on the inspections screen at all is
+  /// enough to skip a new-arrival push for any inspection.
+  static const Map<String, String> _suppressionKeyByRoute = {
+    '/chat': 'conversationId',
+  };
+
   bool _isOnTargetScreen(Map<String, dynamic> data) {
     final route = data['route'] as String?;
     if (route == null) return false;
 
-    // Build a match-params map from any data fields whose key starts
-    // with 'param_'. Server-side: send `param_conversationId: 'abc'`.
-    final matchParams = <String, String>{};
-    for (final entry in data.entries) {
-      if (entry.key.startsWith('param_')) {
-        matchParams[entry.key.substring(6)] = entry.value.toString();
-      }
+    final identityKey = _suppressionKeyByRoute[route];
+    if (identityKey == null) {
+      // Route doesn't need identity matching — just check we're
+      // on it.
+      return RouteObserverService.instance.isOnRoute(route);
+    }
+
+    final identityValue = data[identityKey]?.toString();
+    if (identityValue == null || identityValue.isEmpty) {
+      return RouteObserverService.instance.isOnRoute(route);
     }
 
     return RouteObserverService.instance.isOnRoute(
       route,
-      matchParams: matchParams.isEmpty ? null : matchParams,
+      matchParams: {identityKey: identityValue},
     );
   }
 
@@ -259,13 +283,26 @@ class NotificationService {
     }
 
     // Navigate to the deep-link target.
+    // Navigate to the deep-link target.
     final route = data['route'] as String?;
     if (route == null) return;
 
     try {
-      // Pass the entire data map as `extra` so target screens can pluck
-      // whatever fields they need.
-      appRouter.push(route, extra: Map<String, dynamic>.from(data));
+      // Pass the entire data map as `extra` so target screens can
+      // pluck whatever fields they need. FCM values are all strings,
+      // so we coerce known integer keys here. Currently just
+      // initialTab — add more keys as needed.
+      final extra = Map<String, dynamic>.from(data);
+      final tabRaw = extra['initialTab'];
+      if (tabRaw is String) {
+        final parsed = int.tryParse(tabRaw);
+        if (parsed != null) {
+          extra['initialTab'] = parsed;
+        } else {
+          extra.remove('initialTab');
+        }
+      }
+      appRouter.push(route, extra: extra);
     } catch (e) {
       AppLogger.e('Failed to navigate to notification target',
           error: e, name: 'NotificationService');

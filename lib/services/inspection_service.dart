@@ -27,6 +27,25 @@ class InspectionService {
     'evening': 'Evening',
   };
 
+  /// Start-of-window hour (24h, local) for each time slot. Used to
+  /// fold the slot's actual start time into `requestedDate`.
+  static const Map<String, int> timeSlotStartHour = {
+    'morning': 9,
+    'afternoon': 12,
+    'late_afternoon': 15,
+    'evening': 18,
+  };
+
+  /// Compose a scheduled DateTime by combining a calendar date with
+  /// the slot's start hour. Returns midnight if the slot is unknown.
+  static DateTime composeScheduledDateTime(DateTime date, String slot) {
+    final hour = timeSlotStartHour[slot];
+    if (hour == null) {
+      return DateTime(date.year, date.month, date.day);
+    }
+    return DateTime(date.year, date.month, date.day, hour, 0);
+  }
+
   // ============ PRICING CALCULATION ============
 
   /// Resolves the property's area/cluster from its address, LGA, or city fields.
@@ -84,10 +103,12 @@ class InspectionService {
             : null;
 
         if (agentCluster == null) {
-          developer.log(
-            '\u26a0\ufe0f Agent baseLocation "$agentBaseLocation" not mapped to any cluster, using same-zone fallback.',
-            name: 'InspectionService',
-          );
+          if (kDebugMode) {
+            developer.log(
+              '\u26a0\ufe0f Agent baseLocation "$agentBaseLocation" not mapped to any cluster, using same-zone fallback.',
+              name: 'InspectionService',
+            );
+          }
         }
 
         if (propertyCluster == null) {
@@ -226,7 +247,7 @@ class InspectionService {
               .where('tenantId', isEqualTo: _currentUserId)
               .where(
                 'status',
-                whereIn: ['pending', 'approved', 'declinedByAgent'],
+                whereIn: ['pending', 'approved', 'pendingPayment','pendingVerification','declinedByAgent'],
               )
               .get();
 
@@ -295,7 +316,9 @@ class InspectionService {
         'agentLongitude': agentLon,
         'agentBaseLocation': agentBaseLocation,
 
-        'requestedDate': Timestamp.fromDate(requestedDate),
+        'requestedDate': Timestamp.fromDate(
+          composeScheduledDateTime(requestedDate, requestedTimeSlot),
+        ),
         'requestedTimeSlot': requestedTimeSlot,
         'requestedTimeDisplay':
             timeSlotDisplay[requestedTimeSlot] ?? requestedTimeSlot,
@@ -309,6 +332,11 @@ class InspectionService {
         'clearrentFee': feeBreakdown?.clearrentEarnings ?? 0,
         'totalFee': feeBreakdown?.totalFee ?? 0,
         'agentEarnings': feeBreakdown?.agentEarnings ?? 0,
+
+        // Snapshot of handler context — used by activity notifications
+        // and (later) by the creditInspectionEarnings Cloud Function.
+        'isSelfHandled': property.inspectionHandler != 'agent',
+        'landlordLivesInProperty': property.landlordLivesInProperty == true,
 
         'paymentStatus':
             paymentStatus ??
@@ -437,6 +465,31 @@ class InspectionService {
             return request;
           }).toList();
         });
+  }
+
+  /// One-shot, server-source read of the landlord's requests. Used
+  /// by the smart-initial-tab logic to avoid landing on the wrong
+  /// tab due to cache staleness right after a new request arrives.
+  Future<List<InspectionRequest>> getLandlordRequestsOnce() async {
+    if (_currentUserId == null) return [];
+
+    try {
+      final snapshot = await _firestore
+          .collection('inspection_requests')
+          .where('landlordId', isEqualTo: _currentUserId)
+          .orderBy('createdAt', descending: true)
+          .get(const GetOptions(source: Source.server));
+
+      return snapshot.docs
+          .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
+          .toList();
+    } catch (e) {
+      developer.log(
+        '❌ Error in getLandlordRequestsOnce: $e',
+        name: 'InspectionService',
+      );
+      return [];
+    }
   }
 
   Stream<List<InspectionRequest>> getLandlordRequests() {
@@ -581,6 +634,48 @@ class InspectionService {
 
   // ============ APPROVE / DECLINE ============
 
+  /// Tenant reschedules an inspection that expired unapproved — picks a new
+  /// future date; the request re-enters the approval queue (payment is kept).
+  Future<bool> rescheduleExpiredInspection(
+    String requestId,
+    DateTime newDate,
+    String newTimeSlot,
+  ) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'status': 'pending',
+        'requestedDate': Timestamp.fromDate(newDate),
+        'requestedTimeSlot': newTimeSlot,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('âŒ rescheduleExpiredInspection failed: $e',
+          name: 'InspectionService');
+      return false;
+    }
+  }
+
+  /// Tenant takes the refund instead of rescheduling an expired inspection.
+  /// Setting paymentStatus='refunded' triggers the refund record for admin
+  /// payout (onInspectionRefundTriggered).
+  Future<bool> refundExpiredInspection(String requestId) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'status': 'refunded',
+        'paymentStatus': 'refunded',
+        'refundReason': 'Inspection was not approved in time',
+        'refundedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('âŒ refundExpiredInspection failed: $e',
+          name: 'InspectionService');
+      return false;
+    }
+  }
+
   Future<bool> approveRequest(
     String requestId, {
     bool isLandlordOverride = false,
@@ -590,6 +685,28 @@ class InspectionService {
         'ðŸ”„ Approving request: $requestId (override: $isLandlordOverride)',
         name: 'InspectionService',
       );
+
+      // Refuse to approve a request whose date has already passed — it can't be
+      // a real future inspection. (Compare by day so a same-day slot still
+      // works.) The lifecycle sweep reclassifies these stale requests.
+      final existing = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final reqTs = existing.data()?['requestedDate'];
+      if (reqTs is Timestamp) {
+        final reqDate = reqTs.toDate();
+        final now = DateTime.now();
+        final reqDay = DateTime(reqDate.year, reqDate.month, reqDate.day);
+        final today = DateTime(now.year, now.month, now.day);
+        if (reqDay.isBefore(today)) {
+          developer.log(
+            'â›” Cannot approve a past-date request: $requestId',
+            name: 'InspectionService',
+          );
+          return false;
+        }
+      }
 
       final updates = <String, dynamic>{
         'status': 'approved',
@@ -639,6 +756,28 @@ class InspectionService {
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
+
+        // Transport advisory: remind the tenant that transport is
+        // off-platform. Skip if the handler is a landlord living in
+        // the property (nothing to coordinate — landlord is already
+        // at the destination).
+        final isSelfHandled = requestData['isSelfHandled'] == true;
+        final landlordLivesInProperty =
+            requestData['landlordLivesInProperty'] == true;
+        if (!(isSelfHandled && landlordLivesInProperty)) {
+          final handlerLabel = isSelfHandled
+              ? (requestData['landlordName'] ?? 'the landlord')
+              : (requestData['agentName'] ?? 'the agent');
+          await _createActivity(
+            userId: requestData['tenantId'],
+            type: 'transport_reminder',
+            title: 'Coordinate transport directly',
+            message:
+                'Transport for your inspection is arranged directly with $handlerLabel. ClearRent does not collect transport money — please discuss the amount with them in chat.',
+            relatedId: requestId,
+            propertyId: requestData['propertyId'],
+          );
+        }
 
         if (isLandlordOverride && requestData['agentId'] != null) {
           await _createActivity(
@@ -901,6 +1040,43 @@ class InspectionService {
     }
   }
 
+  /// Mark that the tenant decided NOT to rent this property ("I'll Keep Looking").
+  /// Persists so it survives restart, re-locks exact address to approximate.
+  Future<bool> markTenantPassed(String requestId) async {
+    try {
+      await _firestore.collection('inspection_requests').doc(requestId).update({
+        'tenantPassed': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('Tenant passed on property: $requestId',
+          name: 'InspectionService');
+      return true;
+    } catch (e) {
+      developer.log('❌ Error marking tenant passed: $e',
+          name: 'InspectionService');
+      return false;
+    }
+  }
+
+  /// True if the current tenant has passed on (declined to rent) this property.
+  /// Used to re-lock the exact address.
+  Future<bool> hasPassed(String propertyId) async {
+    if (_currentUserId == null) return false;
+    try {
+      final snapshot = await _firestore
+          .collection('inspection_requests')
+          .where('propertyId', isEqualTo: propertyId)
+          .where('tenantId', isEqualTo: _currentUserId)
+          .where('tenantPassed', isEqualTo: true)
+          .get();
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      developer.log('❌ Error checking tenant passed: $e',
+          name: 'InspectionService');
+      return false;
+    }
+  }
+
   /// Mark the handler (agent or landlord) as arrived at the inspection location
   Future<bool> markHandlerArrived(String requestId) async {
     try {
@@ -951,6 +1127,9 @@ class InspectionService {
 
   Future<bool> completeInspection(String requestId) async {
     try {
+      final userId = _currentUserId;
+      if (userId == null) return false;
+
       final requestDoc =
           await _firestore
               .collection('inspection_requests')
@@ -958,6 +1137,13 @@ class InspectionService {
               .get();
       final requestData = requestDoc.data();
       if (requestData == null) return false;
+
+      // Eligibility gates: status must be approved, both parties
+      // must have confirmed they met, caller must be the handler.
+      if (requestData['status'] != 'approved') return false;
+      if (requestData['met'] != true) return false;
+      final role = _actorRole(requestData, userId);
+      if (role != 'agent' && role != 'landlord') return false;
 
       // Determine the actual handler — whoever is calling this method.
       // If the current user is the assigned agent, they handled it.
@@ -989,7 +1175,9 @@ class InspectionService {
       );
 
       if (agentHandled) {
-        // Agent did the inspection — agent gets paid and notified
+        // Agent did the inspection — landlord activity feed entry.
+        // Earnings are credited server-side by the
+        // creditInspectionEarnings Cloud Function (closes F1.4).
         await _createActivity(
           userId: requestData['landlordId'],
           type: 'inspection_completed',
@@ -999,24 +1187,10 @@ class InspectionService {
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
-        await _creditAgentEarnings(
-          assignedAgentId,
-          requestData['agentEarnings']?.toDouble() ?? 0,
-        );
-      } else {
-        // Landlord did the inspection (either self-handled or overrode agent)
-        final landlordEarnings = (requestData['agentEarnings'] ?? 0).toDouble();
-        if (landlordEarnings > 0) {
-          await _firestore
-              .collection('users')
-              .doc(requestData['landlordId'])
-              .update({
-                'totalEarnings': FieldValue.increment(landlordEarnings),
-                'pendingEarnings': FieldValue.increment(landlordEarnings),
-                'completedInspections': FieldValue.increment(1),
-              });
-        }
       }
+      // Landlord-handled completions: no client-side credit either.
+      // The Cloud Function detects status→completed and credits the
+      // landlord ₦7,000 server-side.
 
       developer.log(
         '✅ Inspection completed: $requestId by ${agentHandled ? 'agent' : 'landlord'}',
@@ -1214,7 +1388,7 @@ class InspectionService {
 
       if (requestData == null) return false;
       if (requestData['tenantId'] != _currentUserId) return false;
-      if (requestData['status'] != 'pending') return false;
+      if (requestData['status'] != 'pendingPayment') return false;
 
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'cancelled',
@@ -1233,6 +1407,559 @@ class InspectionService {
     } catch (e) {
       developer.log(
         '❌ Error cancelling request: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  // ============ RESCHEDULE ============
+
+  /// Server-side guard: reschedule must be initiated more than 2
+  /// hours before the current scheduled slot.
+  bool _isWithinRescheduleWindow(DateTime requestedDate) {
+    final cutoff = requestedDate.subtract(const Duration(hours: 2));
+    return DateTime.now().isBefore(cutoff);
+  }
+
+  /// Determine whether the acting user is the tenant or the handler
+  /// (agent or landlord) on a given request. Returns null if neither.
+  String? _actorRole(Map<String, dynamic> data, String userId) {
+    if (data['tenantId'] == userId) return 'tenant';
+    if (data['agentId'] == userId) return 'agent';
+    if (data['landlordId'] == userId) return 'landlord';
+    return null;
+  }
+
+  /// Initiate a fresh reschedule proposal. Either tenant or handler
+  /// can call this. Fails if there's already a pending proposal, the
+  /// cap is reached, or the cutoff has passed.
+  Future<bool> proposeReschedule({
+    required String requestId,
+    required DateTime newDate,
+    required String newTimeSlot,
+    required String reason,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    if (reason.trim().isEmpty) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == null) return false;
+
+      if (data['status'] != 'approved') return false;
+      if (data['rescheduleProposal'] != null) return false;
+      if ((data['rescheduleCount'] ?? 0) >= 2) return false;
+
+      final currentDate = (data['requestedDate'] as Timestamp).toDate();
+      if (!_isWithinRescheduleWindow(currentDate)) return false;
+
+      final proposal = RescheduleProposal(
+        proposedBy: role,
+        proposedByUserId: userId,
+        proposedDate: composeScheduledDateTime(newDate, newTimeSlot),
+        proposedTimeSlot: newTimeSlot,
+        proposedTimeDisplay:
+            timeSlotDisplay[newTimeSlot] ?? newTimeSlot,
+        reason: reason.trim(),
+        proposedAt: DateTime.now(),
+      );
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'rescheduleProposal': proposal.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Reschedule proposed by $role for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error proposing reschedule: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Counter-propose against the active proposal. The receiver of the
+  /// current proposal becomes the new proposer. Fails if the receiver
+  /// has already used their counter slot.
+  Future<bool> counterProposeReschedule({
+    required String requestId,
+    required DateTime newDate,
+    required String newTimeSlot,
+    required String reason,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    if (reason.trim().isEmpty) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == null) return false;
+
+      final proposalData = data['rescheduleProposal'];
+      if (proposalData == null) return false;
+
+      final current = RescheduleProposal.fromMap(
+        Map<String, dynamic>.from(proposalData as Map),
+      );
+
+      // The actor must be the *receiver* of the current proposal.
+      final actorIsReceiver = (current.proposedBy == 'tenant')
+          ? (role == 'agent' || role == 'landlord')
+          : (role == 'tenant');
+      if (!actorIsReceiver) return false;
+
+      // Receiver must not have already countered.
+      if (current.receiverCannotCounter) return false;
+
+      final currentDate = (data['requestedDate'] as Timestamp).toDate();
+      if (!_isWithinRescheduleWindow(currentDate)) return false;
+
+      final isTenantCountering = role == 'tenant';
+      final newProposal = RescheduleProposal(
+        proposedBy: role,
+        proposedByUserId: userId,
+        proposedDate: composeScheduledDateTime(newDate, newTimeSlot),
+        proposedTimeSlot: newTimeSlot,
+        proposedTimeDisplay:
+            timeSlotDisplay[newTimeSlot] ?? newTimeSlot,
+        reason: reason.trim(),
+        proposedAt: DateTime.now(),
+        tenantHasCountered:
+            current.tenantHasCountered || isTenantCountering,
+        handlerHasCountered:
+            current.handlerHasCountered || !isTenantCountering,
+      );
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'rescheduleProposal': newProposal.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Reschedule counter-proposed by $role for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error counter-proposing: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Approve the active proposal. The receiver of the current
+  /// proposal calls this. Updates the request's date/time, clears
+  /// the proposal, increments rescheduleCount.
+  Future<bool> approveReschedule(String requestId) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == null) return false;
+
+      final proposalData = data['rescheduleProposal'];
+      if (proposalData == null) return false;
+
+      final proposal = RescheduleProposal.fromMap(
+        Map<String, dynamic>.from(proposalData as Map),
+      );
+
+      final actorIsReceiver = (proposal.proposedBy == 'tenant')
+          ? (role == 'agent' || role == 'landlord')
+          : (role == 'tenant');
+      if (!actorIsReceiver) return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'requestedDate': Timestamp.fromDate(
+          composeScheduledDateTime(
+            proposal.proposedDate,
+            proposal.proposedTimeSlot,
+          ),
+        ),
+        'requestedTimeSlot': proposal.proposedTimeSlot,
+        'requestedTimeDisplay': proposal.proposedTimeDisplay,
+        'rescheduleProposal': null,
+        'rescheduleCount': FieldValue.increment(1),
+        'tenantArrived': false,
+        'tenantArrivedAt': null,
+        'handlerArrived': false,
+        'handlerArrivedAt': null,
+        'tenantOnWay': false,
+        'tenantOnWayAt': null,
+        'handlerOnWay': false,
+        'handlerOnWayAt': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Reschedule approved for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error approving reschedule: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Decline the active proposal. The receiver calls this with a
+  /// required reason. Triggers refund and flips status to declined.
+  Future<bool> declineReschedule({
+    required String requestId,
+    required String reason,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    if (reason.trim().isEmpty) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == null) return false;
+
+      final proposalData = data['rescheduleProposal'];
+      if (proposalData == null) return false;
+
+      final proposal = RescheduleProposal.fromMap(
+        Map<String, dynamic>.from(proposalData as Map),
+      );
+
+      final actorIsReceiver = (proposal.proposedBy == 'tenant')
+          ? (role == 'agent' || role == 'landlord')
+          : (role == 'tenant');
+      if (!actorIsReceiver) return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'status': 'declined',
+        'declinedBy': role,
+        'declineReason': reason.trim(),
+        'declinedAt': FieldValue.serverTimestamp(),
+        'rescheduleProposal': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Refund only if payment was actually taken.
+      if (data['paymentStatus'] == 'paid') {
+        await _processRefund(requestId, data);
+      }
+
+      developer.log(
+        '✅ Reschedule declined by $role for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error declining reschedule: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Abandon the active proposal without consequences. Either side
+  /// can call this. Original date stands, no refund.
+  Future<bool> abandonReschedule(String requestId) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == null) return false;
+
+      if (data['rescheduleProposal'] == null) return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'rescheduleProposal': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Reschedule abandoned by $role for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error abandoning reschedule: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  // ============ ON THE WAY ============
+
+  /// Tenant marks themselves as on the way to the property.
+  /// Eligible only when status is 'approved' and we're within 2h of
+  /// the scheduled slot. Idempotent — second call is a no-op.
+  Future<bool> markTenantOnWay(String requestId) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      if (data['tenantId'] != userId) return false;
+      if (data['status'] != 'approved') return false;
+      if (data['tenantOnWay'] == true) return false;
+
+      final scheduledDate = (data['requestedDate'] as Timestamp).toDate();
+      final cutoff = scheduledDate.subtract(const Duration(hours: 2));
+      if (DateTime.now().isBefore(cutoff)) return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'tenantOnWay': true,
+        'tenantOnWayAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Tenant on way for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error marking tenant on way: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  /// Handler (agent or landlord) marks themselves as on the way.
+  /// Eligible only when status is 'approved' and we're within 2h of
+  /// the scheduled slot. Idempotent — second call is a no-op.
+  Future<bool> markHandlerOnWay(String requestId) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role != 'agent' && role != 'landlord') return false;
+      if (data['status'] != 'approved') return false;
+      if (data['handlerOnWay'] == true) return false;
+
+      final scheduledDate = (data['requestedDate'] as Timestamp).toDate();
+      final cutoff = scheduledDate.subtract(const Duration(hours: 2));
+      if (DateTime.now().isBefore(cutoff)) return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'handlerOnWay': true,
+        'handlerOnWayAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        'Handler on way for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error marking handler on way: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  // ============ MET CONFIRMATION ============
+
+  /// Either party marks "I've met the other person." Unlocks the
+  /// handler's Mark as Completed button.
+  ///
+  /// Tenant can call anytime after they've arrived. Handler can
+  /// only call when both have arrived (anti-fake-meet guard — handler
+  /// can't fake meeting a tenant who never showed up).
+  Future<bool> markMet(String requestId) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role == 'unknown') return false;
+      if (data['status'] != 'approved') return false;
+      if (data['met'] == true) return false;
+
+      if (role == 'tenant') {
+        if (data['tenantArrived'] != true) return false;
+      } else {
+        // agent or landlord
+        if (data['handlerArrived'] != true) return false;
+        if (data['tenantArrived'] != true) return false;
+      }
+
+      // Normalize role: store 'handler' for both agent and landlord
+      // so downstream readers don't have to branch on it.
+      final metBy = role == 'tenant' ? 'tenant' : 'handler';
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'met': true,
+        'metAt': FieldValue.serverTimestamp(),
+        'metBy': metBy,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Met confirmed by $metBy for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error in markMet: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
+  // ============ HANDLER CANCEL ============
+
+  /// Handler (agent or landlord) cancels a paid inspection on the
+  /// tenant's behalf. Triggers refund. Reason is required.
+  ///
+  /// Eligible while status is 'pending' or 'approved'. Clears any
+  /// pending reschedule proposal. Tenant gets notified via the
+  /// status diff in onInspectionRequestUpdated.
+  Future<bool> handlerCancelRequest({
+    required String requestId,
+    required String reason,
+  }) async {
+    final userId = _currentUserId;
+    if (userId == null) return false;
+    if (reason.trim().isEmpty) return false;
+
+    try {
+      final doc = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      final data = doc.data();
+      if (data == null) return false;
+
+      final role = _actorRole(data, userId);
+      if (role != 'agent' && role != 'landlord') return false;
+
+      final status = data['status'] as String?;
+      if (status != 'pending' && status != 'approved') return false;
+
+      await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .update({
+        'status': 'cancelled',
+        'cancelledBy': role,
+        'cancellationReason': reason.trim(),
+        'cancelledAt': FieldValue.serverTimestamp(),
+        'rescheduleProposal': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (data['paymentStatus'] == 'paid') {
+        await _processRefund(requestId, data);
+      }
+
+      developer.log(
+        '✅ Inspection cancelled by $role for $requestId',
+        name: 'InspectionService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error in handler cancel: $e',
         name: 'InspectionService',
       );
       return false;
@@ -1288,7 +2015,7 @@ class InspectionService {
               .where('tenantId', isEqualTo: _currentUserId)
               .where(
                 'status',
-                whereIn: ['pending', 'approved', 'declinedByAgent'],
+                whereIn: ['pending','pendingPayment','pendingVerification','approved','declinedByAgent'],
               )
               .get();
 
@@ -1301,44 +2028,19 @@ class InspectionService {
   /// Returns true if the current tenant has an inspection on this property
   /// at status 'approved' or 'completed'. Used to gate exact-address reveal
   /// on the property detail screen.
-  /// Returns true if the current tenant has an inspection on this property
-  /// at status 'approved' or 'completed'. Used to gate exact-address reveal
-  /// on the property detail screen.
   Future<bool> hasApprovedInspection(String propertyId) async {
-    debugPrint('🔐 hasApprovedInspection called for propertyId=$propertyId');
-    debugPrint('🔐 _currentUserId=$_currentUserId');
-
-    if (_currentUserId == null) {
-      debugPrint('🔐 → returning false (no user)');
-      return false;
-    }
-
+    if (_currentUserId == null) return false;
     try {
-      final snapshot =
-          await _firestore
-              .collection('inspection_requests')
-              .where('propertyId', isEqualTo: propertyId)
-              .where('tenantId', isEqualTo: _currentUserId)
-              .where(
-                'status',
-                whereIn: ['approved', 'completed'],
-              )
-              .get();
-
-      debugPrint('🔐 query returned ${snapshot.docs.length} docs');
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        debugPrint(
-          '🔐   doc ${doc.id}: propertyId=${data['propertyId']}, '
-          'tenantId=${data['tenantId']}, status=${data['status']}',
-        );
-      }
-
-      final result = snapshot.docs.isNotEmpty;
-      debugPrint('🔐 → returning $result');
-      return result;
+      final snapshot = await _firestore
+          .collection('inspection_requests')
+          .where('propertyId', isEqualTo: propertyId)
+          .where('tenantId', isEqualTo: _currentUserId)
+          .where('status', whereIn: ['approved', 'completed'])
+          .get();
+      return snapshot.docs.isNotEmpty;
     } catch (e) {
-      debugPrint('🔐 ❌ query error: $e');
+      developer.log('❌ Error checking approved inspection: $e',
+          name: 'InspectionService');
       return false;
     }
   }
@@ -1439,11 +2141,70 @@ class InspectionService {
       }
     }
 
-    if (agentSlots.isEmpty) {
-      return landlordSlots;
-    }
+    final eligible = agentSlots.isEmpty
+        ? List<String>.from(landlordSlots)
+        : landlordSlots.where((slot) => agentSlots.contains(slot)).toList();
 
-    return landlordSlots.where((slot) => agentSlots.contains(slot)).toList();
+    // Remove slots already booked for this handler on this date.
+    final bookedSlots = await _getBookedSlotsForHandler(
+      property: property,
+      date: date,
+    );
+    return eligible.where((slot) => !bookedSlots.contains(slot)).toList();
+  }
+
+  /// Statuses that "hold" a slot — a tenant cannot double-book any
+  /// of these. Cancelled/declined/refunded/completed do not hold.
+  static const Set<String> _slotHoldingStatuses = {
+    'pendingPayment',
+    'pendingVerification',
+    'pending',
+    'declinedByAgent', // still in 12hr landlord-override window
+    'approved',
+  };
+
+  /// Returns the slot strings already booked for the handler (agent
+  /// if agent-handled, else landlord) on the given date.
+  Future<Set<String>> _getBookedSlotsForHandler({
+    required PropertyModel property,
+    required DateTime date,
+  }) async {
+    final isAgentHandled = property.inspectionHandler == 'agent' &&
+        property.assignedAgentId != null;
+    final handlerField = isAgentHandled ? 'agentId' : 'landlordId';
+    final handlerId =
+        isAgentHandled ? property.assignedAgentId! : property.landlordId;
+
+    try {
+      final snap = await _firestore
+          .collection('inspection_requests')
+          .where(handlerField, isEqualTo: handlerId)
+          .where('status', whereIn: _slotHoldingStatuses.toList())
+          .get();
+
+      final taken = <String>{};
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final ts = data['requestedDate'];
+        final slot = data['requestedTimeSlot'] as String?;
+        if (ts is! Timestamp || slot == null) continue;
+        final d = ts.toDate();
+        if (d.year == date.year &&
+            d.month == date.month &&
+            d.day == date.day) {
+          taken.add(slot);
+        }
+      }
+      return taken;
+    } catch (e) {
+      developer.log(
+        'Could not load booked slots: $e',
+        name: 'InspectionService',
+      );
+      // On error, return empty — let the server-side CF catch any
+      // conflict rather than blocking all booking.
+      return {};
+    }
   }
 
   String _getWeekdayName(int weekday) {
@@ -1517,24 +2278,6 @@ class InspectionService {
       );
     } catch (e) {
       developer.log('❌ Error processing refund: $e', name: 'InspectionService');
-    }
-  }
-
-  Future<void> _creditAgentEarnings(String agentId, double amount) async {
-    try {
-      await _firestore.collection('users').doc(agentId).update({
-        'totalEarnings': FieldValue.increment(amount),
-        'pendingEarnings': FieldValue.increment(amount),
-        'totalInspections': FieldValue.increment(1),
-        'completedInspections': FieldValue.increment(1),
-      });
-
-      developer.log(
-        'ðŸ’° Credited ₦$amount to agent: $agentId',
-        name: 'InspectionService',
-      );
-    } catch (e) {
-      developer.log('❌ Error crediting agent: $e', name: 'InspectionService');
     }
   }
 
@@ -1690,118 +2433,6 @@ class InspectionService {
             .toList());
   }
 
-  /// Get all completed inspections where agent has been paid
-  Stream<List<InspectionRequest>> getPaidAgentPayouts() {
-    return _firestore
-        .collection('inspection_requests')
-        .where('status', isEqualTo: 'completed')
-        .where('agentPayoutStatus', isEqualTo: 'paid')
-        .orderBy('agentPaidAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs
-                  .map(
-                    (doc) =>
-                        InspectionRequest.fromFirestore(doc.data(), doc.id),
-                  )
-                  .toList(),
-        );
-  }
-
-  /// Get agent's bank details for payout
-  Future<Map<String, dynamic>?> getAgentBankDetails(String agentId) async {
-    try {
-      final doc = await _firestore.collection('users').doc(agentId).get();
-      if (!doc.exists) return null;
-      final data = doc.data()!;
-
-      // Bank details are stored in a nested 'bankDetails' map
-      final bankDetails = data['bankDetails'] as Map<String, dynamic>? ?? {};
-
-      // Fall back to root-level fields for older accounts
-      final bankName = bankDetails['bankName'] as String? ?? 
-                       data['bankName'] as String? ?? '';
-      final accountNumber = bankDetails['accountNumber'] as String? ?? 
-                            data['accountNumber'] as String? ?? '';
-      final accountName = bankDetails['accountName'] as String? ?? 
-                          data['accountName'] as String? ?? '';
-
-      return {
-        'agentName': data['fullName'] ?? data['name'] ?? '',
-        'bankName': bankName,
-        'accountNumber': accountNumber,
-        'accountName': accountName,
-        'agentPhone': data['phone'] ?? '',
-        'pendingEarnings': (data['pendingEarnings'] ?? 0).toDouble(),
-      };
-    } catch (e) {
-      developer.log(
-        '❌ Error getting agent bank details: $e',
-        name: 'InspectionService',
-      );
-      return null;
-    }
-  }
-
-  /// Admin marks agent as paid for a specific inspection
-  Future<bool> markAgentPaid(String requestId) async {
-    try {
-      final requestDoc =
-          await _firestore
-              .collection('inspection_requests')
-              .doc(requestId)
-              .get();
-      final data = requestDoc.data();
-      if (data == null) return false;
-
-      final agentId = data['agentId'];
-      final landlordId = data['landlordId'];
-      final earnings = (data['agentEarnings'] ?? 0).toDouble();
-      
-      // Determine who the handler is (agent or landlord)
-      final handlerId = agentId ?? landlordId;
-
-      // Update inspection request
-      await _firestore.collection('inspection_requests').doc(requestId).update({
-        'agentPayoutStatus': 'paid',
-        'agentPaidAt': FieldValue.serverTimestamp(),
-        'agentPaidBy': _currentUserId,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Move from pending to paid on handler's user doc
-      if (handlerId != null) {
-        await _firestore.collection('users').doc(handlerId).update({
-          'pendingEarnings': FieldValue.increment(-earnings),
-          'paidEarnings': FieldValue.increment(earnings),
-        });
-
-        await _createActivity(
-          userId: handlerId,
-          type: 'payout_received',
-          title: 'Payment Received',
-          message:
-              'You\'ve been paid ₦${earnings.toStringAsFixed(0)} for inspection at ${data['propertyTitle']}',
-          relatedId: requestId,
-          propertyId: data['propertyId'],
-        );
-      }
-
-      developer.log(
-        'âœ… Agent marked as paid for: $requestId',
-        name: 'InspectionService',
-      );
-      return true;
-    } catch (e) {
-      developer.log(
-        '❌ Error marking agent paid: $e',
-        name: 'InspectionService',
-      );
-      return false;
-    }
-  }
-
   /// Agent confirms they received payment
   Future<bool> confirmPaymentReceived(String requestId) async {
     try {
@@ -1831,7 +2462,7 @@ class InspectionService {
       }
 
       developer.log(
-        'âœ… Agent confirmed payment: $requestId',
+        'Agent confirmed payment: $requestId',
         name: 'InspectionService',
       );
       return true;
@@ -1863,21 +2494,5 @@ class InspectionService {
                   )
                   .toList(),
         );
-  }
-
-  /// Get landlord's self-handled inspections that are paid but not yet confirmed
-  Stream<List<InspectionRequest>> getLandlordPendingConfirmations() {
-    if (_currentUserId == null) return Stream.value([]);
-    
-    return _firestore
-        .collection('inspection_requests')
-        .where('landlordId', isEqualTo: _currentUserId)
-        .where('agentPayoutStatus', isEqualTo: 'paid')
-        .where('agentConfirmedPayment', isEqualTo: false)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .where((doc) => doc.data()['agentId'] == null) // Only self-handled
-            .map((doc) => InspectionRequest.fromFirestore(doc.data(), doc.id))
-            .toList());
   }
 }

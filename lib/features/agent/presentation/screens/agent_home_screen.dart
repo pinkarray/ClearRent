@@ -303,12 +303,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   String get _accountType => _userProfile?['accountType'] ?? 'agent';
   String get _userName => _userProfile?['fullName'] ?? 'Agent';
   String get _baseLocation => _userProfile?['baseLocation'] ?? 'Not set';
-  bool get _hasBankDetails {
-    final bankDetails = _userProfile?['bankDetails'] as Map<String, dynamic>?;
-    return bankDetails != null &&
-        (bankDetails['bankName'] ?? '').toString().isNotEmpty &&
-        (bankDetails['accountNumber'] ?? '').toString().isNotEmpty;
-  }
+  // C1: bank details moved to the locked users/{uid}/private/bank
+  // subcollection; the user doc only carries this non-sensitive flag.
+  bool get _hasBankDetails => _userProfile?['hasBankDetails'] == true;
   List<String> get _serviceAreas =>
       List<String>.from(_userProfile?['serviceAreas'] ?? []);
   double get _rating => (_userProfile?['rating'] ?? 0.0).toDouble();
@@ -774,7 +771,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                   onTap:
                       () => context.push(
                         '/agent/inspections',
-                        extra: {'initialTab': 1},
+                        extra: {'initialTab': 2},
                       ),
                 ),
               ),
@@ -850,6 +847,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         title: 'No Assignments Yet',
         subtitle:
             'Complete verification to start receiving property assignments from landlords.',
+        actionLabel: 'Complete Verification',
+        actionIcon: Icons.verified_user_outlined,
+        onAction: () => context.push('/agent/verification'),
       );
     }
 
@@ -859,7 +859,11 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         icon: Icons.home_work_outlined,
         title: 'No Assigned Properties',
         subtitle:
-            'When landlords assign you to their properties, they\'ll appear here.',
+            'When landlords assign you to their properties, they\'ll appear here. '
+            'Discover properties to introduce yourself to landlords.',
+        actionLabel: 'Discover Properties',
+        actionIcon: Icons.explore_outlined,
+        onAction: () => setState(() => _currentNavIndex = 1),
       );
     }
 
@@ -902,7 +906,11 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             icon: Icons.home_work_outlined,
             title: 'No Assigned Properties',
             subtitle:
-                'When landlords assign you to their properties, they\'ll appear here.',
+                'When landlords assign you to their properties, they\'ll appear here. '
+                'Discover properties to introduce yourself to landlords.',
+            actionLabel: 'Discover Properties',
+            actionIcon: Icons.explore_outlined,
+            onAction: () => setState(() => _currentNavIndex = 1),
           );
         }
 
@@ -1312,6 +1320,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         icon: Icons.event_note_outlined,
         title: 'No Inspection Requests',
         subtitle: 'Complete verification to receive inspection requests.',
+        actionLabel: 'Complete Verification',
+        actionIcon: Icons.verified_user_outlined,
+        onAction: () => context.push('/agent/verification'),
       );
     }
 
@@ -1615,6 +1626,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     required IconData icon,
     required String title,
     required String subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
+    IconData actionIcon = Icons.arrow_forward,
   }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -1642,6 +1656,22 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             ),
             textAlign: TextAlign.center,
           ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onAction,
+              icon: Icon(actionIcon, size: 18),
+              label: Text(actionLabel),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1688,12 +1718,8 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                 child: Column(
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(
-                          'Profile',
-                          style: AppTextStyles.h3.copyWith(color: Colors.white),
-                        ),
                         GestureDetector(
                           onTap: () => context.push('/settings'),
                           child: Container(
@@ -1898,77 +1924,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-
-                // Sign Out button
-                GestureDetector(
-                  onTap: () => _showLogoutConfirmation(),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withAlpha(26),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.error.withAlpha(77)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.logout, color: AppColors.error),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Sign Out',
-                          style: AppTextStyles.labelLarge.copyWith(
-                            color: AppColors.error,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
                 const SizedBox(height: 20),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-
-  void _showLogoutConfirmation() {
-    showDialog(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Sign Out'),
-            content: const Text('Are you sure you want to sign out?'),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  'Cancel',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await _authService.signOut();
-                  if (mounted) {
-                    context.go('/login');
-                  }
-                },
-                child: Text(
-                  'Sign Out',
-                  style: TextStyle(color: AppColors.error),
-                ),
-              ),
-            ],
-          ),
     );
   }
 

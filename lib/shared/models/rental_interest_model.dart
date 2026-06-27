@@ -81,6 +81,7 @@ class RentalInterest {
   bool get isPaymentVerified => status == RentalInterestStatus.paymentVerified;
   bool get isRejected => status == RentalInterestStatus.rejected;
   bool get isAccepted => status == RentalInterestStatus.accepted;
+  bool get isLostToOther => status == RentalInterestStatus.lostToOther;
   
   String get statusDisplay {
     switch (status) {
@@ -94,6 +95,8 @@ class RentalInterest {
         return 'Payment Rejected';
       case RentalInterestStatus.accepted:
         return 'Rental Confirmed';
+      case RentalInterestStatus.lostToOther:
+        return 'Refund Processing';
     }
   }
   
@@ -248,6 +251,8 @@ class RentalInterest {
         return RentalInterestStatus.rejected;
       case 'accepted':
         return RentalInterestStatus.accepted;
+      case 'lost_to_other':
+        return RentalInterestStatus.lostToOther;
       default:
         return RentalInterestStatus.pendingPayment;
     }
@@ -265,6 +270,8 @@ class RentalInterest {
         return 'rejected';
       case RentalInterestStatus.accepted:
         return 'accepted';
+      case RentalInterestStatus.lostToOther:
+        return 'lost_to_other';
     }
   }
 }
@@ -276,4 +283,5 @@ enum RentalInterestStatus {
   paymentVerified,  // Admin verified payment (landlord locked in)
   rejected,         // Payment rejected by admin
   accepted,         // Landlord accepted, rental created
+  lostToOther,      // Property rented to another applicant; full refund due
 }

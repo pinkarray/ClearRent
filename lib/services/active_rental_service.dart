@@ -1,13 +1,54 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:developer' as developer;
 import '../shared/models/active_rental_model.dart';
 import '../shared/models/rental_interest_model.dart';
 import '../shared/models/inspection_request_model.dart';
+import '../shared/models/tenancy_link_model.dart';
+import '../shared/models/tenant_rental.dart';
 import 'auth_service.dart';
 
 class ActiveRentalService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final AuthService _authService = AuthService();
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+
+  // ============ RENEWAL / PROMOTION (System D) ============
+
+  /// Complete a renewal (active rental) or promotion (linked tenant) after
+  /// a successful Paystack payment. Branches on origin to call the matching
+  /// Cloud Function; the CF re-verifies the payment server-side, extends or
+  /// creates the rental, and fires payout/receipt side-effects. Returns true
+  /// on success.
+  Future<bool> completeRenewal(
+    TenantRental rental,
+    String paymentReference,
+  ) async {
+    final fn = rental.isLinked
+        ? 'completeLinkedPromotion'
+        : 'completeActiveRenewal';
+    try {
+      final callable = _functions.httpsCallable(fn);
+      final result = await callable.call<Map<String, dynamic>>({
+        'sourceId': rental.sourceId,
+        'paymentReference': paymentReference,
+      });
+      final success = result.data['success'] == true;
+      if (!success) {
+        developer.log('❌ $fn returned success=false',
+            name: 'ActiveRentalService');
+      }
+      return success;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('❌ $fn failed: ${e.code} — ${e.message}',
+          name: 'ActiveRentalService');
+      return false;
+    } catch (e) {
+      developer.log('❌ $fn error: $e', name: 'ActiveRentalService');
+      return false;
+    }
+  }
 
   // ============ CREATE ============
 
@@ -184,56 +225,19 @@ class ActiveRentalService {
 
   /// Update property status — increments/decrements currentTenantsCount
   /// and only marks unavailable when all slots are filled (respects maxTenants).
+  /// Property occupancy (currentTenantsCount + isAvailable) is now owned
+  /// exclusively by the server-side occupancy-sync Cloud Functions, which
+  /// recompute from confirmed tenancy_links + occupying active_rentals.
+  /// Kept as a no-op so the create/terminate call sites stay intact; the
+  /// CF fires on the active_rentals create/status-change those flows cause.
   Future<void> _updatePropertyStatus(
     String propertyId,
     String tenantId,
     bool isRented,
   ) async {
-    try {
-      final propertyDoc =
-          await _firestore.collection('properties').doc(propertyId).get();
-      final propertyData = propertyDoc.data();
-
-      final maxTenants = (propertyData?['maxTenants'] as num?)?.toInt() ?? 1;
-      final currentCount =
-          (propertyData?['currentTenantsCount'] as num?)?.toInt() ?? 0;
-
-      final newCount =
-          isRented ? currentCount + 1 : (currentCount - 1).clamp(0, maxTenants);
-
-      // Only mark unavailable when every slot is filled
-      final nowFull = newCount >= maxTenants;
-      // Only mark available again when count drops to 0
-      final nowEmpty = newCount <= 0;
-
-      final Map<String, dynamic> updates = {
-        'currentTenantsCount': newCount,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (isRented) {
-        updates['rentedToTenantId'] = tenantId;
-        updates['rentalStartDate'] = FieldValue.serverTimestamp();
-        if (nowFull) updates['isAvailable'] = false;
-      } else {
-        updates['rentedToTenantId'] = null;
-        if (nowEmpty) updates['isAvailable'] = true;
-      }
-
-      await _firestore.collection('properties').doc(propertyId).update(updates);
-
-      developer.log(
-        '✅ Property $propertyId: tenants $currentCount → $newCount / $maxTenants',
-        name: 'ActiveRentalService',
-      );
-    } catch (e) {
-      developer.log(
-        '❌ Error updating property status: $e',
-        name: 'ActiveRentalService',
-      );
-    }
+    // Intentionally empty — see doc comment above.
   }
-
+  
   /// Update tenant status (mark as having active rental)
   Future<void> _updateTenantStatus(
     String tenantId,
@@ -355,6 +359,99 @@ class ActiveRentalService {
         });
   }
 
+  /// Unified multi-rental stream: merges every active_rentals doc (active /
+  /// expiring_soon / expired — i.e. not terminated) with every CONFIRMED
+  /// tenancy_link for the current tenant, wrapped as [TenantRental] tagged by
+  /// origin. Confirmed-only filtering also excludes future 'promoted' links
+  /// (a promoted link becomes an active_rental, so it must not double-count).
+  ///
+  /// Emits a fresh merged list whenever EITHER source changes. Replaces the
+  /// single-rental .limit(1) reads for the dashboard; the old getters stay for
+  /// other callers.
+  Stream<List<TenantRental>> streamTenantRentals() {
+    final currentUserId = _authService.currentUserId;
+    if (currentUserId == null) return Stream.value(const []);
+
+    final activeStream = _firestore
+        .collection('active_rentals')
+        .where('tenantId', isEqualTo: currentUserId)
+        .where('status', whereIn: ['active', 'expiring_soon', 'grace_locked'])
+        .snapshots();
+
+    final linkStream = _firestore
+        .collection('tenancy_links')
+        .where('tenantId', isEqualTo: currentUserId)
+        .where('status', whereIn: ['confirmed', 'expiring_soon', 'grace_locked'])
+        .snapshots();
+
+    // Manual combineLatest — hold the latest of each source, emit on either.
+    final controller = StreamController<List<TenantRental>>();
+    QuerySnapshot<Map<String, dynamic>>? latestActive;
+    QuerySnapshot<Map<String, dynamic>>? latestLinks;
+    var activeReady = false;
+    var linksReady = false;
+
+    void emit() {
+      // Wait until both sources have delivered at least once, so the first
+      // emission is complete rather than active-only then links-added.
+      if (!activeReady || !linksReady) return;
+
+      final merged = <TenantRental>[];
+
+      for (final doc in latestActive?.docs ?? const []) {
+        merged.add(
+          TenantRental.fromActive(
+            ActiveRental.fromFirestore(doc.data(), doc.id),
+          ),
+        );
+      }
+      for (final doc in latestLinks?.docs ?? const []) {
+        merged.add(
+          TenantRental.fromLink(
+            TenancyLinkModel.fromFirestore(doc.data(), doc.id),
+          ),
+        );
+      }
+
+      controller.add(merged);
+    }
+
+    final activeSub = activeStream.listen(
+      (snap) {
+        latestActive = snap;
+        activeReady = true;
+        emit();
+      },
+      onError: (Object e) {
+        developer.log('❌ streamTenantRentals active error: $e',
+            name: 'ActiveRentalService');
+        activeReady = true;
+        emit();
+      },
+    );
+
+    final linkSub = linkStream.listen(
+      (snap) {
+        latestLinks = snap;
+        linksReady = true;
+        emit();
+      },
+      onError: (Object e) {
+        developer.log('❌ streamTenantRentals link error: $e',
+            name: 'ActiveRentalService');
+        linksReady = true;
+        emit();
+      },
+    );
+
+    controller.onCancel = () async {
+      await activeSub.cancel();
+      await linkSub.cancel();
+    };
+
+    return controller.stream;
+  }
+
   /// Get all rentals for a landlord
   Future<List<ActiveRental>> getLandlordRentals() async {
     final currentUserId = _authService.currentUserId;
@@ -392,22 +489,7 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify tenant via activities collection
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['tenantId'],
-          'type': 'agreement_uploaded',
-          'title': 'Tenancy Agreement Ready',
-          'message':
-              'Your landlord has uploaded the tenancy agreement for ${data['propertyTitle']}.',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function.
 
       developer.log(
         '✅ Agreement uploaded for rental: $rentalId',
@@ -436,22 +518,8 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify tenant
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['tenantId'],
-          'type': 'agreement_uploaded',
-          'title': 'Tenancy Agreement Ready for Review',
-          'message':
-              'Your landlord has sent the tenancy agreement for ${data['propertyTitle']}. Please review and accept or raise any concerns.',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → pending_review).
 
       developer.log(
         '✅ Agreement sent to tenant for rental: $rentalId',
@@ -477,22 +545,8 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify landlord
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['landlordId'],
-          'type': 'agreement_accepted',
-          'title': 'Tenant Accepted Agreement',
-          'message':
-              '${data['tenantName']} has accepted the tenancy agreement for ${data['propertyTitle']}. You can now finalize it.',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → accepted).
 
       developer.log(
         '✅ Tenant accepted agreement: $rentalId',
@@ -517,22 +571,8 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify landlord
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['landlordId'],
-          'type': 'agreement_disputed',
-          'title': 'Tenant Has Concerns About Agreement',
-          'message':
-              '${data['tenantName']} has raised concerns about the agreement for ${data['propertyTitle']}: "$reason"',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → disputed; reason read from tenantDisputeReason).
 
       developer.log(
         '✅ Tenant disputed agreement: $rentalId',
@@ -557,22 +597,8 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify tenant
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['tenantId'],
-          'type': 'agreement_finalized',
-          'title': 'Tenancy Agreement Finalized',
-          'message':
-              'Your tenancy agreement for ${data['propertyTitle']} has been finalized by your landlord. For full legal protection, consider getting it stamped at your local tax office (LIRS/SIRS).',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → finalized).
 
       developer.log(
         '✅ Agreement finalized: $rentalId',
@@ -603,21 +629,8 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      final doc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = doc.data();
-      if (data != null) {
-        await _firestore.collection('activities').add({
-          'userId': data['tenantId'],
-          'type': 'agreement_updated',
-          'title': 'Updated Agreement Available',
-          'message':
-              'Your landlord has uploaded a revised agreement for ${data['propertyTitle']}. Please review.',
-          'propertyId': data['propertyId'],
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → pending_review on re-upload).
 
       developer.log(
         '✅ Agreement re-uploaded: $rentalId',
@@ -691,6 +704,128 @@ class ActiveRentalService {
     }
   }
 
+  Future<bool> tenantMoveOut(String rentalId, String reason) async {
+    try {
+      final rental = await getRentalById(rentalId);
+      if (rental == null) return false;
+
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'status': 'ended_by_tenant',
+        'endReason': reason,
+        'endedBy': 'tenant',
+        'endedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await _updatePropertyStatus(rental.propertyId, rental.tenantId, false);
+      await _updateTenantStatus(
+        rental.tenantId,
+        rental.propertyId,
+        rentalId,
+        false,
+      );
+
+      // Landlord notification handled by the onActiveRentalUpdated Cloud
+      // Function (status → ended_by_tenant).
+
+      developer.log(
+        '✅ Tenant moved out: $rentalId',
+        name: 'ActiveRentalService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error in tenant move-out: $e',
+        name: 'ActiveRentalService',
+      );
+      return false;
+    }
+  }
+
+  /// Landlord ends a rental. ONLY permitted when the rental is grace_locked
+  /// (lease lapsed + tenant hasn't renewed). Fails closed otherwise — a
+  /// landlord cannot touch a mid-lease active rental. ClearRent records and
+  /// notifies; this is not an eviction.
+  Future<bool> landlordRemoveTenant(String rentalId, String reason) async {
+    try {
+      final rental = await getRentalById(rentalId);
+      if (rental == null) return false;
+
+      // Server-truth gate: only grace_locked rentals are removable.
+      if (rental.status != ActiveRentalStatus.graceLocked) {
+        developer.log(
+          '⚠️ landlordRemoveTenant blocked — status is '
+          '${rental.statusDisplay}, not grace_locked: $rentalId',
+          name: 'ActiveRentalService',
+        );
+        return false;
+      }
+
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'status': 'ended_by_landlord',
+        'endReason': reason,
+        'endedBy': 'landlord',
+        'endedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await _updatePropertyStatus(rental.propertyId, rental.tenantId, false);
+      await _updateTenantStatus(
+        rental.tenantId,
+        rental.propertyId,
+        rentalId,
+        false,
+      );
+
+      // Tenant notification handled by the onActiveRentalUpdated Cloud
+      // Function (status → ended_by_landlord).
+
+      developer.log(
+        '✅ Landlord removed tenant: $rentalId',
+        name: 'ActiveRentalService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error in landlord removal: $e',
+        name: 'ActiveRentalService',
+      );
+      return false;
+    }
+  }
+
+  /// Tenant adds their side to a landlord-ended rental. Annotates the record
+  /// only — does NOT change rental status. Notifies the landlord. No
+  /// adjudication; the timeline is preserved for any offline/legal process.
+  Future<bool> tenantContest(String rentalId, String statement) async {
+    try {
+      final rental = await getRentalById(rentalId);
+      if (rental == null) return false;
+
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'tenantContested': true,
+        'tenantContestStatement': statement,
+        'contestedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Landlord notification handled by the onActiveRentalUpdated Cloud
+      // Function (tenantContested → true).
+
+      developer.log(
+        '✅ Tenant contested rental end: $rentalId',
+        name: 'ActiveRentalService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error in tenant contest: $e',
+        name: 'ActiveRentalService',
+      );
+      return false;
+    }
+  }
+
   /// Check and update rental statuses based on dates
   Future<void> updateRentalStatuses() async {
     try {
@@ -730,204 +865,6 @@ class ActiveRentalService {
         '❌ Error updating rental statuses: $e',
         name: 'ActiveRentalService',
       );
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // RENT PAYOUT METHODS (admin)
-  // ══════════════════════════════════════════════════════════════
-
-  /// Get all active rentals where landlord payout is pending
-  Stream<List<ActiveRental>> getPendingLandlordPayouts() {
-    return _firestore
-        .collection('active_rentals')
-        .where('landlordPayoutStatus', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs
-                  .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
-                  .toList(),
-        );
-  }
-
-  /// Get all active rentals where agent payout is pending
-  Stream<List<ActiveRental>> getPendingAgentRentPayouts() {
-    return _firestore
-        .collection('active_rentals')
-        .where('agentPayoutStatus', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs
-                  .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
-                  .toList(),
-        );
-  }
-
-  /// Get all completed rent payouts (landlord or agent paid)
-  Stream<List<ActiveRental>> getCompletedRentPayouts() {
-    return _firestore
-        .collection('active_rentals')
-        .where('landlordPayoutStatus', isEqualTo: 'paid')
-        .orderBy('landlordPaidAt', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) =>
-              snapshot.docs
-                  .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
-                  .toList(),
-        );
-  }
-
-  /// Get bank details for a user (landlord or agent)
-  Future<Map<String, dynamic>?> getUserBankDetails(String userId) async {
-    try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      if (!doc.exists) return null;
-      final data = doc.data()!;
-      final bankDetails = data['bankDetails'] as Map<String, dynamic>? ?? {};
-      return {
-        'fullName': data['fullName'] ?? data['name'] ?? '',
-        'bankName': bankDetails['bankName'] ?? data['bankName'] ?? '',
-        'accountNumber':
-            bankDetails['accountNumber'] ?? data['accountNumber'] ?? '',
-        'accountName': bankDetails['accountName'] ?? data['accountName'] ?? '',
-        'phone': data['phone'] ?? '',
-      };
-    } catch (e) {
-      developer.log(
-        '❌ Error getting bank details: $e',
-        name: 'ActiveRentalService',
-      );
-      return null;
-    }
-  }
-
-  /// Admin marks landlord as paid for a rental
-  Future<bool> markLandlordPaid(String rentalId) async {
-    try {
-      final rentalDoc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = rentalDoc.data();
-      if (data == null) return false;
-
-      await _firestore.collection('active_rentals').doc(rentalId).update({
-        'landlordPayoutStatus': 'paid',
-        'landlordPaidAt': FieldValue.serverTimestamp(),
-        'landlordPaidBy': _authService.currentUserId,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Create activity for landlord
-      final landlordId = data['landlordId'];
-      if (landlordId != null) {
-        final payout = (data['landlordPayout'] ?? 0).toDouble();
-        await _firestore.collection('activities').add({
-          'landlordId': landlordId,
-          'type': 'rent_payout',
-          'title': 'Rent Payout Sent',
-          'message':
-              'Your rent payout of ₦${payout.toStringAsFixed(0)} for ${data['propertyTitle']} has been sent to your bank account.',
-          'propertyId': data['propertyId'],
-          'rentalId': rentalId,
-          'amount': payout,
-          'actorId': _authService.currentUserId,
-          'actorName': 'ClearRent Admin',
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        // Record in payments collection for documents screen
-        await _firestore
-            .collection('payments')
-            .doc('PAYOUT_LANDLORD_$rentalId')
-            .set({
-              'reference': 'PAYOUT_LANDLORD_$rentalId',
-              'userId': landlordId,
-              'type': 'rent_payout',
-              'amount': payout,
-              'status': 'completed',
-              'relatedId': rentalId,
-              'propertyId': data['propertyId'],
-              'propertyTitle': data['propertyTitle'],
-              'description': 'Rent payout for ${data['propertyTitle']}',
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-      }
-
-      return true;
-    } catch (e) {
-      developer.log(
-        '❌ Error marking landlord paid: $e',
-        name: 'ActiveRentalService',
-      );
-      return false;
-    }
-  }
-
-  /// Admin marks agent as paid for their rental cut
-  Future<bool> markAgentRentPaid(String rentalId) async {
-    try {
-      final rentalDoc =
-          await _firestore.collection('active_rentals').doc(rentalId).get();
-      final data = rentalDoc.data();
-      if (data == null) return false;
-
-      await _firestore.collection('active_rentals').doc(rentalId).update({
-        'agentPayoutStatus': 'paid',
-        'agentPaidAt': FieldValue.serverTimestamp(),
-        'agentPaidBy': _authService.currentUserId,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // Create activity for agent
-      final agentId = data['agentId'];
-      if (agentId != null) {
-        final payout = (data['agentPayout'] ?? 0).toDouble();
-        await _firestore.collection('activities').add({
-          'landlordId':
-              agentId, // activity stream uses landlordId as the owner field
-          'type': 'rent_payout',
-          'title': 'Agent Fee Payout Sent',
-          'message':
-              'Your agent fee payout of ₦${payout.toStringAsFixed(0)} for ${data['propertyTitle']} has been sent to your bank account.',
-          'propertyId': data['propertyId'],
-          'rentalId': rentalId,
-          'amount': payout,
-          'actorId': _authService.currentUserId,
-          'actorName': 'ClearRent Admin',
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        // Record in payments collection for documents screen
-        await _firestore
-            .collection('payments')
-            .doc('PAYOUT_AGENT_$rentalId')
-            .set({
-              'reference': 'PAYOUT_AGENT_$rentalId',
-              'userId': agentId,
-              'type': 'rent_payout',
-              'amount': payout,
-              'status': 'completed',
-              'relatedId': rentalId,
-              'propertyId': data['propertyId'],
-              'propertyTitle': data['propertyTitle'],
-              'description': 'Agent fee payout for ${data['propertyTitle']}',
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-      }
-
-      return true;
-    } catch (e) {
-      developer.log(
-        '❌ Error marking agent rent paid: $e',
-        name: 'ActiveRentalService',
-      );
-      return false;
     }
   }
 }

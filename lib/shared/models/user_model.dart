@@ -5,7 +5,7 @@ class UserModel {
   final String fullName;
   final String email;
   final String accountType; // 'tenant', 'landlord', or 'agent'
-  final String? bvn;
+  final String? nin;
   final String? phoneNumber;
   final String? profileImageUrl;
   final bool profileCompleted;
@@ -29,7 +29,7 @@ class UserModel {
     required this.fullName,
     required this.email,
     required this.accountType,
-    this.bvn,
+    this.nin,
     this.phoneNumber,
     this.profileImageUrl,
     this.profileCompleted = false,
@@ -54,7 +54,7 @@ class UserModel {
       fullName: json['fullName'] ?? '',
       email: json['email'] ?? '',
       accountType: json['accountType'] ?? 'tenant',
-      bvn: json['bvn'],
+      nin: json['nin'],
       phoneNumber: json['phoneNumber'],
       profileImageUrl: json['profileImageUrl'],
       profileCompleted: json['profileCompleted'] ?? false,
@@ -84,7 +84,7 @@ class UserModel {
       'fullName': fullName,
       'email': email,
       'accountType': accountType,
-      'bvn': bvn,
+      'nin': nin,
       'phoneNumber': phoneNumber,
       'profileImageUrl': profileImageUrl,
       'profileCompleted': profileCompleted,
@@ -109,7 +109,7 @@ class UserModel {
     String? fullName,
     String? email,
     String? accountType,
-    String? bvn,
+    String? nin,
     String? phoneNumber,
     String? profileImageUrl,
     bool? profileCompleted,
@@ -131,7 +131,7 @@ class UserModel {
       fullName: fullName ?? this.fullName,
       email: email ?? this.email,
       accountType: accountType ?? this.accountType,
-      bvn: bvn ?? this.bvn,
+      nin: nin ?? this.nin,
       phoneNumber: phoneNumber ?? this.phoneNumber,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       profileCompleted: profileCompleted ?? this.profileCompleted,

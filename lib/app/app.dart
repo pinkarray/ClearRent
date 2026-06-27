@@ -38,7 +38,10 @@ class ClearRentApp extends ConsumerWidget {
               isDark ? Brightness.light : Brightness.dark,
         ));
 
-        return child!;
+        return KeyedSubtree(
+          key: ValueKey(isDark),
+          child: child!,
+        );
       },
     );
   }

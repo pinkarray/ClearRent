@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/utils/app_logger.dart';
 
@@ -85,6 +87,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(() {
         _notifications = snap.docs.map((d) {
           final m = d.data();
+          final payload = m['payload'] as Map<String, dynamic>?;
+          final route = payload?['route'] as String?;
           return _InboxItem(
             id: d.id,
             kind: _ItemKind.notification,
@@ -92,6 +96,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             body: (m['body'] as String?) ?? '',
             createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
             read: (m['read'] as bool?) ?? false,
+            route: (route != null && route.isNotEmpty) ? route : null,
+            payload: payload,
           );
         }).toList();
         _hasMoreNotifications = snap.docs.length >= _notifLimit;
@@ -165,6 +171,105 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  /// Open a notification/announcement in a detail sheet: full body (no
+  /// truncation) plus a deep-link button when the payload carries a route.
+  /// Marks unread notifications read on open.
+  void _openDetail(_InboxItem item) {
+    if (item.kind == _ItemKind.notification && !item.read) {
+      _markNotificationRead(item.id);
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(item.title, style: AppTextStyles.h4),
+                const SizedBox(height: 6),
+                Text(
+                  _InboxRow._relativeTime(item.createdAt),
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textHint),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      item.body,
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.textPrimary),
+                    ),
+                  ),
+                ),
+                if (item.route != null) ...[
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        // push (not go) so the target keeps a back stack —
+                        // go replaces the stack and strands the user with a
+                        // dead back button.
+                        context.push(item.route!, extra: item.payload);
+                      },
+                      child: Text(
+                        _actionLabel(item.route!),
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Friendly label for the deep-link button, derived from the route.
+  static String _actionLabel(String route) {
+    if (route.contains('my-rentals')) return 'Go to My Rentals';
+    if (route.contains('tenant/home')) return 'Go to My Tenancy';
+    if (route.contains('inspections')) return 'View Inspections';
+    if (route.contains('chat')) return 'Open Chat';
+    if (route.contains('documents')) return 'View Documents';
+    if (route.contains('property')) return 'View Property';
+    if (route.contains('landlord/rentals')) return 'Go to My Rentals';
+    return 'View details';
+  }
+
   Future<void> _dismissAnnouncement(String id) async {
     final uid = _uid;
     if (uid == null) return;
@@ -208,40 +313,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: !_ready
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : merged.isEmpty
-              ? _buildEmptyState()
+              ? const GuidanceEmptyState(
+                  icon: Icons.notifications_none_outlined,
+                  title: 'No notifications yet',
+                  subtitle:
+                      'Announcements from ClearRent and event updates will '
+                      'appear here.',
+                )
               : _buildList(merged),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withAlpha(26),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.notifications_none_outlined,
-              size: 50,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text('No notifications yet', style: AppTextStyles.h4),
-          const SizedBox(height: 8),
-          Text(
-            'Announcements from ClearRent and event\nupdates will appear here.',
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 
@@ -270,11 +349,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         }
         return _InboxRow(
           item: items[i],
-          onTap: () {
-            if (items[i].kind == _ItemKind.notification && !items[i].read) {
-              _markNotificationRead(items[i].id);
-            }
-          },
+          onTap: () => _openDetail(items[i]),
           onDismiss: items[i].kind == _ItemKind.announcement
               ? () => _dismissAnnouncement(items[i].id)
               : null,
@@ -296,6 +371,12 @@ class _InboxItem {
   final DateTime? createdAt;
   final bool read;
   final String? announcementType;
+  // Deep-link route from the notification payload (e.g. /tenant/my-rentals).
+  // Null for announcements and notifications with no destination.
+  final String? route;
+  // Full payload, passed as go_router `extra` on navigation so param-bearing
+  // routes (e.g. /chat needs conversationId) get what they require.
+  final Map<String, dynamic>? payload;
 
   _InboxItem({
     required this.id,
@@ -305,6 +386,8 @@ class _InboxItem {
     required this.createdAt,
     required this.read,
     this.announcementType,
+    this.route,
+    this.payload,
   });
 }
 

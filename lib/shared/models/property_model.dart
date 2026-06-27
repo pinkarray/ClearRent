@@ -27,6 +27,10 @@ class PropertyModel {
   final List<String> amenities;
   final List<String> rules;
   final DateTime? createdAt;
+  final double? scheduledRent;
+  final DateTime? scheduledRentEffectiveDate;
+  final String? scheduledRentReason;
+  final int rentIncreaseCount;
   final String? landlordName;
   final String? landlordPhone;
   final double? latitude;
@@ -52,6 +56,11 @@ class PropertyModel {
   final String? ownershipDocType;   // 'c_of_o' | 'deed' | 'other'
   final String ownershipDocStatus;  // 'none' | 'pending' | 'verified' | 'rejected'
   final String? ownershipDocRejectionReason;
+
+  // Building group — non-null when this property is a unit in a multi-unit
+  // building/compound. Units inherit the building's ownership-doc verification
+  // (one C of O covers every unit of the same owner). Null = standalone listing.
+  final String? buildingId;
 
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
@@ -98,6 +107,10 @@ class PropertyModel {
     this.amenities = const [],
     this.rules = const [],
     this.createdAt,
+    this.scheduledRent,
+    this.scheduledRentEffectiveDate,
+    this.scheduledRentReason,
+    this.rentIncreaseCount = 0, 
     this.landlordName,
     this.landlordPhone,
     this.latitude,
@@ -130,7 +143,24 @@ class PropertyModel {
     this.ownershipDocType,
     this.ownershipDocStatus = 'none',
     this.ownershipDocRejectionReason,
+    this.buildingId,
   });
+
+  /// Address shown to a viewer who is NOT yet entitled to the exact address.
+  /// Area-level only: LGA, city, state — enough to judge location without
+  /// revealing the street. Used before an inspection is approved (tenant) or
+  /// before an agent is assigned.
+  String get approximateAddress {
+    final parts = <String>[];
+    if (lga.isNotEmpty) parts.add(lga);
+    if (city.isNotEmpty) parts.add(city);
+    if (state.isNotEmpty) parts.add(state);
+    return parts.isEmpty ? 'Location available after approval' : parts.join(', ');
+  }
+
+  /// Full street-level address. Only show when the viewer is entitled:
+  /// tenant with an approved inspection, assigned agent, or the owner.
+  String get exactAddress => '$address, $city, $state';
 
   // ── Pricing helpers ──
 
@@ -204,6 +234,21 @@ class PropertyModel {
   /// Renewal rent (just the base rent after the first year)
   double get renewalAmount => rent;
 
+  /// True when a future rent increase is scheduled.
+  bool get hasScheduledIncrease =>
+      scheduledRent != null && scheduledRentEffectiveDate != null;
+
+  /// The rent figure to charge/display *now*. Once the scheduled date has
+  /// passed, this returns the scheduled rent; otherwise the current rent.
+  /// Stored `rent` is never mutated — read sites opt in by calling this.
+  double get effectiveRent {
+    if (hasScheduledIncrease &&
+        !DateTime.now().isBefore(scheduledRentEffectiveDate!)) {
+      return scheduledRent!;
+    }
+    return rent;
+  }
+
   // Check if has agent
   bool get hasAgent => agentId != null && agentId!.isNotEmpty;
 
@@ -258,6 +303,10 @@ class PropertyModel {
     List<String>? amenities,
     List<String>? rules,
     DateTime? createdAt,
+    double? scheduledRent,
+    DateTime? scheduledRentEffectiveDate,
+    String? scheduledRentReason,
+    int? rentIncreaseCount,
     String? landlordName,
     String? landlordPhone,
     double? latitude,
@@ -280,6 +329,7 @@ class PropertyModel {
     String? ownershipDocType,
     String? ownershipDocStatus,
     String? ownershipDocRejectionReason,
+    String? buildingId,
     String? videoUrl,
     String? ceilingType,
     List<Map<String, dynamic>>? recurringDues,
@@ -311,6 +361,11 @@ class PropertyModel {
       amenities: amenities ?? this.amenities,
       rules: rules ?? this.rules,
       createdAt: createdAt ?? this.createdAt,
+      scheduledRent: scheduledRent ?? this.scheduledRent,
+      scheduledRentEffectiveDate:
+          scheduledRentEffectiveDate ?? this.scheduledRentEffectiveDate,
+      scheduledRentReason: scheduledRentReason ?? this.scheduledRentReason,
+      rentIncreaseCount: rentIncreaseCount ?? this.rentIncreaseCount,
       landlordName: landlordName ?? this.landlordName,
       landlordPhone: landlordPhone ?? this.landlordPhone,
       latitude: latitude ?? this.latitude,
@@ -336,6 +391,7 @@ class PropertyModel {
       ownershipDocType: ownershipDocType ?? this.ownershipDocType,
       ownershipDocStatus: ownershipDocStatus ?? this.ownershipDocStatus,
       ownershipDocRejectionReason: ownershipDocRejectionReason ?? this.ownershipDocRejectionReason,
+      buildingId: buildingId ?? this.buildingId,
     );
   }
 
@@ -376,8 +432,12 @@ class PropertyModel {
       isVerified: json['isVerified'] ?? false,
       amenities: List<String>.from(json['amenities'] ?? []),
       rules: List<String>.from(json['rules'] ?? []),
-      createdAt:
-          json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      createdAt: _dateFromJson(json['createdAt']),
+      scheduledRent: (json['scheduledRent'] as num?)?.toDouble(),
+      scheduledRentEffectiveDate:
+          _dateFromJson(json['scheduledRentEffectiveDate']),
+      scheduledRentReason: json['scheduledRentReason'] as String?,
+      rentIncreaseCount: (json['rentIncreaseCount'] as num?)?.toInt() ?? 0,
       landlordName: json['landlordName'],
       landlordPhone: json['landlordPhone'],
       latitude: (json['latitude'] as num?)?.toDouble(),
@@ -419,7 +479,21 @@ class PropertyModel {
       ownershipDocType: json['ownershipDocType'] as String?,
       ownershipDocStatus: json['ownershipDocStatus'] as String? ?? 'none',
       ownershipDocRejectionReason: json['ownershipDocRejectionReason'] as String?,
+      buildingId: json['buildingId'] as String?,
     );
+  }
+
+  /// Tolerant date parse for [fromJson]. Date fields can arrive as a Firestore
+  /// Timestamp (raw Firestore stream data), an ISO-8601 String (already
+  /// normalised JSON), or an existing DateTime. DateTime.parse only handles the
+  /// String case — feeding it a Timestamp (e.g. scheduledRentEffectiveDate
+  /// written by the approveRentReview CF) threw and broke property loading.
+  static DateTime? _dateFromJson(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   // From Firestore document
@@ -451,6 +525,11 @@ class PropertyModel {
       amenities: List<String>.from(data['amenities'] ?? []),
       rules: List<String>.from(data['rules'] ?? []),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      scheduledRent: (data['scheduledRent'] as num?)?.toDouble(),
+      scheduledRentEffectiveDate:
+          (data['scheduledRentEffectiveDate'] as Timestamp?)?.toDate(),
+      scheduledRentReason: data['scheduledRentReason'] as String?,
+      rentIncreaseCount: (data['rentIncreaseCount'] as num?)?.toInt() ?? 0,
       landlordName: data['landlordName'],
       landlordPhone: data['landlordPhone'],
       latitude: (data['latitude'] as num?)?.toDouble(),
@@ -492,6 +571,7 @@ class PropertyModel {
       ownershipDocType: data['ownershipDocType'] as String?,
       ownershipDocStatus: data['ownershipDocStatus'] as String? ?? 'none',
       ownershipDocRejectionReason: data['ownershipDocRejectionReason'] as String?,
+      buildingId: data['buildingId'] as String?,
     );
   }
 
@@ -524,6 +604,13 @@ class PropertyModel {
       'amenities': amenities,
       'rules': rules,
       'createdAt': createdAt?.toIso8601String(),
+      if (scheduledRent != null) 'scheduledRent': scheduledRent,
+      if (scheduledRentEffectiveDate != null)
+        'scheduledRentEffectiveDate':
+            scheduledRentEffectiveDate!.toIso8601String(),
+      if (scheduledRentReason != null)
+        'scheduledRentReason': scheduledRentReason,
+      'rentIncreaseCount': rentIncreaseCount,
       'landlordName': landlordName,
       'landlordPhone': landlordPhone,
       'latitude': latitude,
@@ -549,6 +636,7 @@ class PropertyModel {
       'ownershipDocType': ownershipDocType,
       'ownershipDocStatus': ownershipDocStatus,
       if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
+      if (buildingId != null) 'buildingId': buildingId,
     };
   }
 
@@ -583,6 +671,13 @@ class PropertyModel {
           createdAt != null
               ? Timestamp.fromDate(createdAt!)
               : FieldValue.serverTimestamp(),
+      if (scheduledRent != null) 'scheduledRent': scheduledRent,
+      if (scheduledRentEffectiveDate != null)
+        'scheduledRentEffectiveDate':
+            Timestamp.fromDate(scheduledRentEffectiveDate!),
+      if (scheduledRentReason != null)
+        'scheduledRentReason': scheduledRentReason,
+      'rentIncreaseCount': rentIncreaseCount,
       'landlordName': landlordName,
       'landlordPhone': landlordPhone,
       'latitude': latitude,
@@ -608,6 +703,7 @@ class PropertyModel {
       if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
       'ownershipDocStatus': ownershipDocStatus,
       if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
+      if (buildingId != null) 'buildingId': buildingId,
     };
   }
 }

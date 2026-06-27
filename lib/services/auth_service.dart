@@ -2,8 +2,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'dart:io';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'property_service.dart';
+import 'notification_service.dart';
+import '../core/utils/phone_utils.dart';
 
 class AuthService {
   // Use singleton instances directly - Firebase is already initialized in main.dart
@@ -40,7 +44,7 @@ class AuthService {
     int? forceResendingToken,
   }) async {
     try {
-      developer.log('📱 Sending OTP to $phoneNumber');
+      if (kDebugMode) developer.log('Sending OTP to $phoneNumber');
 
       final completer = PhoneAuthCompleter();
 
@@ -51,30 +55,41 @@ class AuthService {
         verificationCompleted: (PhoneAuthCredential credential) async {
           // Auto-verification (e.g., on Android with SMS retriever)
           developer.log('✅ Phone auto-verified');
-          completer.complete(PhoneAuthResult(
-            success: true,
-            autoVerified: true,
-            credential: credential,
-          ));
+          completer.complete(
+            PhoneAuthResult(
+              success: true,
+              autoVerified: true,
+              credential: credential,
+            ),
+          );
         },
         verificationFailed: (FirebaseAuthException e) {
-          developer.log('❌ Phone verification failed: ${e.code} - ${e.message}');
-          completer.complete(PhoneAuthResult(
-            success: false,
-            error: _getPhoneErrorMessage(e.code),
-          ));
+          developer.log(
+            '❌ Phone verification failed: ${e.code} - ${e.message}',
+          );
+          completer.complete(
+            PhoneAuthResult(
+              success: false,
+              error: _getPhoneErrorMessage(e.code),
+            ),
+          );
         },
         codeSent: (String verificationId, int? resendToken) {
-          developer.log('📨 OTP code sent. verificationId: $verificationId');
+          if (kDebugMode) {
+            developer.log('OTP code sent. verificationId: $verificationId');
+          }
           _verificationId = verificationId;
           _resendToken = resendToken;
-          completer.complete(PhoneAuthResult(
-            success: true,
-            verificationId: verificationId,
-          ));
+          completer.complete(
+            PhoneAuthResult(success: true, verificationId: verificationId),
+          );
         },
         codeAutoRetrievalTimeout: (String verificationId) {
-          developer.log('⏱️ Auto-retrieval timeout. verificationId: $verificationId');
+          if (kDebugMode) {
+            developer.log(
+              'Auto-retrieval timeout. verificationId: $verificationId',
+            );
+          }
           _verificationId = verificationId;
           // Don't complete here — codeSent already did
         },
@@ -111,7 +126,9 @@ class AuthService {
       final user = userCredential.user;
       final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
 
-      developer.log('✅ Phone sign-in successful. uid=${user?.uid}, isNew=$isNew');
+      developer.log(
+        '✅ Phone sign-in successful. uid=${user?.uid}, isNew=$isNew',
+      );
 
       // Check if user has completed profile
       bool hasProfile = false;
@@ -127,10 +144,7 @@ class AuthService {
       );
     } on FirebaseAuthException catch (e) {
       developer.log('❌ OTP verification failed: ${e.code} - ${e.message}');
-      return AuthResult(
-        success: false,
-        error: _getPhoneErrorMessage(e.code),
-      );
+      return AuthResult(success: false, error: _getPhoneErrorMessage(e.code));
     } catch (e) {
       developer.log('❌ OTP verification error: $e');
       return AuthResult(
@@ -181,7 +195,7 @@ class AuthService {
       return AuthResult(success: true, user: currentUser);
     } on FirebaseAuthException catch (e) {
       developer.log('❌ Phone link failed: ${e.code} - ${e.message}');
-      
+
       // Handle "already linked" case
       if (e.code == 'credential-already-in-use') {
         return AuthResult(
@@ -189,11 +203,8 @@ class AuthService {
           error: 'This phone number is already linked to another account.',
         );
       }
-      
-      return AuthResult(
-        success: false,
-        error: _getPhoneErrorMessage(e.code),
-      );
+
+      return AuthResult(success: false, error: _getPhoneErrorMessage(e.code));
     } catch (e) {
       developer.log('❌ Phone link error: $e');
       return AuthResult(
@@ -204,7 +215,9 @@ class AuthService {
   }
 
   /// Auto-sign-in with credential (for auto-verified phones)
-  Future<AuthResult> signInWithCredential(PhoneAuthCredential credential) async {
+  Future<AuthResult> signInWithCredential(
+    PhoneAuthCredential credential,
+  ) async {
     try {
       final userCredential = await _auth.signInWithCredential(credential);
       final user = userCredential.user;
@@ -247,7 +260,11 @@ class AuthService {
         );
       }
 
-      developer.log('🔗 Linking email $email to phone account (uid=${currentUser!.uid})...');
+      if (kDebugMode) {
+        developer.log(
+          'Linking email $email to phone account (uid=${currentUser!.uid})...',
+        );
+      }
 
       final credential = EmailAuthProvider.credential(
         email: email,
@@ -273,7 +290,8 @@ class AuthService {
       if (e.code == 'email-already-in-use') {
         return AuthResult(
           success: false,
-          error: 'This email is already registered to another account. Please use a different email.',
+          error:
+              'This email is already registered to another account. Please use a different email.',
         );
       }
       if (e.code == 'provider-already-linked') {
@@ -300,10 +318,7 @@ class AuthService {
         );
       }
 
-      return AuthResult(
-        success: false,
-        error: _getErrorMessage(e.code),
-      );
+      return AuthResult(success: false, error: _getErrorMessage(e.code));
     } catch (e) {
       developer.log('❌ Email link error: $e');
       return AuthResult(
@@ -454,11 +469,15 @@ class AuthService {
   Future<Map<String, dynamic>?> getUserProfile() async {
     try {
       if (currentUser == null) {
-        developer.log('⚠️ getUserProfile: No current user', name: 'AuthService');
+        developer.log(
+          '⚠️ getUserProfile: No current user',
+          name: 'AuthService',
+        );
         return null;
       }
 
-      final doc = await _firestore.collection('users').doc(currentUser!.uid).get();
+      final doc =
+          await _firestore.collection('users').doc(currentUser!.uid).get();
       return doc.data();
     } catch (e) {
       developer.log(
@@ -480,10 +499,7 @@ class AuthService {
     try {
       if (currentUser == null) return;
       await _firestore.collection('users').doc(currentUser!.uid).set({
-        'profileDraft': {
-          ...draft,
-          'savedAt': FieldValue.serverTimestamp(),
-        },
+        'profileDraft': {...draft, 'savedAt': FieldValue.serverTimestamp()},
       }, SetOptions(merge: true));
       developer.log('💾 Profile draft saved', name: 'AuthService');
     } catch (e) {
@@ -495,10 +511,8 @@ class AuthService {
   Future<Map<String, dynamic>?> getProfileDraft() async {
     try {
       if (currentUser == null) return null;
-      final doc = await _firestore
-          .collection('users')
-          .doc(currentUser!.uid)
-          .get();
+      final doc =
+          await _firestore.collection('users').doc(currentUser!.uid).get();
       final data = doc.data();
       if (data == null) return null;
       // Only return draft if profile isn't completed yet
@@ -528,7 +542,6 @@ class AuthService {
     required String fullName,
     required String email,
     required String accountType,
-    String? bvn,
     String? phone,
     // Agent-specific fields
     String? baseLocation,
@@ -546,7 +559,10 @@ class AuthService {
   }) async {
     try {
       if (currentUser == null) {
-        developer.log('❌ saveUserProfile: No current user', name: 'AuthService');
+        developer.log(
+          '❌ saveUserProfile: No current user',
+          name: 'AuthService',
+        );
         return false;
       }
 
@@ -556,20 +572,21 @@ class AuthService {
         'fullNameLower': fullName.toLowerCase(), // for tenant name search
         'email': email,
         'accountType': accountType,
-        'bvn': bvn,
         'profileCompleted': true,
         'emailVerified': currentUser!.emailVerified,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // Add phone for landlords and agents
+      // Add phone for landlords and agents (normalize to E.164)
       if (phone != null && phone.isNotEmpty) {
-        data['phone'] = phone;
+        final normalized = phoneToE164(phone);
+        if (normalized != null) data['phone'] = normalized;
       }
 
       // If user signed in with phone, store the phone number
-      if (currentUser!.phoneNumber != null && currentUser!.phoneNumber!.isNotEmpty) {
+      if (currentUser!.phoneNumber != null &&
+          currentUser!.phoneNumber!.isNotEmpty) {
         data['phone'] = currentUser!.phoneNumber;
         data['phoneVerified'] = true;
       }
@@ -694,10 +711,63 @@ class AuthService {
     }
   }
 
+  // ============ BANK DETAILS (C1 — locked subcollection) ============
+  // Bank details are sensitive (account number/name) and must NOT live on the
+  // user doc, which is readable by any authenticated user. They live in
+  // `users/{uid}/private/bank`, readable only by the owner + admin (firestore
+  // rules). A non-sensitive `hasBankDetails` flag stays on the user doc so the
+  // home-screen "set up your bank" nudges don't need to read the subcollection.
+
+  /// Save the owner's bank details to the locked private subcollection and
+  /// flip the `hasBankDetails` flag on the user doc.
+  Future<bool> saveBankDetails(Map<String, dynamic> bank) async {
+    try {
+      if (currentUser == null) return false;
+      final uid = currentUser!.uid;
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('private')
+          .doc('bank')
+          .set({...bank, 'updatedAt': FieldValue.serverTimestamp()},
+              SetOptions(merge: true));
+      await _firestore.collection('users').doc(uid).update({
+        'hasBankDetails': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Bank details saved (private/bank)', name: 'AuthService');
+      return true;
+    } catch (e) {
+      developer.log('❌ Failed to save bank details: $e',
+          name: 'AuthService', error: e);
+      return false;
+    }
+  }
+
+  /// Read the owner's bank details from the locked private subcollection.
+  Future<Map<String, dynamic>?> getBankDetails() async {
+    try {
+      if (currentUser == null) return null;
+      final doc = await _firestore
+          .collection('users')
+          .doc(currentUser!.uid)
+          .collection('private')
+          .doc('bank')
+          .get();
+      return doc.data();
+    } catch (e) {
+      developer.log('⚠️ getBankDetails failed: $e', name: 'AuthService');
+      return null;
+    }
+  }
+
   Future<String?> uploadProfileImage(File imageFile) async {
     try {
       if (currentUser == null) {
-        developer.log('❌ uploadProfileImage: No current user', name: 'AuthService');
+        developer.log(
+          '❌ uploadProfileImage: No current user',
+          name: 'AuthService',
+        );
         return null;
       }
 
@@ -706,7 +776,10 @@ class AuthService {
       final imageUrl = await _propertyService.uploadImage(imageFile);
 
       if (imageUrl == null || imageUrl.isEmpty) {
-        developer.log('❌ Profile image upload returned null', name: 'AuthService');
+        developer.log(
+          '❌ Profile image upload returned null',
+          name: 'AuthService',
+        );
         return null;
       }
 
@@ -718,7 +791,11 @@ class AuthService {
       developer.log('✅ Profile image uploaded: $imageUrl', name: 'AuthService');
       return imageUrl;
     } catch (e) {
-      developer.log('❌ Profile image upload failed: $e', name: 'AuthService', error: e);
+      developer.log(
+        '❌ Profile image upload failed: $e',
+        name: 'AuthService',
+        error: e,
+      );
       return null;
     }
   }
@@ -729,7 +806,10 @@ class AuthService {
       final doc = await _firestore.collection('users').doc(userId).get();
       return doc.data()?['profileImageUrl'];
     } catch (e) {
-      developer.log('❌ Error getting user profile image: $e', name: 'AuthService');
+      developer.log(
+        '❌ Error getting user profile image: $e',
+        name: 'AuthService',
+      );
       return null;
     }
   }
@@ -747,7 +827,11 @@ class AuthService {
       developer.log('✅ Profile image removed', name: 'AuthService');
       return true;
     } catch (e) {
-      developer.log('❌ Error removing profile image: $e', name: 'AuthService', error: e);
+      developer.log(
+        '❌ Error removing profile image: $e',
+        name: 'AuthService',
+        error: e,
+      );
       return false;
     }
   }
@@ -757,6 +841,18 @@ class AuthService {
     try {
       _verificationId = null;
       _resendToken = null;
+      // Remove FCM token while still authenticated, so the write
+      // passes Firestore rules. Otherwise the token lingers on the
+      // user's doc and they keep receiving pushes meant for the
+      // previous account on this device.
+      try {
+        await NotificationService.instance.removeTokenBeforeLogout();
+      } catch (e) {
+        developer.log(
+          '⚠️ FCM token cleanup failed (continuing with signOut): $e',
+          name: 'AuthService',
+        );
+      }
       await _auth.signOut();
       developer.log('✅ Signed out successfully', name: 'AuthService');
     } catch (e) {
@@ -776,31 +872,73 @@ class AuthService {
     required String password,
   }) async {
     try {
-      developer.log('📱 Looking up email for phone: $phoneNumber', name: 'AuthService');
-
-      // Query Firestore for user with this phone number
-      final query = await _firestore
-          .collection('users')
-          .where('phone', isEqualTo: phoneNumber)
-          .limit(1)
-          .get();
-
-      if (query.docs.isEmpty) {
-        return AuthResult(
-          success: false,
-          error: 'No account found with this phone number. Please sign up.',
+      if (kDebugMode) {
+        developer.log(
+          'Looking up email for phone: $phoneNumber',
+          name: 'AuthService',
         );
       }
 
-      final email = query.docs.first.data()['email'] as String?;
-      if (email == null || email.isEmpty) {
-        return AuthResult(
-          success: false,
-          error: 'No email linked to this account. Please contact support.',
+      // Look up email via Cloud Function. Replaces a direct Firestore query
+      // that previously required an unauthenticated `allow list: if true`
+      // rule on /users (security audit F1.1). The CF rate-limits per IP.
+      final String email;
+      try {
+        final callable = FirebaseFunctions.instance.httpsCallable(
+          'lookupEmailByPhone',
         );
+        final result = await callable.call<Map<String, dynamic>>({
+          'phone': phoneNumber,
+        });
+        final value = result.data['email'];
+        if (value is! String || value.isEmpty) {
+          return AuthResult(
+            success: false,
+            error: 'Sign in failed. Please try again.',
+          );
+        }
+        email = value;
+      } on FirebaseFunctionsException catch (e) {
+        switch (e.code) {
+          case 'not-found':
+            return AuthResult(
+              success: false,
+              error: 'No account found with this phone number. Please sign up.',
+            );
+          case 'failed-precondition':
+            return AuthResult(
+              success: false,
+              error: 'No email linked to this account. Please contact support.',
+            );
+          case 'invalid-argument':
+            return AuthResult(
+              success: false,
+              error: 'Please enter a valid phone number.',
+            );
+          case 'resource-exhausted':
+            return AuthResult(
+              success: false,
+              error:
+                  'Too many attempts. Please wait a few minutes and try again.',
+            );
+          default:
+            debugPrint(
+              'lookupEmailByPhone failed: '
+              'code=${e.code} message=${e.message} details=${e.details}',
+            );
+            return AuthResult(
+              success: false,
+              error: 'Sign in failed. Please try again.',
+            );
+        }
       }
 
-      developer.log('✅ Found email: $email, signing in...', name: 'AuthService');
+      if (kDebugMode) {
+        developer.log(
+          '✅ Found email: $email, signing in...',
+          name: 'AuthService',
+        );
+      }
 
       // Sign in with the looked-up email + provided password
       return await signIn(email: email, password: password);
@@ -864,158 +1002,51 @@ class AuthService {
 
   /// Permanently deletes the current user's account and all associated data.
   /// Returns an error message on failure, or null on success.
+  ///
+  /// Delegates to the `deleteMyAccount` Cloud Function, which removes the
+  /// Firestore data AND the auth account server-side with the admin SDK. This
+  /// avoids the re-auth requirement of a client-side `currentUser.delete()`
+  /// (which phone-OTP users could never satisfy) and the half-deleted-account
+  /// risk of deleting data before the auth record.
   Future<String?> deleteAccount() async {
     final uid = currentUserId;
     if (uid == null) return 'Not logged in';
 
     try {
-      developer.log('🗑️ Starting account deletion for $uid', name: 'AuthService');
+      developer.log(
+        '🗑️ Requesting server-side account deletion for $uid',
+        name: 'AuthService',
+      );
 
-      // 1. Delete user's properties
-      final propertiesSnap = await _firestore
-          .collection('properties')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in propertiesSnap.docs) {
-        await doc.reference.delete();
-      }
+      final callable =
+          FirebaseFunctions.instanceFor(region: 'us-central1')
+              .httpsCallable('deleteMyAccount');
+      await callable.call<Map<String, dynamic>>();
 
-      // 2. Delete activities (both userId and landlordId fields)
-      final activitiesSnap1 = await _firestore
-          .collection('activities')
-          .where('userId', isEqualTo: uid)
-          .get();
-      for (final doc in activitiesSnap1.docs) {
-        await doc.reference.delete();
-      }
-      final activitiesSnap2 = await _firestore
-          .collection('activities')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in activitiesSnap2.docs) {
-        await doc.reference.delete();
-      }
+      developer.log(
+        '✅ Account deleted server-side for $uid',
+        name: 'AuthService',
+      );
 
-      // 3. Delete active rentals
-      final rentalsSnap1 = await _firestore
-          .collection('active_rentals')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in rentalsSnap1.docs) {
-        await doc.reference.delete();
-      }
-      final rentalsSnap2 = await _firestore
-          .collection('active_rentals')
-          .where('tenantId', isEqualTo: uid)
-          .get();
-      for (final doc in rentalsSnap2.docs) {
-        await doc.reference.delete();
-      }
+      // The auth account is gone — clear the local session so the app routes
+      // back to login. The user is already deleted, so this can't fail
+      // meaningfully; swallow any error.
+      try {
+        await _auth.signOut();
+      } catch (_) {}
 
-      // 4. Delete tenancy links
-      final linksSnap1 = await _firestore
-          .collection('tenancy_links')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in linksSnap1.docs) {
-        await doc.reference.delete();
-      }
-      final linksSnap2 = await _firestore
-          .collection('tenancy_links')
-          .where('tenantId', isEqualTo: uid)
-          .get();
-      for (final doc in linksSnap2.docs) {
-        await doc.reference.delete();
-      }
-
-      // 5. Delete verification requests
-      final verSnap = await _firestore
-          .collection('verification_requests')
-          .where('userId', isEqualTo: uid)
-          .get();
-      for (final doc in verSnap.docs) {
-        await doc.reference.delete();
-      }
-
-      // 6. Delete inspection requests (as tenant or landlord)
-      final inspSnap1 = await _firestore
-          .collection('inspection_requests')
-          .where('tenantId', isEqualTo: uid)
-          .get();
-      for (final doc in inspSnap1.docs) {
-        await doc.reference.delete();
-      }
-      final inspSnap2 = await _firestore
-          .collection('inspection_requests')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in inspSnap2.docs) {
-        await doc.reference.delete();
-      }
-
-      // 7. Delete conversations and their messages
-      final convSnap = await _firestore
-          .collection('conversations')
-          .where('participants', arrayContains: uid)
-          .get();
-      for (final doc in convSnap.docs) {
-        final messagesSnap = await doc.reference.collection('messages').get();
-        for (final msgDoc in messagesSnap.docs) {
-          await msgDoc.reference.delete();
-        }
-        await doc.reference.delete();
-      }
-
-      // 8. Delete payments
-      final paySnap = await _firestore
-          .collection('payments')
-          .where('userId', isEqualTo: uid)
-          .get();
-      for (final doc in paySnap.docs) {
-        await doc.reference.delete();
-      }
-
-      // 9. Delete issues
-      final issuesSnap1 = await _firestore
-          .collection('issues')
-          .where('tenantId', isEqualTo: uid)
-          .get();
-      for (final doc in issuesSnap1.docs) {
-        await doc.reference.delete();
-      }
-      final issuesSnap2 = await _firestore
-          .collection('issues')
-          .where('landlordId', isEqualTo: uid)
-          .get();
-      for (final doc in issuesSnap2.docs) {
-        await doc.reference.delete();
-      }
-
-      // 10. Delete notifications
-      final notifSnap = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: uid)
-          .get();
-      for (final doc in notifSnap.docs) {
-        await doc.reference.delete();
-      }
-
-      // 11. Delete the user document itself
-      await _firestore.collection('users').doc(uid).delete();
-
-      developer.log('✅ All Firestore data deleted for $uid', name: 'AuthService');
-
-      // 12. Delete Firebase Auth account (must be last)
-      await _auth.currentUser?.delete();
-
-      developer.log('✅ Firebase Auth account deleted for $uid', name: 'AuthService');
       return null; // Success
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        return 'requires-recent-login';
+    } on FirebaseFunctionsException catch (e) {
+      developer.log(
+        '❌ deleteMyAccount failed: ${e.code} ${e.message}',
+        name: 'AuthService',
+      );
+      if (e.code == 'unauthenticated') {
+        return 'Your session expired. Please sign in again and retry.';
       }
-      developer.log('❌ Auth error deleting account: ${e.code}', name: 'AuthService');
-      return 'Failed to delete account: ${e.message}';
+      // Surface the server's reason (e.g. the active-tenancy / inspection
+      // block) so the user knows what to resolve — nothing was deleted.
+      return e.message ?? 'Failed to delete account. Please try again.';
     } catch (e) {
       developer.log('❌ Error deleting account: $e', name: 'AuthService');
       return 'Failed to delete account. Please try again.';

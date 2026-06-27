@@ -43,3 +43,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Stray nested folder created by accident (cloudinary node_modules) — junk
+functions/functions/
+
+# Service account keys — never commit
+serviceAccountKey*.json
+**/serviceAccountKey*.json
+
+# Android signing — never commit
+*.jks
+*.keystore
+key.properties
+**/key.properties

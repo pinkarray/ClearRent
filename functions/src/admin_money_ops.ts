@@ -8,22 +8,35 @@
  *   markInspectionAgentPayoutPaid
  *     Flips agentPayoutStatus on inspection_requests/{id}.
  *     Amount source: agentEarnings on the doc.
+ *     Side-effects (post-W5): shifts handler's pendingEarnings →
+ *     paidEarnings on their user doc (inside tx); writes a
+ *     `payout_received` activity and a
+ *     `payments/PAYOUT_INSPECTION_{requestId}` receipt (post-commit).
  *
  *   markRentLandlordPayoutPaid
  *     Flips landlordPayoutStatus on active_rentals/{id}.
  *     Amount source: landlordPayout on the doc.
+ *     Side-effects (post-W5): writes a `rent_payout` activity and
+ *     a `payments/PAYOUT_LANDLORD_{id}` receipt (post-commit).
  *
  *   markRentAgentCommissionPaid
  *     Flips agentPayoutStatus on active_rentals/{id}.
  *     Amount source: agentPayout on the doc.
+ *     Side-effects (post-W5): writes a `rent_payout` activity and
+ *     a `payments/PAYOUT_AGENT_{id}` receipt (post-commit). Skipped
+ *     if agentId is null (no agent on the rental).
  *
  *   markRefundPaid
  *     Flips status on refunds/{id}.
  *     Amount source: amount on the doc.
  *
  * Design notes:
- *   - Each function runs in a Firestore transaction to prevent two
- *     admins from double-marking the same payout.
+ *   - Each function runs a Firestore transaction for the money state.
+ *     Money writes (status flips + earnings counter shifts) all happen
+ *     inside the transaction; display docs (activities, payment
+ *     receipts) are written after commit. Rationale: a failed receipt
+ *     write should not roll back a real payout that's already been
+ *     transferred. Receipt failures are logged loudly.
  *   - Status-transition guard inside the transaction blocks doc:pending
  *     -> paid only. Replays / double-clicks fail with failed-precondition.
  *   - Audit log write happens AFTER the transaction commits. If the
@@ -32,17 +45,17 @@
  *   - Field naming is inconsistent across collections (agentEarnings vs
  *     agentPayout). We tolerate this here rather than renaming, since
  *     a rename would require a data migration.
+ *   - Receipt docs use deterministic IDs (PAYOUT_LANDLORD_{id} /
+ *     PAYOUT_AGENT_{id}) and .create() so a re-fire of a CF that
+ *     somehow gets past the status guard won't double-write a receipt.
  */
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
-import {
-  assertAdmin,
-  guardStatusTransition,
-  writeAuditLog,
-} from "./admin_helpers";
+import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpers";
+import {writeNotificationOnce} from "./notification_helpers";
 
 interface MarkPaidInput {
   docId?: unknown;
@@ -124,9 +137,31 @@ function readAmount(
   return raw;
 }
 
+/**
+ * Read an optional string from a doc snapshot. Returns null if missing
+ * or non-string. Used for display-only fields (propertyTitle, etc) that
+ * are nice-to-have on activities/receipts but not blocking.
+ */
+function readOptionalString(
+  data: FirebaseFirestore.DocumentData,
+  fieldName: string,
+): string | null {
+  const raw = data[fieldName];
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
 // ============================================================
 // 1. Inspection agent payout — flips agentPayoutStatus on
 //    inspection_requests/{id}.
+//
+// In-tx side effect (W5): also shifts the handler's earnings counters
+// (pendingEarnings → paidEarnings) on their user doc. Handler is the
+// agent if agent-handled, else the landlord (self-handled). This is
+// the only money side-effect of the three rent/inspection CFs — the
+// rest are display docs.
+//
+// Post-commit side effect: writes a `payout_received` activity so
+// the handler sees it in their feed. Activity write is best-effort.
 // ============================================================
 export const markInspectionAgentPayoutPaid = onCall(
   callableOptions,
@@ -138,42 +173,141 @@ export const markInspectionAgentPayoutPaid = onCall(
     const db = getFirestore();
     const ref = db.collection("inspection_requests").doc(input.docId);
 
-    const amount = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) {
-        throw new HttpsError(
-          "not-found",
-          `inspection_requests/${input.docId} not found.`,
+    interface InspectionPayoutSideEffect {
+      amount: number;
+      handlerId: string | null;
+      propertyId: string | null;
+      propertyTitle: string | null;
+    }
+
+    const sideEffect = await db.runTransaction<InspectionPayoutSideEffect>(
+      async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) {
+          throw new HttpsError(
+            "not-found",
+            `inspection_requests/${input.docId} not found.`,
+          );
+        }
+        const data = snap.data()!;
+        guardStatusTransition(
+          data.agentPayoutStatus,
+          "pending",
+          "agentPayoutStatus",
         );
-      }
-      const data = snap.data()!;
-      guardStatusTransition(
-        data.agentPayoutStatus,
-        "pending",
-        "agentPayoutStatus",
-      );
-      const amt = readAmount(data, "agentEarnings");
+        const amt = readAmount(data, "agentEarnings");
 
-      tx.update(ref, {
-        agentPayoutStatus: "paid",
-        agentPaidAt: FieldValue.serverTimestamp(),
-        agentPaidBy: adminUid,
-        agentPaymentReference: input.paymentReference,
-        agentPaymentNote: input.paymentNote,
+        const agentId = data.agentId as string | null | undefined;
+        const landlordId = data.landlordId as string | undefined;
+        const handlerId = agentId ?? landlordId ?? null;
+
+        // Earnings shift on handler's user doc — IN the transaction
+        // so a failure rolls back the status flip too. This is money
+        // state, not a display doc.
+        if (handlerId !== null) {
+          const handlerRef = db.collection("users").doc(handlerId);
+          tx.update(handlerRef, {
+            pendingEarnings: FieldValue.increment(-amt),
+            paidEarnings: FieldValue.increment(amt),
+          });
+        } else {
+          // Should never happen — an inspection_request with no
+          // agentId AND no landlordId is malformed. Log and proceed
+          // with the status flip rather than crashing the admin
+          // operation; the absence of a handler means no earnings
+          // to shift anyway.
+          logger.error(
+            "Inspection payout has neither agentId nor landlordId",
+            {docId: input.docId},
+          );
+        }
+
+        tx.update(ref, {
+          agentPayoutStatus: "paid",
+          agentPaidAt: FieldValue.serverTimestamp(),
+          agentPaidBy: adminUid,
+          agentPaymentReference: input.paymentReference,
+          agentPaymentNote: input.paymentNote,
+        });
+
+        return {
+          amount: amt,
+          handlerId,
+          propertyId: readOptionalString(data, "propertyId"),
+          propertyTitle: readOptionalString(data, "propertyTitle"),
+        };
       });
-
-      return amt;
-    });
 
     const auditLogId = await writeAuditLog({
       actorId: adminUid,
       action: "mark_inspection_agent_payout_paid",
       targetCollection: "inspection_requests",
       targetId: input.docId,
-      amount,
+      amount: sideEffect.amount,
       paymentReference: input.paymentReference,
-      paymentNote: input.paymentNote ?? undefined,
+      ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
     });
+
+    // Post-commit: write the activity + payment receipt. Best-effort —
+    // log on failure. Both are display-only docs and a failed write
+    // should not undo the (already-real) money flip.
+    if (sideEffect.handlerId !== null) {
+      const propertyTitle = sideEffect.propertyTitle ?? "your property";
+
+      try {
+        await db.collection("activities").add({
+          userId: sideEffect.handlerId,
+          type: "payout_received",
+          title: "Payment Received",
+          message:
+            `You've been paid ₦${sideEffect.amount.toFixed(0)} for ` +
+            `inspection at ${propertyTitle}`,
+          relatedId: input.docId,
+          propertyId: sideEffect.propertyId,
+          actorId: adminUid,
+          actorName: "ClearRent Admin",
+          isRead: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        logger.error("payout_received activity write failed", {
+          docId: input.docId,
+          handlerId: sideEffect.handlerId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      // Payment receipt — surfaces on the handler's Documents screen.
+      // Deterministic ID + .create() so a duplicate trigger is a no-op.
+      const receiptDocId = `PAYOUT_INSPECTION_${input.docId}`;
+      try {
+        await db.collection("payments").doc(receiptDocId).create({
+          reference: receiptDocId,
+          userId: sideEffect.handlerId,
+          type: "inspection_payout",
+          amount: sideEffect.amount,
+          status: "completed",
+          relatedId: input.docId,
+          propertyId: sideEffect.propertyId,
+          propertyTitle: sideEffect.propertyTitle,
+          description: `Inspection payout for ${propertyTitle}`,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        const code = (err as {code?: unknown})?.code;
+        if (code === 6 || code === "already-exists") {
+          logger.info("Inspection payout receipt already exists, skipping", {
+            receiptDocId,
+          });
+        } else {
+          logger.error("Inspection payout receipt write failed", {
+            docId: input.docId,
+            receiptDocId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
 
     return {success: true, auditLogId};
   },
@@ -182,6 +316,10 @@ export const markInspectionAgentPayoutPaid = onCall(
 // ============================================================
 // 2. Rent landlord payout — flips landlordPayoutStatus on
 //    active_rentals/{id}.
+//
+// Post-commit side effects (W5): writes a `rent_payout` activity and
+// a `payments/PAYOUT_LANDLORD_{rentalId}` receipt so the payout shows
+// in the landlord's Documents screen. Both best-effort.
 // ============================================================
 export const markRentLandlordPayoutPaid = onCall(
   callableOptions,
@@ -193,41 +331,69 @@ export const markRentLandlordPayoutPaid = onCall(
     const db = getFirestore();
     const ref = db.collection("active_rentals").doc(input.docId);
 
-    const amount = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) {
-        throw new HttpsError(
-          "not-found",
-          `active_rentals/${input.docId} not found.`,
+    interface RentPayoutSideEffect {
+      amount: number;
+      beneficiaryId: string | null;
+      propertyId: string | null;
+      propertyTitle: string | null;
+    }
+
+    const sideEffect = await db.runTransaction<RentPayoutSideEffect>(
+      async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) {
+          throw new HttpsError(
+            "not-found",
+            `active_rentals/${input.docId} not found.`,
+          );
+        }
+        const data = snap.data()!;
+        guardStatusTransition(
+          data.landlordPayoutStatus,
+          "pending",
+          "landlordPayoutStatus",
         );
-      }
-      const data = snap.data()!;
-      guardStatusTransition(
-        data.landlordPayoutStatus,
-        "pending",
-        "landlordPayoutStatus",
-      );
-      const amt = readAmount(data, "landlordPayout");
+        const amt = readAmount(data, "landlordPayout");
 
-      tx.update(ref, {
-        landlordPayoutStatus: "paid",
-        landlordPaidAt: FieldValue.serverTimestamp(),
-        landlordPaidBy: adminUid,
-        landlordPaymentReference: input.paymentReference,
-        landlordPaymentNote: input.paymentNote,
+        tx.update(ref, {
+          landlordPayoutStatus: "paid",
+          landlordPaidAt: FieldValue.serverTimestamp(),
+          landlordPaidBy: adminUid,
+          landlordPaymentReference: input.paymentReference,
+          landlordPaymentNote: input.paymentNote,
+        });
+
+        return {
+          amount: amt,
+          beneficiaryId: readOptionalString(data, "landlordId"),
+          propertyId: readOptionalString(data, "propertyId"),
+          propertyTitle: readOptionalString(data, "propertyTitle"),
+        };
       });
-
-      return amt;
-    });
 
     const auditLogId = await writeAuditLog({
       actorId: adminUid,
       action: "mark_rent_landlord_payout_paid",
       targetCollection: "active_rentals",
       targetId: input.docId,
-      amount,
+      amount: sideEffect.amount,
       paymentReference: input.paymentReference,
-      paymentNote: input.paymentNote ?? undefined,
+      ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
+    });
+
+    await writeRentPayoutSideEffects({
+      rentalId: input.docId,
+      beneficiaryId: sideEffect.beneficiaryId,
+      amount: sideEffect.amount,
+      propertyId: sideEffect.propertyId,
+      propertyTitle: sideEffect.propertyTitle,
+      receiptDocId: `PAYOUT_LANDLORD_${input.docId}`,
+      activityTitle: "Rent Payout Sent",
+      activityMessageBuilder: (a, p) =>
+        `Your rent payout of ₦${a.toFixed(0)} for ${p} has been sent ` +
+        "to your bank account.",
+      receiptDescription: (p) => `Rent payout for ${p}`,
+      adminUid,
     });
 
     return {success: true, auditLogId};
@@ -237,6 +403,11 @@ export const markRentLandlordPayoutPaid = onCall(
 // ============================================================
 // 3. Rent agent commission — flips agentPayoutStatus on
 //    active_rentals/{id}.
+//
+// Post-commit side effects (W5): writes a `rent_payout` activity and
+// a `payments/PAYOUT_AGENT_{rentalId}` receipt. Both best-effort.
+// Skipped if agentId is null (no agent on the rental). Mirrors the
+// pre-migration mobile behaviour at active_rental_service.dart:888.
 // ============================================================
 export const markRentAgentCommissionPaid = onCall(
   callableOptions,
@@ -248,41 +419,69 @@ export const markRentAgentCommissionPaid = onCall(
     const db = getFirestore();
     const ref = db.collection("active_rentals").doc(input.docId);
 
-    const amount = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) {
-        throw new HttpsError(
-          "not-found",
-          `active_rentals/${input.docId} not found.`,
+    interface RentPayoutSideEffect {
+      amount: number;
+      beneficiaryId: string | null;
+      propertyId: string | null;
+      propertyTitle: string | null;
+    }
+
+    const sideEffect = await db.runTransaction<RentPayoutSideEffect>(
+      async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) {
+          throw new HttpsError(
+            "not-found",
+            `active_rentals/${input.docId} not found.`,
+          );
+        }
+        const data = snap.data()!;
+        guardStatusTransition(
+          data.agentPayoutStatus,
+          "pending",
+          "agentPayoutStatus",
         );
-      }
-      const data = snap.data()!;
-      guardStatusTransition(
-        data.agentPayoutStatus,
-        "pending",
-        "agentPayoutStatus",
-      );
-      const amt = readAmount(data, "agentPayout");
+        const amt = readAmount(data, "agentPayout");
 
-      tx.update(ref, {
-        agentPayoutStatus: "paid",
-        agentPaidAt: FieldValue.serverTimestamp(),
-        agentPaidBy: adminUid,
-        agentPaymentReference: input.paymentReference,
-        agentPaymentNote: input.paymentNote,
+        tx.update(ref, {
+          agentPayoutStatus: "paid",
+          agentPaidAt: FieldValue.serverTimestamp(),
+          agentPaidBy: adminUid,
+          agentPaymentReference: input.paymentReference,
+          agentPaymentNote: input.paymentNote,
+        });
+
+        return {
+          amount: amt,
+          beneficiaryId: readOptionalString(data, "agentId"),
+          propertyId: readOptionalString(data, "propertyId"),
+          propertyTitle: readOptionalString(data, "propertyTitle"),
+        };
       });
-
-      return amt;
-    });
 
     const auditLogId = await writeAuditLog({
       actorId: adminUid,
       action: "mark_rent_agent_commission_paid",
       targetCollection: "active_rentals",
       targetId: input.docId,
-      amount,
+      amount: sideEffect.amount,
       paymentReference: input.paymentReference,
-      paymentNote: input.paymentNote ?? undefined,
+      ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
+    });
+
+    await writeRentPayoutSideEffects({
+      rentalId: input.docId,
+      beneficiaryId: sideEffect.beneficiaryId,
+      amount: sideEffect.amount,
+      propertyId: sideEffect.propertyId,
+      propertyTitle: sideEffect.propertyTitle,
+      receiptDocId: `PAYOUT_AGENT_${input.docId}`,
+      activityTitle: "Agent Fee Payout Sent",
+      activityMessageBuilder: (a, p) =>
+        `Your agent fee payout of ₦${a.toFixed(0)} for ${p} has been ` +
+        "sent to your bank account.",
+      receiptDescription: (p) => `Agent fee payout for ${p}`,
+      adminUid,
     });
 
     return {success: true, auditLogId};
@@ -302,7 +501,14 @@ export const markRefundPaid = onCall(
     const db = getFirestore();
     const ref = db.collection("refunds").doc(input.docId);
 
-    const amount = await db.runTransaction(async (tx) => {
+    interface RefundSideEffect {
+      amount: number;
+      beneficiaryId: string | null;
+      propertyId: string | null;
+      propertyTitle: string | null;
+    }
+
+    const sideEffect = await db.runTransaction<RefundSideEffect>(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) {
         throw new HttpsError(
@@ -322,7 +528,12 @@ export const markRefundPaid = onCall(
         paymentNote: input.paymentNote,
       });
 
-      return amt;
+      return {
+        amount: amt,
+        beneficiaryId: readOptionalString(data, "beneficiaryId"),
+        propertyId: readOptionalString(data, "propertyId"),
+        propertyTitle: readOptionalString(data, "propertyTitle"),
+      };
     });
 
     const auditLogId = await writeAuditLog({
@@ -330,14 +541,161 @@ export const markRefundPaid = onCall(
       action: "mark_refund_paid",
       targetCollection: "refunds",
       targetId: input.docId,
-      amount,
+      amount: sideEffect.amount,
       paymentReference: input.paymentReference,
-      paymentNote: input.paymentNote ?? undefined,
+      ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
     });
+
+    // Post-commit: notify the beneficiary + write a payment receipt so the
+    // payout lands in their Documents screen. Both best-effort — a failed
+    // display write must not undo the (already-real) money mark. Mirrors the
+    // three payout CFs above.
+    if (sideEffect.beneficiaryId !== null) {
+      const propertyTitle = sideEffect.propertyTitle ?? "your inspection";
+
+      await writeNotificationOnce(
+        `refund_${input.docId}_paid_${sideEffect.beneficiaryId}`,
+        {
+          userId: sideEffect.beneficiaryId,
+          type: "refund_paid",
+          title: "Refund Sent",
+          body:
+            `Your refund of ₦${sideEffect.amount.toFixed(0)} for ` +
+            `${propertyTitle} has been sent to your bank account.`,
+          payload: {route: "/tenant/documents"},
+        },
+      );
+
+      const receiptDocId = `REFUND_${input.docId}`;
+      try {
+        await db.collection("payments").doc(receiptDocId).create({
+          reference: receiptDocId,
+          userId: sideEffect.beneficiaryId,
+          type: "refund",
+          amount: sideEffect.amount,
+          status: "completed",
+          relatedId: input.docId,
+          propertyId: sideEffect.propertyId,
+          propertyTitle: sideEffect.propertyTitle,
+          description: `Refund for ${propertyTitle}`,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        const code = (err as {code?: unknown})?.code;
+        if (code === 6 || code === "already-exists") {
+          logger.info("Refund receipt already exists, skipping", {
+            receiptDocId,
+          });
+        } else {
+          logger.error("Refund receipt write failed", {
+            docId: input.docId,
+            receiptDocId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
 
     return {success: true, auditLogId};
   },
 );
+
+// ============================================================
+// Rent-payout post-commit side-effect helper.
+//
+// Shared by markRentLandlordPayoutPaid + markRentAgentCommissionPaid.
+// Writes one activity doc + one payment receipt doc. Both writes are
+// best-effort: failures are logged, never thrown. Receipt uses
+// .create() with a deterministic ID so a duplicate trigger is a no-op.
+//
+// NOTE on the activity doc's `landlordId` field: the activity service
+// queries by `landlordId` for the user's feed (see activity_service in
+// mobile), so all activities — even agent-targeted ones — set
+// `landlordId` to the beneficiary's UID. This is a pre-existing quirk
+// of the activities schema; flagged for a future fix in a dedicated
+// activities refactor ticket. Mirroring the mobile behaviour here so
+// the agent's feed continues to surface their rent-payout activity.
+// ============================================================
+
+interface RentPayoutSideEffectsInput {
+  rentalId: string;
+  beneficiaryId: string | null;
+  amount: number;
+  propertyId: string | null;
+  propertyTitle: string | null;
+  receiptDocId: string;
+  activityTitle: string;
+  activityMessageBuilder: (amount: number, propertyTitle: string) => string;
+  receiptDescription: (propertyTitle: string) => string;
+  adminUid: string;
+}
+
+async function writeRentPayoutSideEffects(
+  input: RentPayoutSideEffectsInput,
+): Promise<void> {
+  // Mirrors the mobile pre-migration behaviour: if there's no
+  // beneficiary on the doc, skip activity + receipt entirely. The
+  // money flip already succeeded; this is purely display.
+  if (input.beneficiaryId === null) return;
+
+  const db = getFirestore();
+  const propertyTitle = input.propertyTitle ?? "your property";
+
+  // Activity write.
+  try {
+    await db.collection("activities").add({
+      // Pre-existing schema quirk: feed queries by `landlordId`, so
+      // we set it to the beneficiary regardless of role. TODO: fix
+      // in a dedicated activities-schema refactor ticket.
+      landlordId: input.beneficiaryId,
+      type: "rent_payout",
+      title: input.activityTitle,
+      message: input.activityMessageBuilder(input.amount, propertyTitle),
+      propertyId: input.propertyId,
+      rentalId: input.rentalId,
+      amount: input.amount,
+      actorId: input.adminUid,
+      actorName: "ClearRent Admin",
+      isRead: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    logger.error("rent_payout activity write failed", {
+      rentalId: input.rentalId,
+      beneficiaryId: input.beneficiaryId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Payment receipt write (deterministic ID, .create() for idempotency).
+  try {
+    await db.collection("payments").doc(input.receiptDocId).create({
+      reference: input.receiptDocId,
+      userId: input.beneficiaryId,
+      type: "rent_payout",
+      amount: input.amount,
+      status: "completed",
+      relatedId: input.rentalId,
+      propertyId: input.propertyId,
+      propertyTitle: input.propertyTitle,
+      description: input.receiptDescription(propertyTitle),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    const code = (err as {code?: unknown})?.code;
+    if (code === 6 || code === "already-exists") {
+      logger.info("Payment receipt already exists, skipping", {
+        receiptDocId: input.receiptDocId,
+      });
+      return;
+    }
+    logger.error("Payment receipt write failed", {
+      rentalId: input.rentalId,
+      receiptDocId: input.receiptDocId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 // ============================================================
 // 5. Refund creation trigger — watches inspection_requests for
@@ -468,6 +826,214 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
       logger.error("Refund record creation failed", {
         requestId,
         error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+)
+// ============================================================
+// 6. Rental-interest loser refund trigger — watches rental_interests
+//    for status transitioning to "accepted" (landlord picked a winner).
+//    Every OTHER payment_verified interest on the same property is a
+//    loser: the tenant paid in full and was locked in, but the
+//    landlord chose someone else. Flip each to "lost_to_other",
+//    record the refund reason, and notify the tenant. Admin processes
+//    the actual bank refund from the payments dashboard (Refunded tab).
+//
+//    Refunds are MANUAL (no auto-Paystack): the flip surfaces the
+//    loser in the admin payments page exactly like any other rent
+//    refund. The refund must be returned to the originating account
+//    — enforced at admin verification/refund time, NOT here.
+//
+//    Idempotency: re-firing on an already-accepted doc re-runs the
+//    sibling query, but losers already flipped to lost_to_other no
+//    longer match the payment_verified filter, so the second pass is
+//    a no-op. Notifications use writeNotificationOnce with a
+//    deterministic key.
+// ============================================================
+export const onRentalInterestAccepted = onDocumentUpdated(
+  "rental_interests/{interestId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    // Only fire on the transition INTO "accepted".
+    if (before.status === "accepted") return;
+    if (after.status !== "accepted") return;
+
+    const winnerId = event.params.interestId;
+    const propertyId = after.propertyId as string | undefined;
+    const propertyTitle =
+      (after.propertyTitle as string | undefined) ?? "the property";
+
+    // Tell the WINNING tenant they got the place — otherwise acceptance is a
+    // silent surprise (only the losing applicants were ever notified). Fires
+    // before the propertyId guard so the winner is told regardless.
+    const winnerTenantId = after.tenantId as string | undefined;
+    if (winnerTenantId) {
+      await writeNotificationOnce(
+        `interest_${winnerId}_accepted_${winnerTenantId}`,
+        {
+          userId: winnerTenantId,
+          type: "rental_accepted",
+          title: "You got the place! 🎉",
+          body:
+            `Your application for ${propertyTitle} was accepted. ` +
+            "Next: review your tenancy agreement to complete your move-in.",
+          payload: {route: "/tenant/my-rentals"},
+        },
+      );
+    }
+
+    if (!propertyId) {
+      logger.error("Loser-refund trigger: propertyId missing", {winnerId});
+      return;
+    }
+
+    const db = getFirestore();
+
+    // Find sibling interests still locked in (paid + verified) on the
+    // same property. These are the losers.
+    const snap = await db
+      .collection("rental_interests")
+      .where("propertyId", "==", propertyId)
+      .where("status", "==", "payment_verified")
+      .get();
+
+    if (snap.empty) {
+      logger.info("No losing interests to refund", {winnerId, propertyId});
+      return;
+    }
+
+    for (const doc of snap.docs) {
+      // Defensive: never touch the winner (shouldn't match the filter
+      // anyway since it's now "accepted", but guard regardless).
+      if (doc.id === winnerId) continue;
+
+      const loser = doc.data();
+      const tenantId = loser.tenantId as string | undefined;
+
+      const reason =
+        "Property was rented to another applicant — " +
+        "your payment is being refunded in full.";
+
+      try {
+        await doc.ref.update({
+          status: "lost_to_other",
+          refundReason: reason,
+          refundedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        logger.error("Failed to flip losing interest", {
+          loserId: doc.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue; // Skip notification if the flip itself failed.
+      }
+
+      if (!tenantId) {
+        logger.error("Losing interest has no tenantId", {loserId: doc.id});
+        continue;
+      }
+
+      // Refund record so the loser enters the admin payout queue, exactly
+      // like an inspection refund. Best-effort + idempotent (deterministic
+      // id = interest id, .create()): the lost_to_other flip above is the
+      // source of truth; a failed refund-doc write is logged, never blocks.
+      const refundAmount = loser.paymentAmount;
+      if (
+        typeof refundAmount === "number" &&
+        Number.isFinite(refundAmount) &&
+        refundAmount > 0
+      ) {
+        try {
+          await db.collection("refunds").doc(doc.id).create({
+            status: "pending",
+            amount: refundAmount,
+            beneficiaryId: tenantId,
+            beneficiaryRole: "tenant",
+            source: "rental_loser",
+            sourceCollection: "rental_interests",
+            sourceDocId: doc.id,
+            reason,
+            propertyId: propertyId ?? null,
+            propertyTitle: after.propertyTitle ?? null,
+            createdAt: FieldValue.serverTimestamp(),
+            paidAt: null,
+            paidBy: null,
+            paymentReference: null,
+            paymentNote: null,
+          });
+        } catch (err) {
+          const code = (err as {code?: unknown})?.code;
+          if (code === 6 || code === "already-exists") {
+            logger.info("Loser refund record already exists, skipping", {
+              loserId: doc.id,
+            });
+          } else {
+            logger.error("Loser refund record creation failed", {
+              loserId: doc.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      } else {
+        logger.error("Loser refund: invalid paymentAmount", {
+          loserId: doc.id,
+          amount: refundAmount,
+        });
+      }
+
+      // Push notification — deterministic key so a re-fire is a no-op.
+      await writeNotificationOnce(
+        `interest_${doc.id}_lostToOther_${tenantId}`,
+        {
+          userId: tenantId,
+          type: "rental_not_selected",
+          title: "Property Rented to Another Applicant",
+          body:
+            `The landlord accepted another tenant for ${propertyTitle}. ` +
+            "Your full payment is being refunded.",
+          payload: {
+            route: "/tenant/inspections",
+            initialTab: "2",
+            param_interestId: doc.id,
+          },
+        },
+      );
+
+      // Activity feed entry. Mirrors the slot-conflict activity write:
+      // the feed queries by `landlordId`, so set it to the recipient
+      // (the losing tenant) regardless of role — same pre-existing
+      // schema quirk documented in writeRentPayoutSideEffects.
+      try {
+        await db.collection("activities").add({
+          userId: tenantId,
+          landlordId: tenantId,
+          type: "rental_not_selected",
+          title: "Not Selected",
+          message:
+            `The landlord rented ${propertyTitle} to another applicant. ` +
+            "Your payment is being refunded in full.",
+          subtitle:
+            `${propertyTitle} was rented to another applicant.`,
+          relatedId: doc.id,
+          propertyId,
+          isRead: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        logger.error("Loser activity write failed", {
+          loserId: doc.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      logger.info("Losing interest refunded", {
+        loserId: doc.id,
+        tenantId,
+        propertyId,
       });
     }
   },

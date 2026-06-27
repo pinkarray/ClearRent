@@ -302,6 +302,29 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                   onPressed: _shareProperty,
                 ),
               ),
+              Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(128),
+                  shape: BoxShape.circle,
+                ),
+                child: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onSelected: (v) {
+                    if (v == 'step_back') _confirmStepBack(property);
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'step_back',
+                      child: Row(children: [
+                        Icon(Icons.logout, size: 20, color: AppColors.error),
+                        const SizedBox(width: 12),
+                        const Text('Step back from this property'),
+                      ]),
+                    ),
+                  ],
+                ),
+              ),
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
@@ -714,6 +737,123 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
         ),
       ],
     );
+  }
+
+  /// Let the assigned agent step back from this property, with a reason. The
+  /// server reverts it to landlord-handled (fee preserved) and notifies the
+  /// landlord. Blocked server-side if the agent has an in-flight inspection.
+  Future<void> _confirmStepBack(PropertyModel property) async {
+    final controller = TextEditingController();
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Step back from this property', style: AppTextStyles.h4),
+              const SizedBox(height: 6),
+              Text(
+                "The property reverts to the landlord, who'll be notified. "
+                "You can't step back while you have a pending or scheduled "
+                "inspection here.",
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Reason (e.g. too far, schedule conflict)',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (controller.text.trim().isEmpty) return;
+                    Navigator.pop(sheetCtx, true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text('Step back',
+                      style: AppTextStyles.labelLarge
+                          .copyWith(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+    final reason = controller.text.trim();
+    if (reason.isEmpty || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          Center(child: CircularProgressIndicator(color: AppColors.primary)),
+    );
+    final error =
+        await _propertyService.agentUnassignFromProperty(property.id, reason);
+    if (!mounted) return;
+    Navigator.pop(context); // close loading
+
+    if (error == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              const Text('You\'ve stepped back. The landlord was notified.'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      context.pop(); // leave the property detail
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 
   /// Open the edit-schedule bottom sheet for the assigned agent.

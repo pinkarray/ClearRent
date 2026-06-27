@@ -16,9 +16,20 @@ class RefundService {
   ///
   /// Doc ID convention: refunds/{inspectionRequestId}.
   Stream<Refund?> streamForInspection(String inspectionRequestId) {
+    return _streamByDocId(inspectionRequestId);
+  }
+
+  /// Stream the refund record for a losing rental interest, if one exists.
+  /// Doc ID convention: refunds/{rentalInterestId} (created by
+  /// onRentalInterestAccepted for each loser).
+  Stream<Refund?> streamForRental(String rentalInterestId) {
+    return _streamByDocId(rentalInterestId);
+  }
+
+  Stream<Refund?> _streamByDocId(String refundId) {
     return _firestore
         .collection('refunds')
-        .doc(inspectionRequestId)
+        .doc(refundId)
         .snapshots()
         .map((snap) => snap.exists ? Refund.fromFirestore(snap) : null);
   }

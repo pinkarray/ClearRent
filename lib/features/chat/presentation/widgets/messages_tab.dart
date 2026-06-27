@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/conversation_service.dart';
 
@@ -69,7 +70,11 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
               final conversations = snapshot.data ?? [];
 
               if (conversations.isEmpty) {
-                return _buildEmptyState();
+                return GuidanceEmptyState(
+                  icon: Icons.chat_bubble_outline,
+                  title: widget.emptyTitle,
+                  subtitle: widget.emptySubtitle,
+                );
               }
 
               return RefreshIndicator(
@@ -107,46 +112,6 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withAlpha(26),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.chat_bubble_outline,
-              size: 50,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            widget.emptyTitle,
-            style: AppTextStyles.h4.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              widget.emptySubtitle,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textHint,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ConversationTile extends StatelessWidget {

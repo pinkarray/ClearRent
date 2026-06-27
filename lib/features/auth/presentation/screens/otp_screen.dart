@@ -98,7 +98,7 @@ class _OtpScreenState extends State<OtpScreen> {
       _errorMessage = null;
     });
 
-    debugPrint('🔑 Verifying OTP: $_otp');
+    debugPrint('🔑 Verifying OTP');
 
     final result = await _authService.verifyOtpAndSignIn(_otp);
 

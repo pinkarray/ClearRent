@@ -495,6 +495,14 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
     super.dispose();
   }
 
+  bool get _allFilteredSelected {
+    final allFilteredAreas = <String>[
+      for (final g in _filteredGroups) ...(g['areas'] as List<String>),
+    ];
+    return allFilteredAreas.isNotEmpty &&
+        allFilteredAreas.every((a) => _selected.contains(a));
+  }
+
   List<Map<String, dynamic>> get _filteredGroups {
     if (_searchQuery.isEmpty) return _groups;
     return _groups.map((group) {
@@ -520,6 +528,26 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
           return;
         }
         _selected.add(area);
+      }
+    });
+  }
+
+  /// Select (or clear) every area across all currently-filtered groups.
+  /// Mirrors _selectAllInCluster's behaviour of ignoring maxSelections.
+  void _toggleSelectAll() {
+    final allFilteredAreas = <String>[
+      for (final g in _filteredGroups) ...(g['areas'] as List<String>),
+    ];
+    final allSelected =
+        allFilteredAreas.every((a) => _selected.contains(a));
+    setState(() {
+      if (allSelected) {
+        // Clear only the filtered ones (preserve selections outside search)
+        _selected.removeWhere(allFilteredAreas.contains);
+      } else {
+        for (final area in allFilteredAreas) {
+          if (!_selected.contains(area)) _selected.add(area);
+        }
       }
     });
   }
@@ -552,7 +580,7 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
           ),
           const SizedBox(height: 16),
 
-          // Header with done button
+          // Header with select-all + done button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
@@ -560,10 +588,19 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
                 Text('Select Areas', style: AppTextStyles.h4),
                 const Spacer(),
                 TextButton(
+                  onPressed: _toggleSelectAll,
+                  child: Text(
+                    _allFilteredSelected ? 'Clear all' : 'Select all',
+                    style: AppTextStyles.labelMedium
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+                TextButton(
                   onPressed: () => widget.onDone(_selected),
                   child: Text(
                     'Done (${_selected.length})',
-                    style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                    style: AppTextStyles.labelLarge
+                        .copyWith(color: AppColors.primary),
                   ),
                 ),
               ],

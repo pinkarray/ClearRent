@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/activity_model.dart';
 import '../../../../services/activity_service.dart';
@@ -192,40 +193,14 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
           ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : _isEverythingEmpty
-              ? _buildEmptyState()
+              ? const GuidanceEmptyState(
+                  icon: Icons.notifications_none_outlined,
+                  title: 'No notifications yet',
+                  subtitle:
+                      'Announcements from ClearRent and activity from your '
+                      'properties will appear here.',
+                )
               : _buildContent(),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withAlpha(26),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.notifications_none_outlined,
-              size: 50,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text('No notifications yet', style: AppTextStyles.h4),
-          const SizedBox(height: 8),
-          Text(
-            'Announcements from ClearRent and activity\nfrom your properties will appear here.',
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 

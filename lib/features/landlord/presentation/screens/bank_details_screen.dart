@@ -139,11 +139,11 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
 
   Future<void> _loadBankDetails() async {
     try {
-      final profile = await _authService.getUserProfile();
+      // C1: bank details now live in the locked users/{uid}/private/bank
+      // subcollection, not on the user doc.
+      final bankDetails = await _authService.getBankDetails();
 
-      if (mounted && profile != null) {
-        final bankDetails = profile['bankDetails'] as Map<String, dynamic>?;
-
+      if (mounted) {
         if (bankDetails != null) {
           setState(() {
             _selectedBank = bankDetails['bankName'];
@@ -183,14 +183,11 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final success = await _authService.updateUserProfile({
-        'bankDetails': {
-          'bankName': _selectedBank,
-          'bankCode': _selectedBankCode,
-          'accountNumber': _accountNumberController.text.trim(),
-          'accountName': _accountNameController.text.trim(),
-          'updatedAt': DateTime.now().toIso8601String(),
-        },
+      final success = await _authService.saveBankDetails({
+        'bankName': _selectedBank,
+        'bankCode': _selectedBankCode,
+        'accountNumber': _accountNumberController.text.trim(),
+        'accountName': _accountNameController.text.trim(),
       });
 
       if (mounted) {

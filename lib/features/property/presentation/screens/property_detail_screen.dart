@@ -5,11 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
+import '../../../../core/utils/app_logger.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
-
+import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/building_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/inspection_service.dart';
@@ -20,6 +22,7 @@ import '../../../tenant/presentation/widgets/request_inspection_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:flutter/services.dart';
 
 class PropertyDetailScreen extends StatefulWidget {
   final PropertyModel property;
@@ -44,10 +47,23 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   // Services
   late final PropertyService _propertyService;
+  late final BuildingService _buildingService;
   late final AuthService _authService;
   late final ConversationService _conversationService;
   late final VerificationService _verificationService;
   late final TenancyLinkService _tenancyLinkService;
+
+  // For a unit grouped under a building, the shared ownership doc lives on the
+  // building. Loaded async; null until then (or for standalone listings).
+  String? _buildingDocStatus;
+
+  /// Ownership-doc status that actually governs this listing: the building's
+  /// shared status when grouped (property.ownershipDocStatus is 'inherited'
+  /// then), otherwise the property's own. Defaults to 'pending' while the
+  /// building loads so a grouped unit is never wrongly treated as verified.
+  String get _effectiveDocStatus => widget.property.buildingId != null
+      ? (_buildingDocStatus ?? 'pending')
+      : widget.property.ownershipDocStatus;
 
   // User info
   String? _currentUserId;
@@ -57,10 +73,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   bool _hasExistingRequest = false;
   bool _isCheckingRequest = true;
-
-  // Whether the current tenant has an approved/completed inspection on this
-  // property. Gates exact-address reveal in the detail screen.
-  bool _hasApprovedInspection = false;
+  // Address gate: false = approximate (LGA/city/state), true = exact street.
+  bool _addressUnlocked = false;
 
   // Verification status
   bool _isCurrentUserVerified = false;
@@ -73,20 +87,50 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   // Whether current tenant is already linked to THIS property
   bool _isLinkedToThisProperty = false;
 
+  // True once we confirm the property has a sitting tenant. Rent changes for an
+  // occupied unit must go through the admin "Request Rent Change" flow (the
+  // sitting tenant is protected); a vacant unit's rent is edited directly on
+  // Edit Property, so we hide "Request Rent Change" when vacant.
+  bool _hasSittingTenant = false;
+
   @override
   void initState() {
     super.initState();
     _propertyService = PropertyService();
+    _buildingService = BuildingService();
     _authService = AuthService();
     _conversationService = ConversationService();
     _verificationService = VerificationService();
     _tenancyLinkService = TenancyLinkService();
     _determineUserContext();
     _checkExistingRequest();
-    _checkApprovedInspection();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
+    _loadBuildingDocStatus();
+    _loadOccupancy();
     _initializeVideo();
+  }
+
+  /// Resolve whether this property currently has a sitting tenant (drives
+  /// whether "Request Rent Change" is offered — occupied only). Only the
+  /// owner sees that menu item, and propertyHasSittingTenant runs an
+  /// owner-scoped query, so skip it entirely for non-owner viewers.
+  Future<void> _loadOccupancy() async {
+    if (widget.property.landlordId != _authService.currentUser?.uid) return;
+    final occupied =
+        await _propertyService.propertyHasSittingTenant(widget.property.id);
+    if (!mounted) return;
+    setState(() => _hasSittingTenant = occupied);
+  }
+
+  /// Resolve the shared ownership-doc status for a grouped unit by reading its
+  /// building. No-op for standalone listings.
+  Future<void> _loadBuildingDocStatus() async {
+    final buildingId = widget.property.buildingId;
+    if (buildingId == null || buildingId.isEmpty) return;
+    final building = await _buildingService.getBuilding(buildingId);
+    if (!mounted || building == null) return;
+    setState(() => _buildingDocStatus = building.ownershipDocStatus);
   }
 
   @override
@@ -258,25 +302,15 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     final hasRequest = await inspectionService.hasPendingRequest(
       widget.property.id,
     );
+    // Address gate: exact only when approved/completed AND not passed.
+    final approved =
+        await inspectionService.hasApprovedInspection(widget.property.id);
+    final passed = await inspectionService.hasPassed(widget.property.id);
     if (mounted) {
       setState(() {
         _hasExistingRequest = hasRequest;
+        _addressUnlocked = approved && !passed;
         _isCheckingRequest = false;
-      });
-    }
-  }
-
-  Future<void> _checkApprovedInspection() async {
-    final inspectionService = InspectionService();
-    final hasApproved = await inspectionService.hasApprovedInspection(
-      widget.property.id,
-    );
-    debugPrint(
-      '🏠 _checkApprovedInspection: property=${widget.property.id} → $hasApproved',
-    );
-    if (mounted) {
-      setState(() {
-        _hasApprovedInspection = hasApproved;
       });
     }
   }
@@ -304,25 +338,101 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder:
-          (context) => _ContactSheet(
-            property: widget.property,
-            currentUserId: _currentUserId ?? '',
-            currentUserName: 'Tenant',
-            conversationService: _conversationService,
-            landlordAllowsCalls: _landlordAllowsCalls,
-            landlordPhone: _landlordPhone,
-            onStartChat: (conversation) {
-              context.push(
-                '/chat',
-                extra: {
-                  'conversationId': conversation.id,
-                  'currentUserId': _currentUserId,
-                },
-              );
-            },
-          ),
+      builder: (context) => SharePropertySheet(
+        property: widget.property,
+        // Only tenants/agents share *to* the owner. The owner viewing their
+        // own listing gets external-share only (no "send to landlord").
+        onShareInApp: _isOwner ? null : _shareToOwnerInApp,
+      ),
     );
+  }
+
+  Future<void> _shareToOwnerInApp() async {
+    // Gate: same verification rules as messaging.
+    if (!_isCurrentUserVerified) {
+      _showVerificationRequired(
+        currentUserNeedsVerification: true,
+        action: 'message',
+      );
+      return;
+    }
+    if (!_isLandlordVerified) {
+      _showVerificationRequired(
+        currentUserNeedsVerification: false,
+        action: 'message',
+      );
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    // Resolve current user's display name for the share message.
+    final profile = await _authService.getUserProfile();
+    final senderName = profile?['fullName'] ?? 'User';
+    final senderRole = _currentUserType ?? 'tenant';
+
+    // Get or create the conversation with this property's landlord.
+    final conversation = await _conversationService.getOrCreateConversation(
+      propertyId: widget.property.id,
+      propertyTitle: widget.property.title,
+      propertyImage:
+          widget.property.images.isNotEmpty ? widget.property.images.first : '',
+      landlordId: widget.property.landlordId,
+      landlordName: widget.property.landlordName ?? 'Landlord',
+      tenantId: _currentUserId ?? '',
+      tenantName: senderName,
+      agentId: widget.property.assignedAgentId,
+      agentName: widget.property.assignedAgentName,
+    );
+
+    if (!mounted) return;
+
+    if (conversation == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Could not start the chat. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    // Send the property as a share card into the conversation.
+    final message = await _conversationService.sendPropertyShare(
+      conversationId: conversation.id,
+      senderName: senderName,
+      senderRole: senderRole,
+      propertyId: widget.property.id,
+      propertyTitle: widget.property.title,
+      propertyImage:
+          widget.property.images.isNotEmpty ? widget.property.images.first : '',
+      propertyRent: widget.property.formattedRent,
+    );
+
+    if (!mounted) return;
+
+    if (message == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Could not share the property. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    // Navigate into the chat.
+    router.push('/chat', extra: {
+      'conversationId': conversation.id,
+      'propertyTitle': widget.property.title,
+      'propertyImage':
+          widget.property.images.isNotEmpty ? widget.property.images.first : '',
+    });
   }
 
   // ============ VERIFICATION CHECK HELPERS ============
@@ -487,8 +597,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       return;
     }
 
-    // Block if ownership doc was rejected — landlord must re-submit
-    final docStatus = widget.property.ownershipDocStatus;
+    // Block if ownership doc was rejected — landlord must re-submit.
+    // For a grouped unit this resolves to the building's shared doc status.
+    final docStatus = _effectiveDocStatus;
     if (docStatus == 'rejected') {
       _showDocBlockedDialog(
         title: 'Document Rejected',
@@ -551,6 +662,17 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     context.push('/landlord/edit-property', extra: widget.property);
   }
 
+  void _requestRentChange() {
+    final property = widget.property;
+    context.push('/landlord/request-rent-change', extra: {
+      'propertyId': property.id,
+      'propertyTitle': property.title,
+      'currentRent': property.rent,
+      'landlordId': property.landlordId,
+      'landlordName': property.landlordName ?? '',
+    });
+  }
+
   Future<void> _toggleAvailability() async {
     final newStatus = !widget.property.isAvailable;
 
@@ -591,6 +713,23 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   Future<void> _deleteProperty() async {
+    // Can't delete a property with a sitting/linked tenant — it would strand
+    // their dashboard with an orphaned rental/link.
+    if (await _propertyService.propertyHasSittingTenant(widget.property.id)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'This property has a sitting or linked tenant and can\'t be deleted. End the tenancy first.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder:
@@ -707,14 +846,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           const SizedBox(height: 8),
 
-                          Builder(builder: (_) {
-                            debugPrint(
-                              '🏠 RENDER property=${property.id} _isOwner=$_isOwner '
-                              '_hasApprovedInspection=$_hasApprovedInspection',
-                            );
-                            return const SizedBox.shrink();
-                          }),
-
                           Row(
                             children: [
                               Icon(
@@ -725,9 +856,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  (_isOwner || _hasApprovedInspection)
-                                      ? property.fullLocation
-                                      : property.publicLocation,
+                                  (_isOwner || _addressUnlocked)
+                                      ? property.exactAddress
+                                      : property.approximateAddress,
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.textSecondary,
                                   ),
@@ -735,29 +866,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               ),
                             ],
                           ),
-
-                          if (!_isOwner && !_hasApprovedInspection) ...[
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.lock_outline,
-                                  size: 14,
-                                  color: AppColors.textHint,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    'Exact address shared after inspection is confirmed',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: AppColors.textHint,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
 
                           const SizedBox(height: 20),
 
@@ -789,10 +897,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               const SizedBox(height: 24),
 
                             // Ownership doc status banner — shown when doc is not verified
-                            if (property.ownershipDocStatus != 'verified')
+                            if (_effectiveDocStatus != 'verified')
                               _buildDocStatusBanner(property),
 
-                            if (property.ownershipDocStatus != 'verified')
+                            if (_effectiveDocStatus != 'verified')
                               const SizedBox(height: 24),
 
                             // Inspection fee section (for agent-handled properties)
@@ -981,7 +1089,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   Widget _buildDocStatusBanner(PropertyModel property) {
-    final docStatus = property.ownershipDocStatus;
+    final docStatus = _effectiveDocStatus;
 
     final Color color;
     final IconData icon;
@@ -1133,7 +1241,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surface,
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 8),
@@ -1156,7 +1264,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppColors.surface,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [
                           BoxShadow(
@@ -1188,8 +1296,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   decoration: BoxDecoration(
                     color:
                         index == _currentImageIndex
-                            ? Colors.white
-                            : Colors.white.withAlpha(128),
+                            ? AppColors.surface
+                            : AppColors.surface.withAlpha(128),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 );
@@ -1271,6 +1379,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           case 'stats':
             _viewPropertyStats();
             break;
+          case 'rent_change':
+            _requestRentChange();
+            break;
           case 'share':
             _shareProperty();
             break;
@@ -1330,6 +1441,19 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 ],
               ),
             ),
+            // Occupied units only — a vacant unit's rent is edited directly on
+            // Edit Property (no admin review needed without a sitting tenant).
+            if (_hasSittingTenant)
+              const PopupMenuItem(
+                value: 'rent_change',
+                child: Row(
+                  children: [
+                    Icon(Icons.price_change_outlined, size: 20),
+                    SizedBox(width: 12),
+                    Text('Request Rent Change'),
+                  ],
+                ),
+              ),
             const PopupMenuItem(
               value: 'share',
               child: Row(
@@ -1477,15 +1601,52 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   // ============ TENANT MANAGEMENT (OWNER) ============
 
+  /// Inline warning shown inside the Tenants card when a tenant stream errors.
+  /// Keeps the failure visible instead of silently rendering "0 tenants".
+  Widget _buildTenantsErrorBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.error.withAlpha(26),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.error.withAlpha(77)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, size: 16, color: AppColors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Couldn\'t load tenant data. Occupancy shown may be incomplete — '
+              'pull to refresh or try again.',
+              style: AppTextStyles.caption.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTenantManagementSection(PropertyModel property) {
-    // Outer stream: active rentals for this property (inspection → payment path)
+    // Outer stream: active rentals for this property (inspection → payment path).
+    // landlordId-scoped for the ownership-constrained list rule — this is the
+    // owner's tenant-management view, so property.landlordId == the caller's uid.
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('active_rentals')
+          .where('landlordId', isEqualTo: property.landlordId)
           .where('propertyId', isEqualTo: property.id)
           .where('status', isEqualTo: 'active')
           .snapshots(),
       builder: (context, rentalSnapshot) {
+        if (rentalSnapshot.hasError) {
+          AppLogger.e(
+            'active_rentals tenants stream failed for ${property.id}',
+            error: rentalSnapshot.error,
+            name: 'PropertyDetail',
+          );
+        }
         final rentalDocs = rentalSnapshot.data?.docs ?? [];
         // Collect tenant IDs that came through the rental path
         final rentalTenantIds = rentalDocs
@@ -1497,6 +1658,17 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         return StreamBuilder<List<TenancyLinkModel>>(
           stream: _tenancyLinkService.propertyTenantsStream(property.id),
           builder: (context, snapshot) {
+            // Surface, don't swallow. A stream error here (e.g. a rules/query
+            // regression) previously rendered as "0 tenants" — making the
+            // failure invisible. Log it and show an inline banner so occupancy
+            // never silently understates reality.
+            if (snapshot.hasError) {
+              AppLogger.e(
+                'propertyTenantsStream failed for ${property.id}',
+                error: snapshot.error,
+                name: 'PropertyDetail',
+              );
+            }
             final links = snapshot.data ?? [];
             final confirmed = links.where((l) => l.status == 'confirmed').toList();
             final pending = links.where((l) => l.status == 'pending').toList();
@@ -1521,6 +1693,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Degraded-state banner — either tenant source failed to
+                  // load, so the occupancy figures below may be incomplete.
+                  if (snapshot.hasError || rentalSnapshot.hasError) ...[
+                    _buildTenantsErrorBanner(),
+                    const SizedBox(height: 12),
+                  ],
                   // Header row
                   Row(
                     children: [
@@ -1531,42 +1709,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text('Tenants', style: AppTextStyles.labelLarge),
-                      const Spacer(),
-                      // Capacity pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isFull
-                              ? AppColors.error.withAlpha(26)
-                              : AppColors.success.withAlpha(26),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '$occupied / $max occupied',
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: isFull ? AppColors.error : AppColors.success,
-                          ),
-                        ),
-                      ),
                     ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Capacity bar
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: max > 0 ? occupied / max : 0,
-                      minHeight: 6,
-                      backgroundColor: AppColors.border,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        isFull ? AppColors.error : AppColors.success,
-                      ),
-                    ),
                   ),
 
                   const SizedBox(height: 16),
@@ -2252,44 +2395,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildInspectionFeeRow(
-                  'Agent Service Fee',
-                  feeBreakdown.agentServiceFee,
+                Text(
+                  'Inspection fee',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                _buildInspectionFeeRow(
-                  'Transport Fee',
-                  feeBreakdown.transportFee,
-                  note: 'varies by zone',
-                ),
-                const SizedBox(height: 8),
-                _buildInspectionFeeRow(
-                  'Platform Fee',
-                  feeBreakdown.clearrentFee,
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Estimated Total',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      'From ${InspectionPricing.formatNaira(feeBreakdown.totalFee)}',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: AppColors.primary,
-                        fontFamily: 'Roboto',
-                      ),
-                    ),
-                  ],
+                Text(
+                  InspectionPricing.formatNaira(feeBreakdown.totalFee),
+                  style: AppTextStyles.labelLarge.copyWith(
+                    color: AppColors.primary,
+                    fontFamily: 'Roboto',
+                  ),
                 ),
               ],
             ),
@@ -2297,7 +2417,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
           const SizedBox(height: 12),
 
-          // Info note
+          // Info note: transport advisory + refund policy
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -2311,7 +2431,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Pay upfront to schedule inspection. Full refund if the landlord or agent declines.',
+                    'Transport to and from the property is arranged '
+                    'directly with the agent. Pay upfront to schedule; '
+                    'full refund if the landlord or agent declines.',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.info,
                     ),
@@ -2322,42 +2444,6 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildInspectionFeeRow(String label, double amount, {String? note}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              Text(
-                label,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              if (note != null) ...[
-                const SizedBox(width: 4),
-                Text(
-                  '($note)',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textHint,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        Text(
-          InspectionPricing.formatNaira(amount),
-          style: AppTextStyles.labelMedium.copyWith(
-            fontFamily: 'Roboto',
-          ),
-        ),
-      ],
     );
   }
 
@@ -2559,7 +2645,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       ),
                     )
                   : Builder(builder: (context) {
-                      final docStatus = widget.property.ownershipDocStatus;
+                      final docStatus = _effectiveDocStatus;
                       final docBlocked = docStatus == 'rejected' ||
                           docStatus == 'none' ||
                           docStatus == 'pending';
@@ -2615,62 +2701,26 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   // ============ SHARED WIDGETS ============
 
-  /// Occupancy info card shown to tenants — transparent view of who lives there.
-  /// Combines confirmed tenancy links AND active rentals for accurate count.
   Widget _buildOccupancyInfoCard(PropertyModel property) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('active_rentals')
-          .where('propertyId', isEqualTo: property.id)
-          .where('status', isEqualTo: 'active')
-          .snapshots(),
-      builder: (context, rentalSnap) {
-        return StreamBuilder<List<TenancyLinkModel>>(
-          stream: _tenancyLinkService.propertyTenantsStream(property.id),
-          builder: (context, linkSnap) {
-            final rentalTenantIds = (rentalSnap.data?.docs ?? [])
-                .map((d) => d['tenantId'] as String? ?? '')
-                .where((id) => id.isNotEmpty)
-                .toSet();
-
-            final linkedTenantIds = (linkSnap.data ?? [])
-                .where((l) => l.status == 'confirmed')
-                .map((l) => l.tenantId)
-                .toSet();
-
-            // Union of both sets — avoid double-counting same tenant
-            final allTenantIds = {...rentalTenantIds, ...linkedTenantIds};
-            final liveCount = allTenantIds.isNotEmpty
-                ? allTenantIds.length
-                : (property.currentTenantsCount ?? 0);
-
-            return _buildOccupancyCard(property, liveCount);
-          },
-        );
-      },
-    );
+    // Tenant-facing card. Uses the stored currentTenantsCount, which is
+    // recomputed server-side (Cloud Function) from both active_rentals and
+    // tenancy_links — so it's authoritative and covers landlord-linked
+    // tenants. A browsing tenant no longer lists active_rentals directly
+    // (the list rule is now owner-scoped), and never read tenancy_links.
+    final storedCount = property.currentTenantsCount ?? 0;
+    return _buildOccupancyCard(property, storedCount);
   }
 
   Widget _buildOccupancyCard(PropertyModel property, int currentCount) {
     // Collect info rows — only show fields that have meaningful data
     final rows = <_OccupancyRow>[];
 
-    // Max tenants (always show)
-    rows.add(_OccupancyRow(
-      icon: Icons.people_outline,
-      label: 'Max occupants allowed',
-      value: '${property.maxTenants} person${property.maxTenants != 1 ? 's' : ''}',
-    ));
-
-    // Current tenants
-    final spotsLeft = (property.maxTenants - currentCount).clamp(0, property.maxTenants);
+    // Availability — single-unit listing, so no multi-tenant capacity framing.
     rows.add(_OccupancyRow(
       icon: Icons.chair_outlined,
-      label: 'Currently occupied',
-      value: currentCount == 0
-          ? 'No current tenants'
-          : '$currentCount tenant${currentCount != 1 ? 's' : ''} ($spotsLeft spot${spotsLeft != 1 ? 's' : ''} left)',
-      valueColor: spotsLeft == 0 ? AppColors.error : null,
+      label: 'Availability',
+      value: currentCount > 0 ? 'Occupied' : 'Available',
+      valueColor: currentCount > 0 ? AppColors.error : AppColors.success,
     ));
 
     // Landlord on premises
@@ -3645,6 +3695,8 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
       rentDueMonth: (rentConfig['rentDueMonth'] as int?) ?? 1,
       rentAmount: widget.property.rent,
       rentFrequency: (rentConfig['rentFrequency'] as String?) ?? widget.property.rentFrequency,
+      leaseStartDate: rentConfig['leaseStartDate'] as DateTime?,
+      leaseEndDate: rentConfig['leaseEndDate'] as DateTime?,
     );
 
     if (!mounted) return;
@@ -3910,23 +3962,46 @@ class _RentConfigSheet extends StatefulWidget {
 }
 
 class _RentConfigSheetState extends State<_RentConfigSheet> {
-  // frequency toggle
-  String _frequency = 'yearly'; // 'yearly' | 'monthly'
-  // for monthly: day 1-28
+  // Yearly only at launch (monthly is v2). Fixed — there is no UI to change it.
+  final String _frequency = 'yearly';
   int _selectedDay = 1;
   // for yearly: month 1-12
   int _selectedMonth = 1;
+  // Lease term is DERIVED from the rent due date — one source of truth, so the
+  // landlord can't enter a lease date that contradicts when rent is due. The
+  // current period began on the most recent past occurrence of the due
+  // month/day and runs one year (Lagos yearly advance-rent cap).
+  DateTime get _leaseStart {
+    final now = DateTime.now();
+    final maxDay = _daysInMonth(_selectedMonth);
+    final day = _selectedDay < 1
+        ? 1
+        : (_selectedDay > maxDay ? maxDay : _selectedDay);
+    final thisYear = DateTime(now.year, _selectedMonth, day);
+    return thisYear.isAfter(now)
+        ? DateTime(now.year - 1, _selectedMonth, day)
+        : thisYear;
+  }
+
+  DateTime get _leaseEnd => DateTime(
+        _leaseStart.year + 1,
+        _leaseStart.month,
+        _leaseStart.day,
+      );
 
   static const _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
+  String _fmtDate(DateTime d) => '${_months[d.month - 1].substring(0, 3)} ${d.day}, ${d.year}';
+
   @override
   void initState() {
     super.initState();
-    // Default frequency to property setting
-    _frequency = widget.property.rentFrequency == 'monthly' ? 'monthly' : 'yearly';
+    // Yearly only at launch — monthly is v2 (mirrors add-property; the lease
+    // lifecycle relies on the Lagos one-year advance-rent cap). _frequency
+    // stays 'yearly' regardless of the property's stored value.
   }
 
   @override
@@ -3989,93 +4064,35 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
             ),
             const SizedBox(height: 20),
 
-            // ── Frequency toggle ──────────────────────────
+            // ── Rent frequency — yearly only at launch (monthly is v2; the
+            // lease lifecycle relies on the Lagos one-year advance-rent cap).
+            // Mirrors the add-property screen. ──
             Text('Rent Frequency', style: AppTextStyles.labelMedium),
             const SizedBox(height: 10),
-            Row(children: [
-              _FreqChip(
-                label: 'Yearly',
-                sublabel: 'Once a year',
-                icon: Icons.calendar_today_outlined,
-                selected: _frequency == 'yearly',
-                onTap: () => setState(() => _frequency = 'yearly'),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.primary),
               ),
-              const SizedBox(width: 10),
-              _FreqChip(
-                label: 'Monthly',
-                sublabel: 'Every month',
-                icon: Icons.replay_outlined,
-                selected: _frequency == 'monthly',
-                onTap: () => setState(() => _frequency = 'monthly'),
-              ),
-            ]),
+              child: Row(children: [
+                Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Per Year',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+                ),
+                const Spacer(),
+                Text(
+                  'Monthly coming soon',
+                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                ),
+              ]),
+            ),
             const SizedBox(height: 20),
 
-            // ── Due date section (changes based on frequency) ─
-            if (_frequency == 'monthly') ...[
-              Text('Which day is rent due each month?', style: AppTextStyles.labelMedium),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [1, 5, 10, 15, 20, 25, 28].map((day) {
-                  final sel = _selectedDay == day;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedDay = day),
-                    child: Container(
-                      width: 56,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: sel ? AppColors.primary : AppColors.background,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: sel ? AppColors.primary : AppColors.border),
-                      ),
-                      child: Center(
-                        child: Text(
-                          _ordinal(day),
-                          style: AppTextStyles.labelMedium.copyWith(
-                            color: sel ? Colors.white : AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-              Row(children: [
-                Text('Other:', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 72,
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.labelLarge,
-                    decoration: InputDecoration(
-                      hintText: '1–28',
-                      hintStyle: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                      filled: true,
-                      fillColor: AppColors.background,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.primary, width: 2)),
-                    ),
-                    onChanged: (val) {
-                      final n = int.tryParse(val);
-                      if (n != null && n >= 1 && n <= 28) setState(() => _selectedDay = n);
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text('of each month', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
-              ]),
-              const SizedBox(height: 6),
-              Text('Capped at the 28th for consistency across all months.',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-            ] else ...[
-              // Yearly — pick month
+            // ── Due date — yearly: pick the month + day rent is due ──
               Text('Which month is rent due each year?', style: AppTextStyles.labelMedium),
               const SizedBox(height: 12),
               Wrap(
@@ -4084,7 +4101,11 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                 children: List.generate(12, (i) {
                   final sel = _selectedMonth == (i + 1);
                   return GestureDetector(
-                    onTap: () => setState(() => _selectedMonth = i + 1),
+                    onTap: () => setState(() {
+                      _selectedMonth = i + 1;
+                      final maxDay = _daysInMonth(_selectedMonth);
+                      if (_selectedDay > maxDay) _selectedDay = maxDay;
+                    }),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
@@ -4109,7 +4130,11 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [1, 5, 10, 15, 20, 25, 28].map((day) {
+                children: () {
+                  final maxDay = _daysInMonth(_selectedMonth);
+                  final picks = [1, 5, 10, 15, 20, 25, maxDay];
+                  return picks.toSet().toList()..sort();
+                }().map((day) {
                   final sel = _selectedDay == day;
                   return GestureDetector(
                     onTap: () => setState(() => _selectedDay = day),
@@ -4143,8 +4168,20 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     style: AppTextStyles.labelLarge,
+                    maxLength: 2,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      TextInputFormatter.withFunction((oldValue, newValue) {
+                        if (newValue.text.isEmpty) return newValue;
+                        final n = int.tryParse(newValue.text);
+                        final maxDay = _daysInMonth(_selectedMonth);
+                        if (n == null || n < 1 || n > maxDay) return oldValue;
+                        return newValue;
+                      }),
+                    ],
                     decoration: InputDecoration(
-                      hintText: '1–28',
+                      counterText: '',
+                      hintText: '1–${_daysInMonth(_selectedMonth)}',
                       hintStyle: AppTextStyles.caption.copyWith(color: AppColors.textHint),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                       filled: true,
@@ -4155,7 +4192,8 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                     ),
                     onChanged: (val) {
                       final n = int.tryParse(val);
-                      if (n != null && n >= 1 && n <= 28) setState(() => _selectedDay = n);
+                      final maxDay = _daysInMonth(_selectedMonth);
+                      if (n != null && n >= 1 && n <= maxDay) setState(() => _selectedDay = n);
                     },
                   ),
                 ),
@@ -4167,7 +4205,49 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                 'Tenant will be reminded when ${_months[_selectedMonth - 1]} ${_ordinal(_selectedDay)} approaches.',
                 style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
               ),
-            ],
+
+            const SizedBox(height: 24),
+
+            // ── Lease term (auto-derived from the rent due date) ──────────
+            Text('Lease Term', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Set automatically from the rent due date above — the current '
+              'year runs to the next due date (Lagos law caps yearly rent in '
+              'advance at one year).',
+              style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(children: [
+                Icon(Icons.event_outlined, size: 18, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Starts', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+                      Text(_fmtDate(_leaseStart), style: AppTextStyles.labelMedium),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward, size: 16, color: AppColors.textHint),
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('Ends', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+                    Text(_fmtDate(_leaseEnd), style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+                  ],
+                ),
+              ]),
+            ),
 
             const SizedBox(height: 24),
 
@@ -4180,6 +4260,8 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                     'rentDueDay': _selectedDay,
                     'rentDueMonth': _frequency == 'yearly' ? _selectedMonth : null,
                     'rentFrequency': _frequency,
+                    'leaseStartDate': _leaseStart,
+                    'leaseEndDate': _leaseEnd,
                   });
                 },
                 style: ElevatedButton.styleFrom(
@@ -4189,9 +4271,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: Text(
-                  _frequency == 'monthly'
-                      ? 'Confirm  •  Due ${_ordinal(_selectedDay)} monthly'
-                      : 'Confirm  •  Due ${_ordinal(_selectedDay)} ${_months[_selectedMonth - 1]} yearly',
+                  'Confirm  •  Due ${_ordinal(_selectedDay)} ${_months[_selectedMonth - 1]} yearly',
                   style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
                 ),
               ),
@@ -4214,64 +4294,22 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
       default: return '${n}th';
     }
   }
-}
 
-// ── Frequency chip ─────────────────────────────────────────────────────────────
-
-class _FreqChip extends StatelessWidget {
-  final String label;
-  final String sublabel;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _FreqChip({
-    required this.label,
-    required this.sublabel,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.primary : AppColors.background,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? AppColors.primary : AppColors.border,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Row(children: [
-            Icon(icon, size: 18, color: selected ? Colors.white : AppColors.textSecondary),
-            const SizedBox(width: 8),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: AppTextStyles.labelMedium.copyWith(
-                  color: selected ? Colors.white : AppColors.textPrimary,
-                )),
-                Text(sublabel, style: AppTextStyles.caption.copyWith(
-                  color: selected ? Colors.white.withAlpha(200) : AppColors.textSecondary,
-                )),
-              ],
-            )),
-            if (selected)
-              const Icon(Icons.check_circle, size: 16, color: Colors.white),
-          ]),
-        ),
-      ),
-    );
+  int _daysInMonth(int month) {
+    switch (month) {
+      case 1: case 3: case 5: case 7: case 8: case 10: case 12:
+        return 31;
+      case 4: case 6: case 9: case 11:
+        return 30;
+      case 2:
+        final year = DateTime.now().year;
+        final isLeap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        return isLeap ? 29 : 28;
+      default:
+        return 28;
+    }
   }
 }
-
 
 class _OccupancyRow {
   final IconData icon;

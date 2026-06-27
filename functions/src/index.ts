@@ -7,11 +7,9 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import {
-  onDocumentCreated,
-  onDocumentUpdated,
-} from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
@@ -19,6 +17,7 @@ import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {getMessaging} from "firebase-admin/messaging";
 import {createHash} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
+import {writeNotificationOnce} from "./notification_helpers";
 
 initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
@@ -142,47 +141,167 @@ export const onNotificationCreated = onDocumentCreated(
   },
 );
 
+
 /**
- * Helper: write a notification doc with a deterministic ID.
- * Used for idempotent creates from event triggers — avoids
- * duplicate pushes when a Firestore trigger re-fires for the
- * same event.
- *
- * @param {string} notifId Deterministic notification doc ID.
- * @param {object} data Notification fields (userId, title, body,
- *   payload, type).
- * @return {Promise<boolean>} True if written, false if a doc
- *   with that ID already existed.
+ * Slot-holding statuses — mirror of InspectionService._slotHoldingStatuses
+ * on the Dart side. A request in any of these states reserves
+ * its (handler, date, slot) tuple against new bookings.
  */
-async function writeNotificationOnce(
-  notifId: string,
-  data: {
-    userId: string;
-    title: string;
-    body: string;
-    payload: Record<string, string>;
-    type: string;
-  },
+const SLOT_HOLDING_STATUSES = [
+  "pendingPayment",
+  "pendingVerification",
+  "pending",
+  "declinedByAgent",
+  "approved",
+];
+
+/**
+ * Server-side conflict guard. If the newly-created inspection
+ * request collides with an already-active inspection for the same
+ * handler on the same date+slot, decline+refund the new doc and
+ * notify the tenant.
+ *
+ * The collision is resolved in favour of the EARLIER createdAt —
+ * the new doc is the one rejected.
+ *
+ * Returns true if the new doc was conflict-declined (caller should
+ * skip its own logic).
+ */
+async function rejectIfSlotConflict(
+  requestId: string,
+  data: FirebaseFirestore.DocumentData,
 ): Promise<boolean> {
   const db = getFirestore();
-  const ref = db.collection("notifications").doc(notifId);
-  try {
-    await ref.create({
-      ...data,
-      read: false,
-      readAt: null,
+  const agentId = data.agentId as string | null | undefined;
+  const landlordId = data.landlordId as string | undefined;
+  const requestedTs = data.requestedDate as Timestamp | undefined;
+  const requestedSlot = data.requestedTimeSlot as string | undefined;
+  const tenantId = data.tenantId as string | undefined;
+  const propertyTitle =
+    (data.propertyTitle as string | undefined) ?? "the property";
+  const propertyId = data.propertyId as string | undefined;
+  const createdAt = data.createdAt as Timestamp | undefined;
+
+  if (!requestedTs || !requestedSlot || !landlordId) {
+    return false;
+  }
+
+  // Handler key — agent if agent-handled, else landlord.
+  const handlerField = agentId ? "agentId" : "landlordId";
+  const handlerId = agentId ?? landlordId;
+
+  const requestedDate = requestedTs.toDate();
+  const y = requestedDate.getFullYear();
+  const m = requestedDate.getMonth();
+  const d = requestedDate.getDate();
+
+  const snap = await db
+    .collection("inspection_requests")
+    .where(handlerField, "==", handlerId)
+    .where("status", "in", SLOT_HOLDING_STATUSES)
+    .where("requestedTimeSlot", "==", requestedSlot)
+    .get();
+
+  // Look for any other doc on the same calendar day. Filter in
+  // memory to avoid needing a Timestamp range index.
+  let conflict: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  for (const doc of snap.docs) {
+    if (doc.id === requestId) continue;
+    const other = doc.data();
+    const otherTs = other.requestedDate as Timestamp | undefined;
+    if (!otherTs) continue;
+    const ot = otherTs.toDate();
+    if (ot.getFullYear() !== y) continue;
+    if (ot.getMonth() !== m) continue;
+    if (ot.getDate() !== d) continue;
+
+    // Tiebreaker: keep the earlier-created doc, reject the newer.
+    // Fall back to lexicographic id if createdAt is missing/equal.
+    const otherCreated = other.createdAt as Timestamp | undefined;
+    const newerMillis = createdAt ? createdAt.toMillis() : 0;
+    const otherMillis = otherCreated ? otherCreated.toMillis() : 0;
+    if (otherMillis < newerMillis) {
+      conflict = doc;
+      break;
+    }
+    if (otherMillis === newerMillis && doc.id < requestId) {
+      conflict = doc;
+      break;
+    }
+  }
+
+  if (!conflict) return false;
+
+  logger.info("Slot conflict detected — declining new request", {
+    requestId,
+    conflictWith: conflict.id,
+    handlerField,
+    handlerId,
+    requestedSlot,
+  });
+
+  const wasPaid = data.paymentStatus === "paid";
+  const update: Record<string, unknown> = {
+    status: "declined",
+    declineSource: "system_slot_conflict",
+    declineReason:
+      "This slot was just taken by another tenant. " +
+      "Please pick a different time.",
+    declinedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (wasPaid) {
+    update.paymentStatus = "refunded";
+    update.refundedAt = FieldValue.serverTimestamp();
+    update.refundReason = "Slot conflict — automatic refund";
+  }
+  await db.collection("inspection_requests").doc(requestId).update(update);
+
+  // Notify the tenant directly. The existing update-trigger decline
+  // notifications are skipped for system_slot_conflict (see the
+  // guard in onInspectionRequestUpdated).
+  if (tenantId) {
+    await writeNotificationOnce(
+      `req_${requestId}_slotConflict_${tenantId}`,
+      {
+        userId: tenantId,
+        type: "inspection_declined",
+        title: "Slot Just Taken",
+        body:
+          `Your inspection slot for ${propertyTitle} was just booked ` +
+          "by someone else. Please pick a different time" +
+          (wasPaid ? " — refund processing." : "."),
+        payload: {
+          route: "/tenant/inspections",
+          initialTab: "2",
+          param_requestId: requestId,
+        },
+      },
+    );
+  }
+
+  // Activity feed entry mirroring _processRefund's activity write.
+  if (tenantId) {
+    await db.collection("activities").add({
+      userId: tenantId,
+      landlordId: tenantId,
+      type: "inspection_declined",
+      title: "Slot Conflict",
+      message:
+        `Your inspection request for ${propertyTitle} was declined ` +
+        "because the slot had just been booked. " +
+        (wasPaid ? "Your payment is being refunded." : ""),
+      subtitle:
+        `Your inspection request for ${propertyTitle} was declined ` +
+        "because the slot had just been booked.",
+      relatedId: requestId,
+      propertyId: propertyId,
+      isRead: false,
       createdAt: FieldValue.serverTimestamp(),
     });
-    return true;
-  } catch (err) {
-    const code = (err as {code?: number | string})?.code;
-    // Firestore admin SDK throws ALREADY_EXISTS for duplicate create.
-    if (code === 6 || code === "already-exists") {
-      logger.info("Notification already exists, skipping", {notifId});
-      return false;
-    }
-    throw err;
   }
+
+  return true;
 }
 
 /**
@@ -210,6 +329,23 @@ export const onInspectionRequestCreated = onDocumentCreated(
     const requestId = event.params.requestId;
     const data = snap.data();
     const status = data.status as string | undefined;
+
+    // Slot conflict check — if the new request collides with an
+    // existing booking on the same handler/date/slot, decline it
+    // here and exit. Skip the handler notification below since the
+    // request is being rejected. Wrapped so a query failure (e.g.
+    // missing index) degrades to "no conflict protection" rather
+    // than killing the handler notification below.
+    let conflicted = false;
+    try {
+      conflicted = await rejectIfSlotConflict(requestId, data);
+    } catch (err) {
+      logger.error("Slot conflict check failed — proceeding", {
+        requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (conflicted) return;
 
     if (status === "pendingPayment") {
       logger.info("Skipping notification — pendingPayment", {requestId});
@@ -257,6 +393,479 @@ export const onInspectionRequestCreated = onDocumentCreated(
 );
 
 /**
+ * Notify an agent when a landlord assigns them to handle a property's
+ * inspections. Prompts them to reach out to the landlord, visit the unit, and
+ * help get it viewing-ready. Fires only when assignedAgentId actually changes
+ * to a (new) agent — ordinary edits that leave the agent unchanged are ignored.
+ *
+ * @param {object} event Firestore update event with before/after.
+ * @return {Promise<void>}
+ */
+export const onPropertyAgentAssigned = onDocumentUpdated(
+  "properties/{propertyId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const beforeAgent =
+      (before.assignedAgentId as string | null | undefined) ?? null;
+    const afterAgent =
+      (after.assignedAgentId as string | null | undefined) ?? null;
+    // Only on a newly-assigned (or changed) agent — not removals or no-ops.
+    if (!afterAgent || afterAgent === beforeAgent) return;
+
+    const propertyId = event.params.propertyId;
+    const propertyTitle =
+      (after.title as string | undefined) ?? "a property";
+
+    await writeNotificationOnce(
+      `property_${propertyId}_agent_${afterAgent}`,
+      {
+        userId: afterAgent,
+        type: "agent_assigned",
+        title: "You've been assigned a property",
+        body:
+          `You're now handling inspections for ${propertyTitle}. Reach out ` +
+          `to the landlord, visit the property, and help get it photo- and ` +
+          `viewing-ready.`,
+        payload: {route: `/agent/property/${propertyId}`},
+      },
+    );
+
+    logger.info("Agent-assigned notification queued", {
+      propertyId,
+      agentId: afterAgent,
+    });
+  },
+);
+
+/**
+ * Notify the landlord when a tenant reports an issue on their property.
+ * The client writes the issue (and an in-app activity); this turns it into a
+ * real push + deep-link to the landlord's issues for that property.
+ *
+ * @param {object} event Firestore create event for issues/{issueId}.
+ * @return {Promise<void>}
+ */
+export const onIssueCreated = onDocumentCreated(
+  "issues/{issueId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.data();
+
+    const landlordId = data.landlordId as string | undefined;
+    if (!landlordId) {
+      logger.warn("Issue has no landlordId", {issueId: event.params.issueId});
+      return;
+    }
+    const tenantName = (data.tenantName as string | undefined) ?? "A tenant";
+    const propertyTitle =
+      (data.propertyTitle as string | undefined) ?? "your property";
+    const category = (data.category as string | undefined) ?? "maintenance";
+    const propertyId = (data.propertyId as string | undefined) ?? "";
+
+    await writeNotificationOnce(
+      `issue_${event.params.issueId}_${landlordId}`,
+      {
+        userId: landlordId,
+        type: "issue_reported",
+        title: "New issue reported",
+        body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+        payload: {
+          route: "/landlord/issues",
+          ...(propertyId ? {propertyId} : {}),
+        },
+      },
+    );
+
+    logger.info("Issue-reported notification queued", {
+      issueId: event.params.issueId,
+      landlordId,
+    });
+  },
+);
+
+/**
+ * Push the right party when an issue's status changes — completes the
+ * report → working → fixed → confirm/dispute loop with phone pings + deep
+ * links. Landlord moves drive tenant notifications; the tenant's confirm /
+ * dispute drives a landlord notification.
+ *
+ * @param {object} event Firestore update event for issues/{issueId}.
+ * @return {Promise<void>}
+ */
+export const onIssueUpdated = onDocumentUpdated(
+  "issues/{issueId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+    const from = before.status as string | undefined;
+    const to = after.status as string | undefined;
+    if (!to || from === to) return; // only on a real status change
+
+    const issueId = event.params.issueId;
+    const tenantId = after.tenantId as string | undefined;
+    const landlordId = after.landlordId as string | undefined;
+    const propertyTitle =
+      (after.propertyTitle as string | undefined) ?? "your property";
+    const category = (after.category as string | undefined) ?? "maintenance";
+    const propertyId = (after.propertyId as string | undefined) ?? "";
+
+    const tenantRoute = {route: "/tenant/issue-history"};
+    const landlordRoute = {
+      route: "/landlord/issues",
+      ...(propertyId ? {propertyId} : {}),
+    };
+
+    let userId: string | undefined;
+    let title = "";
+    let body = "";
+    let payload: Record<string, string> = {};
+
+    if (to === "in_progress" && from === "pending_confirmation") {
+      userId = landlordId; // tenant disputed the fix
+      title = "Tenant says it's not fixed";
+      body = `${propertyTitle}: the tenant reports the ${category} issue ` +
+        "isn't resolved.";
+      payload = landlordRoute;
+    } else if (to === "in_progress") {
+      userId = tenantId; // landlord acknowledged
+      title = "Issue acknowledged";
+      body = `Your landlord is working on the ${category} issue at ` +
+        `${propertyTitle}.`;
+      payload = tenantRoute;
+    } else if (to === "pending_confirmation") {
+      userId = tenantId; // landlord marked fixed → confirm/dispute
+      title = "Fix ready — please confirm";
+      body = `Your landlord says the ${category} issue at ${propertyTitle} ` +
+        "is fixed. Confirm or dispute.";
+      payload = tenantRoute;
+    } else if (to === "resolved" && from === "pending_confirmation") {
+      userId = landlordId; // tenant confirmed
+      title = "Issue confirmed resolved";
+      body = `The tenant confirmed the ${category} issue at ${propertyTitle} ` +
+        "is fixed.";
+      payload = landlordRoute;
+    } else if (to === "resolved") {
+      userId = tenantId;
+      title = "Issue resolved";
+      body = `Your ${category} issue at ${propertyTitle} was marked resolved.`;
+      payload = tenantRoute;
+    } else if (to === "open" && from === "resolved") {
+      userId = tenantId; // landlord re-opened
+      title = "Issue re-opened";
+      body = `Your landlord re-opened the ${category} issue at ` +
+        `${propertyTitle}.`;
+      payload = tenantRoute;
+    } else {
+      return;
+    }
+
+    if (!userId) return;
+    await writeNotificationOnce(
+      `issue_${issueId}_${from}_${to}_${userId}`,
+      {userId, type: "issue_updated", title, body, payload},
+    );
+    logger.info("Issue-updated notification queued", {issueId, from, to});
+  },
+);
+
+/**
+ * Notify the right party on an active_rental's agreement lifecycle and on a
+ * tenancy ending. Previously these events were "notified" only via dead
+ * client-side `activities` writes (keyed on a field nothing reads), so no push
+ * ever went out. This makes the Cloud Function the single source.
+ *
+ * Covers: agreement ready-for-review (→ tenant), accepted (→ landlord),
+ * disputed (→ landlord), finalized (→ tenant); rental ended by tenant
+ * (→ landlord), ended by landlord (→ tenant); tenant contests an end
+ * (→ landlord). Dedup IDs include the doc's `updatedAt` revision so a real
+ * re-cycle (e.g. dispute → re-upload → dispute again) still notifies, while a
+ * retried trigger for the same write does not double-send.
+ *
+ * @param {object} event Firestore update event for active_rentals/{rentalId}.
+ * @return {Promise<void>}
+ */
+export const onActiveRentalUpdated = onDocumentUpdated(
+  "active_rentals/{rentalId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const rentalId = event.params.rentalId;
+    const tenantId = after.tenantId as string | undefined;
+    const landlordId = after.landlordId as string | undefined;
+    const tenantName =
+      (after.tenantName as string | undefined) ?? "Your tenant";
+    const propertyTitle =
+      (after.propertyTitle as string | undefined) ?? "your property";
+    const propertyId = (after.propertyId as string | undefined) ?? "";
+    // Stable per-write revision: idempotent across retries of the same event,
+    // distinct across genuinely new writes (so re-cycles re-notify).
+    const rev =
+      after.updatedAt instanceof Timestamp ? after.updatedAt.toMillis() : 0;
+
+    const tenantDocsRoute = {route: "/tenant/documents"};
+    const tenantRentalsRoute = {route: "/tenant/my-rentals"};
+    const landlordAgreementsRoute = {
+      route: "/landlord/agreements",
+      ...(propertyId ? {propertyId} : {}),
+    };
+    const landlordRentalsRoute = {
+      route: "/landlord/rentals",
+      ...(propertyId ? {propertyId} : {}),
+    };
+
+    // ── Agreement lifecycle (agreementStatus transitions) ──
+    const agrBefore = before.agreementStatus as string | undefined;
+    const agrAfter = after.agreementStatus as string | undefined;
+    if (agrAfter && agrAfter !== agrBefore) {
+      let uid: string | undefined;
+      let type = "";
+      let title = "";
+      let body = "";
+      let payload: Record<string, string> = {};
+      if (agrAfter === "pending_review") {
+        uid = tenantId;
+        type = "agreement_uploaded";
+        title = "Agreement ready for review";
+        body =
+          `Your landlord sent the tenancy agreement for ${propertyTitle}. ` +
+          "Review it, then accept or raise concerns.";
+        payload = tenantDocsRoute;
+      } else if (agrAfter === "accepted") {
+        uid = landlordId;
+        type = "agreement_accepted";
+        title = "Tenant accepted the agreement";
+        body =
+          `${tenantName} accepted the tenancy agreement for ` +
+          `${propertyTitle}. You can now finalize it.`;
+        payload = landlordAgreementsRoute;
+      } else if (agrAfter === "disputed") {
+        uid = landlordId;
+        type = "agreement_disputed";
+        const reason = (after.tenantDisputeReason as string | undefined) ?? "";
+        title = "Tenant raised concerns";
+        body =
+          `${tenantName} raised concerns about the agreement for ` +
+          `${propertyTitle}${reason ? `: "${reason}"` : "."}`;
+        payload = landlordAgreementsRoute;
+      } else if (agrAfter === "finalized") {
+        uid = tenantId;
+        type = "agreement_finalized";
+        title = "Agreement finalized";
+        body =
+          `Your tenancy agreement for ${propertyTitle} is finalized. For ` +
+          "full legal protection, consider stamping it at your local tax " +
+          "office (LIRS/SIRS).";
+        payload = tenantDocsRoute;
+      }
+      if (uid && title) {
+        await writeNotificationOnce(
+          `rental_${rentalId}_agr_${agrAfter}_${rev}`,
+          {userId: uid, type, title, body, payload},
+        );
+      }
+    } else {
+      // Bare agreement upload (agreementUrl set without an agreementStatus —
+      // e.g. confirming a rental with an attached agreement). Guarded by the
+      // `else` so it can't double-fire with the pending_review branch above.
+      const urlBefore = (before.agreementUrl as string | undefined) ?? "";
+      const urlAfter = (after.agreementUrl as string | undefined) ?? "";
+      if (!urlBefore && urlAfter && tenantId) {
+        await writeNotificationOnce(
+          `rental_${rentalId}_agrurl_${rev}`,
+          {
+            userId: tenantId,
+            type: "agreement_uploaded",
+            title: "Tenancy agreement ready",
+            body:
+              `Your landlord attached the tenancy agreement for ` +
+              `${propertyTitle}. Open Documents to view it.`,
+            payload: tenantDocsRoute,
+          },
+        );
+      }
+    }
+
+    // ── Rental end (status transitions) ──
+    const stBefore = before.status as string | undefined;
+    const stAfter = after.status as string | undefined;
+    if (stAfter && stAfter !== stBefore) {
+      const endReason = (after.endReason as string | undefined) ?? "";
+      if (stAfter === "ended_by_tenant" && landlordId) {
+        await writeNotificationOnce(
+          `rental_${rentalId}_ended_tenant_${rev}`,
+          {
+            userId: landlordId,
+            type: "rental_ended",
+            title: "Tenant moved out",
+            body:
+              `${tenantName} ended their tenancy for ${propertyTitle}` +
+              `${endReason ? `: "${endReason}"` : "."}`,
+            payload: landlordRentalsRoute,
+          },
+        );
+      } else if (stAfter === "ended_by_landlord" && tenantId) {
+        await writeNotificationOnce(
+          `rental_${rentalId}_ended_landlord_${rev}`,
+          {
+            userId: tenantId,
+            type: "rental_ended",
+            title: "Tenancy ended by landlord",
+            body:
+              `Your landlord marked your tenancy for ${propertyTitle} as ` +
+              `ended${endReason ? `: "${endReason}"` : "."} You can add your ` +
+              "account of what happened.",
+            payload: tenantRentalsRoute,
+          },
+        );
+      }
+    }
+
+    // ── Tenant contests a landlord-ended rental ──
+    if (
+      after.tenantContested === true &&
+      before.tenantContested !== true &&
+      landlordId
+    ) {
+      const statement =
+        (after.tenantContestStatement as string | undefined) ?? "";
+      await writeNotificationOnce(
+        `rental_${rentalId}_contested_${rev}`,
+        {
+          userId: landlordId,
+          type: "rental_end_contested",
+          title: "Tenant contested the tenancy end",
+          body:
+            `${tenantName} added their account of the ended tenancy for ` +
+            `${propertyTitle}${statement ? `: "${statement}"` : "."}`,
+          payload: landlordRentalsRoute,
+        },
+      );
+    }
+
+    logger.info("Active-rental notification check done", {rentalId});
+  },
+);
+
+/**
+ * Populate the landlord (and agent) earnings ledger when a completed rent
+ * payment is recorded. The `transactions` collection powers the landlord
+ * Earnings screen, but nothing ever wrote to it — so earnings always read
+ * empty. Payout amounts are recomputed from the authoritative
+ * `rental_interests` doc rather than trusting the client-written payment
+ * fields. Deterministic doc IDs keep it idempotent if the trigger retries.
+ *
+ * Two rows per rent payment: a landlord row (carries `landlordId`, so the
+ * Earnings screen's `where(landlordId == me)` reads it) and — when there's an
+ * agent — an agent row (keyed by `agentId` only, so it never shows in the
+ * landlord's earnings; readable by the agent per the transactions rules).
+ *
+ * @param {object} event Firestore create event for payments/{reference}.
+ * @return {Promise<void>}
+ */
+export const onRentPaymentRecorded = onDocumentCreated(
+  "payments/{reference}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const pay = snap.data();
+    const reference = event.params.reference;
+
+    // Only completed *rent* payments generate earnings rows.
+    if (pay.type !== "rent" || pay.status !== "completed") return;
+
+    const db = getFirestore();
+
+    // SECURITY (H2): money and the identities that receive it are derived
+    // ONLY from the authoritative rental_interest — NEVER from the
+    // client-written payment doc. A tampered client can forge a `payments`
+    // doc (type:rent, status:completed) with arbitrary landlordId/landlordPayout;
+    // trusting those fields would mint a fabricated earnings row. So if the
+    // payment carries no rentalInterestId, or the rental_interest is missing,
+    // we write NO earnings rows rather than fall back to client figures.
+    const riId = pay.rentalInterestId as string | undefined;
+    if (!riId) {
+      logger.warn("Rent payment has no rentalInterestId — no earnings written", {
+        reference,
+      });
+      return;
+    }
+    const riSnap = await db.collection("rental_interests").doc(riId).get();
+    if (!riSnap.exists) {
+      logger.warn("rental_interest not found — no earnings written", {
+        reference,
+        riId,
+      });
+      return;
+    }
+    const ri = riSnap.data() as Record<string, unknown>;
+
+    const landlordId = ri.landlordId as string | undefined;
+    const agentId = ri.agentId as string | undefined;
+    const tenantId = (ri.tenantId ?? "") as string;
+    const tenantName = (ri.tenantName ?? "Your tenant") as string;
+    const propertyId = (ri.propertyId ?? "") as string;
+    const propertyTitle = (ri.propertyTitle ?? "your property") as string;
+    const landlordPayout = Number(ri.landlordPayout ?? 0);
+    const agentPayout = Number(ri.agentPayout ?? 0);
+
+    const base = {
+      reference,
+      type: "rent",
+      tenantId,
+      tenantName,
+      propertyId,
+      propertyTitle,
+      status: "completed",
+    };
+
+    const writeOnce = async (
+      id: string,
+      data: Record<string, unknown>,
+    ): Promise<void> => {
+      try {
+        await db.collection("transactions").doc(id).create({
+          ...base,
+          ...data,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        const code = (err as {code?: number | string})?.code;
+        if (code === 6 || code === "already-exists") {
+          logger.info("Transaction already exists, skipping", {id});
+          return;
+        }
+        throw err;
+      }
+    };
+
+    if (landlordId && landlordPayout > 0) {
+      await writeOnce(`txn_${reference}_landlord`, {
+        landlordId,
+        role: "landlord",
+        amount: landlordPayout,
+      });
+    }
+
+    if (agentId && agentPayout > 0) {
+      await writeOnce(`txn_${reference}_agent`, {
+        agentId,
+        role: "agent",
+        amount: agentPayout,
+      });
+    }
+
+    logger.info("Rent earnings ledger written", {reference, landlordId, agentId});
+  },
+);
+
+/**
  * Notify the right parties when an inspection request changes state.
  *
  * Diffs before vs after on the inspection_requests doc and emits one
@@ -268,6 +877,88 @@ export const onInspectionRequestCreated = onDocumentCreated(
  * @param {object} event Firestore update event with before/after.
  * @return {Promise<void>}
  */
+/**
+ * Notify the landlord the moment a tenant *pays to rent* (rental interest
+ * reaches payment_verified). Before this, a paid applicant produced no push
+ * and no Recent-Activities entry — the landlord only found it by digging into
+ * Inspections → History. Sends a push (deep-linking to where they accept) and
+ * writes a Recent-Activities row. Both are idempotent on trigger retries.
+ *
+ * @param {object} event Update event for rental_interests/{interestId}.
+ * @return {Promise<void>}
+ */
+export const onRentalInterestPaid = onDocumentUpdated(
+  "rental_interests/{interestId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    // Only on the transition INTO payment_verified.
+    if (before.status === "payment_verified") return;
+    if (after.status !== "payment_verified") return;
+
+    const interestId = event.params.interestId;
+    const landlordId = after.landlordId as string | undefined;
+    if (!landlordId) return;
+    const tenantId = (after.tenantId as string | undefined) ?? "";
+    const tenantName = (after.tenantName as string | undefined) ?? "A tenant";
+    const propertyId = (after.propertyId as string | undefined) ?? "";
+    const propertyTitle =
+      (after.propertyTitle as string | undefined) ?? "your property";
+
+    // Push + bell inbox.
+    await writeNotificationOnce(
+      `interest_${interestId}_paid_${landlordId}`,
+      {
+        userId: landlordId,
+        type: "rental_interest_paid",
+        title: "Tenant paid to rent your property",
+        body:
+          `${tenantName} has paid to rent ${propertyTitle}. ` +
+          "Review and accept them as your tenant.",
+        payload: {
+          route: "/landlord/inspections",
+          initialTab: "2",
+          ...(propertyId ? {propertyId} : {}),
+        },
+      },
+    );
+
+    // Recent-Activities feed (read by the landlordId field). Deterministic ID
+    // so a retry doesn't create a duplicate row. Uses the `payment` type for a
+    // money icon / green accent.
+    try {
+      await getFirestore()
+        .collection("activities")
+        .doc(`interest_${interestId}_paid`)
+        .create({
+          landlordId,
+          type: "payment",
+          title: "New tenant paid to rent",
+          subtitle:
+            `${tenantName} paid to rent ${propertyTitle}. ` +
+            "Accept them in Inspections → History.",
+          propertyId,
+          actorId: tenantId,
+          actorName: tenantName,
+          isRead: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+      const code = (err as {code?: number | string})?.code;
+      if (code !== 6 && code !== "already-exists") {
+        logger.warn("Failed to write rental-interest activity", {interestId});
+      }
+    }
+
+    logger.info("Rental-interest-paid notification queued", {
+      interestId,
+      landlordId,
+    });
+  },
+);
+
 export const onInspectionRequestUpdated = onDocumentUpdated(
   "inspection_requests/{requestId}",
   async (event) => {
@@ -435,12 +1126,15 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     }
 
     // ---- Status: pending → declined (landlord-handled decline) ----
-    // Tenant gets pushed.
+    // Tenant gets pushed. Skipped when the decline came from the
+    // server-side slot-conflict guard — that path emits its own
+    // tenant notification with accurate wording.
     if (
       statusChanged &&
       beforeStatus === "pending" &&
       afterStatus === "declined" &&
-      tenantId
+      tenantId &&
+      after.declineSource !== "system_slot_conflict"
     ) {
       await writeNotificationOnce(
         `req_${requestId}_declined_${tenantId}`,
@@ -656,24 +1350,34 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       after.met === true &&
       after.metBy === "tenant"
     ) {
+      const agentHandled = !!agentId;
       const recipients: string[] = [];
-      if (agentId) {
-        recipients.push(agentId);
+      if (agentHandled) {
+        recipients.push(agentId as string);
         if (landlordId) recipients.push(landlordId);
       } else if (landlordId) {
         recipients.push(landlordId);
       }
       for (const rid of recipients) {
+        // The party who actually met the tenant (the agent when agent-handled,
+        // otherwise the landlord) gets the "complete the inspection" prompt.
+        // On an agent-handled inspection the landlord wasn't there, so they get
+        // an accurate FYI instead of the wrong "confirms meeting you".
+        const isLandlordFyi = agentHandled && rid === landlordId;
         const route = rid === agentId ? agentRoute : landlordRoute;
         await writeNotificationOnce(
           `req_${requestId}_met_${rid}`,
           {
             userId: rid,
             type: "inspection_met",
-            title: "Tenant Confirmed Meeting",
-            body:
-              `${tenantName} confirms meeting you. ` +
-              "You can now complete the inspection.",
+            title: isLandlordFyi
+              ? "Inspection Underway"
+              : "Tenant Confirmed Meeting",
+            body: isLandlordFyi
+              ? `${tenantName} has met ${agentName} for the inspection at ` +
+                `${propertyTitle}.`
+              : `${tenantName} confirms meeting you. ` +
+                "You can now complete the inspection.",
             payload: {
               route,
               initialTab: "1",
@@ -1127,7 +1831,8 @@ export const resolveAccount = onCall(
   {
     secrets: [paystackSecret],
     timeoutSeconds: 30,
-    enforceAppCheck: false,
+    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    enforceAppCheck: true,
   },
   async (request) => {
     // 1. Auth check — only signed-in users may call this.
@@ -1215,6 +1920,323 @@ export const resolveAccount = onCall(
     }
   },
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYSTACK TRANSACTION PROXIES
+//
+// initializePayment / verifyPayment / refundPayment move the Paystack secret
+// key off the mobile client (was hardcoded in paystack_service.dart) into
+// Secret Manager. The client now calls these callables instead of hitting
+// api.paystack.co directly with a Bearer secret.
+//
+// These intentionally preserve the exact request/response shape the old
+// client code used, so PaystackService and its four call sites need no
+// behavioural change. Server-authoritative writes to the `payments`
+// collection are a separate, later hardening step — these functions do NOT
+// write Firestore; the client still records payments for now.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface InitializePaymentInput {
+  amount?: unknown; // Naira (not kobo) — matches old client contract.
+  type?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+const PAYSTACK_CALLBACK_URL = "https://verealtytech.com/payment/callback";
+
+/**
+ * Generate a payment reference server-side. Mirrors the old client format
+ * CR_<TYPE>_<millis>_<8hex> so existing reference parsing/lookups still work.
+ * @param {string} type Payment type (verification, inspection, listing, rent).
+ * @return {string} The generated reference.
+ */
+function generatePaymentReference(type: string): string {
+  const rand = createHash("sha256")
+    .update(`${Date.now()}_${Math.random()}`)
+    .digest("hex")
+    .slice(0, 8);
+  return `CR_${type.toUpperCase()}_${Date.now()}_${rand}`;
+}
+
+export const initializePayment = onCall(
+  {
+    secrets: [paystackSecret],
+    timeoutSeconds: 30,
+    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    enforceAppCheck: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Sign in required to start a payment.",
+      );
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token?.email as string | undefined;
+    if (!email || email.length === 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "No email on your account. Update your profile and try again.",
+      );
+    }
+
+    const data = request.data as InitializePaymentInput;
+    const amount = data.amount;
+    const type = data.type;
+    if (typeof amount !== "number" || !(amount > 0)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "amount must be a positive number (in Naira).",
+      );
+    }
+    if (typeof type !== "string" || type.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "type must be a non-empty string.",
+      );
+    }
+
+    const reference = generatePaymentReference(type);
+    const amountInKobo = Math.round(amount * 100);
+
+    // Reproduce the metadata block the client used to build, including the
+    // custom_fields Paystack displays on the dashboard. Caller metadata is
+    // merged last so per-payment fields (propertyId, accountType, etc.) are
+    // preserved exactly as before.
+    const callerMetadata =
+      (data.metadata && typeof data.metadata === "object") ?
+        data.metadata :
+        {};
+    const fullMetadata = {
+      userId: uid,
+      paymentType: type,
+      custom_fields: [
+        {
+          display_name: "Payment Type",
+          variable_name: "payment_type",
+          value: type,
+        },
+        {
+          display_name: "User ID",
+          variable_name: "user_id",
+          value: uid,
+        },
+      ],
+      ...callerMetadata,
+    };
+
+    try {
+      const resp = await fetch(
+        "https://api.paystack.co/transaction/initialize",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${paystackSecret.value()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            amount: amountInKobo,
+            reference,
+            currency: "NGN",
+            metadata: fullMetadata,
+            callback_url: PAYSTACK_CALLBACK_URL,
+          }),
+        },
+      );
+
+      const body = (await resp.json()) as {
+        status?: boolean;
+        message?: string;
+        data?: {authorization_url?: string; access_code?: string};
+      };
+
+      if (resp.ok && body.status === true && body.data?.authorization_url) {
+        return {
+          authorizationUrl: body.data.authorization_url,
+          accessCode: body.data.access_code ?? "",
+          reference,
+        };
+      }
+
+      logger.warn("Paystack initialize non-OK", {
+        status: resp.status,
+        message: body.message,
+        uid,
+      });
+      throw new HttpsError(
+        "internal",
+        body.message ?? "Failed to initialize payment.",
+      );
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      logger.error("Paystack initialize failed", {
+        error: err instanceof Error ? err.message : String(err),
+        uid,
+      });
+      throw new HttpsError(
+        "internal",
+        "Network error reaching Paystack. Please try again.",
+      );
+    }
+  },
+);
+
+interface VerifyPaymentInput {
+  reference?: unknown;
+}
+
+export const verifyPayment = onCall(
+  {
+    secrets: [paystackSecret],
+    timeoutSeconds: 30,
+    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    enforceAppCheck: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Sign in required to verify a payment.",
+      );
+    }
+    const data = request.data as VerifyPaymentInput;
+    const reference = data.reference;
+    if (typeof reference !== "string" || reference.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "reference must be a non-empty string.",
+      );
+    }
+
+    try {
+      const resp = await fetch(
+        "https://api.paystack.co/transaction/verify/" +
+          encodeURIComponent(reference),
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${paystackSecret.value()}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const body = (await resp.json()) as {
+        status?: boolean;
+        message?: string;
+        data?: {
+          status?: string;
+          amount?: number;
+          paid_at?: string | null;
+          gateway_response?: string | null;
+        };
+      };
+
+      if (resp.ok && body.status === true && body.data) {
+        const tx = body.data;
+        const txStatus = tx.status ?? "failed";
+        const amountInKobo = typeof tx.amount === "number" ? tx.amount : 0;
+        return {
+          success: txStatus === "success",
+          status: txStatus,
+          reference,
+          amountPaid: amountInKobo / 100,
+          paidAt: tx.paid_at ?? null,
+          gatewayResponse: tx.gateway_response ?? "",
+        };
+      }
+
+      logger.warn("Paystack verify non-OK", {
+        status: resp.status,
+        message: body.message,
+        uid: request.auth.uid,
+      });
+      return {
+        success: false,
+        status: "failed",
+        reference,
+        error: body.message ?? "Verification failed.",
+      };
+    } catch (err) {
+      logger.error("Paystack verify failed", {
+        error: err instanceof Error ? err.message : String(err),
+        uid: request.auth.uid,
+      });
+      throw new HttpsError(
+        "internal",
+        "Network error during verification. Please try again.",
+      );
+    }
+  },
+);
+
+interface RefundPaymentInput {
+  reference?: unknown;
+  reason?: unknown;
+}
+
+export const refundPayment = onCall(
+  {
+    secrets: [paystackSecret],
+    timeoutSeconds: 30,
+    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    enforceAppCheck: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const data = request.data as RefundPaymentInput;
+    const reference = data.reference;
+    if (typeof reference !== "string" || reference.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "reference must be a non-empty string.",
+      );
+    }
+    const reason =
+      typeof data.reason === "string" && data.reason.length > 0 ?
+        data.reason :
+        "ClearRent refund";
+
+    try {
+      const resp = await fetch("https://api.paystack.co/refund", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${paystackSecret.value()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({transaction: reference, merchant_note: reason}),
+      });
+      const body = (await resp.json()) as {
+        status?: boolean;
+        message?: string;
+      };
+
+      if (resp.ok && body.status === true) {
+        return {success: true};
+      }
+      logger.warn("Paystack refund non-OK", {
+        status: resp.status,
+        message: body.message,
+        uid: request.auth.uid,
+      });
+      return {success: false, error: body.message ?? "Refund failed."};
+    } catch (err) {
+      logger.error("Paystack refund failed", {
+        error: err instanceof Error ? err.message : String(err),
+        uid: request.auth.uid,
+      });
+      throw new HttpsError(
+        "internal",
+        "Network error during refund. Please try again.",
+      );
+    }
+  },
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // lookupEmailByPhone
 //
@@ -1386,19 +2408,23 @@ export const lookupEmailByPhone = onCall(
         "phone must be a non-empty string.",
       );
     }
-    const phone = normalizeNigerianPhone(rawPhone);
-    if (phone === null) {
+    const phoneLocal = normalizeNigerianPhone(rawPhone);
+    if (phoneLocal === null) {
       throw new HttpsError(
         "invalid-argument",
         "phone is not a valid Nigerian mobile number.",
       );
     }
+    // All users.phone values are stored in E.164 (enforced at every
+    // write site via phone_utils.dart phoneToE164, and backfilled
+    // via scripts/backfill-phone-e164.ts).
+    const phoneE164 = "+234" + phoneLocal.slice(1);
 
     const ip = extractIp(request.rawRequest);
     const ipHash = sha256Hex(ip);
     let rlReason: string | null;
     try {
-      rlReason = await checkRateLimit(ipHash, phone);
+      rlReason = await checkRateLimit(ipHash, phoneLocal);
     } catch (err) {
       logger.error("Rate-limit check failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -1417,7 +2443,7 @@ export const lookupEmailByPhone = onCall(
     try {
       const snap = await getFirestore()
         .collection("users")
-        .where("phone", "==", phone)
+        .where("phone", "==", phoneE164)
         .limit(1)
         .get();
 
@@ -1447,6 +2473,148 @@ export const lookupEmailByPhone = onCall(
         "internal",
         "Could not process request right now. Try again.",
       );
+    }
+  },
+)
+
+/**
+ * Daily lease-lifecycle sweep (08:00 Africa/Lagos).
+ *
+ * For both `active_rentals` and `tenancy_links`, this:
+ *  1. Sends lease-end reminders at T-30, T-7 and T-1 days. Reminder notif IDs
+ *     are deterministic (`lease_reminder_T{n}_{docId}`), so `writeNotificationOnce`
+ *     dedups them — a given threshold fires exactly once even across daily runs.
+ *  2. Flips active-ish docs whose `leaseEndDate` has passed to `grace_locked`
+ *     (server is the source of truth for this transition) and sends a one-time
+ *     `lease_ended_{docId}` notification.
+ *
+ * Scale note: reads all active docs daily (Approach 1). Fine at launch scale;
+ * switch to leaseEndDate range queries + composite indexes at high volume.
+ *
+ * Docs with no `leaseEndDate` (legacy links) are skipped — they never expire.
+ */
+export const leaseLifecycleSweep = onSchedule(
+  {schedule: "0 8 * * *", timeZone: "Africa/Lagos"},
+  async () => {
+    const db = getFirestore();
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    // Reminder thresholds in days before lease end.
+    const thresholds = [30, 7, 1];
+
+    let remindersSent = 0;
+    let locked = 0;
+
+    /**
+     * Process one collection's active-ish docs.
+     * @param {string} collection Firestore collection name.
+     * @param {string[]} activeStatuses Statuses considered "live" (lockable).
+     * @param {boolean} isLinked Whether this is the tenancy_links collection.
+     */
+    async function sweepCollection(
+      collection: string,
+      activeStatuses: string[],
+      isLinked: boolean,
+    ): Promise<void> {
+      const snap = await db
+        .collection(collection)
+        .where("status", "in", activeStatuses)
+        .get();
+
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const leaseEndTs = data.leaseEndDate as Timestamp | undefined;
+        if (!leaseEndTs) continue; // legacy/no-term — never expires
+
+        const leaseEndMs = leaseEndTs.toMillis();
+        const tenantId = data.tenantId as string | undefined;
+        if (!tenantId) continue;
+
+        const propertyTitle =
+          (data.propertyTitle as string | undefined) ?? "your rental";
+        const daysLeft = Math.ceil((leaseEndMs - now) / dayMs);
+
+        // ── Already lapsed → lock + one-time ended notice ──
+        if (leaseEndMs <= now) {
+          if (data.status !== "grace_locked") {
+            await doc.ref.update({
+              status: "grace_locked",
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            locked++;
+          }
+          const wrote = await writeNotificationOnce(
+            `lease_ended_${doc.id}`,
+            {
+              userId: tenantId,
+              title: "Lease ended — action needed",
+              body: isLinked ?
+                `Your lease for ${propertyTitle} has ended. Pay rent to ` +
+                  "continue, or move out." :
+                `Your lease for ${propertyTitle} has ended. Renew to keep ` +
+                  "your dashboard active.",
+              payload: {
+                type: "lease_ended",
+                rentalId: doc.id,
+                source: isLinked ? "linked" : "active",
+              },
+              type: "lease_ended",
+            },
+          );
+          if (wrote) remindersSent++;
+          continue;
+        }
+
+        // ── Upcoming → threshold reminders ──
+        for (const t of thresholds) {
+          // Fire when the doc is within this threshold's day (daysLeft === t).
+          if (daysLeft === t) {
+            const wrote = await writeNotificationOnce(
+              `lease_reminder_T${t}_${doc.id}`,
+              {
+                userId: tenantId,
+                title: t === 1 ?
+                  "Lease ends tomorrow" :
+                  `Lease ends in ${t} days`,
+                body: isLinked ?
+                  `Your lease for ${propertyTitle} ends in ${t} ` +
+                    `day${t === 1 ? "" : "s"}. Pay rent to continue or plan ` +
+                    "your move." :
+                  `Your lease for ${propertyTitle} ends in ${t} ` +
+                    `day${t === 1 ? "" : "s"}. Renew to avoid interruption.`,
+                payload: {
+                  type: "lease_reminder",
+                  rentalId: doc.id,
+                  daysLeft: String(t),
+                  source: isLinked ? "linked" : "active",
+                },
+                type: "lease_reminder",
+              },
+            );
+            if (wrote) remindersSent++;
+          }
+        }
+      }
+    }
+
+    try {
+      await sweepCollection(
+        "active_rentals",
+        ["active", "expiring_soon"],
+        false,
+      );
+      await sweepCollection(
+        "tenancy_links",
+        ["confirmed", "expiring_soon"],
+        true,
+      );
+      logger.info("leaseLifecycleSweep complete", {remindersSent, locked});
+    } catch (err) {
+      logger.error("leaseLifecycleSweep failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
     }
   },
 )
@@ -1577,6 +2745,7 @@ export const setAdminClaim = onCall(
   },
 )
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // creditInspectionEarnings
 //
@@ -1686,6 +2855,232 @@ export const creditInspectionEarnings = onDocumentUpdated(
     }
   },
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property occupancy sync (server-authoritative)
+//
+// currentTenantsCount and isAvailable are owned exclusively by these
+// triggers. A property's occupancy = the number of currently-confirmed
+// tenancy_links PLUS the number of active_rentals in an occupying state
+// (active or expiring_soon). Either source changing recomputes the total.
+//
+// Recompute-from-source (not increment) makes it self-healing — it can't
+// drift. Moving the write server-side also closes the category-2 permission
+// gap: a tenant accepting a link can't write to the landlord's property doc
+// directly, and now doesn't need to.
+//
+// A property can legitimately hold BOTH a rental tenant (inspection → paid
+// rent) and a directly-linked pre-existing tenant, so both sources must be
+// summed — neither may clobber the other.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// active_rental statuses that occupy a slot. expired/terminated free it.
+// grace_locked still occupies — the tenant may still be living there while
+// they decide to renew or move out; the slot frees only on actual move-out.
+const OCCUPYING_RENTAL_STATUSES = ["active", "expiring_soon", "grace_locked"];
+
+/**
+ * Recompute currentTenantsCount + isAvailable for one property from both
+ * occupancy sources and write the result. Admin SDK — bypasses rules.
+ *
+ * @param {string} propertyId The property to recompute.
+ * @return {Promise<void>}
+ */
+async function recomputePropertyOccupancy(propertyId: string): Promise<void> {
+  const db = getFirestore();
+  const propertyRef = db.collection("properties").doc(propertyId);
+
+  const propertySnap = await propertyRef.get();
+  if (!propertySnap.exists) {
+    logger.warn("Property not found for occupancy recompute", {propertyId});
+    return;
+  }
+  const maxTenants =
+    (propertySnap.get("maxTenants") as number | undefined) ?? 1;
+
+  // Count confirmed tenancy links.
+  const linksSnap = await db
+    .collection("tenancy_links")
+    .where("propertyId", "==", propertyId)
+    .where("status", "==", "confirmed")
+    .get();
+
+  // Count occupying active rentals.
+  const rentalsSnap = await db
+    .collection("active_rentals")
+    .where("propertyId", "==", propertyId)
+    .where("status", "in", OCCUPYING_RENTAL_STATUSES)
+    .get();
+
+  const total = linksSnap.size + rentalsSnap.size;
+
+  const update: Record<string, unknown> = {
+    currentTenantsCount: total,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (total >= maxTenants) {
+    update.isAvailable = false;
+  } else if (total <= 0) {
+    update.isAvailable = true;
+  }
+  // Partial occupancy (0 < total < max): leave isAvailable as-is, so a
+  // landlord's manual "unavailable" toggle isn't overridden.
+
+  await propertyRef.update(update);
+
+  logger.info("Property occupancy recomputed", {
+    propertyId,
+    confirmedLinks: linksSnap.size,
+    occupyingRentals: rentalsSnap.size,
+    total,
+    maxTenants,
+  });
+}
+
+export const onTenancyLinkOccupancyChange = onDocumentUpdated(
+  "tenancy_links/{linkId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const before = snap.before.data();
+    const after = snap.after.data();
+
+    // Only recompute when confirmed-ness changed.
+    const wasConfirmed = before.status === "confirmed";
+    const isConfirmed = after.status === "confirmed";
+    if (wasConfirmed === isConfirmed) return;
+
+    const propertyId = after.propertyId as string | undefined;
+    if (!propertyId) {
+      logger.warn("tenancy_link has no propertyId", {
+        linkId: event.params.linkId,
+      });
+      return;
+    }
+    try {
+      await recomputePropertyOccupancy(propertyId);
+    } catch (err) {
+      logger.error("Occupancy recompute failed (link change)", {
+        propertyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+);
+
+export const onActiveRentalCreatedOccupancy = onDocumentCreated(
+  "active_rentals/{rentalId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const propertyId = snap.data().propertyId as string | undefined;
+    if (!propertyId) return;
+    try {
+      await recomputePropertyOccupancy(propertyId);
+    } catch (err) {
+      logger.error("Occupancy recompute failed (rental create)", {
+        propertyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+);
+
+export const onActiveRentalStatusOccupancy = onDocumentUpdated(
+  "active_rentals/{rentalId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const before = snap.before.data();
+    const after = snap.after.data();
+
+    // Only recompute when occupying-ness changed.
+    const wasOccupying =
+      OCCUPYING_RENTAL_STATUSES.includes(before.status as string);
+    const isOccupying =
+      OCCUPYING_RENTAL_STATUSES.includes(after.status as string);
+    if (wasOccupying === isOccupying) return;
+
+    const propertyId = after.propertyId as string | undefined;
+    if (!propertyId) return;
+    try {
+      await recomputePropertyOccupancy(propertyId);
+    } catch (err) {
+      logger.error("Occupancy recompute failed (rental status change)", {
+        propertyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setVerificationExempt
+//
+// Grants/revokes the verificationExempt custom claim on a target user and
+// mirrors it to their user doc. Exempt accounts bypass the email-verification
+// nudge — intended ONLY for test accounts with non-deliverable emails.
+// Caller must be superAdmin. Strip these before launch; logs every change.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SetVerificationExemptInput {
+  targetUid?: unknown;
+  exempt?: unknown;
+}
+
+export const setVerificationExempt = onCall(
+  {timeoutSeconds: 15, enforceAppCheck: false},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    if ((request.auth.token ?? {}).superAdmin !== true) {
+      logger.warn("setVerificationExempt called by non-superAdmin", {
+        callerUid: request.auth.uid,
+      });
+      throw new HttpsError(
+        "permission-denied",
+        "Only super admins can set verification exemptions.",
+      );
+    }
+
+    const data = request.data as SetVerificationExemptInput;
+    const targetUid = data.targetUid;
+    const exempt = data.exempt;
+    if (typeof targetUid !== "string" || targetUid.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument", "targetUid must be a non-empty string.");
+    }
+    if (typeof exempt !== "boolean") {
+      throw new HttpsError("invalid-argument", "exempt must be a boolean.");
+    }
+
+    const auth = getAuth();
+    const target = await auth.getUser(targetUid);
+    const existing = (target.customClaims ?? {}) as Record<string, unknown>;
+
+    let next: Record<string, unknown>;
+    if (exempt) {
+      next = {...existing, verificationExempt: true};
+    } else {
+      const {verificationExempt: _ve, ...rest} = existing;
+      next = rest;
+    }
+    await auth.setCustomUserClaims(targetUid, next);
+
+    const db = getFirestore();
+    await db.collection("users").doc(targetUid).set(
+      {verificationExempt: exempt, updatedAt: FieldValue.serverTimestamp()},
+      {merge: true},
+    );
+
+    logger.warn("VERIFICATION EXEMPT CHANGED — strip before launch", {
+      callerUid: request.auth.uid, targetUid, exempt,
+    });
+
+    return {success: true, targetUid, exempt};
+  },
+)
 ;
 export {
   markInspectionAgentPayoutPaid,
@@ -1693,4 +3088,25 @@ export {
   markRentAgentCommissionPaid,
   markRefundPaid,
   onInspectionRefundTriggered,
+  onRentalInterestAccepted,
 } from "./admin_money_ops";
+
+export {
+  completeActiveRenewal,
+  completeLinkedPromotion,
+} from "./renewal_ops";
+export {
+  approveRentReview,
+  rejectRentReview,
+  approveImmediateRentChange,
+} from "./rent_review_ops";
+
+export {submitNin} from "./nin_ops";
+
+export {deleteMyAccount} from "./account_ops";
+
+export {getSignedAgreementUrl} from "./doc_access_ops";
+
+export {agentUnassignFromProperty} from "./agent_property_ops";
+
+export {inspectionLifecycleSweep} from "./inspection_lifecycle_ops";

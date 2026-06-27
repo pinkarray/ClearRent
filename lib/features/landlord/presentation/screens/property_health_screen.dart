@@ -106,6 +106,10 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('issues')
+            // landlordId-scoped so the query satisfies the ownership-constrained
+            // list rule. This is the landlord's own property, so
+            // property.landlordId == the caller's uid.
+            .where('landlordId', isEqualTo: widget.property.landlordId)
             .where('propertyId', isEqualTo: widget.property.id)
             .snapshots(),
         builder: (context, issueSnap) {
@@ -714,6 +718,11 @@ class _HealthTab extends StatelessWidget {
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('maintenance_logs')
+              // landlordId-scoped so the query satisfies the ownership-constrained
+              // list rule. This is the landlord's own property, so
+              // property.landlordId == the caller's uid. Requires the composite
+              // index (landlordId, propertyId, loggedAt desc).
+              .where('landlordId', isEqualTo: property.landlordId)
               .where('propertyId', isEqualTo: property.id)
               .orderBy('loggedAt', descending: true)
               .limit(10)

@@ -176,8 +176,9 @@ class _PropertyIssueGroupState extends State<_PropertyIssueGroup> {
         // Issue cards
         if (_expanded) ...[
           const Divider(height: 1),
-          ...widget.issues.map((doc) =>
-              _IssueHistoryTile(data: doc.data() as Map<String, dynamic>)),
+          ...widget.issues.map((doc) => _IssueHistoryTile(
+              issueId: doc.id,
+              data: doc.data() as Map<String, dynamic>)),
         ],
       ]),
     );
@@ -187,8 +188,9 @@ class _PropertyIssueGroupState extends State<_PropertyIssueGroup> {
 // ── Single issue row ──────────────────────────────────────────────────────────
 
 class _IssueHistoryTile extends StatelessWidget {
+  final String issueId;
   final Map<String, dynamic> data;
-  const _IssueHistoryTile({required this.data});
+  const _IssueHistoryTile({required this.issueId, required this.data});
 
   List<String> get _images => List<String>.from(data['images'] ?? []);
 
@@ -288,7 +290,7 @@ class _IssueHistoryTile extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _IssueDetailScreen(data: data),
+        builder: (_) => _IssueDetailScreen(issueId: issueId, data: data),
       ),
     );
   }
@@ -358,8 +360,9 @@ class _IssueHistoryTile extends StatelessWidget {
 // ── Issue Detail Screen ───────────────────────────────────────────────────────
 
 class _IssueDetailScreen extends StatelessWidget {
+  final String issueId;
   final Map<String, dynamic> data;
-  const _IssueDetailScreen({required this.data});
+  const _IssueDetailScreen({required this.issueId, required this.data});
 
   List<String> get _images => List<String>.from(data['images'] ?? []);
   String get _status => (data['status'] as String?) ?? 'open';
@@ -391,18 +394,26 @@ class _IssueDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status + priority header
+            // Status + priority header. Wrapped so a long status label
+            // ellipsizes on narrow screens instead of overflowing the row.
             Row(
               children: [
-                _buildStatusChip(),
-                const SizedBox(width: 8),
-                _buildPriorityChip(),
-                const Spacer(),
-                if (_createdAt != null)
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(child: _buildStatusChip()),
+                      const SizedBox(width: 8),
+                      _buildPriorityChip(),
+                    ],
+                  ),
+                ),
+                if (_createdAt != null) ...[
+                  const SizedBox(width: 8),
                   Text(
                     _formatDate(_createdAt!),
                     style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
                   ),
+                ],
               ],
             ),
 
@@ -535,6 +546,12 @@ class _IssueDetailScreen extends StatelessWidget {
             const SizedBox(height: 20),
             _buildStatusTimeline(),
 
+            // Tenant confirms or disputes the landlord's fix.
+            if (_status == 'pending_confirmation') ...[
+              const SizedBox(height: 24),
+              _ConfirmFixButtons(issueId: issueId, data: data),
+            ],
+
             const SizedBox(height: 40),
           ],
         ),
@@ -553,6 +570,8 @@ class _IssueDetailScreen extends StatelessWidget {
         border: Border.all(color: color.withAlpha(77)),
       ),
       child: Text(label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: AppTextStyles.labelSmall.copyWith(
               color: color, fontWeight: FontWeight.w600)),
     );
@@ -728,5 +747,167 @@ class _IssueDetailScreen extends StatelessWidget {
       'Jul','Aug','Sep','Oct','Nov','Dec'
     ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+}
+
+// ── Confirm / dispute the landlord's fix (closes the loop) ────────────────────
+
+class _ConfirmFixButtons extends StatefulWidget {
+  final String issueId;
+  final Map<String, dynamic> data;
+  const _ConfirmFixButtons({required this.issueId, required this.data});
+
+  @override
+  State<_ConfirmFixButtons> createState() => _ConfirmFixButtonsState();
+}
+
+class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
+  bool _busy = false;
+
+  Future<void> _update(
+      Map<String, dynamic> fields, String okMsg, Color okColor) async {
+    setState(() => _busy = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('issues')
+          .doc(widget.issueId)
+          .update({...fields, 'updatedAt': FieldValue.serverTimestamp()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(okMsg),
+        backgroundColor: okColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      Navigator.pop(context);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Something went wrong. Please try again.'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
+  Future<void> _confirm() => _update(
+        {
+          'status': 'resolved',
+          'resolvedAt': FieldValue.serverTimestamp(),
+          'tenantConfirmedAt': FieldValue.serverTimestamp(),
+        },
+        'Marked resolved — thanks for confirming!',
+        AppColors.success,
+      );
+
+  Future<void> _dispute() async {
+    final controller = TextEditingController();
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Not fixed?'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(
+            "Tell your landlord what's still wrong — it goes back to their "
+            'In Progress list.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: 'What\'s still wrong?',
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ]),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Back',
+                  style: TextStyle(color: AppColors.textSecondary))),
+          TextButton(
+              onPressed: () {
+                if (controller.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: Text('Send', style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (send != true || !mounted) return;
+    await _update(
+      {
+        'status': 'in_progress',
+        'tenantDisputeReason': controller.text.trim(),
+      },
+      'Sent back to your landlord.',
+      AppColors.info,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.info.withAlpha(13),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.info.withAlpha(51)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Has this been fixed?', style: AppTextStyles.labelLarge),
+        const SizedBox(height: 4),
+        Text(
+          'Your landlord marked this as fixed. Confirm to close it, or let '
+          'them know if it\'s not resolved.',
+          style: AppTextStyles.caption
+              .copyWith(color: AppColors.textSecondary, height: 1.4),
+        ),
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _busy ? null : _dispute,
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: AppColors.border),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text('Not fixed',
+                      style: AppTextStyles.labelMedium
+                          .copyWith(color: AppColors.textSecondary)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _busy ? null : _confirm,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: Text('Yes, fixed',
+                  style: AppTextStyles.labelMedium
+                      .copyWith(color: Colors.white)),
+            ),
+          ),
+        ]),
+      ]),
+    );
   }
 }

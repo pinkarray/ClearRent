@@ -4,6 +4,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/date_time_slot_picker.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import 'package:go_router/go_router.dart';
@@ -285,13 +286,28 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                   // Date selection
                   Text('Select Date', style: AppTextStyles.labelLarge),
                   const SizedBox(height: 12),
-                  _buildDateSelection(),
+                  DateStrip(
+                    availableDates: _availableDates,
+                    selectedDate: _selectedDate,
+                    isLoading: _isLoadingDates,
+                    onDateSelected: (date) {
+                      setState(() => _selectedDate = date);
+                      _loadTimeSlots(date);
+                    },
+                  ),
                   const SizedBox(height: 24),
 
                   // Time slot selection
                   Text('Select Time', style: AppTextStyles.labelLarge),
                   const SizedBox(height: 12),
-                  _buildTimeSlotSelection(),
+                  TimeSlotWrap(
+                    availableTimeSlots: _availableTimeSlots,
+                    selectedTimeSlot: _selectedTimeSlot,
+                    selectedDate: _selectedDate,
+                    isLoading: _isLoadingSlots,
+                    onTimeSlotSelected: (slot) =>
+                        setState(() => _selectedTimeSlot = slot),
+                  ),
                   const SizedBox(height: 24),
 
                   // Notes (optional)
@@ -425,249 +441,6 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDateSelection() {
-    if (_isLoadingDates) {
-      return Container(
-        height: 80,
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-      );
-    }
-
-    if (_availableDates.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Icon(Icons.event_busy, size: 40, color: AppColors.textHint),
-            const SizedBox(height: 8),
-            Text(
-              'No available dates',
-              style: AppTextStyles.labelMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'The property owner hasn\'t set inspection availability',
-              style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: 90,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _availableDates.length,
-        itemBuilder: (context, index) {
-          final date = _availableDates[index];
-          final isSelected =
-              _selectedDate != null &&
-              _selectedDate!.year == date.year &&
-              _selectedDate!.month == date.month &&
-              _selectedDate!.day == date.day;
-
-          final isToday =
-              DateTime.now().year == date.year &&
-              DateTime.now().month == date.month &&
-              DateTime.now().day == date.day;
-
-          final isTomorrow =
-              DateTime.now().add(const Duration(days: 1)).year == date.year &&
-              DateTime.now().add(const Duration(days: 1)).month == date.month &&
-              DateTime.now().add(const Duration(days: 1)).day == date.day;
-
-          return GestureDetector(
-            onTap: () {
-              setState(() => _selectedDate = date);
-              _loadTimeSlots(date);
-            },
-            child: Container(
-              width: 70,
-              margin: EdgeInsets.only(
-                right: index < _availableDates.length - 1 ? 12 : 0,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.primary : AppColors.background,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isSelected ? AppColors.primary : AppColors.border,
-                  width: isSelected ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    DateFormat('EEE').format(date),
-                    style: AppTextStyles.caption.copyWith(
-                      color:
-                          isSelected
-                              ? Colors.white.withAlpha(179)
-                              : AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    DateFormat('d').format(date),
-                    style: AppTextStyles.h3.copyWith(
-                      color: isSelected ? Colors.white : AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    DateFormat('MMM').format(date),
-                    style: AppTextStyles.caption.copyWith(
-                      color:
-                          isSelected
-                              ? Colors.white.withAlpha(179)
-                              : AppColors.textSecondary,
-                    ),
-                  ),
-                  if (isToday || isTomorrow) ...[
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            isSelected
-                                ? Colors.white.withAlpha(51)
-                                : AppColors.primary.withAlpha(26),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        isToday ? 'Today' : 'Tomorrow',
-                        style: TextStyle(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? Colors.white : AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildTimeSlotSelection() {
-    if (_selectedDate == null) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            'Select a date first',
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
-          ),
-        ),
-      );
-    }
-
-    if (_isLoadingSlots) {
-      return Container(
-        height: 60,
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-      );
-    }
-
-    if (_availableTimeSlots.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            'No time slots available for this date',
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
-          ),
-        ),
-      );
-    }
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children:
-          _availableTimeSlots.map((slot) {
-            final isSelected = _selectedTimeSlot == slot;
-            final label = InspectionService.timeSlotLabels[slot] ?? slot;
-            final time = InspectionService.timeSlotDisplay[slot] ?? '';
-
-            return GestureDetector(
-              onTap: () => setState(() => _selectedTimeSlot = slot),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.background,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.border,
-                    width: isSelected ? 2 : 1,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color:
-                            isSelected ? Colors.white : AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      time,
-                      style: AppTextStyles.caption.copyWith(
-                        color:
-                            isSelected
-                                ? Colors.white.withAlpha(179)
-                                : AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
     );
   }
 

@@ -506,6 +506,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   Future<void> _saveChanges() async {
     if (!_validateForm()) return;
+    final hasActiveTenants = (widget.property.currentTenantsCount ?? 0) > 0;
 
     setState(() => _isSaving = true);
 
@@ -531,8 +532,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       if (_newOwnershipDocFile != null) {
         setState(() => _isUploadingDoc = true);
         try {
-          final urls = await _propertyService.uploadImages([_newOwnershipDocFile!]);
-          if (urls.isNotEmpty) finalDocUrl = urls.first;
+          // Private Storage (not Cloudinary) — C of O is sensitive PII.
+          final path =
+              await _propertyService.uploadOwnershipDoc(_newOwnershipDocFile!);
+          if (path != null) finalDocUrl = path;
         } catch (e) {
           debugPrint('⚠️ Doc upload failed: $e');
         }
@@ -554,10 +557,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'address': _addressController.text.trim(),
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim(),
-        'rent': _parseRentAmount(),
-        'rentFrequency': _rentPeriod,
-        'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
-        'cautionDeposit': _parseAmountFromController(_cautionDepositController),
+        if (!hasActiveTenants) ...{
+          'rent': _parseRentAmount(),
+          'rentFrequency': _rentPeriod,
+          'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
+          'cautionDeposit': _parseAmountFromController(_cautionDepositController),
+        },
         'amenities': _selectedAmenities,
         if (_ceilingType != null) 'ceilingType': _ceilingType,
         'rules': _selectedRules,
@@ -568,6 +573,14 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         if (finalDocUrl != null) 'ownershipDocUrl': finalDocUrl,
         if (_ownershipDocType != null) 'ownershipDocType': _ownershipDocType,
       };
+
+      // A re-uploaded ownership doc must go back through admin review — never
+      // keep the old 'verified' status on a new document. Standalone listings
+      // only; grouped units inherit their building's doc status.
+      if (_newOwnershipDocFile != null && widget.property.buildingId == null) {
+        updates['ownershipDocStatus'] = 'pending';
+        updates['isAvailable'] = false;
+      }
 
       // Handle agent assignment changes
       if (_inspectionHandler == 'self') {
@@ -1246,12 +1259,34 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
         Text('Rent Period', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            _buildPeriodChip('Per Year', 'yearly', locked: hasActiveTenants),
-            const SizedBox(width: 12),
-            _buildPeriodChip('Per Month', 'monthly', locked: hasActiveTenants),
-          ],
+        // Frequency is no longer switchable — yearly only at launch (monthly is
+        // v2). Existing monthly properties keep their stored value (shown as-is,
+        // not rewritten); new ones are always yearly.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_today_outlined,
+                  size: 16, color: AppColors.textSecondary),
+              const SizedBox(width: 8),
+              Text(
+                _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month',
+                style: AppTextStyles.labelMedium,
+              ),
+              const Spacer(),
+              if (_rentPeriod == 'yearly')
+                Text(
+                  'Monthly coming soon',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textHint),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 24),
 
@@ -1295,7 +1330,16 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 onChanged: hasActiveTenants ? null : (v) {
                   setState(() {
                     _includeAgentFee = v;
-                    if (!v) _agentFeeController.clear();
+                    if (v) {
+                      // Agent fee requires an assigned agent to earn it →
+                      // force agent-handled inspection.
+                      _inspectionHandler = 'agent';
+                    } else {
+                      _agentFeeController.clear();
+                      _inspectionHandler = 'self';
+                      _assignedAgentId = null;
+                      _assignedAgentName = null;
+                    }
                     _hasChanges = true;
                   });
                 },
@@ -1468,41 +1512,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
-  Widget _buildPeriodChip(String label, String value, {bool locked = false}) {
-    final isSelected = _rentPeriod == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: locked ? null : () {
-          setState(() { _rentPeriod = value; _hasChanges = true; });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? (locked ? AppColors.border.withAlpha(80) : AppColors.primary.withAlpha(26))
-                : AppColors.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected
-                  ? (locked ? AppColors.border : AppColors.primary)
-                  : AppColors.border,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: isSelected
-                    ? (locked ? AppColors.textHint : AppColors.primary)
-                    : AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInspectionSection() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1524,6 +1533,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                   onTap: () {
                     setState(() { 
                       _inspectionHandler = 'self'; 
+                      // Self-handled → no agent fee (keeps fee/handler consistent).
+                      _includeAgentFee = false;
+                      _agentFeeController.clear();
                       _hasChanges = true; 
                     });
                   },

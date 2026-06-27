@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:developer' as developer;
+import 'package:flutter/foundation.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import '../shared/models/property_model.dart';
 import 'activity_service.dart';
@@ -25,6 +28,50 @@ class PropertyService {
   String? get _currentUserId => _auth.currentUser?.uid;
 
   // ============ CREATE ============
+
+  /// Upload an ownership document (C of O / deed) to PRIVATE Firebase Storage,
+  /// mirroring how verification documents are handled. Returns the storage
+  /// PATH (not a public URL) — the admin streams the bytes through an
+  /// authenticated route, and Storage rules restrict reads to the owner + admin.
+  /// A C of O is title-level PII, so it must never live on a public URL.
+  Future<String?> uploadOwnershipDoc(File file) async {
+    final uid = _currentUserId;
+    if (uid == null) return null;
+    try {
+      final ext =
+          file.path.contains('.') ? file.path.split('.').last : 'jpg';
+      final path =
+          'ownership/$uid/cofo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await FirebaseStorage.instance.ref(path).putFile(file);
+      developer.log('✅ Ownership doc uploaded: $path', name: 'PropertyService');
+      return path;
+    } catch (e) {
+      developer.log('❌ uploadOwnershipDoc failed: $e', name: 'PropertyService');
+      return null;
+    }
+  }
+
+  /// Upload a tenancy agreement to PRIVATE Firebase Storage under the uploading
+  /// landlord's folder (`agreements/{uid}/…`). Returns the storage PATH.
+  /// Tenants read it via a short-lived signed URL from the getSignedAgreementUrl
+  /// CF (storage rules can't authorize the tenant). A tenancy agreement is
+  /// sensitive — it must not live on a public URL.
+  Future<String?> uploadAgreementDoc(File file) async {
+    final uid = _currentUserId;
+    if (uid == null) return null;
+    try {
+      final ext =
+          file.path.contains('.') ? file.path.split('.').last : 'jpg';
+      final path =
+          'agreements/$uid/agreement_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await FirebaseStorage.instance.ref(path).putFile(file);
+      developer.log('✅ Agreement uploaded: $path', name: 'PropertyService');
+      return path;
+    } catch (e) {
+      developer.log('❌ uploadAgreementDoc failed: $e', name: 'PropertyService');
+      return null;
+    }
+  }
 
   /// Upload a single image to Cloudinary
   Future<String?> uploadImage(File imageFile) async {
@@ -139,6 +186,9 @@ class PropertyService {
     double? landlordBaseLongitude,
     String? ownershipDocUrl,
     String? ownershipDocType,
+    // When set, this unit belongs to a building/compound and inherits the
+    // building's shared ownership doc — no per-property doc is stored.
+    String? buildingId,
     String? listingFeePaymentReference,
     String? assignedAgentId,
     String? assignedAgentName,
@@ -180,10 +230,12 @@ class PropertyService {
               'baseLatitude': landlordBaseLatitude,
               'baseLongitude': landlordBaseLongitude,
             });
-            developer.log(
-              '✅ Updated landlord baseLatitude/baseLongitude: ($landlordBaseLatitude, $landlordBaseLongitude)',
-              name: 'PropertyService',
-            );
+            if (kDebugMode) {
+              developer.log(
+                '✅ Updated landlord baseLatitude/baseLongitude: ($landlordBaseLatitude, $landlordBaseLongitude)',
+                name: 'PropertyService',
+              );
+            }
           }
         } catch (e) {
           developer.log(
@@ -249,9 +301,14 @@ class PropertyService {
         'inspectionPropertyCluster': inspectionPropertyCluster,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        if (buildingId != null) 'buildingId': buildingId,
         if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
         if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
-        'ownershipDocStatus': ownershipDocUrl != null ? 'pending' : 'none',
+        // Grouped units inherit the building's doc status (resolved at read
+        // time via effectiveDocStatus); they carry 'inherited' as a marker.
+        'ownershipDocStatus': buildingId != null
+            ? 'inherited'
+            : (ownershipDocUrl != null ? 'pending' : 'none'),
         if (listingFeePaymentReference != null) 'listingFeePaymentReference': listingFeePaymentReference,
       };
 
@@ -583,6 +640,60 @@ class PropertyService {
     }
   }
 
+  /// Get properties assigned to the current agent.
+  /// Mirrors getLandlordProperties but filters on assignedAgentId, so the
+  /// in-chat property picker can offer an agent their assigned listings.
+  Future<List<PropertyModel>> getAgentProperties() async {
+    try {
+      if (_currentUserId == null) {
+        developer.log(
+          '❌ User not authenticated for getAgentProperties',
+          name: 'PropertyService',
+        );
+        return [];
+      }
+
+      try {
+        final snapshot = await _propertiesRef
+            .where('assignedAgentId', isEqualTo: _currentUserId)
+            .orderBy('createdAt', descending: true)
+            .get();
+
+        return snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          data['id'] = doc.id;
+          return PropertyModel.fromJson(_convertTimestamps(data));
+        }).toList();
+      } catch (e) {
+        final snapshot = await _propertiesRef
+            .where('assignedAgentId', isEqualTo: _currentUserId)
+            .get();
+
+        final properties = snapshot.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          data['id'] = doc.id;
+          return PropertyModel.fromJson(_convertTimestamps(data));
+        }).toList();
+
+        properties.sort((a, b) {
+          final aDate = a.createdAt ?? DateTime(2000);
+          final bDate = b.createdAt ?? DateTime(2000);
+          return bDate.compareTo(aDate);
+        });
+
+        return properties;
+      }
+    } catch (e) {
+      developer.log(
+        '❌ Failed to get agent properties: $e',
+        name: 'PropertyService',
+        error: e,
+        stackTrace: StackTrace.current,
+      );
+      return [];
+    }
+  }
+
   /// Get a single property by ID
   Future<PropertyModel?> getProperty(String propertyId) async {
     try {
@@ -751,12 +862,27 @@ class PropertyService {
     required String agentPhone,
   }) async {
     try {
-      await _propertiesRef.doc(propertyId).update({
+      final ref = _propertiesRef.doc(propertyId);
+      final snap = await ref.get();
+      final data = snap.data() as Map<String, dynamic>?;
+      final savedFee = (data?['savedAgentFee'] as num?)?.toDouble() ?? 0;
+
+      final updates = <String, dynamic>{
         'assignedAgentId': agentId,
         'assignedAgentName': agentName,
         'assignedAgentPhone': agentPhone,
+        // Assigning an agent means the agent handles inspections — keep the
+        // handler consistent so it doesn't read back as 'self'.
+        'inspectionHandler': 'agent',
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      // Restore the agent fee preserved when a previous agent stepped away, so
+      // the landlord doesn't have to re-enter it.
+      if (savedFee > 0) {
+        updates['agentFee'] = savedFee;
+        updates['savedAgentFee'] = FieldValue.delete();
+      }
+      await ref.update(updates);
       developer.log('✅ Agent assigned to property', name: 'PropertyService');
       return true;
     } catch (e) {
@@ -767,6 +893,32 @@ class PropertyService {
         stackTrace: StackTrace.current,
       );
       return false;
+    }
+  }
+
+  /// Agent steps back from a property they're assigned to, with a [reason].
+  /// Runs server-side (the agent isn't the property owner, so rules block a
+  /// direct write): the CF reverts the unit to landlord-handled, preserves the
+  /// agent fee, and notifies the landlord. Returns null on success, or an error
+  /// message to show the agent.
+  Future<String?> agentUnassignFromProperty(
+    String propertyId,
+    String reason,
+  ) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('agentUnassignFromProperty');
+      await callable.call<Map<String, dynamic>>({
+        'propertyId': propertyId,
+        'reason': reason,
+      });
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      return e.message ?? 'Could not step back. Please try again.';
+    } catch (e) {
+      developer.log('❌ agentUnassignFromProperty failed: $e',
+          name: 'PropertyService');
+      return 'Could not step back. Please try again.';
     }
   }
 
@@ -871,9 +1023,47 @@ class PropertyService {
 
   // ============ DELETE ============
 
-  /// Delete a property
+  /// True if the property has a sitting tenant — an occupying active rental or
+  /// a confirmed tenancy link. Such a property must not be deleted (doing so
+  /// strands the tenant's dashboard with an orphaned rental/link). Uses the
+  /// same occupying statuses as the server-side rent-review occupancy check.
+  Future<bool> propertyHasSittingTenant(String propertyId) async {
+    // Owner-only caller (the delete + rent-change guards). Scope both queries
+    // by landlordId so they satisfy the ownership-constrained list rules
+    // (active_rentals, and tenancy_links F1.13). The owner's uid is on every
+    // rental/link for their property, so this returns the same set as a
+    // propertyId-only query.
+    final uid = _currentUserId;
+    if (uid == null) return false;
+    final rentals = await _firestore
+        .collection('active_rentals')
+        .where('landlordId', isEqualTo: uid)
+        .where('propertyId', isEqualTo: propertyId)
+        .where('status', whereIn: ['active', 'expiring_soon', 'grace_locked'])
+        .limit(1)
+        .get();
+    if (rentals.docs.isNotEmpty) return true;
+    final links = await _firestore
+        .collection('tenancy_links')
+        .where('landlordId', isEqualTo: uid)
+        .where('propertyId', isEqualTo: propertyId)
+        .where('status', isEqualTo: 'confirmed')
+        .limit(1)
+        .get();
+    return links.docs.isNotEmpty;
+  }
+
+  /// Delete a property. Refuses if it has a sitting tenant (see
+  /// [propertyHasSittingTenant]) — returns false without deleting.
   Future<bool> deleteProperty(String propertyId) async {
     try {
+      if (await propertyHasSittingTenant(propertyId)) {
+        developer.log(
+          '⛔ Refusing to delete property with a sitting tenant: $propertyId',
+          name: 'PropertyService',
+        );
+        return false;
+      }
       await _propertiesRef.doc(propertyId).delete();
       developer.log('✅ Property deleted', name: 'PropertyService');
       return true;

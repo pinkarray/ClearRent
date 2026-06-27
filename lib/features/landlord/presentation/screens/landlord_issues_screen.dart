@@ -3,11 +3,14 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 
 /// Landlord screen to view and manage reported issues from tenants.
 /// Shows issues grouped by status: Open, In Progress, Resolved.
@@ -40,6 +43,12 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   late TabController _tabController;
   final AuthService _authService = AuthService();
 
+  // Live per-status counts for the tab badges + the initial-tab pick.
+  StreamSubscription? _issuesSub;
+  int _openCount = 0;
+  int _inProgressCount = 0;
+  bool _didInitialTab = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,12 +57,88 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
       vsync: this,
       initialIndex: widget.initialTab.clamp(0, 3),
     );
+    _listenIssues();
   }
 
   @override
   void dispose() {
+    _issuesSub?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Live subscription powering the tab badges (Open / In Progress counts) and,
+  /// on the first snapshot, opening the tab of the most recently-updated issue.
+  /// Fetches by landlordId only (auto-indexed); filters in code so no composite
+  /// index is needed.
+  void _listenIssues() {
+    final uid = _authService.currentUserId;
+    if (uid == null) return;
+    _issuesSub = FirebaseFirestore.instance
+        .collection('issues')
+        .where('landlordId', isEqualTo: uid)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      var docs = snap.docs;
+      if (widget.propertyId != null) {
+        docs = docs
+            .where((d) => d.data()['propertyId'] == widget.propertyId)
+            .toList();
+      }
+      if (widget.category != null) {
+        docs = docs
+            .where((d) => d.data()['category'] == widget.category)
+            .toList();
+      }
+      var open = 0;
+      var inProg = 0;
+      for (final d in docs) {
+        final s = d.data()['status'] as String? ?? 'open';
+        if (s == 'open') {
+          open++;
+        } else if (s == 'in_progress') {
+          inProg++;
+        }
+      }
+      setState(() {
+        _openCount = open;
+        _inProgressCount = inProg;
+      });
+
+      // First load with no explicit tab → open the most recently-active tab.
+      if (!_didInitialTab && widget.initialTab == 0 && docs.isNotEmpty) {
+        _didInitialTab = true;
+        DateTime ts(QueryDocumentSnapshot<Map<String, dynamic>> d) {
+          final data = d.data();
+          final v = data['updatedAt'] ?? data['createdAt'];
+          return v is Timestamp ? v.toDate() : DateTime(1970);
+        }
+
+        final sorted = [...docs]..sort((a, b) => ts(b).compareTo(ts(a)));
+        final status = sorted.first.data()['status'] as String? ?? 'open';
+        _goToTabForStatus(status);
+      }
+    }, onError: (_) {});
+  }
+
+  static int _tabIndexForStatus(String status) {
+    switch (status) {
+      case 'in_progress':
+        return 1;
+      case 'pending_confirmation':
+        return 2;
+      case 'resolved':
+        return 3;
+      default:
+        return 0;
+    }
+  }
+
+  /// After an issue's status changes, follow it to its tab.
+  void _goToTabForStatus(String status) {
+    final idx = _tabIndexForStatus(status);
+    if (mounted && _tabController.index != idx) _tabController.animateTo(idx);
   }
 
   /// Whether this screen is showing filtered results from property health.
@@ -136,11 +221,13 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
                 indicatorColor: AppColors.primary,
                 indicatorWeight: 3,
                 labelStyle: AppTextStyles.labelMedium,
-                tabs: const [
-                  Tab(text: 'Open'),
-                  Tab(text: 'In Progress'),
-                  Tab(text: 'Pending'),
-                  Tab(text: 'Resolved'),
+                tabs: [
+                  Tab(child: TabBadge(label: 'Open', count: _openCount)),
+                  Tab(
+                      child: TabBadge(
+                          label: 'In Progress', count: _inProgressCount)),
+                  const Tab(text: 'Pending'),
+                  const Tab(text: 'Resolved'),
                 ],
               ),
             ],
@@ -155,24 +242,28 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
             authService: _authService,
             propertyId: widget.propertyId,
             category: widget.category,
+            onMoved: _goToTabForStatus,
           ),
           _IssuesTab(
             status: 'in_progress',
             authService: _authService,
             propertyId: widget.propertyId,
             category: widget.category,
+            onMoved: _goToTabForStatus,
           ),
           _IssuesTab(
             status: 'pending_confirmation',
             authService: _authService,
             propertyId: widget.propertyId,
             category: widget.category,
+            onMoved: _goToTabForStatus,
           ),
           _IssuesTab(
             status: 'resolved',
             authService: _authService,
             propertyId: widget.propertyId,
             category: widget.category,
+            onMoved: _goToTabForStatus,
           ),
         ],
       ),
@@ -192,12 +283,14 @@ class _IssuesTab extends StatelessWidget {
   final AuthService authService;
   final String? propertyId;
   final String? category;
+  final void Function(String newStatus)? onMoved;
 
   const _IssuesTab({
     required this.status,
     required this.authService,
     this.propertyId,
     this.category,
+    this.onMoved,
   });
 
   @override
@@ -232,7 +325,7 @@ class _IssuesTab extends StatelessWidget {
 
         if (snapshot.hasError) {
           developer.log('❌ Issues error: ${snapshot.error}', name: 'LandlordIssues');
-          return _EmptyState(
+          return GuidanceEmptyState(
             icon: Icons.error_outline,
             title: 'Error loading issues',
             subtitle: 'Please try again later',
@@ -255,7 +348,7 @@ class _IssuesTab extends StatelessWidget {
             default:
               subtitle = 'Resolved issues will appear here';
           }
-          return _EmptyState(
+          return GuidanceEmptyState(
             icon: status == 'resolved'
                 ? Icons.check_circle_outline
                 : status == 'pending_confirmation'
@@ -278,6 +371,7 @@ class _IssuesTab extends StatelessWidget {
               issueId: docId,
               data: data,
               currentStatus: status,
+              onMoved: onMoved,
             );
           },
         );
@@ -290,11 +384,13 @@ class _IssueCard extends StatefulWidget {
   final String issueId;
   final Map<String, dynamic> data;
   final String currentStatus;
+  final void Function(String newStatus)? onMoved;
 
   const _IssueCard({
     required this.issueId,
     required this.data,
     required this.currentStatus,
+    this.onMoved,
   });
 
   @override
@@ -360,45 +456,9 @@ class _IssueCardState extends State<_IssueCard> {
           .doc(widget.issueId)
           .update(updateData);
 
-      // Notify tenant with appropriate message
-      final tenantId = widget.data['tenantId'];
-      if (tenantId != null) {
-        String notifTitle;
-        String notifMessage;
-
-        switch (newStatus) {
-          case 'in_progress':
-            notifTitle = 'Issue Acknowledged';
-            notifMessage =
-                'Your landlord is now working on the $_category issue at $_propertyTitle.';
-            break;
-          case 'pending_confirmation':
-            notifTitle = 'Fix Ready — Please Confirm';
-            notifMessage =
-                'Your landlord says the $_category issue at $_propertyTitle has been fixed. Please confirm or dispute.';
-            break;
-          case 'open':
-            notifTitle = 'Issue Re-opened';
-            notifMessage =
-                'Your landlord has re-opened the $_category issue at $_propertyTitle.';
-            break;
-          default:
-            notifTitle = 'Issue Update';
-            notifMessage =
-                'Your $_category issue at $_propertyTitle has been updated.';
-        }
-
-        await FirebaseFirestore.instance.collection('activities').add({
-          'tenantId': tenantId,
-          'type': 'issue_updated',
-          'title': notifTitle,
-          'message': notifMessage,
-          'propertyId': widget.data['propertyId'],
-          'issueId': widget.issueId,
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
+      // The tenant's push + inbox notification is handled by the
+      // `onIssueUpdated` Cloud Function (single source of truth), which fires
+      // on this status change. No client-side notification write needed.
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -414,6 +474,8 @@ class _IssueCardState extends State<_IssueCard> {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
+        // Follow the issue to its new tab so the user sees where it went.
+        widget.onMoved?.call(newStatus);
       }
     } catch (e) {
       developer.log('❌ Error updating issue: $e', name: 'LandlordIssues');
@@ -798,41 +860,3 @@ class _IssueCardState extends State<_IssueCard> {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  const _EmptyState(
-      {required this.icon, required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 40, color: AppColors.primary),
-            ),
-            const SizedBox(height: 24),
-            Text(title,
-                style: AppTextStyles.h4, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(subtitle,
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textSecondary),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-}

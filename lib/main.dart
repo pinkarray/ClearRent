@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -17,8 +18,16 @@ void main() async {
   // Initialize Firebase with error handling
   try {
     await Firebase.initializeApp();
+    // M4: Play Integrity on release/Play builds (real attestation), debug
+    // provider on `flutter run`/profile builds so local dev still works with
+    // the App-Check-enforced callables. For local testing of those callables,
+    // register the debug token the app prints on first run in the Firebase
+    // console (App Check → Apps → Manage debug tokens). Release/Play builds use
+    // Play Integrity and only attest on a Play-signed install.
+    // (iOS App Check is a separate step for when iOS ships — not configured.)
     await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.debug,
+      androidProvider:
+          kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
     );
     firebaseInitialized = true;
     await NotificationService.instance.init();

@@ -7,6 +7,7 @@ import '../../core/constants/text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
 import '../../shared/widgets/theme_selector.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,6 +17,9 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const String _privacyUrl = 'https://www.verealtytech.com/privacy';
+  static const String _termsUrl = 'https://www.verealtytech.com/terms';
+
   final AuthService _authService = AuthService();
   final BiometricService _biometricService = BiometricService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -443,9 +447,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (error == null) {
       // Success — navigate to login
       router.go('/');
-    } else if (error == 'requires-recent-login') {
-      // Need re-authentication
-      _showReauthDialog();
     } else {
       messenger.showSnackBar(SnackBar(
         content: Row(
@@ -460,79 +461,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
     }
-  }
-
-  void _showReauthDialog() {
-    final passwordController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Re-authenticate', style: AppTextStyles.h4),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'For security, please enter your password to confirm account deletion.',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Your password',
-                prefixIcon: Icon(Icons.lock_outline, color: AppColors.textSecondary),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: AppColors.primary),
-                ),
-              ),
-            ),
-          ],
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () async {
-              final password = passwordController.text.trim();
-              if (password.isEmpty) return;
-
-              Navigator.pop(ctx);
-
-              try {
-                final user = FirebaseAuth.instance.currentUser;
-                if (user?.email != null) {
-                  final credential = EmailAuthProvider.credential(
-                    email: user!.email!,
-                    password: password,
-                  );
-                  await user.reauthenticateWithCredential(credential);
-                  // Now retry deletion
-                  _executeDeleteAccount();
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: const Text('Incorrect password. Please try again.'),
-                    backgroundColor: AppColors.error,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ));
-                }
-              }
-            },
-            child: Text('Confirm', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildDeleteItem(String text) {
@@ -592,6 +520,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        _showError('Could not open link');
+      }
+    } catch (_) {
+      if (mounted) _showError('Could not open link');
+    }
   }
 
   @override
@@ -750,17 +690,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.description_outlined,
                 title: 'Terms of Service',
                 subtitle: 'Read our terms and conditions',
-                onTap: () {
-                  _showSuccess('Terms of Service coming soon');
-                },
+                onTap: () => _openUrl(_termsUrl),
               ),
               _SettingsItem(
                 icon: Icons.privacy_tip_outlined,
                 title: 'Privacy Policy',
                 subtitle: 'How we handle your data',
-                onTap: () {
-                  _showSuccess('Privacy Policy coming soon');
-                },
+                onTap: () => _openUrl(_privacyUrl),
               ),
             ]),
 

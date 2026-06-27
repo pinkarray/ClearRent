@@ -15,15 +15,25 @@
  *   npm install firebase-admin node-fetch@2
  *   (node-fetch v2 for CommonJS require() support)
  *
+ * Secrets (never hardcode — read from the environment):
+ *   PAYSTACK_SECRET_KEY=sk_... node backfill_payments.js [--dry-run]
+ *
  * Place your Firebase service account JSON at:
- *   ./serviceAccountKey.json  (or update the path below)
+ *   ./serviceAccountKey.json  (or update the path below). This file is
+ *   gitignored — never commit it.
  */
 
 const admin = require('firebase-admin');
 const fetch = require('node-fetch');
 
 // ── Config ───────────────────────────────────────────────────────────
-const PAYSTACK_SECRET_KEY = 'sk_test_dba926781692c2cd5e56e84244262448d6d46d2d';
+// Secret comes from the environment so it never lands in source control.
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+if (!PAYSTACK_SECRET_KEY) {
+  console.error('❌ PAYSTACK_SECRET_KEY env var is required. ' +
+    'Run: PAYSTACK_SECRET_KEY=sk_... node backfill_payments.js');
+  process.exit(1);
+}
 const FIREBASE_PROJECT_ID = 'clearrent-app';
 const SERVICE_ACCOUNT_PATH = './serviceAccountKey.json';
 

@@ -7,7 +7,12 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
-import '../../../../shared/widgets/tab_with_dot.dart';
+import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
+import '../../../../shared/widgets/reschedule_proposal_panel.dart';
+import '../../../../shared/widgets/reschedule_propose_sheet.dart';
+import 'package:intl/intl.dart';
+import '../../../../shared/widgets/refund_confirm_sheet.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 
@@ -27,7 +32,9 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   StreamSubscription? _pendingDotSub;
-  bool _hasPendingDot = false;
+  StreamSubscription? _upcomingSub;
+  int _pendingCount = 0;
+  int _upcomingCount = 0;
   final InspectionService _inspectionService = InspectionService();
 
   @override
@@ -35,9 +42,26 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
 
-    _pendingDotSub = _inspectionService.getAgentPendingRequests().listen((list) {
+    _pendingDotSub = _inspectionService.getAgentPendingRequests().listen((
+      list,
+    ) {
       if (!mounted) return;
-      setState(() => _hasPendingDot = list.isNotEmpty);
+      setState(() => _pendingCount = list.length);
+    });
+
+    // Count of approved (upcoming, not past) inspections — drives the
+    // Scheduled tab's attention badge, so a newly-approved inspection lights
+    // the dot even without tapping the push. Mirrors the Scheduled tab's
+    // filter, which excludes past-dated approvals.
+    _upcomingSub = _inspectionService.getAgentRequests().listen((list) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      setState(() => _upcomingCount = list.where((r) {
+            final d = DateTime(r.requestedDate.year, r.requestedDate.month,
+                r.requestedDate.day);
+            return r.isApproved && !d.isBefore(today);
+          }).length);
     });
 
     // If an explicit tab was passed (e.g. from the agent home screen's
@@ -93,10 +117,11 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
       // Non-fatal — keep default Requests tab.
     }
   }
-  
+
   @override
   void dispose() {
     _pendingDotSub?.cancel();
+    _upcomingSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -122,8 +147,8 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
           tabs: [
-            Tab(child: TabWithDot(label: 'Pending', showDot: _hasPendingDot)),
-            const Tab(text: 'Scheduled'),
+            Tab(child: TabBadge(label: 'Pending', count: _pendingCount)),
+            Tab(child: TabBadge(label: 'Scheduled', count: _upcomingCount)),
             const Tab(text: 'Completed'),
           ],
         ),
@@ -131,7 +156,10 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _AgentPendingTab(inspectionService: _inspectionService, tabController: _tabController),
+          _AgentPendingTab(
+            inspectionService: _inspectionService,
+            tabController: _tabController,
+          ),
           _AgentScheduledTab(inspectionService: _inspectionService),
           _AgentCompletedTab(inspectionService: _inspectionService),
         ],
@@ -145,7 +173,10 @@ class _AgentPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
   final TabController tabController;
 
-  const _AgentPendingTab({required this.inspectionService, required this.tabController});
+  const _AgentPendingTab({
+    required this.inspectionService,
+    required this.tabController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -162,7 +193,7 @@ class _AgentPendingTab extends StatelessWidget {
         final pendingRequests = allRequests.where((r) => r.isPending).toList();
 
         if (pendingRequests.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.inbox_outlined,
             title: 'No pending requests',
             subtitle:
@@ -370,10 +401,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: Icon(
-                            Icons.home,
-                            color: AppColors.textHint,
-                          ),
+                          child: Icon(Icons.home, color: AppColors.textHint),
                         ),
               ),
               const SizedBox(width: 12),
@@ -406,7 +434,9 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                         const SizedBox(width: 2),
                         Text(
                           request.propertyCluster != null
-                              ? InspectionPricing.getClusterLabel(request.propertyCluster!)
+                              ? InspectionPricing.getClusterLabel(
+                                request.propertyCluster!,
+                              )
                               : request.propertyAddress,
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textHint,
@@ -458,21 +488,10 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
               color: AppColors.background,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Column(
-              children: [
-                _buildFeeRow(
-                  'Transport (round trip)',
-                  request.transportFee,
-                ),
-                const SizedBox(height: 4),
-                _buildFeeRow('Service fee', request.agentServiceFee),
-                const Divider(height: 16),
-                _buildFeeRow(
-                  'Your earnings',
-                  request.agentEarnings,
-                  isTotal: true,
-                ),
-              ],
+            child: _buildFeeRow(
+              'Your earnings',
+              request.agentEarnings,
+              isTotal: true,
             ),
           ),
 
@@ -669,17 +688,19 @@ class _AgentScheduledTab extends StatelessWidget {
         final allRequests = snapshot.data ?? [];
         final now = DateTime.now();
         final scheduledRequests =
-            allRequests
-                .where((r) {
-                  final today = DateTime(now.year, now.month, now.day);
-                  final requestDay = DateTime(r.requestedDate.year, r.requestedDate.month, r.requestedDate.day);
-                  return r.isApproved && !requestDay.isBefore(today);
-                })
-                .toList()
+            allRequests.where((r) {
+                final today = DateTime(now.year, now.month, now.day);
+                final requestDay = DateTime(
+                  r.requestedDate.year,
+                  r.requestedDate.month,
+                  r.requestedDate.day,
+                );
+                return r.isApproved && !requestDay.isBefore(today);
+              }).toList()
               ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
 
         if (scheduledRequests.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.event_available_outlined,
             title: 'No scheduled inspections',
             subtitle: 'Accepted inspections will appear here',
@@ -869,6 +890,92 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
     }
   }
 
+  Future<void> _markOnWay() async {
+    final ok = await widget.inspectionService.markHandlerOnWay(
+      widget.request.id,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markMet() async {
+    final ok =
+        await widget.inspectionService.markMet(widget.request.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _proposeReschedule() async {
+    final payload = await ReschedulePropoSheet.show(context, widget.request);
+    if (payload == null || !mounted) return;
+
+    final ok = await widget.inspectionService.proposeReschedule(
+      requestId: widget.request.id,
+      newDate: payload.date,
+      newTimeSlot: payload.timeSlot,
+      reason: payload.reason,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Reschedule proposal sent'
+              : 'Couldn\'t send proposal, try again',
+        ),
+        backgroundColor: ok ? AppColors.textPrimary : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _cancelInspection() async {
+    final r = widget.request;
+    final feeText = NumberFormat('#,###').format(r.totalFee);
+    final reason = await RefundConfirmSheet.show(
+      context,
+      title: 'Cancel Inspection',
+      warningMessage:
+          'Cancelling will end this inspection for '
+          '${r.propertyTitle} and refund ₦$feeText to the tenant.',
+      confirmButtonText: 'Cancel & Refund',
+    );
+    if (reason == null || !mounted) return;
+
+    final ok = await widget.inspectionService.handlerCancelRequest(
+      requestId: widget.request.id,
+      reason: reason,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Inspection cancelled. Refund processing.'
+              : 'Couldn\'t cancel, try again',
+        ),
+        backgroundColor: ok ? AppColors.textPrimary : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final request = widget.request;
@@ -912,6 +1019,12 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
               ),
             ),
 
+          // Reschedule proposal panel (only when a proposal is active)
+          if (request.hasPendingReschedule)
+            RescheduleProposalPanel(
+              request: request,
+              currentUserId: request.agentId ?? '',
+            ),
           Row(
             children: [
               Container(
@@ -1081,6 +1194,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
           if (_isToday(request.requestedDate)) ...[
             if (!request.handlerArrived) ...[
               // Tenant waiting notification
+              // Tenant status: arrived takes priority over on-the-way.
               if (request.tenantArrived) ...[
                 Container(
                   padding: const EdgeInsets.all(10),
@@ -1109,15 +1223,50 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                     ],
                   ),
                 ),
+              ] else if (request.tenantOnWay) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.directions_walk,
+                        size: 18,
+                        color: AppColors.info,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${request.tenantName} is on the way.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.info,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
-              // Arrive button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isArrivalLoading ? null : _markArrived,
-                  icon:
-                      _isArrivalLoading
-                          ? const SizedBox(
+              // On Way / Arrive button — gates on whether we're
+              // within 2h cutoff and whether handler has marked
+              // themselves on-way yet.
+              if (request.canHandlerMarkOnWay) ...[
+                AppButton(
+                  text: 'I\'m on my way',
+                  onPressed: _markOnWay,
+                ),
+              ] else if (request.handlerOnWay) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isArrivalLoading ? null : _markArrived,
+                    icon: _isArrivalLoading
+                        ? const SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
@@ -1125,24 +1274,25 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                               color: Colors.white,
                             ),
                           )
-                          : const Icon(Icons.location_on, size: 18),
-                  label: Text(
-                    _isArrivalLoading
-                        ? 'Confirming...'
-                        : 'I\'ve Arrived at Property',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                        : const Icon(Icons.location_on, size: 18),
+                    label: Text(
+                      _isArrivalLoading
+                          ? 'Confirming...'
+                          : 'I\'ve Arrived at Property',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ] else ...[
-              // Agent arrived — show status + complete
+              // Agent arrived — show status + met/complete cascade
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -1161,9 +1311,11 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        request.tenantArrived
-                            ? 'Both arrived — ready to inspect!'
-                            : 'You\'re here. Waiting for tenant...',
+                        !request.tenantArrived
+                            ? 'You\'re here. Waiting for tenant...'
+                            : request.met
+                                ? 'Inspection in progress'
+                                : 'Both arrived — ready to inspect!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.success,
                         ),
@@ -1172,7 +1324,40 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   ],
                 ),
               ),
-              if (request.bothArrived)
+              // Prompt the tenant to confirm meeting. Met state
+              // unlocks Mark as Completed.
+              if (request.canHandlerMarkMet) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 18, color: AppColors.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Ask the tenant to confirm they\'ve seen '
+                          'you so you can complete the inspection.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text: 'I\'ve met the tenant',
+                    onPressed: _markMet,
+                  ),
+                ),
+              ] else if (request.canMarkComplete)
                 SizedBox(
                   width: double.infinity,
                   child: AppButton(
@@ -1183,16 +1368,66 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
             ],
           ] else ...[
-            // Not today — keep original button
-            SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                text: 'Mark as Completed',
-                onPressed: _isLoading ? null : _markComplete,
-                isLoading: _isLoading,
+            // Not today — Mark as Completed still gated on met.
+            // If the inspection hasn't been confirmed met,
+            // nothing shows here (handler completes on the day).
+            if (request.canMarkComplete)
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  text: 'Mark as Completed',
+                  onPressed: _isLoading ? null : _markComplete,
+                  isLoading: _isLoading,
+                ),
+              ),
+          ],
+
+          // Reschedule button (hidden when proposal pending, past 2h
+          // cutoff, or cap reached)
+          if (request.canInitiateReschedule) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _proposeReschedule,
+              icon: Icon(
+                Icons.event_repeat,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              label: Text(
+                'Reschedule',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.primary,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                minimumSize: const Size(double.infinity, 0),
               ),
             ),
           ],
+
+          // Cancel & Refund (handler exit ramp for the tenant)
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _cancelInspection,
+            icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
+            label: Text(
+              'Cancel & Refund',
+              style: AppTextStyles.labelMedium.copyWith(color: AppColors.error),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.error),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: const Size(double.infinity, 0),
+            ),
+          ),
         ],
       ),
     );
@@ -1225,7 +1460,7 @@ class _AgentCompletedTab extends StatelessWidget {
         );
 
         if (completedRequests.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.check_circle_outline,
             title: 'No completed inspections',
             subtitle: 'Your completed inspections will appear here',
@@ -1379,47 +1614,3 @@ class _AgentCompletedTab extends StatelessWidget {
 }
 
 // ============ EMPTY STATE ============
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 40, color: AppColors.primary),
-            ),
-            const SizedBox(height: 24),
-            Text(title, style: AppTextStyles.h4, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

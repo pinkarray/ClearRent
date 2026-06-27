@@ -8,6 +8,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../../../../shared/widgets/tab_badge.dart';
 
 class LandlordRentalsScreen extends StatefulWidget {
   const LandlordRentalsScreen({super.key});
@@ -56,14 +57,23 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   }
 
   List<ActiveRental> get _activeRentals => _allRentals
-      .where((r) => r.isActive || r.isExpiringSoon)
+      .where((r) => r.isActive || r.isExpiringSoon || r.isGraceLocked)
       .toList()
     ..sort((a, b) => a.leaseEndDate.compareTo(b.leaseEndDate));
 
   List<ActiveRental> get _pastRentals => _allRentals
-      .where((r) => r.isExpired || r.isTerminated)
+      .where((r) =>
+          r.isExpired ||
+          r.isTerminated ||
+          r.isEndedByTenant ||
+          r.isEndedByLandlord)
       .toList()
     ..sort((a, b) => b.leaseEndDate.compareTo(a.leaseEndDate));
+
+  /// Active rentals that need the landlord's attention — leases expiring
+  /// soon or in the post-expiry grace window (renewal / re-list decision).
+  int get _expiringCount =>
+      _activeRentals.where((r) => r.isExpiringSoon || r.isGraceLocked).length;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +96,12 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
           tabs: [
-            Tab(text: 'Active (${_activeRentals.length})'),
+            Tab(
+              child: TabBadge(
+                label: 'Active (${_activeRentals.length})',
+                count: _expiringCount,
+              ),
+            ),
             Tab(text: 'Past (${_pastRentals.length})'),
           ],
         ),
@@ -156,7 +171,9 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
         itemBuilder: (context, index) => _RentalCard(
           rental: rentals[index],
           conversationService: _conversationService,
+          rentalService: _rentalService,
           isActive: isActive,
+          onChanged: _loadRentals,
         ),
       ),
     );
@@ -169,12 +186,16 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
 class _RentalCard extends StatefulWidget {
   final ActiveRental rental;
   final ConversationService conversationService;
+  final ActiveRentalService rentalService;
   final bool isActive;
+  final VoidCallback onChanged;
 
   const _RentalCard({
     required this.rental,
     required this.conversationService,
+    required this.rentalService,
     required this.isActive,
+    required this.onChanged,
   });
 
   @override
@@ -244,6 +265,104 @@ class _RentalCardState extends State<_RentalCard> {
     }
   }
 
+  /// Opens the end-tenancy sheet. Only reachable on a grace_locked rental.
+  /// Records status ended_by_landlord server-side; ClearRent notifies the
+  /// tenant and preserves the record — this is not an eviction.
+  Future<void> _showEndTenancySheet() async {
+    final controller = TextEditingController();
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('End Tenancy', style: AppTextStyles.h4),
+              const SizedBox(height: 6),
+              Text(
+                'This lease has lapsed and the tenant hasn\'t renewed. Ending '
+                'it here updates your records and notifies the tenant — it is '
+                'not a legal eviction. The tenant can add their own account.',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Reason (e.g. lease expired, not renewed)',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (controller.text.trim().isEmpty) return;
+                    Navigator.pop(sheetCtx, true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text('End Tenancy',
+                      style: AppTextStyles.labelLarge
+                          .copyWith(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+    final reason = controller.text.trim();
+    if (reason.isEmpty) return;
+
+    final ok =
+        await widget.rentalService.landlordRemoveTenant(rental.id, reason);
+    if (!mounted) return;
+    if (ok) {
+      widget.onChanged(); // reload — rental flips to ended_by_landlord → Past
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text(
+            'Could not end tenancy. It may no longer be eligible.'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final daysLeft = rental.daysUntilLeaseEnd;
@@ -262,6 +381,18 @@ class _RentalCardState extends State<_RentalCard> {
       statusColor = AppColors.textSecondary;
       statusText = 'Terminated';
       statusIcon = Icons.cancel_outlined;
+    } else if (rental.isEndedByTenant) {
+      statusColor = AppColors.textSecondary;
+      statusText = 'Tenant Moved Out';
+      statusIcon = Icons.logout;
+    } else if (rental.isEndedByLandlord) {
+      statusColor = AppColors.textSecondary;
+      statusText = 'Ended';
+      statusIcon = Icons.cancel_outlined;
+    } else if (rental.isGraceLocked) {
+      statusColor = AppColors.warning;
+      statusText = 'Renewal Due';
+      statusIcon = Icons.lock_clock_outlined;
     } else if (isExpiring) {
       statusColor = AppColors.warning;
       statusText = '$daysLeft days left';
@@ -410,6 +541,37 @@ class _RentalCardState extends State<_RentalCard> {
                   ],
                 ),
 
+                // Scheduled rent change from an approved rent review — the new
+                // rent applies at the tenant's next renewal (current rent is
+                // protected until then).
+                if (rental.pendingRentForRenewal != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.info.withAlpha(20),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.info.withAlpha(60)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.trending_up,
+                            size: 16, color: AppColors.info),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'New rent ₦${_formatAmount(rental.pendingRentForRenewal!)} applies when this tenant renews (${_formatDate(rental.leaseEndDate)})',
+                            style: AppTextStyles.caption
+                                .copyWith(color: AppColors.info),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 16),
                 const Divider(height: 1),
                 const SizedBox(height: 16),
@@ -480,6 +642,26 @@ class _RentalCardState extends State<_RentalCard> {
                 if (widget.isActive) ...[
                   const SizedBox(height: 12),
                   _buildPaymentInfo(),
+                ],
+
+                // End-tenancy — only when the lease has lapsed (grace_locked).
+                if (widget.isActive && rental.isGraceLocked) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _showEndTenancySheet,
+                      icon: const Icon(Icons.gavel_outlined, size: 18),
+                      label: const Text('End Tenancy'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: BorderSide(color: AppColors.error),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),

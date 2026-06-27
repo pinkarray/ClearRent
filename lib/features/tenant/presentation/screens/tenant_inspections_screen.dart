@@ -9,7 +9,9 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
-import '../../../../shared/widgets/tab_with_dot.dart';
+import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
+import '../../../../shared/widgets/what_happens_now_hint.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
 import '../../../../shared/widgets/reschedule_propose_sheet.dart';
 import '../../../../services/property_service.dart';
@@ -36,9 +38,11 @@ class TenantInspectionsScreen extends StatefulWidget {
 class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  // ignore: unused_field
   StreamSubscription? _pendingDotSub;
-  bool _hasPendingDot = false;
+  StreamSubscription? _upcomingSub;
+  int _pendingCount = 0;
+  int _upcomingCount = 0;
+  int _historyActionableCount = 0;
   final InspectionService _inspectionService = InspectionService();
 
   @override
@@ -48,7 +52,20 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
 
     _pendingDotSub = _inspectionService.getTenantPendingRequests().listen((list) {
       if (!mounted) return;
-      setState(() => _hasPendingDot = list.isNotEmpty);
+      setState(() => _pendingCount = list.length);
+    });
+
+    // Drives the Upcoming + History attention badges off one stream, so the
+    // tenant is pulled to the right tab even if a push was missed:
+    //   • Upcoming  → approved inspections (mirrors the Upcoming tab filter)
+    //   • History   → completed-but-unrated inspections (the "go rate it" nudge)
+    _upcomingSub = _inspectionService.getTenantRequests().listen((list) {
+      if (!mounted) return;
+      setState(() {
+        _upcomingCount = list.where((r) => r.isApproved).length;
+        _historyActionableCount =
+            list.where((r) => r.isCompleted && !r.tenantRated).length;
+      });
     });
 
     // If an explicit tab was passed (e.g. from a notification deep-link),
@@ -58,6 +75,14 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
     } else {
       _selectInitialTab();
     }
+  }
+
+  @override
+  void dispose() {
+    _pendingDotSub?.cancel();
+    _upcomingSub?.cancel();
+    _tabController.dispose();
+    super.dispose();
   }
 
   /// Picks the most relevant tab for the tenant based on what's actually
@@ -77,10 +102,15 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
           r.isPending ||
           r.isPendingPayment ||
           r.isPendingVerification ||
-          r.isDeclinedByAgent);
+          r.isDeclinedByAgent ||
+          r.isExpiredUnapproved);
       final hasScheduled = all.any((r) => r.isApproved);
       final hasCompleted = all.any((r) =>
-          r.isCompleted || r.isDeclined || r.isCancelled || r.isRefunded);
+          r.isCompleted ||
+          r.isDeclined ||
+          r.isCancelled ||
+          r.isRefunded ||
+          r.isAwaitingOutcome);
 
       int target = 0; // default to Requests for empty state
       if (hasScheduled) {
@@ -120,9 +150,9 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
           indicatorWeight: 3,
           labelStyle: AppTextStyles.labelMedium,
           tabs: [
-            Tab(child: TabWithDot(label: 'Pending', showDot: _hasPendingDot)),
-            const Tab(text: 'Upcoming'),
-            const Tab(text: 'History'),
+            Tab(child: TabBadge(label: 'Pending', count: _pendingCount)),
+            Tab(child: TabBadge(label: 'Upcoming', count: _upcomingCount)),
+            Tab(child: TabBadge(label: 'History', count: _historyActionableCount)),
           ],
         ),
       ),
@@ -157,7 +187,7 @@ class _TenantPendingTab extends StatelessWidget {
         if (snapshot.hasError) {
           developer.log('❌ Error: ${snapshot.error}',
               name: 'TenantInspections');
-          return const _EmptyState(
+          return const GuidanceEmptyState(
             icon: Icons.error_outline,
             title: 'Error loading requests',
             subtitle: 'Please try again later',
@@ -170,15 +200,17 @@ class _TenantPendingTab extends StatelessWidget {
                 r.isPending ||
                 r.isPendingPayment ||
                 r.isPendingVerification ||
-                r.isDeclinedByAgent)
+                r.isDeclinedByAgent ||
+                r.isExpiredUnapproved)
             .toList();
 
         if (pending.isEmpty) {
-          return _EmptyState(
+          return GuidanceEmptyState(
             icon: Icons.inbox_outlined,
             title: 'No pending requests',
             subtitle: 'Your inspection requests will appear here',
             actionLabel: 'Browse Properties',
+            actionIcon: Icons.search,
             onAction: () => context.go('/tenant/home'),
           );
         }
@@ -250,6 +282,63 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
     );
   }
 
+  /// Reschedule an inspection that expired unapproved — pick a new date/slot;
+  /// it re-enters the approval queue (payment kept).
+  Future<void> _rescheduleExpired() async {
+    final payload = await ReschedulePropoSheet.show(context, widget.request);
+    if (payload == null || !mounted) return;
+    setState(() => _isLoading = true);
+    final ok = await widget.inspectionService.rescheduleExpiredInspection(
+      widget.request.id,
+      payload.date,
+      payload.timeSlot,
+    );
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _showSnack(
+      ok
+          ? 'Rescheduled — sent for approval again.'
+          : 'Could not reschedule. Please try again.',
+      ok ? AppColors.success : AppColors.error,
+    );
+  }
+
+  /// Take the refund instead of rescheduling an expired inspection.
+  Future<void> _refundExpired() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Get Refund'),
+        content: const Text(
+            'Take a full refund instead of rescheduling? An admin will '
+            'process it shortly.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Back',
+                  style: TextStyle(color: AppColors.textSecondary))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Yes, Refund',
+                  style: TextStyle(color: AppColors.primary))),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _isLoading = true);
+    final ok = await widget.inspectionService
+        .refundExpiredInspection(widget.request.id);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _showSnack(
+      ok
+          ? 'Refund requested. It\'ll be processed shortly.'
+          : 'Could not request refund. Please try again.',
+      ok ? AppColors.success : AppColors.error,
+    );
+  }
+
   Future<void> _messageHandler() async {
     final r = widget.request;
     final recipientId = r.isAgentHandled ? r.agentId : r.landlordId;
@@ -308,7 +397,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
     Color statusColor;
     IconData statusIcon;
 
-    if (r.isPendingVerification) {
+    if (r.isPendingPayment) {
       statusText = 'Awaiting Payment';
       statusColor = AppColors.warning;
       statusIcon = Icons.payment;
@@ -475,6 +564,23 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
             ),
           ]),
 
+          // What happens now — keeps the tenant oriented while they wait.
+          if (r.isPending || r.isPendingVerification || r.isDeclinedByAgent) ...[
+            const SizedBox(height: 12),
+            WhatHappensNowHint(
+              text: r.isPendingVerification
+                  ? 'We\'re confirming your payment. Once verified, your request '
+                      'goes to the ${r.isAgentHandled ? 'agent' : 'landlord'} to pick a time.'
+                  : r.isDeclinedByAgent
+                      ? 'Under review — the landlord may still take this over. '
+                          'We\'ll notify you of the outcome.'
+                      : 'Your request is with the ${r.isAgentHandled ? 'agent' : 'landlord'}. '
+                          'They\'ll confirm the time or suggest a new one — '
+                          'you\'ll get a notification either way.',
+              color: r.isDeclinedByAgent ? AppColors.info : AppColors.primary,
+            ),
+          ],
+
           // Notes
           if (r.notes != null && r.notes!.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -528,6 +634,52 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               ),
             ]),
           ],
+          // Expired unapproved — tenant picks reschedule (free) or refund.
+          if (r.isExpiredUnapproved) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'This wasn\'t approved before the date. Reschedule for free, '
+                'or take a full refund.',
+                style:
+                    AppTextStyles.caption.copyWith(color: AppColors.warning),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : _refundExpired,
+                  style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: AppColors.border),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10))),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Get Refund',
+                          style: AppTextStyles.labelMedium
+                              .copyWith(color: AppColors.textSecondary)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppButton(
+                  text: 'Reschedule',
+                  onPressed: _isLoading ? null : _rescheduleExpired,
+                ),
+              ),
+            ]),
+          ],
         ],
       ),
     );
@@ -561,10 +713,16 @@ class _TenantUpcomingTab extends StatelessWidget {
           ..sort((a, b) => a.requestedDate.compareTo(b.requestedDate));
 
         if (upcoming.isEmpty) {
-          return const _EmptyState(
-              icon: Icons.event_available_outlined,
-              title: 'No upcoming inspections',
-              subtitle: 'Approved inspections will appear here');
+          return GuidanceEmptyState(
+            icon: Icons.event_available_outlined,
+            title: 'No upcoming inspections',
+            subtitle:
+                'Once a request is approved, your visit shows up here. Browse '
+                'properties to book one.',
+            actionLabel: 'Browse Properties',
+            actionIcon: Icons.search,
+            onAction: () => context.go('/tenant/home'),
+          );
         }
 
         return ListView.builder(
@@ -872,6 +1030,27 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
         ],
 
+        // Handler's live status — so the tenant can see whether the
+        // agent/landlord is on the way or has arrived. Arrived takes
+        // priority. Hidden once met (cascade below shows in-progress).
+        if (!r.met && r.handlerArrived) ...[
+          const SizedBox(height: 12),
+          _partyStatusStrip(
+            icon: Icons.where_to_vote,
+            color: AppColors.success,
+            text:
+                '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} has arrived',
+          ),
+        ] else if (!r.met && r.handlerOnWay) ...[
+          const SizedBox(height: 12),
+          _partyStatusStrip(
+            icon: Icons.directions_walk,
+            color: AppColors.info,
+            text:
+                '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} is on the way',
+          ),
+        ],
+
         // On Way / Arrived / Met — single-slot cascade that
         // progresses through the inspection-day state machine
         if (r.canTenantMarkOnWay) ...[
@@ -967,8 +1146,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               style: AppTextStyles.labelSmall.copyWith(
                   color: color == AppColors.success ? color : Colors.white,
                   fontWeight: FontWeight.w600)),
-        ]),
-      );
+        ]
+      ),
+  );
 
   Widget _iconBtn(
           IconData icon, Color color, VoidCallback? onTap, bool loading) =>
@@ -987,6 +1167,28 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 decoration: BoxDecoration(
                     color: color.withAlpha(26), shape: BoxShape.circle),
                 child: Icon(icon, color: color, size: 18)),
+      );
+
+      Widget _partyStatusStrip({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) =>
+      Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withAlpha(20),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withAlpha(60)),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text,
+                style: AppTextStyles.labelMedium.copyWith(color: color)),
+          ),
+        ]),
       );
 }
 
@@ -1012,7 +1214,8 @@ class _TenantHistoryTab extends StatelessWidget {
                 r.isCompleted ||
                 r.isDeclined ||
                 r.isCancelled ||
-                r.isRefunded)
+                r.isRefunded ||
+                r.isAwaitingOutcome)
             .toList()
           ..sort((a, b) {
             // Unrated completed first
@@ -1031,7 +1234,7 @@ class _TenantHistoryTab extends StatelessWidget {
           });
 
         if (history.isEmpty) {
-          return const _EmptyState(
+          return const GuidanceEmptyState(
               icon: Icons.history,
               title: 'No history yet',
               subtitle: 'Your past inspections will appear here');
@@ -1073,6 +1276,8 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
   @override
   void initState() {
     super.initState();
+    // Restore the persisted decline so the decision box stays gone across restarts.
+    _hasPassed = widget.request.tenantPassed;
     if (widget.request.isCompleted && widget.request.tenantRated) {
       _loadRentalInterest();
     }
@@ -1110,6 +1315,16 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
           _isLoadingInterest = false;
           _hasCheckedInterest = true;
         });
+        // A loser (lost_to_other) is owed a refund tracked at
+        // refunds/{interestId} — stream it so the card shows Processing → Paid,
+        // matching the inspection-refund card.
+        if (interest != null && interest.isLostToOther) {
+          _refundSub = _refundService
+              .streamForRental(interest.id)
+              .listen((refund) {
+            if (mounted) setState(() => _refund = refund);
+          });
+        }
       }
     } catch (e) {
       developer.log('❌ Error loading rental interest: $e',
@@ -1533,6 +1748,15 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                 text: 'Go to My Home',
                 onPressed: () => context.go('/tenant/home')));
         break;
+      case RentalInterestStatus.lostToOther:
+        statusColor = AppColors.info;
+        statusIcon = Icons.info_outline;
+        title = 'Property Rented to Another Applicant';
+        subtitle =
+            'The landlord accepted another tenant for this property. '
+            'Your full payment is being refunded — you don\'t need to do anything.';
+        action = null;
+        break;
     }
 
     return Container(
@@ -1772,16 +1996,30 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       ),
     );
     if (confirm == true && mounted) {
-      setState(() {
-        _hasCheckedInterest = true;
-        _hasPassed = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('No problem! Keep browsing to find your perfect home.'),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      final messenger = ScaffoldMessenger.of(context);
+      final success =
+          await widget.inspectionService.markTenantPassed(widget.request.id);
+      if (!mounted) return;
+      if (success) {
+        setState(() {
+          _hasCheckedInterest = true;
+          _hasPassed = true;
+        });
+        messenger.showSnackBar(SnackBar(
+          content: const Text(
+              'No problem! Keep browsing to find your perfect home.'),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      } else {
+        messenger.showSnackBar(SnackBar(
+          content: const Text('Could not save your decision. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
     }
   }
 }
@@ -1789,51 +2027,3 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
 // ============================================================
 // EMPTY STATE
 // ============================================================
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                  color: AppColors.primary.withAlpha(26),
-                  shape: BoxShape.circle),
-              child: Icon(icon, size: 40, color: AppColors.primary)),
-          const SizedBox(height: 24),
-          Text(title, style: AppTextStyles.h4, textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          Text(subtitle,
-              style: AppTextStyles.bodyMedium
-                  .copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center),
-          if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 24),
-            TextButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.search),
-                label: Text(actionLabel!),
-                style: TextButton.styleFrom(foregroundColor: AppColors.primary)),
-          ],
-        ]),
-      ),
-    );
-  }
-}

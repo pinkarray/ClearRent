@@ -52,6 +52,27 @@ export function assertAdmin(
 }
 
 /**
+ * Throws HttpsError unless the caller is authenticated AND is the user
+ * identified by `expectedUid`. The tenant-facing analogue of assertAdmin:
+ * used by renewal/promotion CFs where the legitimate caller is the tenant
+ * on the rental/link, not an admin.
+ *
+ * @param auth the request's auth context
+ * @param expectedUid the uid the caller must match (e.g. the rental's tenantId)
+ */
+export function assertSelf(
+  auth: {uid: string; token?: Record<string, unknown>} | undefined,
+  expectedUid: string,
+): void {
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  if (auth.uid !== expectedUid) {
+    throw new HttpsError("permission-denied", "Not authorized for this action");
+  }
+}
+
+/**
  * Throws HttpsError if the document's status field is not the expected
  * value. Used to prevent double-payment: a CF should only flip a doc
  * from `pending` to `paid`, never `paid` to `paid` again.

@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return (request.auth.token.admin == true)
+        || (request.auth.token.superAdmin == true);
+    }
+
+    match /verification/{uid}/{docType} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Ownership documents (C of O / deed) for standalone listings and buildings.
+    // Title-level PII — same access model as verification: owner writes, owner
+    // and admin read. Bytes are streamed to admins via an authenticated route,
+    // never a public/signed URL.
+    match /ownership/{uid}/{docId} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Tenancy agreements, uploaded by the landlord under their own uid.
+    // Direct reads are limited to the uploader (landlord) + admin. The TENANT
+    // (a party to the agreement but not the uploader) can't be authorized by a
+    // storage rule — rules can't read Firestore to check rental membership — so
+    // tenants get the doc via a short-lived signed URL from the
+    // getSignedAgreementUrl CF, which verifies membership server-side.
+    match /agreements/{uid}/{docId} {
+      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 
 class SelectAgentScreen extends StatefulWidget {
   final String propertyId;
@@ -412,46 +413,23 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
     final cityText = widget.propertyCity != null && widget.propertyCity!.isNotEmpty
         ? widget.propertyCity!
         : 'this area';
-    
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.textHint.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.person_search, size: 40, color: AppColors.textHint),
-            ),
-            const SizedBox(height: 24),
-            Text('No Agents Found', style: AppTextStyles.h4),
-            const SizedBox(height: 8),
-            Text(
-              _showOnlyAvailable
-                  ? 'No verified agents with availability set are covering $cityText yet.'
-                  : 'No verified agents are covering $cityText yet.',
-              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            if (_showOnlyAvailable)
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _showOnlyAvailable = false;
-                    _applyFilters();
-                  });
-                },
-                child: const Text('Show all agents'),
-              ),
-          ],
-        ),
-      ),
+
+    return GuidanceEmptyState(
+      icon: Icons.person_search,
+      title: 'No Agents Found',
+      subtitle: _showOnlyAvailable
+          ? 'No verified agents with availability set are covering $cityText yet.'
+          : 'No verified agents are covering $cityText yet.',
+      actionLabel: _showOnlyAvailable ? 'Show all agents' : null,
+      actionIcon: Icons.filter_alt_off_outlined,
+      onAction: _showOnlyAvailable
+          ? () {
+              setState(() {
+                _showOnlyAvailable = false;
+                _applyFilters();
+              });
+            }
+          : null,
     );
   }
 }

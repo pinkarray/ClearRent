@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 
 class AgentAssignedPropertiesTab extends StatefulWidget {
   final bool isVerified;
@@ -31,7 +32,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
 
     final userId = _auth.currentUser?.uid;
     if (userId == null) {
-      return _buildEmptyState(
+      return GuidanceEmptyState(
         icon: Icons.error_outline,
         title: 'Not Logged In',
         subtitle: 'Please log in to view assigned properties',
@@ -61,7 +62,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
 
         if (snapshot.hasError) {
           debugPrint('❌ Error loading assigned properties: ${snapshot.error}');
-          return _buildEmptyState(
+          return GuidanceEmptyState(
             icon: Icons.error_outline,
             title: 'Error Loading Properties',
             subtitle: 'Error: ${snapshot.error.toString().substring(0, 50)}...',
@@ -71,7 +72,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
         final docs = snapshot.data?.docs ?? [];
         
         if (docs.isEmpty) {
-          return _buildEmptyState(
+          return GuidanceEmptyState(
             icon: Icons.home_work_outlined,
             title: 'No Assigned Properties',
             subtitle: 'Properties assigned to you by landlords will appear here',
@@ -181,41 +182,6 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
     );
   }
 
-  Widget _buildEmptyState({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight.withAlpha(26),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 50, color: AppColors.primary),
-            ),
-            const SizedBox(height: 24),
-            Text(title, style: AppTextStyles.h4),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ============ ASSIGNED PROPERTY CARD ============

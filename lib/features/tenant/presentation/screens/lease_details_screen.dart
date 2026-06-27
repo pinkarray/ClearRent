@@ -7,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
 
 class LeaseDetailsScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class LeaseDetailsScreen extends StatefulWidget {
 class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   late ActiveRental _rental;
   final ActiveRentalService _rentalService = ActiveRentalService();
+  final AgreementAccessService _agreementAccess = AgreementAccessService();
   bool _isAccepting = false;
   bool _isDisputing = false;
 
@@ -634,9 +636,18 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     }
   }
 
-  void _viewAgreement() {
-    if (_rental.agreementUrl != null) {
-      launchUrl(Uri.parse(_rental.agreementUrl!), mode: LaunchMode.externalApplication);
+  // Agreements are private — resolve a short-lived signed URL via the CF
+  // (which authorizes this tenant as a party) before opening.
+  Future<void> _viewAgreement() async {
+    if (_rental.agreementUrl == null) return;
+    final url = await _agreementAccess.resolveUrl(
+      collection: 'active_rentals',
+      docId: _rental.id,
+    );
+    if (!mounted || url == null) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 

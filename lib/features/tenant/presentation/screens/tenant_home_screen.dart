@@ -16,6 +16,7 @@ import '../../../../services/conversation_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/tenancy_link_service.dart';
+import '../../../../services/agreement_access_service.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
@@ -23,8 +24,12 @@ import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../widgets/tenant_rental_dashboard.dart';
+import '../widgets/multi_rental_dashboard.dart';
+import '../widgets/linked_rent_due_card.dart';
+import '../../../../shared/models/tenant_rental.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 
 const List<Map<String, String>> propertyTypes = [
@@ -64,6 +69,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final PropertyService _propertyService;
   late final ActiveRentalService _activeRentalService;
   late final TenancyLinkService _tenancyLinkService;
+  final AgreementAccessService _agreementAccess = AgreementAccessService();
+  StreamSubscription<ActiveRental?>? _activeRentalSub;
   // Saved properties
   Set<String> _savedProperties = {};
   bool _isLoadingSaved = true;
@@ -83,13 +90,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   // Active rental (paid/contract-based)
   ActiveRental? _activeRental;
-  bool _isLoadingRental = true;
+  // Count of the tenant's current active rentals — a tenant can hold more than
+  // one (multi-rental), so the profile "Rentals" stat shows the real number.
+  int _activeRentalCount = 0;
   bool _browsingFromDashboard = false; // true when user tapped "browse" from rental dashboard
   bool _browsingFromLinkedDashboard = false; // true when verified linked tenant taps browse
-
-  // Live rent from property (overrides stale link snapshot)
-  double? _livePropertyRent;
-  String? _livePropertyRentFrequency;
 
   DateTime? _lastBackPressed;
 
@@ -116,11 +121,26 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _loadSavedProperties();
     _loadUnreadCount();
     _loadProperties();
-    _loadActiveRental();
+    _activeRentalSub = _activeRentalService.streamTenantActiveRental().listen((rental) {
+      if (mounted) setState(() => _activeRental = rental);
+    });
+    _loadActiveRentalCount();
+  }
+
+  /// Counts the tenant's current (non-ended) active rentals for the profile
+  /// "Rentals" stat. A tenant may hold several at once.
+  Future<void> _loadActiveRentalCount() async {
+    final rentals = await _activeRentalService.getTenantRentals();
+    if (!mounted) return;
+    final count = rentals
+        .where((r) => r.isActive || r.isExpiringSoon || r.isGraceLocked)
+        .length;
+    setState(() => _activeRentalCount = count);
   }
 
   @override
   void dispose() {
+    _activeRentalSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -151,11 +171,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           _profileImageUrl = profile['profileImageUrl'];
           _verificationStatus = verStatus;
           _isLoadingProfile = false;
-          // Track bank details
-          final bankDetails = profile['bankDetails'] as Map<String, dynamic>?;
-          _hasBankDetails = bankDetails != null &&
-              (bankDetails['bankName'] ?? '').toString().isNotEmpty &&
-              (bankDetails['accountNumber'] ?? '').toString().isNotEmpty;
+          // Track bank details — C1: moved to the locked private/bank
+          // subcollection; the user doc only carries this non-sensitive flag.
+          _hasBankDetails = profile['hasBankDetails'] == true;
         });
       } else {
         if (mounted) setState(() { _userName = 'Tenant'; _isLoadingProfile = false; });
@@ -210,44 +228,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     }
   }
 
-  Future<void> _loadActiveRental() async {
-    try {
-      final rental = await _activeRentalService.getTenantActiveRental();
-      if (mounted) setState(() { _activeRental = rental; _isLoadingRental = false; });
-    } catch (e) {
-      debugPrint('❌ Error loading rental: $e');
-      if (mounted) setState(() => _isLoadingRental = false);
-    }
-  }
-
-  /// Fetches live rent from Firestore property document.
-  /// Called once we know the activeLink's propertyId.
-  Future<void> _loadLiveRent(String propertyId) async {
-    if (propertyId.isEmpty) return;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('properties')
-          .doc(propertyId)
-          .get();
-      if (!mounted) return;
-      final data = doc.data();
-      if (data != null) {
-        setState(() {
-          _livePropertyRent = (data['rent'] as num?)?.toDouble();
-          _livePropertyRentFrequency = data['rentFrequency'] as String?;
-        });
-      }
-    } catch (e) {
-      debugPrint('⚠️ Could not load live rent: $e');
-    }
-  }
-
   Future<void> _refreshData() async {
     await Future.wait([
       _loadProperties(),
       _loadSavedProperties(),
       _loadUnreadCount(),
-      _loadActiveRental(),
     ]);
   }
 
@@ -412,10 +397,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           stream: _tenancyLinkService.tenantActiveLinkStream(),
           builder: (context, activeLinkSnap) {
             final activeLink = activeLinkSnap.data;
-            // Load live rent from property whenever the link changes
-            if (activeLink != null && _livePropertyRent == null) {
-              _loadLiveRent(activeLink.propertyId);
-            }
             return StreamBuilder<List<TenancyLinkModel>>(
               stream: _tenancyLinkService.tenantPendingLinksStream(),
               builder: (context, pendingSnap) {
@@ -452,25 +433,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       );
     }
 
-    // ── TIER 1: Verified linked tenant — tenancy dashboard ───────────────
-    // Note: TenantRentalDashboard requires an ActiveRental (post-inspection flow).
-    // Linked tenants use their own dashboard built from TenancyLinkModel.
-    if (isLinkedVerified && activeLink != null) {
-      switch (_currentNavIndex) {
-        case 0:
-          // When browsing, show home tab (browse mode) instead of linked dashboard
-          if (_browsingFromLinkedDashboard) {
-            return SafeArea(child: _buildHomeTab(pendingLinks));
-          }
-          return SafeArea(child: _buildLinkedVerifiedDashboard(activeLink, pendingLinks));
-        case 1: return SafeArea(child: _buildSavedTab());
-        case 2: return SafeArea(child: _buildMessagesTab());
-        case 3: return _buildProfileTab();
-        default: return SafeArea(child: _buildLinkedVerifiedDashboard(activeLink, pendingLinks));
-      }
-    }
-
-    // ── TIER 2: Unverified linked tenant — limited access ─────────────────
     if (isLinkedUnverified && activeLink != null) {
       switch (_currentNavIndex) {
         case 0: return SafeArea(child: _buildLinkedUnverifiedHome(activeLink, pendingLinks));
@@ -479,19 +441,45 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       }
     }
 
-    // ── TIER 3: Unlinked tenant — browse mode (with active rental if any) ─
-    if (!_isLoadingRental && _activeRental != null && !_browsingFromDashboard) {
-      if (_currentNavIndex == 0) {
-        return SafeArea(
-          child: TenantRentalDashboard(
-            rental: _activeRental!,
-            userName: _userName,
-            userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
-            isLoadingProfile: _isLoadingProfile,
-            onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
-          ),
-        );
-      }
+    // ── Verified tenant — multi-rental switcher (active + linked) ─────────
+    // Replaces the old mutually-exclusive Tier 1 (single linked) / Tier 3
+    // (single active) routing. The switcher enumerates every occupied rental
+    // via streamTenantRentals() and shows one at a time.
+    if (_currentNavIndex == 0 &&
+        !_browsingFromDashboard &&
+        !_browsingFromLinkedDashboard) {
+      return SafeArea(
+        child: StreamBuilder<List<TenantRental>>(
+          stream: _activeRentalService.streamTenantRentals(),
+          builder: (context, snap) {
+            // First frame: stream hasn't delivered yet. Show a spinner rather
+            // than flashing the browse home before the real list arrives.
+            if (snap.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator(color: AppColors.primary));
+            }
+            final rentals = snap.data ?? const [];
+            if (rentals.isEmpty) {
+              // No occupied rentals — fall through to browse home.
+              return _buildHomeTab(pendingLinks);
+            }
+            return MultiRentalDashboard(
+              rentals: rentals,
+              activeBuilder: (tr) => TenantRentalDashboard(
+                rental: tr.rental,
+                userName: _userName,
+                userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+                isLoadingProfile: _isLoadingProfile,
+                onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
+              ),
+              linkedBuilder: (tr) => _buildLinkedVerifiedDashboard(
+                tr.link!,
+                pendingLinks,
+              ),
+              onRenew: (tr) => context.push('/tenant/renew', extra: tr),
+            );
+          },
+        ),
+      );
     }
     switch (_currentNavIndex) {
       case 0: return SafeArea(child: _buildHomeTab(pendingLinks));
@@ -506,9 +494,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   // Limited dashboard: see rent info + landlord call + verification CTA
 
   Widget _buildLinkedUnverifiedHome(TenancyLinkModel link, List<TenancyLinkModel> pendingLinks) {
-    final daysLeft = link.daysUntilDue;
-    final isUrgent = daysLeft <= 3;
-    final isDue = daysLeft == 0;
     return CustomScrollView(
       slivers: [
         _buildLinkedAppBar(
@@ -520,8 +505,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             padding: const EdgeInsets.all(20),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // Rent due card
-              _buildRentDueCard(link, daysLeft, isUrgent, isDue),
+              LinkedRentDueCard(link: link),
               const SizedBox(height: 16),
+
+              // Revised agreement (sent by landlord on a rent review)
+              _buildRevisedAgreementCard(link),
 
               // Property info
               _buildLinkedPropertyCard(link),
@@ -610,9 +598,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   // Full linked dashboard — report issues, lease details, messaging, browse
 
   Widget _buildLinkedVerifiedDashboard(TenancyLinkModel link, List<TenancyLinkModel> pendingLinks) {
-    final daysLeft = link.daysUntilDue;
-    final isUrgent = daysLeft <= 3;
-    final isDue = daysLeft == 0;
     return CustomScrollView(
       slivers: [
         _buildLinkedAppBar(title: 'My Tenancy', subtitle: link.propertyCity),
@@ -622,8 +607,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
               // Rent due card
-              _buildRentDueCard(link, daysLeft, isUrgent, isDue),
+              LinkedRentDueCard(link: link),
               const SizedBox(height: 16),
+
+              // Revised agreement (sent by landlord on a rent review)
+              _buildRevisedAgreementCard(link),
 
               // Property info
               _buildLinkedPropertyCard(link),
@@ -947,6 +935,29 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   : 'N/A',
             ),
 
+            if (link.agreementUrl != null && link.agreementUrl!.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openLinkAgreement(link),
+                  icon: Icon(Icons.description_outlined,
+                      size: 18, color: AppColors.info),
+                  label: Text(
+                    'View Revised Agreement',
+                    style: AppTextStyles.labelMedium
+                        .copyWith(color: AppColors.info),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppColors.info.withAlpha(120)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(12),
@@ -988,8 +999,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
               child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('Profile', style: AppTextStyles.h3),
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                   GestureDetector(
                     onTap: () => context.push('/settings'),
                     child: Container(
@@ -1140,80 +1150,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           ],
         )),
         VerificationBadge(status: _verificationStatus),
+        const SizedBox(width: 8),
+        NotificationBell(userId: _authService.currentUserId ?? ''),
       ]),
     );
   }
 
-    // ── SHARED LINKED TENANT WIDGETS ──────────────────────────────────────────
-
-  Widget _buildRentDueCard(TenancyLinkModel link, int daysLeft, bool isUrgent, bool isDue) {
-    // Use live rent from property if available, fall back to snapshotted value in link
-    final rentAmount = _livePropertyRent ?? link.rentAmount;
-    final rentFrequency = _livePropertyRentFrequency ?? link.rentFrequency;
-
-    String formattedRent;
-    if (rentAmount >= 1000000) {
-      formattedRent = '₦${(rentAmount / 1000000).toStringAsFixed(1)}M';
-    } else if (rentAmount >= 1000) {
-      formattedRent = '₦${(rentAmount / 1000).toStringAsFixed(0)}K';
-    } else {
-      formattedRent = '₦${rentAmount.toStringAsFixed(0)}';
-    }
-    final periodLabel = rentFrequency == 'yearly' ? 'per year' : 'per month';
-    final Color cardColor;
-    const Color textColor = Colors.white;
-    final String dueLabel;
-    final IconData dueIcon;
-
-    if (isDue) {
-      cardColor = AppColors.error;
-      dueLabel = 'Rent is due TODAY';
-      dueIcon = Icons.warning_rounded;
-    } else if (isUrgent) {
-      cardColor = AppColors.warning;
-      dueLabel = 'Due in $daysLeft day${daysLeft != 1 ? 's' : ''}';
-      dueIcon = Icons.schedule;
-    } else {
-      cardColor = AppColors.primary;
-      dueLabel = 'Due in $daysLeft days';
-      dueIcon = Icons.calendar_today_outlined;
-    }
-
-    final nextDue = link.nextDueDate;
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(16)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(dueIcon, color: textColor.withAlpha(200), size: 18),
-          const SizedBox(width: 6),
-          Text(dueLabel, style: AppTextStyles.labelMedium.copyWith(color: textColor.withAlpha(200))),
-        ]),
-        const SizedBox(height: 8),
-        Text(formattedRent, style: AppTextStyles.h2.copyWith(color: textColor)),
-        const SizedBox(height: 2),
-        Text(
-          '$periodLabel  •  due ${_ordinal(link.rentDueDay)} of each month',
-          style: AppTextStyles.caption.copyWith(color: textColor.withAlpha(180)),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(color: Colors.white.withAlpha(30), borderRadius: BorderRadius.circular(10)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.event, size: 16, color: textColor),
-            const SizedBox(width: 6),
-            Text(
-              'Next: ${months[nextDue.month - 1]} ${nextDue.day}, ${nextDue.year}',
-              style: AppTextStyles.labelMedium.copyWith(color: textColor),
-            ),
-          ]),
-        ),
-      ]),
-    );
-  }
 
   Widget _buildLinkedPropertyCard(TenancyLinkModel link) {
     return Container(
@@ -1355,12 +1297,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             Text(link.propertyAddress, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
             const SizedBox(height: 6),
             Row(children: [
-              Text(_livePropertyRent != null ? (_livePropertyRent! >= 1000000 ? '₦${(_livePropertyRent! / 1000000).toStringAsFixed(1)}M' : _livePropertyRent! >= 1000 ? '₦${(_livePropertyRent! / 1000).toStringAsFixed(0)}K' : '₦${_livePropertyRent!.toStringAsFixed(0)}') : link.formattedRentAmount, style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
-              Text('  ${_livePropertyRentFrequency != null ? (_livePropertyRentFrequency == 'yearly' ? 'per year' : 'per month') : link.rentPeriodLabel}', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+              Text(link.formattedRentAmount, style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+              Text('  ${link.rentPeriodLabel}', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
               const Spacer(),
               Icon(Icons.calendar_today_outlined, size: 13, color: AppColors.textSecondary),
               const SizedBox(width: 4),
-              Text('Due ${_ordinal(link.rentDueDay)} each month', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+              Text('Due ${link.rentDueLabel}', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
             ]),
           ]),
         ),
@@ -1849,8 +1791,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
               child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('Profile', style: AppTextStyles.h3),
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                   GestureDetector(
                     onTap: () => context.push('/settings'),
                     child: Container(
@@ -1904,7 +1845,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           child: Row(children: [
             Expanded(child: _TenantStatCard(icon: Icons.favorite_outline, value: _isLoadingSaved ? '...' : '${_savedProperties.length}', label: 'Saved', color: AppColors.error)),
             const SizedBox(width: 12),
-            Expanded(child: _TenantStatCard(icon: Icons.home_outlined, value: _activeRental != null ? '1' : '0', label: 'Rentals', color: AppColors.primary)),
+            Expanded(child: _TenantStatCard(icon: Icons.home_outlined, value: '$_activeRentalCount', label: 'Rentals', color: AppColors.primary)),
             const SizedBox(width: 12),
             Expanded(child: _TenantStatCard(icon: Icons.chat_bubble_outline, value: '$_unreadCount', label: 'Unread', color: AppColors.info)),
           ]),
@@ -2086,16 +2027,72 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
-  // ── HELPERS ───────────────────────────────────────────────────────────────
-
-  String _ordinal(int n) {
-    if (n >= 11 && n <= 13) return '${n}th';
-    switch (n % 10) {
-      case 1: return '${n}st';
-      case 2: return '${n}nd';
-      case 3: return '${n}rd';
-      default: return '${n}th';
+  // Agreements live in private storage — resolve a short-lived signed URL via
+  // the CF (which authorizes this tenant as a party) before opening.
+  Future<void> _openLinkAgreement(TenancyLinkModel link) async {
+    final url = await _agreementAccess.resolveUrl(
+      collection: 'tenancy_links',
+      docId: link.id,
+    );
+    if (!mounted) return;
+    final uri = url != null ? Uri.tryParse(url) : null;
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Could not open the agreement'),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
     }
+  }
+
+  // Revised tenancy agreement the landlord attached on a rent review. The
+  // approveRentReview CF writes link.agreementUrl; nothing else surfaces it for
+  // linked tenants, so this card is their only way to see the new terms until
+  // the link promotes to an active rental. Renders nothing when absent.
+  Widget _buildRevisedAgreementCard(TenancyLinkModel link) {
+    final url = link.agreementUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GestureDetector(
+        onTap: () => _openLinkAgreement(link),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.info.withAlpha(20),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.info.withAlpha(80)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.info.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.description_outlined,
+                  color: AppColors.info, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Revised Tenancy Agreement', style: AppTextStyles.labelLarge),
+                const SizedBox(height: 2),
+                Text(
+                  'Your landlord updated your agreement. Tap to view.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            )),
+            Icon(Icons.open_in_new, size: 18, color: AppColors.info),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

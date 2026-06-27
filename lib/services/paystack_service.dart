@@ -1,11 +1,8 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:uuid/uuid.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../core/utils/app_logger.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 /// Centralized Paystack payment service for all ClearRent payments.
 ///
@@ -15,6 +12,11 @@ import '../core/utils/app_logger.dart';
 /// - Listing fees (₦10k per additional property)
 ///
 /// Uses Paystack Popup via in-app WebView for payment collection.
+///
+/// The Paystack SECRET key never touches the client. `initializeTransaction`,
+/// `verifyTransaction`, and `initiateRefund` call the `initializePayment`,
+/// `verifyPayment`, and `refundPayment` Cloud Functions, which hold the secret
+/// in Secret Manager. The public key remains client-side (it is public).
 class PaystackService {
   static final PaystackService _instance = PaystackService._internal();
   factory PaystackService() => _instance;
@@ -22,23 +24,20 @@ class PaystackService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   // ── Keys ──────────────────────────────────────────────────────────
-  // Test keys are only available in debug builds.
-  // Live keys should be set here once Paystack account is activated.
-  static const String _liveSecretKey = '';
+  // Only the PUBLIC key lives client-side. The secret key was removed and
+  // now lives in Secret Manager, used exclusively by the Paystack Cloud
+  // Functions. Set the live public key here once Paystack is activated.
   static const String _livePublicKey = '';
-
-  static String get secretKey {
-    if (_liveSecretKey.isNotEmpty) return _liveSecretKey;
-    if (kDebugMode) return const String.fromEnvironment('PAYSTACK_TEST_SK', defaultValue: 'sk_test_dba926781692c2cd5e56e84244262448d6d46d2d');
-    // In release mode with no live key → error state
-    return '';
-  }
 
   static String get publicKey {
     if (_livePublicKey.isNotEmpty) return _livePublicKey;
-    if (kDebugMode) return const String.fromEnvironment('PAYSTACK_TEST_PK', defaultValue: 'pk_test_48c474c1121fb75f80baae6fde8a0dfa380716e6');
+    if (kDebugMode) {
+      return const String.fromEnvironment('PAYSTACK_TEST_PK',
+          defaultValue: 'pk_test_48c474c1121fb75f80baae6fde8a0dfa380716e6');
+    }
     return '';
   }
 
@@ -50,17 +49,23 @@ class PaystackService {
   static const String typeInspection = 'inspection';
   static const String typeListing = 'listing';
   static const String typeRent = 'rent';
+  static const String typeRenewal = 'renewal';
 
-  /// Generate a unique payment reference
-  String _generateReference(String type) {
-    final uuid = const Uuid().v4().substring(0, 8);
-    return 'CR_${type.toUpperCase()}_${DateTime.now().millisecondsSinceEpoch}_$uuid';
+  /// Redact a payment reference for release-build logs.
+  /// Returns the full reference in debug builds, first 8 chars + ellipsis in release.
+  /// Partial prefix is enough to trace via Firestore lookup without leaking the full token.
+  String _redactRef(String ref) {
+    if (kDebugMode) return ref;
+    return ref.length > 8 ? '${ref.substring(0, 8)}…' : ref;
   }
 
   // ── Initialize Transaction ────────────────────────────────────────
-  /// Initialize a Paystack transaction and return the authorization URL + reference.
+  /// Initialize a Paystack transaction via the `initializePayment` Cloud
+  /// Function and return the authorization URL + reference.
   ///
-  /// Amount is in Naira (e.g. 15000) — this method converts to kobo internally.
+  /// Amount is in Naira (e.g. 15000) — the function converts to kobo. The
+  /// reference is generated server-side. `metadata` is merged into the
+  /// Paystack metadata exactly as before.
   Future<PaystackInitResult> initializeTransaction({
     required double amount,
     required String type,
@@ -69,13 +74,8 @@ class PaystackService {
     AppLogger.i('initializeTransaction — amount: $amount, type: $type',
         name: 'PaystackService');
     try {
-      if (secretKey.isEmpty) {
-        return PaystackInitResult(
-          success: false,
-          error: 'Payment service not configured. Please contact support.',
-        );
-      }
-
+      // Email presence is enforced server-side too; this is a fast local
+      // guard that preserves the previous user-facing message.
       final email = _currentUserEmail;
       if (email == null || email.isEmpty) {
         return PaystackInitResult(
@@ -84,65 +84,42 @@ class PaystackService {
         );
       }
 
-      final reference = _generateReference(type);
-      final amountInKobo = (amount * 100).toInt();
-
-      final fullMetadata = {
-        'userId': _currentUserId,
-        'paymentType': type,
-        'custom_fields': [
-          {
-            'display_name': 'Payment Type',
-            'variable_name': 'payment_type',
-            'value': type,
-          },
-          {
-            'display_name': 'User ID',
-            'variable_name': 'user_id',
-            'value': _currentUserId,
-          },
-        ],
-        ...?metadata,
-      };
-
-      final response = await http.post(
-        Uri.parse('https://api.paystack.co/transaction/initialize'),
-        headers: {
-          'Authorization': 'Bearer $secretKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email,
-          'amount': amountInKobo,
-          'reference': reference,
-          'currency': 'NGN',
-          'metadata': fullMetadata,
-          'callback_url': 'https://verealtytech.com/payment/callback',
-        }),
-      ).timeout(const Duration(seconds: 15), onTimeout: () {
-        throw TimeoutException('Paystack request timed out');
+      final callable = _functions.httpsCallable('initializePayment');
+      final result = await callable.call<Map<String, dynamic>>({
+        'amount': amount,
+        'type': type,
+        if (metadata != null) 'metadata': metadata,
       });
 
-      final data = jsonDecode(response.body);
+      final authorizationUrl = result.data['authorizationUrl'] as String?;
+      final reference = result.data['reference'] as String?;
+      final accessCode = result.data['accessCode'] as String?;
 
-      if (response.statusCode == 200 && data['status'] == true) {
-        final authorizationUrl = data['data']['authorization_url'] as String;
-        final accessCode = data['data']['access_code'] as String;
-
-        AppLogger.i('Transaction initialized: $reference',
+      if (authorizationUrl == null || reference == null) {
+        AppLogger.e('Init returned no authorization URL/reference',
             name: 'PaystackService');
-
         return PaystackInitResult(
-          success: true,
-          authorizationUrl: authorizationUrl,
-          accessCode: accessCode,
-          reference: reference,
+          success: false,
+          error: 'Failed to initialize payment. Please try again.',
         );
-      } else {
-        final message = data['message'] ?? 'Failed to initialize payment';
-        AppLogger.e('Init failed: $message', name: 'PaystackService');
-        return PaystackInitResult(success: false, error: message);
       }
+
+      AppLogger.i('Transaction initialized: ${_redactRef(reference)}',
+          name: 'PaystackService');
+
+      return PaystackInitResult(
+        success: true,
+        authorizationUrl: authorizationUrl,
+        accessCode: accessCode,
+        reference: reference,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      AppLogger.e('Init failed: ${e.code} — ${e.message}',
+          name: 'PaystackService');
+      return PaystackInitResult(
+        success: false,
+        error: e.message ?? 'Failed to initialize payment.',
+      );
     } catch (e) {
       AppLogger.e('Init error: $e', name: 'PaystackService', error: e);
       return PaystackInitResult(
@@ -152,83 +129,81 @@ class PaystackService {
     }
   }
 
-  /// Resolve account name using Paystack's Resolve Account API.
-  /// Returns the account name if successful, null otherwise.
+  /// Resolve account name via the `resolveAccount` Cloud Function,
+  /// which proxies Paystack server-side. Returns the account name
+  /// on success, null otherwise (invalid number/bank, network
+  /// error, or Paystack down).
   Future<String?> resolveAccount({
     required String accountNumber,
     required String bankCode,
   }) async {
     try {
-      final uri = Uri.parse(
-        'https://api.paystack.co/bank/resolve'
-        '?account_number=$accountNumber'
-        '&bank_code=$bankCode',
+      final callable = _functions.httpsCallable('resolveAccount');
+      final result = await callable.call<Map<String, dynamic>>({
+        'accountNumber': accountNumber,
+        'bankCode': bankCode,
+      });
+      final name = result.data['accountName'];
+      if (name is String && name.isNotEmpty) return name;
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      AppLogger.w(
+        'Resolve account failed: ${e.code} — ${e.message}',
+        name: 'PaystackService',
       );
-
-      final response = await http.get(
-        uri,
-        headers: {
-          'Authorization': 'Bearer $secretKey',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == true && data['data'] != null) {
-          return data['data']['account_name'] as String?;
-        }
-      }
       return null;
     } catch (e) {
-      debugPrint('❌ Resolve account error: $e');
+      AppLogger.e(
+        'Unexpected error in resolveAccount',
+        error: e,
+        name: 'PaystackService',
+      );
       return null;
     }
   }
 
   // ── Verify Transaction ────────────────────────────────────────────
-  /// Verify a Paystack transaction by reference.
+  /// Verify a Paystack transaction by reference via the `verifyPayment`
+  /// Cloud Function.
   Future<PaystackVerifyResult> verifyTransaction(String reference) async {
     try {
-      final response = await http.get(
-        Uri.parse('https://api.paystack.co/transaction/verify/$reference'),
-        headers: {
-          'Authorization': 'Bearer $secretKey',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 15), onTimeout: () {
-        throw TimeoutException('Verification request timed out');
+      final callable = _functions.httpsCallable('verifyPayment');
+      final result = await callable.call<Map<String, dynamic>>({
+        'reference': reference,
       });
 
-      final data = jsonDecode(response.body);
+      final data = result.data;
+      final success = data['success'] == true;
+      final status = data['status'] as String? ?? 'failed';
+      final amountPaid = (data['amountPaid'] as num?)?.toDouble();
+      final paidAt = data['paidAt'] as String?;
+      final gatewayResponse = data['gatewayResponse'] as String? ?? '';
+      final error = data['error'] as String?;
 
-      if (response.statusCode == 200 && data['status'] == true) {
-        final txData = data['data'];
-        final status = txData['status'] as String;
-        final amountInKobo = txData['amount'] as int;
-        final paidAt = txData['paid_at'] as String?;
+      AppLogger.i(
+        'Verify: ${_redactRef(reference)} → $status'
+        '${amountPaid != null ? ' (₦$amountPaid)' : ''}',
+        name: 'PaystackService',
+      );
 
-        AppLogger.i(
-          'Verify: $reference → $status (₦${amountInKobo / 100})',
-          name: 'PaystackService',
-        );
-
-        return PaystackVerifyResult(
-          success: status == 'success',
-          status: status,
-          reference: reference,
-          amountPaid: amountInKobo / 100,
-          paidAt: paidAt,
-          gatewayResponse: txData['gateway_response'] as String? ?? '',
-        );
-      } else {
-        return PaystackVerifyResult(
-          success: false,
-          status: 'failed',
-          reference: reference,
-          error: data['message'] ?? 'Verification failed',
-        );
-      }
+      return PaystackVerifyResult(
+        success: success,
+        status: status,
+        reference: reference,
+        amountPaid: amountPaid,
+        paidAt: paidAt,
+        gatewayResponse: gatewayResponse,
+        error: error,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      AppLogger.e('Verify failed: ${e.code} — ${e.message}',
+          name: 'PaystackService');
+      return PaystackVerifyResult(
+        success: false,
+        status: 'error',
+        reference: reference,
+        error: e.message ?? 'Verification failed',
+      );
     } catch (e) {
       AppLogger.e('Verify error: $e', name: 'PaystackService', error: e);
       return PaystackVerifyResult(
@@ -263,7 +238,7 @@ class PaystackService {
         ...?extra,
       });
 
-      AppLogger.i('Payment recorded: $reference ($type, ₦$amount, $status)',
+      AppLogger.i('Payment recorded: ${_redactRef(reference)} ($type, ₦$amount, $status)',
           name: 'PaystackService');
     } catch (e) {
       AppLogger.e('Failed to record payment: $e',
@@ -272,29 +247,22 @@ class PaystackService {
   }
 
   // ── Refund ────────────────────────────────────────────────────────
-  /// Initiate a refund for a transaction.
+  /// Initiate a refund for a transaction via the `refundPayment` Cloud
+  /// Function.
   /// NOTE: Requires Paystack live mode and approval.
   Future<bool> initiateRefund({
     required String reference,
     String? reason,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('https://api.paystack.co/refund'),
-        headers: {
-          'Authorization': 'Bearer $secretKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'transaction': reference,
-          'merchant_note': reason ?? 'ClearRent refund',
-        }),
-      );
+      final callable = _functions.httpsCallable('refundPayment');
+      final result = await callable.call<Map<String, dynamic>>({
+        'reference': reference,
+        if (reason != null) 'reason': reason,
+      });
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['status'] == true) {
-        AppLogger.i('Refund initiated for $reference',
+      if (result.data['success'] == true) {
+        AppLogger.i('Refund initiated for ${_redactRef(reference)}',
             name: 'PaystackService');
 
         await _firestore.collection('payments').doc(reference).update({
@@ -305,10 +273,14 @@ class PaystackService {
 
         return true;
       } else {
-        AppLogger.e('Refund failed: ${data['message']}',
+        AppLogger.e('Refund failed: ${result.data['error']}',
             name: 'PaystackService');
         return false;
       }
+    } on FirebaseFunctionsException catch (e) {
+      AppLogger.e('Refund failed: ${e.code} — ${e.message}',
+          name: 'PaystackService');
+      return false;
     } catch (e) {
       AppLogger.e('Refund error: $e', name: 'PaystackService', error: e);
       return false;

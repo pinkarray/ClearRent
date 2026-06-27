@@ -9,6 +9,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../../../../shared/widgets/notification_bell.dart';
 
 
 class TenantRentalDashboard extends StatefulWidget {
@@ -233,6 +234,159 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     }
   }
 
+  /// Opens the move-out confirmation sheet. Tenant picks a reason, confirms,
+  /// and the rental is marked ended_by_tenant server-side; the switcher stream
+  /// then drops it from the list so no manual navigation is needed.
+  Future<void> _showMoveOutSheet() async {
+    const reasons = [
+      'Moving to a new area',
+      'Found a better place',
+      'Cost / affordability',
+      'Other',
+    ];
+    String? selectedReason;
+    final otherController = TextEditingController();
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('Move Out', style: AppTextStyles.h4),
+                const SizedBox(height: 6),
+                Text(
+                  'Let your landlord know you\'re ending this tenancy. This '
+                  'updates your record on ClearRent — it isn\'t a legal notice.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                ...reasons.map((r) {
+                  final isSel = selectedReason == r;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: GestureDetector(
+                      onTap: () => setSheet(() => selectedReason = r),
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSel
+                              ? AppColors.primary.withAlpha(20)
+                              : AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            isSel
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 18,
+                            color: isSel
+                                ? AppColors.primary
+                                : AppColors.textHint,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            r,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: isSel
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  );
+                }),
+                if (selectedReason == 'Other') ...[
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: otherController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Tell us a bit more (optional)',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: selectedReason == null
+                        ? null
+                        : () => Navigator.pop(sheetCtx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.error,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppColors.border,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text('Confirm Move Out',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || selectedReason == null) return;
+
+    final reason = selectedReason == 'Other' &&
+            otherController.text.trim().isNotEmpty
+        ? otherController.text.trim()
+        : selectedReason!;
+
+    final ok = await _activeRentalService.tenantMoveOut(rental.id, reason);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Could not complete move-out. Please try again.'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+    // On success, the switcher stream drops this rental automatically.
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -280,6 +434,19 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
 
             // Browse more
             _buildBrowseMore(),
+            const SizedBox(height: 8),
+
+            // Move out — quiet, low-frequency action
+            Center(
+              child: TextButton(
+                onPressed: _showMoveOutSheet,
+                child: Text(
+                  'Move out of this rental',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textHint),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -304,8 +471,6 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                   : Text('Welcome home, $_firstName',
                       style: AppTextStyles.h3
                           .copyWith(color: AppColors.textSecondary)),
-              const SizedBox(height: 4),
-              Text('My Rental', style: AppTextStyles.h3),
             ],
           ),
         ),
@@ -342,6 +507,8 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             ),
           ]),
         ),
+        const SizedBox(width: 8),
+        NotificationBell(userId: rental.tenantId),
       ],
     );
   }
@@ -1018,14 +1185,20 @@ class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
       // Notify landlord
       final landlordId = widget.data['landlordId'];
       if (landlordId != null) {
+        // Landlord recent-activity entry (push itself is sent by the
+        // onIssueUpdated Cloud Function). Field must be `landlordId` — the
+        // activity feed only queries that field — matching tenant_home's
+        // confirm and the dispute case below.
         await FirebaseFirestore.instance.collection('activities').add({
-          'userId': landlordId,
-          'type': 'issue_updated',
-          'title': 'Fix Confirmed',
+          'landlordId': landlordId,
+          'type': 'issue_confirmed',
+          'title': 'Fix Confirmed ✓',
           'message':
               '${widget.data['tenantName'] ?? 'Your tenant'} confirmed the $_category issue has been resolved.',
           'propertyId': widget.data['propertyId'],
           'issueId': widget.issueId,
+          'actorId': widget.data['tenantId'],
+          'actorName': widget.data['tenantName'],
           'isRead': false,
           'createdAt': FieldValue.serverTimestamp(),
         });

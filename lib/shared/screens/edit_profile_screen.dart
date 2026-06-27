@@ -18,9 +18,7 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final AuthService _authService = AuthService();
-  final _phoneController = TextEditingController();
-  final _phoneFocusNode = FocusNode();
-
+  
   // Tenant profile controllers
   final _occupationController = TextEditingController();
   final _employerController = TextEditingController();
@@ -28,7 +26,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _budgetMaxController = TextEditingController();
 
   bool _isLoading = true;
-  bool _isSavingPhone = false;
   bool _isSavingTenantProfile = false;
   bool _isUploadingPhoto = false;
 
@@ -73,18 +70,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     _loadProfile();
-
-    _phoneFocusNode.addListener(() {
-      if (!_phoneFocusNode.hasFocus) {
-        _savePhoneIfChanged();
-      }
-    });
   }
 
   @override
   void dispose() {
-    _phoneController.dispose();
-    _phoneFocusNode.dispose();
     _occupationController.dispose();
     _employerController.dispose();
     _budgetMinController.dispose();
@@ -110,7 +99,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _photoUrl = profile['photoUrl'];
           _isVerified = profile['verificationStatus'] == 'verified';
           _accountType = profile['accountType'] ?? 'tenant';
-          _phoneController.text = _phone;
 
           // Load tenant profile fields
           _occupationController.text = profile['occupation'] ?? '';
@@ -155,24 +143,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   double _parseBudgetAmount(TextEditingController controller) {
     final cleaned = controller.text.replaceAll(',', '');
     return double.tryParse(cleaned) ?? 0;
-  }
-
-  Future<void> _savePhoneIfChanged() async {
-    final newPhone = _phoneController.text.trim();
-    if (newPhone == _phone || newPhone.isEmpty) return;
-
-    setState(() => _isSavingPhone = true);
-    final success = await _authService.updateUserProfile({'phone': newPhone});
-    if (!mounted) return;
-    setState(() => _isSavingPhone = false);
-
-    if (success) {
-      setState(() => _phone = newPhone);
-      _showSuccess('Phone number updated');
-    } else {
-      _phoneController.text = _phone;
-      _showError('Failed to update phone number');
-    }
   }
 
   Future<void> _saveTenantProfile() async {
@@ -461,43 +431,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _buildReadOnlyField(label: 'Full Name', value: _fullName, icon: Icons.person_outline),
         const SizedBox(height: 20),
         _buildReadOnlyField(label: 'Email', value: _email, icon: Icons.email_outlined),
-        const SizedBox(height: 20),
-
-        Text('Phone Number', style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _phoneController,
-          focusNode: _phoneFocusNode,
-          keyboardType: TextInputType.phone,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
-            LengthLimitingTextInputFormatter(15),
-          ],
-          onSubmitted: (_) => _savePhoneIfChanged(),
-          decoration: InputDecoration(
-            hintText: 'Enter your phone number',
-            hintStyle: TextStyle(color: AppColors.textHint),
-            prefixIcon: Icon(Icons.phone_outlined, color: AppColors.textHint),
-            suffixIcon: _isSavingPhone
-                ? Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                    ),
-                  )
-                : null,
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primary, width: 1.5)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          ),
-        ),
         const SizedBox(height: 6),
-        Text('Changes are saved automatically',
-            style: AppTextStyles.caption.copyWith(color: AppColors.textHint, fontStyle: FontStyle.italic)),
+        Text('Contact support to change',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+        const SizedBox(height: 20),
+        _buildReadOnlyField(label: 'Phone Number', value: _phone, icon: Icons.phone_outlined),
+        const SizedBox(height: 6),
+        Text('Contact support to change',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
       ],
     );
   }

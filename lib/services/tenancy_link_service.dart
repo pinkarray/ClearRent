@@ -87,6 +87,9 @@ class TenancyLinkService {
     int rentDueMonth = 1,
     required double rentAmount,
     required String rentFrequency,
+    DateTime? leaseStartDate,
+    DateTime? leaseEndDate,
+    String? agreementUrl,
   }) async {
     try {
       final landlordId = _currentUserId;
@@ -127,6 +130,9 @@ class TenancyLinkService {
         rentDueMonth: rentDueMonth,
         rentAmount: rentAmount,
         rentFrequency: rentFrequency,
+        leaseStartDate: leaseStartDate,
+        leaseEndDate: leaseEndDate,
+        agreementUrl: agreementUrl,
       );
 
       await _links.add(link.toFirestore());
@@ -160,10 +166,14 @@ class TenancyLinkService {
     }
   }
 
-  /// Stream of all tenants (pending + confirmed) for a property — for landlord view
+  /// Stream of all tenants (pending + confirmed) for a property — for landlord view.
+  /// Scoped by landlordId so it satisfies the ownership-constrained tenancy_links
+  /// list rule (firestore.rules — F1.13). This is a landlord-only view and every
+  /// link on the landlord's property carries their uid, so the result is unchanged.
   Stream<List<TenancyLinkModel>> propertyTenantsStream(String propertyId) {
     return _links
         .where('propertyId', isEqualTo: propertyId)
+        .where('landlordId', isEqualTo: _currentUserId)
         .where('status', whereIn: ['pending', 'confirmed'])
         .snapshots()
         .map((snap) => snap.docs.map((doc) {
@@ -179,32 +189,18 @@ class TenancyLinkService {
   /// if no confirmed links remain.
   Future<bool> removeTenant(String linkId) async {
     try {
-      // Fetch the link first so we have propertyId
+      // Confirm the link exists before updating.
       final linkDoc = await _links.doc(linkId).get();
       if (!linkDoc.exists) return false;
-      final data = linkDoc.data() as Map<String, dynamic>;
-      final propertyId = data['propertyId'] as String? ?? '';
 
       await _links.doc(linkId).update({
         'status': 'removed',
         'removedAt': FieldValue.serverTimestamp(),
       });
 
-      // Check if any other confirmed links remain for this property
-      if (propertyId.isNotEmpty) {
-        final remaining = await _links
-            .where('propertyId', isEqualTo: propertyId)
-            .where('status', isEqualTo: 'confirmed')
-            .get();
-
-        await _firestore.collection('properties').doc(propertyId).update({
-          'currentTenantsCount': FieldValue.increment(-1),
-          // Re-mark available only if no confirmed tenants left
-          if (remaining.docs.isEmpty) 'isAvailable': true,
-        });
-      }
-
-      developer.log('✅ Tenant removed from link $linkId — property $propertyId updated',
+      // Property occupancy recomputed server-side by the
+      // syncPropertyOccupancyOnLinkChange Cloud Function.
+      developer.log('✅ Tenant removed from link $linkId — occupancy sync deferred to CF',
           name: 'TenancyLinkService');
       return true;
     } catch (e) {
@@ -277,27 +273,16 @@ class TenancyLinkService {
   /// Also marks the property as occupied and increments currentTenantsCount.
   Future<bool> acceptLink(String linkId) async {
     try {
-      // Fetch the link first so we have propertyId
-      final linkDoc = await _links.doc(linkId).get();
-      if (!linkDoc.exists) return false;
-      final data = linkDoc.data() as Map<String, dynamic>;
-      final propertyId = data['propertyId'] as String? ?? '';
-
-      // Update link status
+      // Update link status. The parent property's occupancy
+      // (currentTenantsCount + isAvailable) is recomputed server-side
+      // by the syncPropertyOccupancyOnLinkChange Cloud Function — the
+      // tenant can't write to the landlord's property doc directly.
       await _links.doc(linkId).update({
         'status': 'confirmed',
         'acceptedAt': FieldValue.serverTimestamp(),
       });
 
-      // Update property: mark occupied + increment tenant count
-      if (propertyId.isNotEmpty) {
-        await _firestore.collection('properties').doc(propertyId).update({
-          'isAvailable': false,
-          'currentTenantsCount': FieldValue.increment(1),
-        });
-      }
-
-      developer.log('✅ Tenant accepted link $linkId — property $propertyId marked occupied',
+      developer.log('✅ Tenant accepted link $linkId — occupancy sync deferred to CF',
           name: 'TenancyLinkService');
       return true;
     } catch (e) {

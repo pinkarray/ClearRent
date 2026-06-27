@@ -18,6 +18,7 @@ import '../../../../services/conversation_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../shared/widgets/notification_bell.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
@@ -117,6 +118,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       final data = doc.data()!;
       // Parse verification status directly from profile doc
       final statusStr = data['verificationStatus'] as String? ?? 'none';
+      final isVerifiedFlag = data['isVerified'] == true;
       VerificationStatus vStatus;
       switch (statusStr) {
         case 'verified':  vStatus = VerificationStatus.verified;  break;
@@ -124,6 +126,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         case 'rejected':  vStatus = VerificationStatus.rejected;  break;
         default:          vStatus = VerificationStatus.none;
       }
+      if (isVerifiedFlag) vStatus = VerificationStatus.verified;
       setState(() {
         _userName = data['fullName'] ?? 'Landlord';
         _profileImageUrl = data['profileImageUrl'];
@@ -1184,6 +1187,23 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Future<void> _deleteProperty(PropertyModel property) async {
+    // Can't delete a property with a sitting/linked tenant — it would strand
+    // their dashboard with an orphaned rental/link.
+    if (await _propertyService.propertyHasSittingTenant(property.id)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'This property has a sitting or linked tenant and can\'t be deleted. End the tenancy first.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1231,18 +1251,15 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Widget _buildEmptyProperties() {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Container(
-        width: 100, 
-        height: 100, 
-        decoration: BoxDecoration(color: AppColors.primaryLight.withAlpha(26), shape: BoxShape.circle), 
-        child: Icon(Icons.home_outlined, size: 50, color: AppColors.primary),
-      ),
-      const SizedBox(height: 24),
-      Text('No properties yet', style: AppTextStyles.h4),
-      const SizedBox(height: 8),
-      Text('Add your first property to start\nreceiving tenant inquiries', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary), textAlign: TextAlign.center),
-    ]));
+    return GuidanceEmptyState(
+      icon: Icons.home_outlined,
+      title: 'No properties yet',
+      subtitle: 'Add your first property to start receiving tenant inquiries.',
+      actionLabel: 'Add Property',
+      actionIcon: Icons.add,
+      onAction: () =>
+          context.push('/landlord/add-property').then((_) => _refreshData()),
+    );
   }
 
   /// UPDATED: Now uses real Firestore messages
@@ -1265,8 +1282,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 60),
               child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('Profile', style: AppTextStyles.h3.copyWith(color: Colors.white)),
+                Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                   GestureDetector(
                     onTap: () => context.push('/settings'),
                     child: Container(
@@ -1939,6 +1955,14 @@ class _LandlordPropertyCard extends StatelessWidget {
                 context.push('/landlord/edit-property', extra: property);
               } else if (v == 'health') {
                 context.push('/landlord/property-health', extra: property);
+              } else if (v == 'rent_change') {
+                context.push('/landlord/request-rent-change', extra: {
+                  'propertyId': property.id,
+                  'propertyTitle': property.title,
+                  'currentRent': property.rent,
+                  'landlordId': property.landlordId,
+                  'landlordName': property.landlordName ?? '',
+                });
               } else if (v == 'delete' && onDelete != null) {
                 onDelete!();
               } else if (v == 'toggle' && onToggleStatus != null) {
@@ -1948,6 +1972,7 @@ class _LandlordPropertyCard extends StatelessWidget {
             itemBuilder: (c) => [
               const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 8), Text('Edit Property')])),
               const PopupMenuItem(value: 'health', child: Row(children: [Icon(Icons.monitor_heart_outlined, size: 20), SizedBox(width: 8), Text('Property Health')])),
+              const PopupMenuItem(value: 'rent_change', child: Row(children: [Icon(Icons.price_change_outlined, size: 20), SizedBox(width: 8), Text('Request Rent Change')])),
               PopupMenuItem(value: 'toggle', child: Row(children: [Icon(property.isAvailable ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20), SizedBox(width: 8), Text(property.isAvailable ? 'Mark Occupied' : 'Mark Available')])),
               PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline, size: 20, color: AppColors.error), SizedBox(width: 8), Text('Delete', style: TextStyle(color: AppColors.error))])),
             ],

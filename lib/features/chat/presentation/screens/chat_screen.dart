@@ -3,10 +3,14 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
+import '../../../../services/property_service.dart';
+import '../../../../services/saved_properties_service.dart';
+import '../../../../shared/models/property_model.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -35,6 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ConversationService _conversationService = ConversationService();
   final AuthService _authService = AuthService();
   final VerificationService _verificationService = VerificationService();
+  final PropertyService _propertyService = PropertyService();
 
   ConversationData? _conversation;
   List<MessageData> _messages = [];
@@ -64,6 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _conversationService.deleteIfEmpty(widget.conversationId);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -491,7 +497,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 if (_messages.isEmpty) {
-                  return _buildEmptyState();
+                  return GuidanceEmptyState(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'Start the conversation',
+                    subtitle: _canSendMessages
+                        ? 'Send a message to begin chatting'
+                        : 'Both parties need to be verified to chat',
+                  );
                 }
 
                 return ListView.builder(
@@ -513,7 +525,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (showDate) _buildDateDivider(message.timestamp),
                         message.isSystemMessage
                             ? _buildSystemMessage(message)
-                            : _buildMessageBubble(message, isMe, isFirstInGroup),
+                            : message.isPropertyShare
+                                ? _buildPropertyShareCard(message, isMe, isFirstInGroup)
+                                : _buildMessageBubble(message, isMe, isFirstInGroup),
                       ],
                     );
                   },
@@ -646,42 +660,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(26),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.chat_bubble_outline,
-              size: 40,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Start the conversation',
-            style: AppTextStyles.h4.copyWith(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _canSendMessages 
-                ? 'Send a message to begin chatting'
-                : 'Both parties need to be verified to chat',
-            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -872,6 +850,237 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Tappable card rendered in place of a text bubble when a message is a
+  /// shared property. Reads the snapshot fields stored on the message so it
+  /// renders even if the property was later edited or deleted.
+  Widget _buildPropertyShareCard(
+      MessageData message, bool isMe, bool isFirstInGroup) {
+    final title = message.sharedPropertyTitle ?? 'Property';
+    final image = message.sharedPropertyImage ?? '';
+    final rent = message.sharedPropertyRent ?? '';
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: 4,
+          top: isFirstInGroup ? 8 : 0,
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isMe && isFirstInGroup) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 4),
+                child: Text(
+                  message.senderName,
+                  style: AppTextStyles.labelSmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+            GestureDetector(
+              onTap: () => _openSharedProperty(message.sharedPropertyId!),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 16),
+                  ),
+                  border: Border.all(color: AppColors.primary.withAlpha(77)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(8),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                      child: image.isNotEmpty
+                          ? Image.network(
+                              image,
+                              height: 140,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                height: 140,
+                                color: AppColors.background,
+                                child: Icon(Icons.home,
+                                    color: AppColors.textHint, size: 40),
+                              ),
+                            )
+                          : Container(
+                              height: 140,
+                              color: AppColors.background,
+                              child: Icon(Icons.home,
+                                  color: AppColors.textHint, size: 40),
+                            ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.home_work_outlined,
+                                  size: 14, color: AppColors.primary),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Shared property',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            title,
+                            style: AppTextStyles.labelMedium,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (rent.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              rent,
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: AppColors.primary,
+                                fontFamily: 'Roboto',
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Tap to view',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              Icon(Icons.chevron_right,
+                                  size: 14, color: AppColors.primary),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+              child: Text(
+                message.formattedTime,
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textHint,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Fetch the shared property and open its detail screen. Only navigates
+  /// if the property still exists — the /property-detail route casts
+  /// state.extra as a non-null PropertyModel, so pushing null would crash.
+  Future<void> _openSharedProperty(String propertyId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    final property = await _propertyService.getProperty(propertyId);
+
+    if (!mounted) return;
+
+    if (property == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('This property is no longer available'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    router.push('/property-detail', extra: property);
+  }
+
+  /// Open the property picker so the user can share a listing into this
+  /// conversation. On selection, sends a property-share message via
+  /// sendPropertyShare. Landlord → own listings, agent → assigned,
+  /// tenant → saved.
+  Future<void> _openPropertyPicker() async {
+    final selected = await showModalBottomSheet<PropertyModel>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PropertyPickerSheet(
+        role: _currentUserRole,
+        propertyService: _propertyService,
+        savedPropertiesService: SavedPropertiesService(),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+
+    final message = await _conversationService.sendPropertyShare(
+      conversationId: widget.conversationId,
+      senderName: _currentUserName,
+      senderRole: _currentUserRole,
+      propertyId: selected.id,
+      propertyTitle: selected.title,
+      propertyImage: selected.images.isNotEmpty ? selected.images.first : '',
+      propertyRent: selected.formattedRent,
+    );
+
+    if (!mounted) return;
+
+    if (message != null) {
+      _scrollToBottom();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not share property. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
   Widget _buildMessageInput() {
     final bool inputEnabled = _canSendMessages;
     
@@ -907,15 +1116,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 Icons.attach_file, 
                 color: inputEnabled ? AppColors.textSecondary : AppColors.textHint,
               ),
-              onPressed: inputEnabled ? () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('File attachment coming soon'),
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                );
-              } : null,
+              onPressed: inputEnabled ? _openPropertyPicker : null,
             ),
           ),
           const SizedBox(width: 12),
@@ -976,5 +1177,205 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+}
+
+/// Bottom sheet that lists the user's properties (role-appropriate) and
+/// pops the selected PropertyModel. Landlord → own, agent → assigned,
+/// tenant → saved. Tenant cross-listing search is a fast-follow.
+class _PropertyPickerSheet extends StatefulWidget {
+  final String role;
+  final PropertyService propertyService;
+  final SavedPropertiesService savedPropertiesService;
+
+  const _PropertyPickerSheet({
+    required this.role,
+    required this.propertyService,
+    required this.savedPropertiesService,
+  });
+
+  @override
+  State<_PropertyPickerSheet> createState() => _PropertyPickerSheetState();
+}
+
+class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
+  bool _isLoading = true;
+  List<PropertyModel> _properties = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    List<PropertyModel> result = [];
+    try {
+      switch (widget.role) {
+        case 'landlord':
+          result = await widget.propertyService.getLandlordProperties();
+          break;
+        case 'agent':
+          result = await widget.propertyService.getAgentProperties();
+          break;
+        case 'tenant':
+        default:
+          final ids = await widget.savedPropertiesService.getSavedPropertyIds();
+          for (final id in ids) {
+            final p = await widget.propertyService.getProperty(id);
+            if (p != null) result.add(p);
+          }
+          break;
+      }
+    } catch (_) {
+      // Leave result empty — the empty state covers it.
+    }
+
+    if (mounted) {
+      setState(() {
+        _properties = result;
+        _isLoading = false;
+      });
+    }
+  }
+
+  String get _emptyMessage {
+    switch (widget.role) {
+      case 'landlord':
+        return 'You have no listings to share yet.';
+      case 'agent':
+        return 'You have no assigned properties to share yet.';
+      case 'tenant':
+      default:
+        return 'You haven\'t saved any properties yet. Save a property to share it here.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Share a property', style: AppTextStyles.h4),
+          const SizedBox(height: 4),
+          Text(
+            'Pick a property to send into this chat',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          else if (_properties.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Text(
+                _emptyMessage,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _properties.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final p = _properties[index];
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(context, p),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: p.images.isNotEmpty
+                                ? Image.network(
+                                    p.images.first,
+                                    width: 56,
+                                    height: 56,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        Container(
+                                      width: 56,
+                                      height: 56,
+                                      color: AppColors.surface,
+                                      child: Icon(Icons.home,
+                                          color: AppColors.textHint),
+                                    ),
+                                  )
+                                : Container(
+                                    width: 56,
+                                    height: 56,
+                                    color: AppColors.surface,
+                                    child: Icon(Icons.home,
+                                        color: AppColors.textHint),
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p.title,
+                                  style: AppTextStyles.labelMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  p.formattedRent,
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                    color: AppColors.primary,
+                                    fontFamily: 'Roboto',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.send, size: 18, color: AppColors.primary),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+        ],
+      ),
+    );
   }
 }

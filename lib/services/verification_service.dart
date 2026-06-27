@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:developer' as developer;
-import 'package:cloudinary_public/cloudinary_public.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../core/utils/phone_utils.dart';
+
 
 enum VerificationStatus { none, pending, verified, rejected }
 
@@ -70,6 +73,7 @@ class VerificationDocument {
 class VerificationData {
   final VerificationStatus status;
   final VerificationDocument documents;
+  final bool isVerified;
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
   final String? rejectionReason;
@@ -87,6 +91,7 @@ class VerificationData {
 
   VerificationData({
     this.status = VerificationStatus.none,
+    this.isVerified = false,
     VerificationDocument? documents,
     this.submittedAt,
     this.reviewedAt,
@@ -105,6 +110,7 @@ class VerificationData {
     if (map == null) return VerificationData();
     return VerificationData(
       status: _parseStatus(map['verificationStatus']),
+      isVerified: map['isVerified'] == true,
       documents: VerificationDocument.fromMap(map['verificationDocs'] ?? map),
       submittedAt: (map['verificationSubmittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (map['verificationReviewedAt'] as Timestamp?)?.toDate(),
@@ -182,12 +188,7 @@ class PendingVerification {
 class VerificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  final _cloudinary = CloudinaryPublic(
-    'den5t1dai',
-    'clearrent_uploads',
-    cache: false,
-  );
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
@@ -216,18 +217,39 @@ class VerificationService {
   Future<String?> _uploadDocument(File file, String folder) async {
     try {
       developer.log('📤 Uploading to $folder...', name: 'VerificationService');
-      final response = await _cloudinary.uploadFile(
-        CloudinaryFile.fromFile(
-          file.path,
-          folder: 'clearrent/verification/$_currentUserId/$folder',
-          resourceType: CloudinaryResourceType.Image,
-        ),
-      );
-      developer.log('✅ Upload successful: ${response.secureUrl}', name: 'VerificationService');
-      return response.secureUrl;
+      final path = 'verification/$_currentUserId/$folder';
+      final ref = FirebaseStorage.instance.ref(path);
+      await ref.putFile(file);
+      developer.log('✅ Upload successful: $path', name: 'VerificationService');
+      return path;
     } catch (e) {
       developer.log('❌ Upload failed: $e', name: 'VerificationService', error: e);
       return null;
+    }
+  }
+
+  /// Encrypts and stores the user's NIN via the submitNin Cloud Function.
+  /// The raw NIN never persists in plaintext — the CF validates, encrypts
+  /// (AES-256-GCM), and writes ciphertext to users/{uid}.nin.
+  Future<bool> submitNin(String nin) async {
+    try {
+      final callable = _functions.httpsCallable('submitNin');
+      final result = await callable.call<Map<String, dynamic>>({
+        'nin': nin,
+      });
+      final success = result.data['success'] == true;
+      if (!success) {
+        developer.log('❌ submitNin returned success=false',
+            name: 'VerificationService');
+      }
+      return success;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('❌ submitNin failed: ${e.code} — ${e.message}',
+          name: 'VerificationService');
+      return false;
+    } catch (e) {
+      developer.log('❌ submitNin error: $e', name: 'VerificationService');
+      return false;
     }
   }
 
@@ -364,7 +386,9 @@ class VerificationService {
       if (experienceProofFile != null) {
         experienceProofUrl = await _uploadDocument(experienceProofFile, 'experience_proof');
       }
-
+      // Upstream form validation guarantees a valid Nigerian phone.
+      // If that contract breaks, the `!` will surface the bug loudly.
+      final normalizedGuarantorPhone = phoneToE164(guarantorPhone)!;
       final verificationDocs = <String, dynamic>{
         'nin': ninUrl,
         'proofOfAddress': proofOfAddressUrl,
@@ -379,7 +403,7 @@ class VerificationService {
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
         'verificationDocs': verificationDocs,
         'guarantorName': guarantorName,
-        'guarantorPhone': guarantorPhone,
+        'guarantorPhone': normalizedGuarantorPhone,
         'guarantorAddress': guarantorAddress,
         'verificationPaymentReference': paymentReference,
         'verificationPaymentAmount': paymentAmount,
@@ -395,7 +419,7 @@ class VerificationService {
         'proofOfAddressUrl': proofOfAddressUrl,
         'guarantorIdUrl': guarantorIdUrl,
         'guarantorName': guarantorName,
-        'guarantorPhone': guarantorPhone,
+        'guarantorPhone': normalizedGuarantorPhone,
         'guarantorAddress': guarantorAddress,
         'paymentReference': paymentReference,
         'paymentAmount': paymentAmount,

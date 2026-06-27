@@ -10,6 +10,72 @@ enum InspectionStatus {
   completed,           // Inspection done
   cancelled,           // Cancelled by tenant
   refunded,            // Refund processed
+  expiredUnapproved,   // Paid but never approved before the date passed —
+                       // tenant chooses reschedule or refund
+  awaitingOutcome,     // Approved date passed without a clear completion —
+                       // admin reviews (no-show / forgot to mark done)
+}
+
+/// Active reschedule proposal on an inspection request. Lives inside
+/// the request doc as a nested map; null when no negotiation is in
+/// progress. See RESCHEDULE_DESIGN.md.
+class RescheduleProposal {
+  final String proposedBy;          // 'tenant' | 'agent' | 'landlord'
+  final String proposedByUserId;
+  final DateTime proposedDate;
+  final String proposedTimeSlot;
+  final String proposedTimeDisplay;
+  final String reason;
+  final DateTime proposedAt;
+  final bool tenantHasCountered;
+  final bool handlerHasCountered;
+
+  RescheduleProposal({
+    required this.proposedBy,
+    required this.proposedByUserId,
+    required this.proposedDate,
+    required this.proposedTimeSlot,
+    required this.proposedTimeDisplay,
+    required this.reason,
+    required this.proposedAt,
+    this.tenantHasCountered = false,
+    this.handlerHasCountered = false,
+  });
+
+  factory RescheduleProposal.fromMap(Map<String, dynamic> data) {
+    return RescheduleProposal(
+      proposedBy: data['proposedBy'] ?? '',
+      proposedByUserId: data['proposedByUserId'] ?? '',
+      proposedDate: (data['proposedDate'] as Timestamp).toDate(),
+      proposedTimeSlot: data['proposedTimeSlot'] ?? '',
+      proposedTimeDisplay: data['proposedTimeDisplay'] ?? '',
+      reason: data['reason'] ?? '',
+      proposedAt: (data['proposedAt'] as Timestamp).toDate(),
+      tenantHasCountered: data['tenantHasCountered'] ?? false,
+      handlerHasCountered: data['handlerHasCountered'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'proposedBy': proposedBy,
+      'proposedByUserId': proposedByUserId,
+      'proposedDate': Timestamp.fromDate(proposedDate),
+      'proposedTimeSlot': proposedTimeSlot,
+      'proposedTimeDisplay': proposedTimeDisplay,
+      'reason': reason,
+      'proposedAt': Timestamp.fromDate(proposedAt),
+      'tenantHasCountered': tenantHasCountered,
+      'handlerHasCountered': handlerHasCountered,
+    };
+  }
+
+  /// True when the receiving party can no longer counter-propose
+  /// (their side already used its one counter slot).
+  bool get receiverCannotCounter {
+    final isTenantTurn = proposedBy != 'tenant';
+    return isTenantTurn ? tenantHasCountered : handlerHasCountered;
+  }
 }
 
 class InspectionRequest {
@@ -82,6 +148,9 @@ class InspectionRequest {
   final DateTime? completedAt;
   final int? tenantRating;
   final bool tenantRated;
+  /// True once the tenant decides not to rent this property ("I'll Keep Looking").
+  /// Re-locks the exact address back to approximate. Persisted across restarts.
+  final bool tenantPassed;
   final String? tenantReview;
   final DateTime? ratingSubmittedAt;
   // Who the rating was given to (agent or landlord)
@@ -101,23 +170,26 @@ class InspectionRequest {
   final bool agentConfirmedPayment;
   final DateTime? agentConfirmedAt;
 
-  // On-the-way tracking
-  final bool tenantOnTheWay;
-  final DateTime? tenantOnTheWayAt;
-  final bool handlerOnTheWay;
-  final DateTime? handlerOnTheWayAt;
-
   // Arrival tracking
   final bool tenantArrived;
   final DateTime? tenantArrivedAt;
   final bool handlerArrived;
   final DateTime? handlerArrivedAt;
 
-  // Location tracking (captured at on-the-way and arrival)
-  final double? tenantLatitude;
-  final double? tenantLongitude;
-  final double? handlerLatitude;
-  final double? handlerLongitude;
+  // On-the-way tracking
+  final bool tenantOnWay;
+  final DateTime? tenantOnWayAt;
+  final bool handlerOnWay;
+  final DateTime? handlerOnWayAt;
+
+  // Met confirmation — gates the Mark as Completed button
+  final bool met;
+  final DateTime? metAt;
+  final String? metBy; // 'tenant' | 'handler'
+
+  // Reschedule
+  final RescheduleProposal? rescheduleProposal;
+  final int rescheduleCount;
   
   // Timestamps
   final DateTime createdAt;
@@ -150,8 +222,8 @@ class InspectionRequest {
     this.propertyCluster,
     this.propertyArea,
     this.transportFee = 0,
-    this.agentServiceFee = 10000,
-    this.clearrentFee = 6000,
+    this.agentServiceFee = 7000,
+    this.clearrentFee = 3000,
     this.totalFee = 0,
     this.agentEarnings = 0,
     this.paymentStatus = 'pending',
@@ -173,6 +245,7 @@ class InspectionRequest {
     this.completedAt,
     this.tenantRating,
     this.tenantRated = false,
+    this.tenantPassed = false,
     this.tenantReview,
     this.ratingSubmittedAt,
     this.ratedUserId,
@@ -189,14 +262,15 @@ class InspectionRequest {
     this.tenantArrivedAt,
     this.handlerArrived = false,
     this.handlerArrivedAt,
-    this.tenantOnTheWay = false,
-    this.tenantOnTheWayAt,
-    this.handlerOnTheWay = false,
-    this.handlerOnTheWayAt,
-    this.tenantLatitude,
-    this.tenantLongitude,
-    this.handlerLatitude,
-    this.handlerLongitude,
+    this.tenantOnWay = false,
+    this.tenantOnWayAt,
+    this.handlerOnWay = false,
+    this.handlerOnWayAt,
+    this.met = false,
+    this.metAt,
+    this.metBy,
+    this.rescheduleProposal,
+    this.rescheduleCount = 0,
     required this.createdAt,
     this.updatedAt,
   });
@@ -211,6 +285,9 @@ class InspectionRequest {
   bool get isCompleted => status == InspectionStatus.completed;
   bool get isCancelled => status == InspectionStatus.cancelled;
   bool get isRefunded => status == InspectionStatus.refunded;
+  bool get isExpiredUnapproved =>
+      status == InspectionStatus.expiredUnapproved;
+  bool get isAwaitingOutcome => status == InspectionStatus.awaitingOutcome;
   
   bool get isPaid => paymentStatus == 'paid';
   bool get isPaymentPendingVerification => paymentStatus == 'pending_verification';
@@ -224,13 +301,53 @@ class InspectionRequest {
       ? completedByType == 'agent'
       : agentId != null && agentId!.isNotEmpty;
   bool get bothArrived => tenantArrived && handlerArrived;
-  bool get bothOnTheWay => tenantOnTheWay && handlerOnTheWay;
-  bool get isInspectionDay {
-    final now = DateTime.now();
-    return requestedDate.year == now.year &&
-        requestedDate.month == now.month &&
-        requestedDate.day == now.day;
+
+  // On-the-way helpers
+  /// True if current time is within 2 hours of the scheduled slot.
+  /// Mirror of isWithinRescheduleWindow — reschedule is allowed
+  /// before the cutoff, on-way is allowed after.
+  bool get isWithinOnWayWindow {
+    final cutoff = requestedDate.subtract(const Duration(hours: 2));
+    return DateTime.now().isAfter(cutoff);
   }
+
+  bool get canTenantMarkOnWay =>
+      isApproved && !tenantOnWay && isWithinOnWayWindow;
+
+  bool get canHandlerMarkOnWay =>
+      isApproved && !handlerOnWay && isWithinOnWayWindow;
+
+  // Met confirmation helpers
+  /// True when the tenant can tap "I've met the agent/landlord".
+  bool get canTenantMarkMet =>
+      tenantArrived && !met && isApproved;
+
+  /// True when the handler can tap "I've met the tenant".
+  /// Handler is a fallback path — they need tenant arrived (so
+  /// they can't fake a meet on a tenant who never showed).
+  bool get canHandlerMarkMet =>
+      handlerArrived && tenantArrived && !met && isApproved;
+
+  /// True when the handler may now tap Mark as Completed.
+  bool get canMarkComplete => met && isApproved;
+
+  // Reschedule helpers
+  bool get hasPendingReschedule => rescheduleProposal != null;
+  bool get hasReachedRescheduleCap => rescheduleCount >= 2;
+
+  /// True if the current scheduled slot is more than 2 hours away.
+  /// Reschedules are only allowed before this cutoff.
+  bool get isWithinRescheduleWindow {
+    final cutoff = requestedDate.subtract(const Duration(hours: 2));
+    return DateTime.now().isBefore(cutoff);
+  }
+
+  /// True if a fresh reschedule can be initiated right now.
+  bool get canInitiateReschedule =>
+      isApproved &&
+      !hasPendingReschedule &&
+      !hasReachedRescheduleCap &&
+      isWithinRescheduleWindow;
 
   // Display status
   String get statusDisplay {
@@ -253,6 +370,10 @@ class InspectionRequest {
         return 'Cancelled';
       case InspectionStatus.refunded:
         return 'Refunded';
+      case InspectionStatus.expiredUnapproved:
+        return 'Expired — Action Needed';
+      case InspectionStatus.awaitingOutcome:
+        return 'Awaiting Review';
     }
   }
 
@@ -336,6 +457,7 @@ class InspectionRequest {
     DateTime? completedAt,
     int? tenantRating,
     bool? tenantRated,
+    bool? tenantPassed,
     String? tenantReview,
     DateTime? ratingSubmittedAt,
     String? ratedUserId,
@@ -352,14 +474,16 @@ class InspectionRequest {
     DateTime? tenantArrivedAt,
     bool? handlerArrived,
     DateTime? handlerArrivedAt,
-    bool? tenantOnTheWay,
-    DateTime? tenantOnTheWayAt,
-    bool? handlerOnTheWay,
-    DateTime? handlerOnTheWayAt,
-    double? tenantLatitude,
-    double? tenantLongitude,
-    double? handlerLatitude,
-    double? handlerLongitude,
+    bool? tenantOnWay,
+    DateTime? tenantOnWayAt,
+    bool? handlerOnWay,
+    DateTime? handlerOnWayAt,
+    bool? met,
+    DateTime? metAt,
+    String? metBy,
+    RescheduleProposal? rescheduleProposal,
+    bool clearRescheduleProposal = false,
+    int? rescheduleCount,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -413,6 +537,7 @@ class InspectionRequest {
       completedAt: completedAt ?? this.completedAt,
       tenantRating: tenantRating ?? this.tenantRating,
       tenantRated: tenantRated ?? this.tenantRated,
+      tenantPassed: tenantPassed ?? this.tenantPassed,
       tenantReview: tenantReview ?? this.tenantReview,
       ratingSubmittedAt: ratingSubmittedAt ?? this.ratingSubmittedAt,
       ratedUserId: ratedUserId ?? this.ratedUserId,
@@ -429,14 +554,17 @@ class InspectionRequest {
       tenantArrivedAt: tenantArrivedAt ?? this.tenantArrivedAt,
       handlerArrived: handlerArrived ?? this.handlerArrived,
       handlerArrivedAt: handlerArrivedAt ?? this.handlerArrivedAt,
-      tenantOnTheWay: tenantOnTheWay ?? this.tenantOnTheWay,
-      tenantOnTheWayAt: tenantOnTheWayAt ?? this.tenantOnTheWayAt,
-      handlerOnTheWay: handlerOnTheWay ?? this.handlerOnTheWay,
-      handlerOnTheWayAt: handlerOnTheWayAt ?? this.handlerOnTheWayAt,
-      tenantLatitude: tenantLatitude ?? this.tenantLatitude,
-      tenantLongitude: tenantLongitude ?? this.tenantLongitude,
-      handlerLatitude: handlerLatitude ?? this.handlerLatitude,
-      handlerLongitude: handlerLongitude ?? this.handlerLongitude,
+      tenantOnWay: tenantOnWay ?? this.tenantOnWay,
+      tenantOnWayAt: tenantOnWayAt ?? this.tenantOnWayAt,
+      handlerOnWay: handlerOnWay ?? this.handlerOnWay,
+      handlerOnWayAt: handlerOnWayAt ?? this.handlerOnWayAt,
+      met: met ?? this.met,
+      metAt: metAt ?? this.metAt,
+      metBy: metBy ?? this.metBy,
+      rescheduleProposal: clearRescheduleProposal
+          ? null
+          : (rescheduleProposal ?? this.rescheduleProposal),
+      rescheduleCount: rescheduleCount ?? this.rescheduleCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -471,8 +599,8 @@ class InspectionRequest {
       propertyCluster: data['propertyCluster'],
       propertyArea: data['propertyArea'],
       transportFee: (data['transportFee'] ?? 0).toDouble(),
-      agentServiceFee: (data['agentServiceFee'] ?? 10000).toDouble(),
-      clearrentFee: (data['clearrentFee'] ?? 6000).toDouble(),
+      agentServiceFee: (data['agentServiceFee'] ?? 7000).toDouble(),
+      clearrentFee: (data['clearrentFee'] ?? 3000).toDouble(),
       totalFee: (data['totalFee'] ?? 0).toDouble(),
       agentEarnings: (data['agentEarnings'] ?? 0).toDouble(),
       paymentStatus: data['paymentStatus'] ?? 'pending',
@@ -497,8 +625,9 @@ class InspectionRequest {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
       // *** FIX: Parse tenantRating from Firestore ***
       tenantRating: data['tenantRating'],
-      // *** FIX: Parse tenantRated â€” true if rating exists OR explicit field ***
+      // *** FIX: Parse tenantRated true if rating exists OR explicit field ***
       tenantRated: data['tenantRated'] ?? (data['tenantRating'] != null),
+      tenantPassed: data['tenantPassed'] ?? false,
       tenantReview: data['tenantReview'],
       ratingSubmittedAt: (data['ratingSubmittedAt'] as Timestamp?)?.toDate(),
       ratedUserId: data['ratedUserId'],
@@ -513,16 +642,21 @@ class InspectionRequest {
       agentConfirmedAt: (data['agentConfirmedAt'] as Timestamp?)?.toDate(),
       tenantArrived: data['tenantArrived'] ?? false,
       tenantArrivedAt: (data['tenantArrivedAt'] as Timestamp?)?.toDate(),
-      tenantOnTheWay: data['tenantOnTheWay'] ?? false,
-      tenantOnTheWayAt: (data['tenantOnTheWayAt'] as Timestamp?)?.toDate(),
-      handlerOnTheWay: data['handlerOnTheWay'] ?? false,
-      handlerOnTheWayAt: (data['handlerOnTheWayAt'] as Timestamp?)?.toDate(),
-      tenantLatitude: (data['tenantLatitude'] as num?)?.toDouble(),
-      tenantLongitude: (data['tenantLongitude'] as num?)?.toDouble(),
-      handlerLatitude: (data['handlerLatitude'] as num?)?.toDouble(),
-      handlerLongitude: (data['handlerLongitude'] as num?)?.toDouble(),
       handlerArrived: data['handlerArrived'] ?? false,
       handlerArrivedAt: (data['handlerArrivedAt'] as Timestamp?)?.toDate(),
+      tenantOnWay: data['tenantOnWay'] ?? false,
+      tenantOnWayAt: (data['tenantOnWayAt'] as Timestamp?)?.toDate(),
+      handlerOnWay: data['handlerOnWay'] ?? false,
+      handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
+      met: data['met'] ?? false,
+      metAt: (data['metAt'] as Timestamp?)?.toDate(),
+      metBy: data['metBy'] as String?,
+      rescheduleProposal: data['rescheduleProposal'] == null
+          ? null
+          : RescheduleProposal.fromMap(
+              Map<String, dynamic>.from(data['rescheduleProposal'] as Map),
+            ),
+      rescheduleCount: data['rescheduleCount'] ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -581,6 +715,7 @@ class InspectionRequest {
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'tenantRating': tenantRating,
       'tenantRated': tenantRated,
+      'tenantPassed': tenantPassed,
       'tenantReview': tenantReview,
       'ratingSubmittedAt': ratingSubmittedAt != null ? Timestamp.fromDate(ratingSubmittedAt!) : null,
       'ratedUserId': ratedUserId,
@@ -595,14 +730,15 @@ class InspectionRequest {
       'tenantArrivedAt': tenantArrivedAt != null ? Timestamp.fromDate(tenantArrivedAt!) : null,
       'handlerArrived': handlerArrived,
       'handlerArrivedAt': handlerArrivedAt != null ? Timestamp.fromDate(handlerArrivedAt!) : null,
-      'tenantOnTheWay': tenantOnTheWay,
-      'tenantOnTheWayAt': tenantOnTheWayAt != null ? Timestamp.fromDate(tenantOnTheWayAt!) : null,
-      'handlerOnTheWay': handlerOnTheWay,
-      'handlerOnTheWayAt': handlerOnTheWayAt != null ? Timestamp.fromDate(handlerOnTheWayAt!) : null,
-      'tenantLatitude': tenantLatitude,
-      'tenantLongitude': tenantLongitude,
-      'handlerLatitude': handlerLatitude,
-      'handlerLongitude': handlerLongitude,
+      'tenantOnWay': tenantOnWay,
+      'tenantOnWayAt': tenantOnWayAt != null ? Timestamp.fromDate(tenantOnWayAt!) : null,
+      'handlerOnWay': handlerOnWay,
+      'handlerOnWayAt': handlerOnWayAt != null ? Timestamp.fromDate(handlerOnWayAt!) : null,
+      'met': met,
+      'metAt': metAt != null ? Timestamp.fromDate(metAt!) : null,
+      'metBy': metBy,
+      'rescheduleProposal': rescheduleProposal?.toMap(),
+      'rescheduleCount': rescheduleCount,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
     };
