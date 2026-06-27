@@ -42,7 +42,10 @@
       "Bash(npx tsc *)",
       "Bash(echo \"EXIT: $?\")",
       "Bash(flutter pub *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(echo \"PUSH EXIT: $?\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\MIDE\\clearrent_admin\\src\\lib",

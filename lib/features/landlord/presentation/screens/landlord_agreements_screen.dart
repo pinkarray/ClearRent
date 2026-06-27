@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -304,9 +305,10 @@ class _AgreementCardState extends State<_AgreementCard> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: r.propertyImage.isNotEmpty
-                  ? Image.network(r.propertyImage,
+                  ? CachedNetworkImage(
+                      imageUrl: r.propertyImage,
                       width: 50, height: 50, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _placeholder())
+                      errorWidget: (_, __, ___) => _placeholder())
                   : _placeholder(),
             ),
             const SizedBox(width: 12),

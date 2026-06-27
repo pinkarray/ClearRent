@@ -15,6 +15,11 @@ bool firebaseInitialized = false;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Keep more decoded images resident so property images don't re-decode and
+  // flash a placeholder when navigating between list and detail screens.
+  // (Default is ~100 MB; bumping it lets a full property list stay cached.)
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 200 << 20; // 200 MB
+
   // Initialize Firebase with error handling
   try {
     await Firebase.initializeApp();

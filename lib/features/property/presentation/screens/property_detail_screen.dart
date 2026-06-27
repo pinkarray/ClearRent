@@ -1193,6 +1193,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       return CachedNetworkImage(
                         imageUrl: property.images[index],
                         fit: BoxFit.cover,
+                        // Decode/cache at ~screen width so the gallery stays
+                        // resident and doesn't reload on revisit.
+                        memCacheWidth: 1080,
                         placeholder:
                             (context, url) => Container(
                               color: AppColors.background,

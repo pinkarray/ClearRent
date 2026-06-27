@@ -45,6 +45,9 @@ class PropertyCard extends StatelessWidget {
                     height: 160,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    // Decode/cache at ~card size, not the full-res original, so
+                    // the list stays in the memory cache and doesn't reload.
+                    memCacheWidth: 800,
                     placeholder: (context, url) => Container(
                       height: 160,
                       color: AppColors.background,

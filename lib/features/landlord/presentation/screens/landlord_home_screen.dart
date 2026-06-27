@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
@@ -939,12 +940,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: rental.propertyImage.isNotEmpty
-                  ? Image.network(
-                      rental.propertyImage,
+                  ? CachedNetworkImage(
+                      imageUrl: rental.propertyImage,
                       width: 56,
                       height: 56,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      memCacheWidth: 200,
+                      errorWidget: (_, __, ___) => Container(
                         width: 56,
                         height: 56,
                         color: AppColors.background,
@@ -1925,11 +1927,14 @@ class _LandlordPropertyCard extends StatelessWidget {
         child: Row(children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(
-              property.images.isNotEmpty ? property.images.first : '', 
-              width: 80, height: 80, fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => Container(width: 80, height: 80, color: AppColors.background, child: Icon(Icons.image_not_supported, color: AppColors.textHint)),
-            ),
+            child: property.images.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: property.images.first,
+                  width: 80, height: 80, fit: BoxFit.cover,
+                  memCacheWidth: 240,
+                  errorWidget: (c, e, s) => Container(width: 80, height: 80, color: AppColors.background, child: Icon(Icons.image_not_supported, color: AppColors.textHint)),
+                )
+              : Container(width: 80, height: 80, color: AppColors.background, child: Icon(Icons.image_not_supported, color: AppColors.textHint)),
           ),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

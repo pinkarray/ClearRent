@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
@@ -556,12 +557,12 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             borderRadius: BorderRadius.circular(12),
             child:
                 widget.property.images.isNotEmpty
-                    ? Image.network(
-                      widget.property.images.first,
+                    ? CachedNetworkImage(
+                      imageUrl: widget.property.images.first,
                       width: 80,
                       height: 80,
                       fit: BoxFit.cover,
-                      errorBuilder:
+                      errorWidget:
                           (_, __, ___) => Container(
                             width: 80,
                             height: 80,

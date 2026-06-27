@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:developer' as developer;
@@ -389,7 +390,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
               color: AppColors.background,
               image: interest.propertyImage.isNotEmpty
                   ? DecorationImage(
-                      image: NetworkImage(interest.propertyImage),
+                      image: CachedNetworkImageProvider(interest.propertyImage),
                       fit: BoxFit.cover,
                     )
                   : null,

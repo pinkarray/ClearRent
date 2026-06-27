@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -314,12 +315,13 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(16)),
             child: rental.propertyImage.isNotEmpty
-                ? Image.network(
-                    rental.propertyImage,
+                ? CachedNetworkImage(
+                    imageUrl: rental.propertyImage,
                     height: 140,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _imagePlaceholder(),
+                    memCacheWidth: 800,
+                    errorWidget: (_, __, ___) => _imagePlaceholder(),
                   )
                 : _imagePlaceholder(),
           ),
