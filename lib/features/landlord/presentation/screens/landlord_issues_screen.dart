@@ -47,6 +47,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   StreamSubscription? _issuesSub;
   int _openCount = 0;
   int _inProgressCount = 0;
+  int _pendingCount = 0;
   bool _didInitialTab = false;
 
   @override
@@ -93,17 +94,21 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
       }
       var open = 0;
       var inProg = 0;
+      var pending = 0;
       for (final d in docs) {
         final s = d.data()['status'] as String? ?? 'open';
         if (s == 'open') {
           open++;
         } else if (s == 'in_progress') {
           inProg++;
+        } else if (s == 'pending_confirmation') {
+          pending++;
         }
       }
       setState(() {
         _openCount = open;
         _inProgressCount = inProg;
+        _pendingCount = pending;
       });
 
       // First load with no explicit tab → open the most recently-active tab.
@@ -226,7 +231,10 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
                   Tab(
                       child: TabBadge(
                           label: 'In Progress', count: _inProgressCount)),
-                  const Tab(text: 'Pending'),
+                  // Pending confirmation is still unfinished (awaiting the
+                  // tenant), so it carries an attention badge. Resolved is the
+                  // done state — no badge, so it never shows a permanent dot.
+                  Tab(child: TabBadge(label: 'Pending', count: _pendingCount)),
                   const Tab(text: 'Resolved'),
                 ],
               ),
