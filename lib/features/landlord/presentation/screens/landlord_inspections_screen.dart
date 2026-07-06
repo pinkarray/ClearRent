@@ -11,6 +11,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/highlight_wrap.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
@@ -30,7 +31,12 @@ class LandlordInspectionsScreen extends StatefulWidget {
   /// notification or home-screen card that already knows which tab is right.
   final int? initialTab;
 
-  const LandlordInspectionsScreen({super.key, this.initialTab});
+  /// Optional inspection id to highlight + pin to the top of its tab, set when
+  /// deep-linking from a notification about a specific inspection.
+  final String? initialRequestId;
+
+  const LandlordInspectionsScreen(
+      {super.key, this.initialTab, this.initialRequestId});
 
   @override
   State<LandlordInspectionsScreen> createState() =>
@@ -152,9 +158,14 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
           _LandlordPendingTab(
             inspectionService: _inspectionService,
             tabController: _tabController,
+            highlightId: widget.initialRequestId,
           ),
-          _LandlordUpcomingTab(inspectionService: _inspectionService),
-          _LandlordHistoryTab(inspectionService: _inspectionService),
+          _LandlordUpcomingTab(
+              inspectionService: _inspectionService,
+              highlightId: widget.initialRequestId),
+          _LandlordHistoryTab(
+              inspectionService: _inspectionService,
+              highlightId: widget.initialRequestId),
         ],
       ),
     );
@@ -167,9 +178,11 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
 class _LandlordPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
   final TabController tabController;
+  final String? highlightId;
   const _LandlordPendingTab({
     required this.inspectionService,
     required this.tabController,
+    this.highlightId,
   });
 
   @override
@@ -200,14 +213,18 @@ class _LandlordPendingTab extends StatelessWidget {
             subtitle: 'Inspection requests from tenants will appear here',
           );
         }
+        final ordered = pinToFront(pending, (r) => r.id == highlightId);
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: pending.length,
+          itemCount: ordered.length,
           itemBuilder:
-              (context, i) => _LandlordPendingCard(
-                request: pending[i],
-                inspectionService: inspectionService,
-                onApproved: () => tabController.animateTo(1),
+              (context, i) => HighlightWrap(
+                active: ordered[i].id == highlightId,
+                child: _LandlordPendingCard(
+                  request: ordered[i],
+                  inspectionService: inspectionService,
+                  onApproved: () => tabController.animateTo(1),
+                ),
               ),
         );
       },
@@ -621,7 +638,9 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
 // ============================================================
 class _LandlordUpcomingTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _LandlordUpcomingTab({required this.inspectionService});
+  final String? highlightId;
+  const _LandlordUpcomingTab(
+      {required this.inspectionService, this.highlightId});
 
   @override
   Widget build(BuildContext context) {
@@ -644,13 +663,17 @@ class _LandlordUpcomingTab extends StatelessWidget {
             subtitle: 'Approved inspections will appear here',
           );
         }
+        final ordered = pinToFront(upcoming, (r) => r.id == highlightId);
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: upcoming.length,
+          itemCount: ordered.length,
           itemBuilder:
-              (ctx, i) => _LandlordUpcomingCard(
-                request: upcoming[i],
-                inspectionService: inspectionService,
+              (ctx, i) => HighlightWrap(
+                active: ordered[i].id == highlightId,
+                child: _LandlordUpcomingCard(
+                  request: ordered[i],
+                  inspectionService: inspectionService,
+                ),
               ),
         );
       },
@@ -1469,7 +1492,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
 // ============================================================
 class _LandlordHistoryTab extends StatelessWidget {
   final InspectionService inspectionService;
-  const _LandlordHistoryTab({required this.inspectionService});
+  final String? highlightId;
+  const _LandlordHistoryTab(
+      {required this.inspectionService, this.highlightId});
 
   @override
   Widget build(BuildContext context) {
@@ -1500,13 +1525,17 @@ class _LandlordHistoryTab extends StatelessWidget {
           );
         }
 
+        final ordered = pinToFront(history, (r) => r.id == highlightId);
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: history.length,
+          itemCount: ordered.length,
           itemBuilder:
-              (ctx, i) => _LandlordHistoryCard(
-                request: history[i],
-                inspectionService: inspectionService,
+              (ctx, i) => HighlightWrap(
+                active: ordered[i].id == highlightId,
+                child: _LandlordHistoryCard(
+                  request: ordered[i],
+                  inspectionService: inspectionService,
+                ),
               ),
         );
       },

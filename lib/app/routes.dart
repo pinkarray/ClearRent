@@ -193,6 +193,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         return TenantInspectionsScreen(
           initialTab: _initialTab(extra?['initialTab']),
+          initialRequestId: extra?['param_requestId'] as String?,
         );
       },
     ),
@@ -294,6 +295,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         return LandlordInspectionsScreen(
           initialTab: _initialTab(extra?['initialTab']),
+          initialRequestId: extra?['param_requestId'] as String?,
         );
       },
     ),
@@ -384,6 +386,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         return AgentInspectionsScreen(
           initialTab: _initialTab(extra?['initialTab']),
+          initialRequestId: extra?['param_requestId'] as String?,
         );
       },
     ),

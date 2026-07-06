@@ -8,6 +8,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/highlight_wrap.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
 import '../../../../shared/widgets/reschedule_propose_sheet.dart';
@@ -22,7 +23,12 @@ class AgentInspectionsScreen extends StatefulWidget {
   /// the agent's data. Pass an explicit value when deep-linking from a
   /// notification or home-screen card that already knows which tab is right.
   final int? initialTab;
-  const AgentInspectionsScreen({super.key, this.initialTab});
+
+  /// Optional inspection id to highlight + pin to the top of its tab, set when
+  /// deep-linking from a notification about a specific inspection.
+  final String? initialRequestId;
+  const AgentInspectionsScreen(
+      {super.key, this.initialTab, this.initialRequestId});
 
   @override
   State<AgentInspectionsScreen> createState() => _AgentInspectionsScreenState();
@@ -159,9 +165,14 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
           _AgentPendingTab(
             inspectionService: _inspectionService,
             tabController: _tabController,
+            highlightId: widget.initialRequestId,
           ),
-          _AgentScheduledTab(inspectionService: _inspectionService),
-          _AgentCompletedTab(inspectionService: _inspectionService),
+          _AgentScheduledTab(
+              inspectionService: _inspectionService,
+              highlightId: widget.initialRequestId),
+          _AgentCompletedTab(
+              inspectionService: _inspectionService,
+              highlightId: widget.initialRequestId),
         ],
       ),
     );
@@ -172,10 +183,12 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
 class _AgentPendingTab extends StatelessWidget {
   final InspectionService inspectionService;
   final TabController tabController;
+  final String? highlightId;
 
   const _AgentPendingTab({
     required this.inspectionService,
     required this.tabController,
+    this.highlightId,
   });
 
   @override
@@ -201,14 +214,18 @@ class _AgentPendingTab extends StatelessWidget {
           );
         }
 
+        final ordered = pinToFront(pendingRequests, (r) => r.id == highlightId);
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: pendingRequests.length,
+          itemCount: ordered.length,
           itemBuilder: (context, index) {
-            return _AgentPendingCard(
-              request: pendingRequests[index],
-              inspectionService: inspectionService,
-              onApproved: () => tabController.animateTo(1),
+            return HighlightWrap(
+              active: ordered[index].id == highlightId,
+              child: _AgentPendingCard(
+                request: ordered[index],
+                inspectionService: inspectionService,
+                onApproved: () => tabController.animateTo(1),
+              ),
             );
           },
         );
@@ -671,8 +688,10 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
 // ============ SCHEDULED TAB ============
 class _AgentScheduledTab extends StatelessWidget {
   final InspectionService inspectionService;
+  final String? highlightId;
 
-  const _AgentScheduledTab({required this.inspectionService});
+  const _AgentScheduledTab(
+      {required this.inspectionService, this.highlightId});
 
   @override
   Widget build(BuildContext context) {
@@ -707,13 +726,18 @@ class _AgentScheduledTab extends StatelessWidget {
           );
         }
 
+        final ordered =
+            pinToFront(scheduledRequests, (r) => r.id == highlightId);
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: scheduledRequests.length,
+          itemCount: ordered.length,
           itemBuilder: (context, index) {
-            return _AgentScheduledCard(
-              request: scheduledRequests[index],
-              inspectionService: inspectionService,
+            return HighlightWrap(
+              active: ordered[index].id == highlightId,
+              child: _AgentScheduledCard(
+                request: ordered[index],
+                inspectionService: inspectionService,
+              ),
             );
           },
         );
@@ -1437,8 +1461,10 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
 // ============ COMPLETED TAB ============
 class _AgentCompletedTab extends StatelessWidget {
   final InspectionService inspectionService;
+  final String? highlightId;
 
-  const _AgentCompletedTab({required this.inspectionService});
+  const _AgentCompletedTab(
+      {required this.inspectionService, this.highlightId});
 
   @override
   Widget build(BuildContext context) {
@@ -1453,7 +1479,9 @@ class _AgentCompletedTab extends StatelessWidget {
 
         final allRequests = snapshot.data ?? [];
         final completedRequests =
-            allRequests.where((r) => r.isCompleted).toList();
+            pinToFront(
+                allRequests.where((r) => r.isCompleted).toList(),
+                (r) => r.id == highlightId);
         final totalEarnings = completedRequests.fold<double>(
           0,
           (sum, r) => sum + r.agentEarnings,
@@ -1537,7 +1565,9 @@ class _AgentCompletedTab extends StatelessWidget {
                 itemCount: completedRequests.length,
                 itemBuilder: (context, index) {
                   final request = completedRequests[index];
-                  return Container(
+                  return HighlightWrap(
+                    active: request.id == highlightId,
+                    child: Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -1601,6 +1631,7 @@ class _AgentCompletedTab extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
                     ),
                   );
                 },
