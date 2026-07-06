@@ -530,7 +530,7 @@ export const onIssueUpdated = onDocumentUpdated(
       title = "Tenant says it's not fixed";
       body = `${propertyTitle}: the tenant reports the ${category} issue ` +
         "isn't resolved.";
-      payload = landlordRoute;
+      payload = {...landlordRoute, initialTab: "1"}; // → In Progress tab
     } else if (to === "in_progress") {
       userId = tenantId; // landlord acknowledged
       title = "Issue acknowledged";
@@ -548,7 +548,7 @@ export const onIssueUpdated = onDocumentUpdated(
       title = "Issue confirmed resolved";
       body = `The tenant confirmed the ${category} issue at ${propertyTitle} ` +
         "is fixed.";
-      payload = landlordRoute;
+      payload = {...landlordRoute, initialTab: "3"}; // → Resolved tab
     } else if (to === "resolved") {
       userId = tenantId;
       title = "Issue resolved";
@@ -1885,6 +1885,19 @@ export const resolveAccount = onCall(
             "not-found",
             "Account could not be resolved. " +
               "Check the number and bank.",
+          );
+        }
+        // Paystack rate-limits /bank/resolve per integration. Surface 429
+        // as resource-exhausted so the client says "slow down" rather than
+        // "service unavailable" — the endpoint is up, just throttled.
+        if (resp.status === 429) {
+          logger.warn("Paystack resolve rate-limited (429)", {
+            uid: request.auth.uid,
+          });
+          throw new HttpsError(
+            "resource-exhausted",
+            "Too many lookups in a short time. " +
+              "Please wait a moment and try again.",
           );
         }
         logger.warn("Paystack resolve non-OK response", {

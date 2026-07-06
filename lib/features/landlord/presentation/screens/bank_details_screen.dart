@@ -35,6 +35,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
   bool _hasExistingDetails = false;
   bool _isResolvingAccount = false;
   bool _resolvedSuccessfully = false;
+  String? _resolveError;
 
   String? _selectedBank;
   String? _selectedBankCode;
@@ -87,9 +88,10 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     if (digits.length == 10 && _selectedBankCode != null) {
       _resolveAccountName();
     } else {
-      if (_resolvedSuccessfully) {
+      if (_resolvedSuccessfully || _resolveError != null) {
         setState(() {
           _resolvedSuccessfully = false;
+          _resolveError = null;
           _accountNameController.clear();
         });
       }
@@ -104,37 +106,27 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     setState(() {
       _isResolvingAccount = true;
       _resolvedSuccessfully = false;
+      _resolveError = null;
     });
 
-    try {
-      final result = await _paystackService.resolveAccount(
-        accountNumber: accountNumber,
-        bankCode: _selectedBankCode!,
-      );
+    final resolution = await _paystackService.resolveAccount(
+      accountNumber: accountNumber,
+      bankCode: _selectedBankCode!,
+    );
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (result != null) {
-        setState(() {
-          _accountNameController.text = result;
-          _resolvedSuccessfully = true;
-          _isResolvingAccount = false;
-        });
+    setState(() {
+      _isResolvingAccount = false;
+      if (resolution.ok) {
+        _accountNameController.text = resolution.accountName!;
+        _resolvedSuccessfully = true;
+        _resolveError = null;
       } else {
-        setState(() {
-          _isResolvingAccount = false;
-          _resolvedSuccessfully = false;
-        });
+        _resolvedSuccessfully = false;
+        _resolveError = resolution.error;
       }
-    } catch (e) {
-      AppLogger.e('Error resolving account', error: e, name: 'BankDetails');
-      if (mounted) {
-        setState(() {
-          _isResolvingAccount = false;
-          _resolvedSuccessfully = false;
-        });
-      }
-    }
+    });
   }
 
   Future<void> _loadBankDetails() async {
@@ -333,6 +325,7 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                           _selectedBank = bank['name'];
                           _selectedBankCode = bank['code'];
                           _resolvedSuccessfully = false;
+                          _resolveError = null;
                           _accountNameController.clear();
                         });
                         Navigator.pop(ctx);
@@ -521,11 +514,16 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
 
                   const SizedBox(height: 12),
                   Text(
-                    _resolvedSuccessfully
-                        ? 'Account name verified by your bank'
-                        : 'Select a bank and enter your account number to auto-resolve',
+                    _resolveError ??
+                        (_resolvedSuccessfully
+                            ? 'Account name verified by your bank'
+                            : 'Select a bank and enter your account number to auto-resolve'),
                     style: AppTextStyles.caption.copyWith(
-                      color: _resolvedSuccessfully ? AppColors.success : AppColors.textHint,
+                      color: _resolveError != null
+                          ? AppColors.error
+                          : _resolvedSuccessfully
+                              ? AppColors.success
+                              : AppColors.textHint,
                       fontStyle: FontStyle.italic,
                     ),
                   ),

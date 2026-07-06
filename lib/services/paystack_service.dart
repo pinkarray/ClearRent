@@ -118,7 +118,10 @@ class PaystackService {
           name: 'PaystackService');
       return PaystackInitResult(
         success: false,
-        error: e.message ?? 'Failed to initialize payment.',
+        error: _callableErrorMessage(
+          e,
+          fallback: 'Failed to initialize payment. Please try again.',
+        ),
       );
     } catch (e) {
       AppLogger.e('Init error: $e', name: 'PaystackService', error: e);
@@ -130,10 +133,14 @@ class PaystackService {
   }
 
   /// Resolve account name via the `resolveAccount` Cloud Function,
-  /// which proxies Paystack server-side. Returns the account name
-  /// on success, null otherwise (invalid number/bank, network
-  /// error, or Paystack down).
-  Future<String?> resolveAccount({
+  /// which proxies Paystack server-side.
+  ///
+  /// Returns an [AccountResolution]: the account name on success, or a
+  /// user-facing message whose wording matches the *actual* cause — an
+  /// App Check / auth rejection reads differently from a genuine
+  /// "account not found" or a connectivity failure, so the UI never
+  /// mislabels one as the other.
+  Future<AccountResolution> resolveAccount({
     required String accountNumber,
     required String bankCode,
   }) async {
@@ -144,21 +151,80 @@ class PaystackService {
         'bankCode': bankCode,
       });
       final name = result.data['accountName'];
-      if (name is String && name.isNotEmpty) return name;
-      return null;
+      if (name is String && name.isNotEmpty) {
+        return AccountResolution.success(name);
+      }
+      // The function returns not-found rather than an empty name, so this
+      // is a defensive fallback only.
+      return AccountResolution.error(
+        'Account name could not be resolved. Check the details and try again.',
+      );
     } on FirebaseFunctionsException catch (e) {
       AppLogger.w(
         'Resolve account failed: ${e.code} — ${e.message}',
         name: 'PaystackService',
       );
-      return null;
+      return AccountResolution.error(_resolveErrorMessage(e));
     } catch (e) {
       AppLogger.e(
         'Unexpected error in resolveAccount',
         error: e,
         name: 'PaystackService',
       );
-      return null;
+      return AccountResolution.error(
+        'Network error. Check your connection and try again.',
+      );
+    }
+  }
+
+  /// Map a callable failure code to a message that reflects the real cause.
+  ///
+  /// `unauthenticated` covers both a missing sign-in and a rejected App
+  /// Check token (e.g. an unregistered debug device, or a release build
+  /// whose Play Integrity attestation failed) — both mean "we couldn't
+  /// verify this request", which is distinct from the account not existing.
+  String _resolveErrorMessage(FirebaseFunctionsException e) {
+    switch (e.code) {
+      case 'unauthenticated':
+        return "Couldn't verify this request. Please try again, or enter "
+            'the account name manually.';
+      case 'not-found':
+        return 'Account not found. Check the account number and bank.';
+      case 'invalid-argument':
+        return 'Enter a valid 10-digit account number and select a bank.';
+      case 'resource-exhausted':
+        // Paystack rate-limited the lookup — not an outage, just throttled.
+        return 'Too many lookups in a short time. '
+            'Please wait a moment and try again.';
+      case 'unavailable':
+      case 'internal':
+        return 'The bank service is unavailable right now. Please try again.';
+      default:
+        return "Couldn't resolve the account name. Please try again.";
+    }
+  }
+
+  /// Shared mapping for the App-Check-enforced payment callables. Overrides
+  /// the codes whose default/framework message would mislead — notably
+  /// `unauthenticated`, which is what an App Check rejection surfaces as and
+  /// must never read as a network error. For other codes it prefers the
+  /// server-provided message (the CFs set useful ones, e.g. missing email),
+  /// falling back to [fallback].
+  String _callableErrorMessage(
+    FirebaseFunctionsException e, {
+    required String fallback,
+  }) {
+    switch (e.code) {
+      case 'unauthenticated':
+        return "Couldn't verify this request. Please try again.";
+      case 'resource-exhausted':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'unavailable':
+        return 'The payment service is temporarily unavailable. '
+            'Please try again.';
+      default:
+        final msg = e.message;
+        return (msg != null && msg.isNotEmpty) ? msg : fallback;
     }
   }
 
@@ -202,7 +268,10 @@ class PaystackService {
         success: false,
         status: 'error',
         reference: reference,
-        error: e.message ?? 'Verification failed',
+        error: _callableErrorMessage(
+          e,
+          fallback: 'Verification failed. Please try again.',
+        ),
       );
     } catch (e) {
       AppLogger.e('Verify error: $e', name: 'PaystackService', error: e);
@@ -289,6 +358,23 @@ class PaystackService {
 }
 
 // ── Result Models ─────────────────────────────────────────────────────
+
+/// Outcome of a bank account-name lookup. Either [accountName] is set
+/// (success) or [error] holds a user-facing message describing the actual
+/// failure cause.
+class AccountResolution {
+  final String? accountName;
+  final String? error;
+
+  const AccountResolution._(this.accountName, this.error);
+
+  factory AccountResolution.success(String name) =>
+      AccountResolution._(name, null);
+  factory AccountResolution.error(String message) =>
+      AccountResolution._(null, message);
+
+  bool get ok => accountName != null;
+}
 
 class PaystackInitResult {
   final bool success;
