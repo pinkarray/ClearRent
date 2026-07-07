@@ -89,3 +89,16 @@ flutter:
           weight: 600
         - asset: assets/fonts/Outfit-Bold.ttf
           weight: 700
+    # Roboto (Apache-2.0, from the Flutter SDK) is bundled ONLY as a glyph
+    # fallback: Outfit has no ₦ (U+20A6) glyph, and a system-name fallback
+    # ('Roboto') isn't resolved reliably on all Android devices (e.g. MIUI).
+    # A bundled family IS resolved reliably, so ₦ renders app-wide via
+    # AppTextStyles/theme fontFamilyFallback. License: assets/fonts/Roboto-LICENSE.txt
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700

@@ -103,6 +103,10 @@ void syncAppColorsWithBrightness(ThemeMode mode, Brightness platformBrightness) 
 
 const _fontFamily = 'Outfit';
 
+// Outfit has no ₦ glyph; the bundled Roboto family (see pubspec) is a
+// glyph-only fallback so plain Text widgets render ₦ too.
+const _fontFallback = <String>['Roboto'];
+
 ThemeData buildLightTheme() {
   // Ensure AppColors is in light mode for building theme
   AppColors.setDarkMode(false);
@@ -236,5 +240,11 @@ ThemeData _buildTheme(Brightness brightness) {
   // Restore previous palette state
   AppColors.setDarkMode(prevDark);
 
-  return theme;
+  // Apply the bundled Roboto glyph-fallback across the whole text theme so
+  // plain Text widgets (not just AppTextStyles) render ₦ correctly.
+  return theme.copyWith(
+    textTheme: theme.textTheme.apply(fontFamilyFallback: _fontFallback),
+    primaryTextTheme:
+        theme.primaryTextTheme.apply(fontFamilyFallback: _fontFallback),
+  );
 }
