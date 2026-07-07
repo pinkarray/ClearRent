@@ -2598,7 +2598,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   Widget _buildActionButtons() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      // Placed as Scaffold.bottomSheet, which does NOT apply the system nav
+      // inset — so pad the bottom by the raw window inset (viewPadding, which
+      // an ancestor can't zero out) to keep the buttons above the gesture/nav
+      // bar. SafeArea(bottom: false) since we handle the bottom explicitly.
+      padding: EdgeInsets.fromLTRB(
+        20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
       decoration: BoxDecoration(
         color: AppColors.surface,
         boxShadow: [
@@ -2610,6 +2615,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         ],
       ),
       child: SafeArea(
+        bottom: false,
         child: Row(
           children: [
             // Message button
@@ -2641,6 +2647,22 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                         backgroundColor: AppColors.success,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor: AppColors.success.withAlpha(179),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    )
+                  : !widget.property.isAvailable
+                  ? ElevatedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.lock_outline),
+                      label: const Text('Not Available'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.textSecondary,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            AppColors.textSecondary.withAlpha(179),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
