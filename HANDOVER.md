@@ -5,6 +5,52 @@
 
 ---
 
+## ▶ START HERE — 2026-07-07 (security-audit fixes + Naira glyph + occupancy)
+
+All committed to `develop` and pushed. Flutter `analyze` ✓, functions `tsc` ✓.
+
+**Shipped to prod this session (deployed):**
+- 🔴 **Security — users self-verify bypass CLOSED.** The `users` owner-update
+  rule had no field allowlist, so a modified client could set
+  `verificationStatus:'verified'` and list properties without paying/review.
+  `firestore.rules` now blocks self-assigning verified/rejected + earnings;
+  `agent_ratings` create requires `raterId==uid`. **Deployed.**
+- **`resolveAccount` CF** — Paystack 429 now maps to `resource-exhausted`
+  (was a generic "unavailable"). **Deployed.**
+
+**Committed (client — needs an app rebuild/release to ship):**
+- **Naira sign (₦) renders app-wide.** Outfit has no ₦ glyph; a *system*
+  'Roboto' fallback isn't resolved reliably (MIUI). Fix bundles Roboto
+  (Apache-2.0, from the Flutter SDK) as an asset family + `fontFamilyFallback`
+  on all `AppTextStyles`/theme. Verified on a Redmi. See `text_styles.dart`,
+  `theme_provider.dart`, `pubspec.yaml`, `assets/fonts/Roboto-*`.
+- **Payment callables** — App-Check `unauthenticated` / 429 now surface
+  accurate messages instead of "network error" (`paystack_service.dart`).
+- **Property detail** — action bar padded above the gesture/nav bar
+  (`Scaffold.bottomSheet` doesn't inset); Request Inspection shows disabled
+  "Not Available" on occupied units.
+
+**In progress (approved, NOT built yet):**
+- **Rating system → Bayesian + count, server-side.** Today it's a plain mean
+  computed client-side, so one 5★ = 5.0 AND anyone can write anyone's rating
+  (audit #2). Plan: a CF on `inspection_requests` tenantRating write computes
+  `(C·m+sum)/(C+n)` (m=3.5, C=5) → user doc; lock user-doc rating to CF-only;
+  show the count. `agent_service.rateAgent`/`agent_ratings` is DEAD (no callers).
+- **Inspection request → agent readiness reminder** at approval (non-blocking).
+
+**Gotchas confirmed this session (see memory):**
+- App Check **debug token is per-device** — register each test device's token
+  (Console → App Check → Manage debug tokens) or the enforced callables fail.
+- Paystack **test key** rate-limits `/bank/resolve` hard (429) — not an outage.
+- Phone-auth on a **sideloaded debug** build falls back to reCAPTCHA (18002)
+  and dies with "missing initial state" on MIUI — use a Play internal track.
+
+**Open audit follow-ups:** #2 rating (in progress), #4 client-set money amounts
+(H2), #5 renewal ref reuse, #6 user PII read scope, #7 payments forgeable,
+enable App Check on `lookupEmailByPhone`, strip `setVerificationExempt`.
+
+---
+
 ## ▶ START HERE — 2026-06-26 (refund close-out + Play internal-testing)
 
 Two threads this session: (A) the refund system was finished end-to-end, and
