@@ -8,14 +8,14 @@
 
 import {setGlobalOptions} from "firebase-functions";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
-import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onCall, onRequest, HttpsError} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {getMessaging} from "firebase-admin/messaging";
-import {createHash} from "node:crypto";
+import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
 import {writeNotificationOnce} from "./notification_helpers";
 
@@ -33,6 +33,8 @@ interface NotificationDoc {
   body?: string;
   payload?: Record<string, string>;
 }
+
+export {nudgeInspectionParty} from "./inspection_admin_ops";
 
 export const onNotificationCreated = onDocumentCreated(
   "notifications/{notificationId}",
@@ -347,6 +349,26 @@ export const onInspectionRequestCreated = onDocumentCreated(
     }
     if (conflicted) return;
 
+    // Collusion-analytics capture (Phase 3): denormalize the handler identity
+    // onto the inspection so admin analytics can group by the tenant↔handler
+    // PAIR. The handler is the assigned agent, or the landlord when
+    // self-handled. Stamped here (server-authoritative) before the
+    // pendingPayment early-return so EVERY inspection carries it.
+    const stampAgentId = data.agentId as string | null | undefined;
+    const handlerId =
+      (stampAgentId ?? (data.landlordId as string | undefined)) ?? null;
+    const handlerType = stampAgentId ? "agent" : "landlord";
+    if (handlerId && data.handlerId !== handlerId) {
+      try {
+        await snap.ref.update({handlerId, handlerType});
+      } catch (e) {
+        logger.error("Failed to stamp handlerId", {
+          requestId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
     if (status === "pendingPayment") {
       logger.info("Skipping notification — pendingPayment", {requestId});
       return;
@@ -426,9 +448,9 @@ export const onPropertyAgentAssigned = onDocumentUpdated(
         type: "agent_assigned",
         title: "You've been assigned a property",
         body:
-          `You're now handling inspections for ${propertyTitle}. Reach out ` +
-          `to the landlord, visit the property, and help get it photo- and ` +
-          `viewing-ready.`,
+          `You're now handling inspections for ${propertyTitle}. Visit the ` +
+          `property and confirm it's ready — tenants can't book inspections ` +
+          `until you do.`,
         payload: {route: `/agent/property/${propertyId}`},
       },
     );
@@ -992,6 +1014,70 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     const tenantRoute = "/tenant/inspections";
     const agentRoute = "/agent/inspections";
     const landlordRoute = "/landlord/inspections";
+
+    // ── Inspection-day arrival pushes ──
+    // The client flips these flags on the doc (and writes the in-app activity);
+    // turn each false→true transition into an FCM push so the other party is
+    // alerted in real time. Deduped by a deterministic id per transition.
+    const flipped = (k: string): boolean =>
+      before[k] !== true && after[k] === true;
+    const handlerId = agentId ?? landlordId;
+    const handlerRoute = agentId ? agentRoute : landlordRoute;
+    const handlerName = agentId ? agentName : landlordName;
+    const arrivalPayload = (route: string) => ({
+      route,
+      initialTab: "1",
+      param_requestId: requestId,
+    });
+
+    if (flipped("tenantOnWay") && handlerId) {
+      await writeNotificationOnce(
+        `insp_${requestId}_tenant_onway_${handlerId}`,
+        {
+          userId: handlerId,
+          type: "inspection_arrival",
+          title: "Tenant on the way",
+          body: `${tenantName} is on the way to ${propertyTitle} for the inspection.`,
+          payload: arrivalPayload(handlerRoute),
+        },
+      );
+    }
+    if (flipped("tenantArrived") && handlerId) {
+      await writeNotificationOnce(
+        `insp_${requestId}_tenant_arrived_${handlerId}`,
+        {
+          userId: handlerId,
+          type: "inspection_arrival",
+          title: "Tenant has arrived",
+          body: `${tenantName} has arrived at ${propertyTitle} for the inspection.`,
+          payload: arrivalPayload(handlerRoute),
+        },
+      );
+    }
+    if (flipped("handlerOnWay") && tenantId) {
+      await writeNotificationOnce(
+        `insp_${requestId}_handler_onway_${tenantId}`,
+        {
+          userId: tenantId,
+          type: "inspection_arrival",
+          title: "Handler on the way",
+          body: `${handlerName} is on the way to ${propertyTitle} for your inspection.`,
+          payload: arrivalPayload(tenantRoute),
+        },
+      );
+    }
+    if (flipped("handlerArrived") && tenantId) {
+      await writeNotificationOnce(
+        `insp_${requestId}_handler_arrived_${tenantId}`,
+        {
+          userId: tenantId,
+          type: "inspection_arrival",
+          title: "Handler has arrived",
+          body: `${handlerName} has arrived at ${propertyTitle} for your inspection.`,
+          payload: arrivalPayload(tenantRoute),
+        },
+      );
+    }
 
     // ---- Status: pendingPayment → pending / pendingVerification ----
     // Deferred Batch A push: handler wasn't notified at create time
@@ -2251,6 +2337,177 @@ export const refundPayment = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// paystackWebhook (G6 — server-authoritative payment record)
+//
+// Closes the gap where every payment was CLIENT-recorded: if the app died,
+// went offline, or was tampered with after a charge, the money moved but no
+// record existed. Paystack POSTs each event here; we verify the signature and
+// reconcile a server-authoritative `payments/{reference}` doc:
+//   • record present  → stamp the gateway-authoritative amount/status and flag
+//                        any mismatch against what the client wrote.
+//   • record MISSING   → create it (source: "webhook") + needsReconciliation so
+//                        admin can complete whatever downstream effect (the
+//                        verification submit / inspection create) the client
+//                        never got to.
+//
+// Signature: HMAC-SHA512 of the RAW request body with the Paystack secret key,
+// compared to the `x-paystack-signature` header. This is the ONLY auth (App
+// Check can't apply — the caller is Paystack, not our app), so it runs before
+// any work and rejects anything that doesn't match.
+//
+// SETUP: register the deployed URL as the webhook in the Paystack dashboard
+// (Settings → API Keys & Webhooks), for BOTH test and live modes. The
+// PAYSTACK_SECRET_KEY secret must match the mode of the keys in use.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PaystackChargeData {
+  reference?: string;
+  amount?: number; // kobo
+  status?: string;
+  paid_at?: string | null;
+  metadata?: {userId?: string; paymentType?: string} & Record<string, unknown>;
+  customer?: {email?: string};
+}
+
+export const paystackWebhook = onRequest(
+  {secrets: [paystackSecret], timeoutSeconds: 30},
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    // Verify the HMAC-SHA512 signature over the raw body BEFORE trusting a byte.
+    const signature = req.get("x-paystack-signature") ?? "";
+    const raw = req.rawBody; // Buffer of the exact bytes Paystack signed
+    const expected = createHmac("sha512", paystackSecret.value())
+      .update(raw)
+      .digest("hex");
+    const sigBuf = Buffer.from(signature, "utf8");
+    const expBuf = Buffer.from(expected, "utf8");
+    if (
+      sigBuf.length !== expBuf.length ||
+      !timingSafeEqual(sigBuf, expBuf)
+    ) {
+      logger.warn("Paystack webhook: signature mismatch — rejected");
+      res.status(401).send("Invalid signature");
+      return;
+    }
+
+    const event = req.body as {event?: string; data?: PaystackChargeData};
+    const eventType = event.event ?? "";
+    const data = event.data ?? {};
+    const reference = data.reference;
+
+    // Ack anything we don't act on (Paystack retries non-2xx).
+    if (eventType !== "charge.success" || !reference) {
+      res.status(200).send("ignored");
+      return;
+    }
+
+    try {
+      await reconcilePaystackCharge(reference, data);
+      res.status(200).send("ok");
+    } catch (err) {
+      logger.error("Paystack webhook reconcile failed", {
+        reference,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // 500 → Paystack retries; our handler is idempotent, so a retry is safe.
+      res.status(500).send("error");
+    }
+  },
+);
+
+/**
+ * Idempotently reconcile a successful charge into payments/{reference}.
+ * @param {string} reference Paystack transaction reference (= payments doc id).
+ * @param {PaystackChargeData} data The webhook event's `data` block.
+ * @return {Promise<void>}
+ */
+async function reconcilePaystackCharge(
+  reference: string,
+  data: PaystackChargeData,
+): Promise<void> {
+  const db = getFirestore();
+  const amountNaira =
+    typeof data.amount === "number" ? data.amount / 100 : 0;
+  const gatewayStatus = data.status ?? "success";
+  const paidAt = data.paid_at ?? null;
+  const meta = data.metadata ?? {};
+  const userId = meta.userId ?? null;
+  const paymentType = meta.paymentType ?? null;
+  const email = data.customer?.email ?? null;
+
+  const ref = db.collection("payments").doc(reference);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = FieldValue.serverTimestamp();
+
+    // Gateway-authoritative fields — never sourced from the client.
+    const authoritative = {
+      reference,
+      gatewayStatus,
+      gatewayAmount: amountNaira,
+      gatewayPaidAt: paidAt,
+      webhookVerified: true,
+      webhookEvent: "charge.success",
+      webhookReceivedAt: now,
+      updatedAt: now,
+    };
+
+    if (!snap.exists) {
+      // The client never recorded this charge. Create the record so no real
+      // payment goes untracked, and flag it for admin to finish the flow.
+      tx.set(ref, {
+        ...authoritative,
+        userId,
+        userEmail: email,
+        type: paymentType,
+        amount: amountNaira,
+        status: "completed",
+        source: "webhook",
+        clientRecorded: false,
+        needsReconciliation: true,
+        createdAt: now,
+      });
+      logger.warn("Paystack webhook created a MISSING payment record", {
+        reference,
+        paymentType,
+        userId,
+      });
+      return;
+    }
+
+    // Reconcile against what the client wrote; flag an amount discrepancy so a
+    // tampered/underpaid client record is visible to admin.
+    const existing = snap.data() ?? {};
+    const clientAmount =
+      typeof existing.amount === "number" ? existing.amount : null;
+    const amountMismatch =
+      clientAmount !== null && Math.abs(clientAmount - amountNaira) > 0.5;
+
+    tx.set(
+      ref,
+      {
+        ...authoritative,
+        clientRecorded: true,
+        amountMismatch,
+        ...(amountMismatch ? {clientAmount} : {}),
+      },
+      {merge: true},
+    );
+    if (amountMismatch) {
+      logger.warn("Paystack webhook: client/gateway amount mismatch", {
+        reference,
+        clientAmount,
+        gatewayAmount: amountNaira,
+      });
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // lookupEmailByPhone
 //
 // Looks up a user's email address by phone number so the client can complete
@@ -3099,6 +3356,7 @@ export {
   markInspectionAgentPayoutPaid,
   markRentLandlordPayoutPaid,
   markRentAgentCommissionPaid,
+  adminForceFinalizeAgreement,
   markRefundPaid,
   onInspectionRefundTriggered,
   onRentalInterestAccepted,
@@ -3123,3 +3381,21 @@ export {getSignedAgreementUrl} from "./doc_access_ops";
 export {agentUnassignFromProperty} from "./agent_property_ops";
 
 export {inspectionLifecycleSweep} from "./inspection_lifecycle_ops";
+
+export {rentalInterestStrandSweep} from "./rent_interest_ops";
+
+export {
+  adminReviewPropertyDoc,
+  adminResolveInspection,
+} from "./admin_review_ops";
+
+export {onInspectionRated} from "./rating_ops";
+
+export {getAvailableInspectionSlots} from "./inspection_slots_ops";
+
+export {
+  inspectionMorningReminders,
+  inspectionSoonReminders,
+} from "./inspection_reminders_ops";
+
+export {onPropertyDeleted} from "./property_cleanup_ops";

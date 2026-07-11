@@ -377,11 +377,27 @@ export const approveImmediateRentChange = onCall(
     }
 
     const proposedRent = await db.runTransaction<number>(async (tx) => {
-      const reviewSnap = await tx.get(reviewRef);
+      // Read the request AND the property up front (all reads before writes).
+      const propertyRef = db.collection("properties").doc(propertyId);
+      const [reviewSnap, propertySnap] = await Promise.all([
+        tx.get(reviewRef),
+        tx.get(propertyRef),
+      ]);
       if (!reviewSnap.exists) {
         throw new HttpsError(
           "not-found",
           `rent_review_requests/${requestId} not found.`,
+        );
+      }
+      // The property can be deleted after filing (vacant units are deletable).
+      // There's then nothing to apply the new rent to — fail cleanly instead of
+      // crashing the transaction with a 500. The admin can Reject to clear it,
+      // and onPropertyDeleted now auto-rejects such orphans going forward.
+      if (!propertySnap.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This property no longer exists — it was deleted after the request " +
+            "was filed. Reject the request to clear it.",
         );
       }
       const review = reviewSnap.data()!;
@@ -396,7 +412,6 @@ export const approveImmediateRentChange = onCall(
       }
 
       // Apply immediately to the property's stored rent.
-      const propertyRef = db.collection("properties").doc(propertyId);
       tx.update(propertyRef, {
         rent: newRent,
         updatedAt: FieldValue.serverTimestamp(),

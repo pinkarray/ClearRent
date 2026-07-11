@@ -53,9 +53,57 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getFirestore, FieldValue, Firestore} from "firebase-admin/firestore";
 import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
+
+interface BeneficiaryBank {
+  bankName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+  bankCode: string | null;
+}
+
+/**
+ * Snapshot a beneficiary's payout account from users/{uid}/private/bank onto a
+ * refund record, so the admin settling the refund sees exactly where to send
+ * the money instead of having to look it up. Fields are null when not on file
+ * (shouldn't happen now that requesting/accepting requires bank details, but
+ * legacy disputes may predate that gate).
+ *
+ * @param {Firestore} db Firestore instance.
+ * @param {string} uid Beneficiary user id.
+ * @return {Promise<BeneficiaryBank>} Account fields (nulls if absent).
+ */
+async function readBeneficiaryBank(
+  db: Firestore,
+  uid: string,
+): Promise<BeneficiaryBank> {
+  try {
+    const snap = await db
+      .collection("users").doc(uid)
+      .collection("private").doc("bank")
+      .get();
+    const d = snap.data() ?? {};
+    return {
+      bankName: (d.bankName as string | undefined) ?? null,
+      accountNumber: (d.accountNumber as string | undefined) ?? null,
+      accountName: (d.accountName as string | undefined) ?? null,
+      bankCode: (d.bankCode as string | undefined) ?? null,
+    };
+  } catch (err) {
+    logger.error("readBeneficiaryBank failed", {
+      uid,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      bankName: null,
+      accountNumber: null,
+      accountName: null,
+      bankCode: null,
+    };
+  }
+}
 
 interface MarkPaidInput {
   docId?: unknown;
@@ -135,6 +183,36 @@ function readAmount(
     );
   }
   return raw;
+}
+
+/**
+ * Gate a rent payout on the deal actually being done (G2/G3). The landlord
+ * (and agent) are only paid once the tenancy agreement is FINALIZED — i.e. the
+ * tenant reviewed and accepted it and the landlord finalized. A payout must
+ * never leave while the agreement is disputed (money would be irreversibly gone
+ * before the dispute is resolved), pending review, or not yet uploaded.
+ *
+ * Throws HttpsError(failed-precondition) with an admin-facing message; the
+ * admin resolves it by finalizing the agreement (or settling the dispute first).
+ * @param {FirebaseFirestore.DocumentData} data active_rental doc data.
+ */
+function assertAgreementFinalized(
+  data: FirebaseFirestore.DocumentData,
+): void {
+  const status = data.agreementStatus;
+  if (status === "finalized") return;
+  if (status === "disputed") {
+    throw new HttpsError(
+      "failed-precondition",
+      "The tenant is disputing the tenancy agreement. Resolve the dispute " +
+        "and finalize the agreement before paying out.",
+    );
+  }
+  throw new HttpsError(
+    "failed-precondition",
+    "The tenancy agreement isn't finalized yet — the tenant must accept it " +
+      "and the landlord must finalize it before a payout can be sent.",
+  );
 }
 
 /**
@@ -348,6 +426,9 @@ export const markRentLandlordPayoutPaid = onCall(
           );
         }
         const data = snap.data()!;
+        // G2/G3: never pay the landlord before the agreement is finalized, and
+        // never while it's disputed.
+        assertAgreementFinalized(data);
         guardStatusTransition(
           data.landlordPayoutStatus,
           "pending",
@@ -436,6 +517,10 @@ export const markRentAgentCommissionPaid = onCall(
           );
         }
         const data = snap.data()!;
+        // G2/G3: gate the agent commission on the same finalized-agreement
+        // condition as the landlord payout — no money leaves until the deal is
+        // done and any dispute resolved.
+        assertAgreementFinalized(data);
         guardStatusTransition(
           data.agentPayoutStatus,
           "pending",
@@ -482,6 +567,77 @@ export const markRentAgentCommissionPaid = onCall(
         "sent to your bank account.",
       receiptDescription: (p) => `Agent fee payout for ${p}`,
       adminUid,
+    });
+
+    return {success: true, auditLogId};
+  },
+);
+
+// ============================================================
+// 3b. Admin force-finalize a tenancy agreement — the escape hatch for the
+//     payout gate (G2/G3). When a deal was settled outside the in-app agreement
+//     flow (offline, tenant unresponsive, legacy doc), admin can deliberately
+//     mark the agreement finalized so the payout can proceed. Audit-logged;
+//     records who/why on the rental. Blocks re-finalizing an already-finalized
+//     agreement (idempotency).
+// ============================================================
+interface ForceFinalizeInput {
+  docId?: unknown;
+  reason?: unknown;
+}
+
+export const adminForceFinalizeAgreement = onCall(
+  callableOptions,
+  async (request) => {
+    assertAdmin(request.auth);
+    const adminUid = request.auth!.uid;
+    const raw = (request.data ?? {}) as ForceFinalizeInput;
+
+    if (typeof raw.docId !== "string" || raw.docId.trim().length === 0) {
+      throw new HttpsError("invalid-argument", "docId must be a non-empty string.");
+    }
+    if (typeof raw.reason !== "string" || raw.reason.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        "reason is required — record why the agreement is being force-finalized.",
+      );
+    }
+    const docId = raw.docId.trim();
+    const reason = raw.reason.trim();
+
+    const db = getFirestore();
+    const ref = db.collection("active_rentals").doc(docId);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw new HttpsError("not-found", `active_rentals/${docId} not found.`);
+      }
+      if (snap.data()!.agreementStatus === "finalized") {
+        throw new HttpsError(
+          "failed-precondition",
+          "This agreement is already finalized.",
+        );
+      }
+      tx.update(ref, {
+        agreementStatus: "finalized",
+        agreementFinalizedByAdmin: true,
+        adminFinalizedReason: reason,
+        adminFinalizedBy: adminUid,
+        landlordFinalizedAt: FieldValue.serverTimestamp(),
+        tenantDisputeReason: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    const auditLogId = await writeAuditLog({
+      actorId: adminUid,
+      action: "admin_force_finalize_agreement",
+      targetCollection: "active_rentals",
+      targetId: docId,
+      amount: 0,
+      paymentReference: "force_finalize",
+      paymentNote: reason,
     });
 
     return {success: true, auditLogId};
@@ -719,6 +875,18 @@ interface RefundReasonResult {
 function deriveRefundReason(
   data: FirebaseFirestore.DocumentData,
 ): RefundReasonResult {
+  // Admin resolved an awaiting-outcome inspection from the review queue (a full
+  // or partial refund). Take precedence so the refund record's source is
+  // accurate for the audit trail instead of being mislabeled below.
+  if (data.resolvedByAdmin === true) {
+    return {
+      source: "inspection_admin_review",
+      reason:
+        (data.refundReason as string | undefined) ??
+        "Refund issued by admin after review",
+    };
+  }
+
   // Handler exit ramp: agent or landlord cancelled on tenant's behalf.
   const cancelledBy = data.cancelledBy as string | undefined;
   if (cancelledBy === "agent" || cancelledBy === "landlord") {
@@ -779,21 +947,39 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
       return;
     }
 
-    const amount = after.totalFee;
-    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
-      logger.error("Refund trigger: invalid totalFee", {requestId, amount});
+    // Amount to refund: an admin partial refund (full fee minus the
+    // non-refundable cut, decided in the inspection-review queue) sets
+    // `refundAmount` explicitly; every other path refunds the full totalFee.
+    // The override is clamped to (0, totalFee] so it can only ever REDUCE the
+    // refund, never inflate it.
+    const totalFee = after.totalFee;
+    if (
+      typeof totalFee !== "number" ||
+      !Number.isFinite(totalFee) ||
+      totalFee <= 0
+    ) {
+      logger.error("Refund trigger: invalid totalFee", {requestId, totalFee});
       return;
     }
+    const override = after.refundAmount;
+    const useOverride =
+      typeof override === "number" &&
+      Number.isFinite(override) &&
+      override > 0 &&
+      override <= totalFee;
+    const amount = useOverride ? override : totalFee;
 
     const {source, reason} = deriveRefundReason(after);
 
     const db = getFirestore();
+    const beneficiaryBank = await readBeneficiaryBank(db, tenantId);
     try {
       await db.collection("refunds").doc(requestId).create({
         status: "pending",
         amount,
         beneficiaryId: tenantId,
         beneficiaryRole: "tenant",
+        beneficiaryBank,
         source,
         sourceCollection: "inspection_requests",
         sourceDocId: requestId,
@@ -947,12 +1133,14 @@ export const onRentalInterestAccepted = onDocumentUpdated(
         Number.isFinite(refundAmount) &&
         refundAmount > 0
       ) {
+        const beneficiaryBank = await readBeneficiaryBank(db, tenantId);
         try {
           await db.collection("refunds").doc(doc.id).create({
             status: "pending",
             amount: refundAmount,
             beneficiaryId: tenantId,
             beneficiaryRole: "tenant",
+            beneficiaryBank,
             source: "rental_loser",
             sourceCollection: "rental_interests",
             sourceDocId: doc.id,

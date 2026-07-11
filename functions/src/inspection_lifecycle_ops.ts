@@ -11,12 +11,17 @@
 //                           the tenant is offered reschedule or refund)
 //   approved (not done)   → resolved by the arrival flags the day-of flow records:
 //       • met                         → completed (they met, just forgot to tap)
-//       • tenant came, handler didn't → refunded (handler no-show)
-//       • handler came, tenant didn't → completed + tenantNoShow (fee stands)
+//       • tenant came, handler didn't → awaitingOutcome (admin reviews — a
+//                                       handler's *absence* is forgeable, so we
+//                                       never auto-refund on it)
+//       • handler came, tenant didn't → awaitingOutcome (admin confirms + pays
+//                                       the handler; "I showed" is forgeable too)
 //       • neither / unclear           → awaitingOutcome (admin reviews)
 //
-// Refunds set paymentStatus='refunded'; onInspectionRefundTriggered then creates
-// the refund record for the admin to pay out.
+// This sweep no longer auto-refunds a handler no-show: a genuine one is
+// confirmed by an admin, who issues the refund from the review queue. Setting
+// paymentStatus='refunded' (now from that admin decision) still triggers
+// onInspectionRefundTriggered to create the refund record for payout.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -138,39 +143,45 @@ async function resolveApproved(
   }
 
   if (tenantArrived && !handlerArrived) {
-    // Handler no-show → refund the tenant.
+    // Tenant says they attended but the handler never confirmed arrival. This
+    // is ALSO the exact signal a colluding tenant+handler can forge to conjure
+    // a full refund on an inspection that really happened (the handler simply
+    // doesn't tap "arrived"). So we NO LONGER auto-refund on handler absence —
+    // it goes to admin review, who confirms the no-show with the handler (an
+    // agent is one of our own) and issues the refund. Genuine handler no-shows
+    // are rare, and the honest tenant is protected by the admin's decision.
     await ref.update({
-      status: "refunded",
-      paymentStatus: "refunded",
-      refundReason: "Handler did not show up for the inspection",
-      refundedAt: FieldValue.serverTimestamp(),
-      autoResolved: true,
+      status: "awaitingOutcome",
       updatedAt: FieldValue.serverTimestamp(),
     });
     if (tenantId) {
-      await writeNotificationOnce(`insp_${ref.id}_noshow_refund_${tenantId}`, {
+      await writeNotificationOnce(`insp_${ref.id}_noshow_review_${tenantId}`, {
         userId: tenantId,
-        type: "inspection_refunded",
-        title: "Refund on the way",
+        type: "inspection_under_review",
+        title: "We're reviewing your inspection",
         body:
-          `The handler didn't show for your inspection at ${propertyTitle}, ` +
-          `so you're being refunded.`,
+          `You marked that you attended the inspection at ${propertyTitle} ` +
+          `but the handler didn't confirm. Our team is reviewing it and will ` +
+          `sort out any refund.`,
         payload: {route: TENANT_INSPECTIONS_ROUTE},
       });
     }
-    return "refunded";
+    return "review";
   }
 
   if (handlerArrived && !tenantArrived) {
-    // Tenant no-show → handler showed up; fee stands.
+    // Handler confirmed arrival, tenant didn't: the fee should stand and be
+    // paid to the handler (₦7k). But "I showed, they didn't" is a one-sided
+    // claim the handler alone made — an agent could forge it to collect on a
+    // genuine tenant no-show. So we don't auto-pay: admin confirms and marks it
+    // completed (which credits the handler) from the review queue. tenantNoShow
+    // is preserved so the queue shows the case.
     await ref.update({
-      status: "completed",
-      completedAt: FieldValue.serverTimestamp(),
+      status: "awaitingOutcome",
       tenantNoShow: true,
-      autoResolved: true,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return "completed";
+    return "review";
   }
 
   // Neither arrived / ambiguous → admin reviews.

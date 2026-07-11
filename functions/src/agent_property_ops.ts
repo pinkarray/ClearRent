@@ -88,6 +88,11 @@ export async function revertPropertyToSelf(
     assignedAgentName: null,
     assignedAgentPhone: null,
     agentFee: 0,
+    // Readiness gate (Phase 2): the handler reverts to the landlord, who must
+    // re-vet before the property is bookable again.
+    readyForInspections: false,
+    readinessCheckedAt: FieldValue.delete(),
+    readinessCheckedBy: FieldValue.delete(),
     updatedAt: FieldValue.serverTimestamp(),
   };
   // Preserve the fee so the landlord doesn't re-enter it on re-assignment.
