@@ -5,6 +5,575 @@
 
 ---
 
+## ▶ START HERE — 2026-07-11e (app bug fixes — arrival activities, tenant-home crash, agent scheduling, browse filters)
+
+`flutter analyze` ✓ (full), rules **95/95** ✓. **NOT committed.** Mostly
+client-only (app rebuild); the agent-scheduling item is a **rules** change
+(`firebase deploy --only firestore:rules`).
+
+**3. Assigned agent couldn't set inspection days (PERMISSION_DENIED).** The
+properties rules granted the assigned agent only the readiness fields, so their
+`inspectionDays`/`inspectionTimeSlots` write (agent_property_detail
+`_EditScheduleSheet` → `updateProperty`) was denied. Added a parallel
+agent-scoped clause: `assignedAgentId == uid` may write ONLY
+`['inspectionDays','inspectionTimeSlots','updatedAt']` (field-scoped, like the
+readiness clause). +3 rules tests (allowed; rent-change-alongside denied;
+non-assigned denied) → **95/95**. **Needs `firebase deploy --only firestore:rules`.**
+
+**4. Dead "more filters" (tune) button on tenant browse.** It was a decorative
+`Container` with no `onTap`. Now opens a "Filters" bottom sheet:
+price/rent RangeSlider (bound = max rent rounded to ₦100k; max=bound ⇒ no cap),
+bedrooms (Any/1+/2+/3+/4+), bathrooms (Any/1+/2+/3+), and amenities (multi-select
+chips derived from the listings in view, AND-matched). Edits are local until
+Apply; the button shows a dot when extra filters are active; Apply shows a live
+match count. Wired into the existing `_filterProperties()` (before the search
+block so they always apply). State: `_minRent/_maxRent/_minBedrooms/_minBathrooms/
+_filterAmenities`.
+
+---
+
+## ▶ START HERE — 2026-07-11e-i (app bug fixes — arrival activities + tenant-home crash)
+
+Client-only (app rebuild). `flutter analyze` ✓ (full). **NOT committed.**
+
+**1. Handler/tenant not told "on the way" / "arrived".** `markTenantOnWay`
+(`inspection_service.dart`) wrote the flag but created NO activity → the handler
+(landlord when self-handled, +agent) never saw it in Recent Activities. Fixed to
+`_createActivity('tenant_on_way')` for landlord (+agent). Mirrored the symmetric
+gap: `markHandlerOnWay` now notifies the tenant (`handler_on_way`). Also
+`activity_model._parseType` didn't map `tenant_on_way`/`tenant_arrived`/
+`handler_on_way`/`handler_arrived` → they fell to the `propertyViewed` default
+(wrong icon, tapped through to the property). Mapped all four to
+`inspectionApproved` (event icon, routes to /inspections; the stored title/message
+carry the specific wording). `markTenantArrived` already created the landlord
+activity — it just rendered mislabeled; now correct.
+
+**FCM push added (2026-07-11e-ii):** the in-app activities aren't enough for a
+time-sensitive alert, so `onInspectionRequestUpdated` (index.ts) now turns each
+arrival flag's false→true transition into an FCM push (deduped
+`insp_{id}_{event}_{recipient}`): tenantOnWay/tenantArrived → push the handler
+(agentId ?? landlordId); handlerOnWay/handlerArrived → push the tenant. Client
+still writes the activity feed item; the CF adds the push (notifications is
+`create:if false`, so pushes must be server-side). **Deploy:**
+`firebase deploy --only functions:onInspectionRequestUpdated`.
+
+**2. Tenant home crash: "Stream has already been listened to"**
+(`tenant_home_screen.dart:485`). The multi-rental `StreamBuilder` read the stored
+single-subscription `_tenantRentalsStream`; that branch unmounts/remounts on nav
+tab switches, so the remounted StreamBuilder re-listened the already-listened
+stream → crash. Replaced with a lifetime subscription (`_tenantRentalsSub` in
+initState, cancelled in dispose) caching `_tenantRentals`/`_tenantRentalsLoaded`;
+build reads cached state (no StreamBuilder). Survives remounts.
+
+---
+
+## ▶ START HERE — 2026-07-11d (audit gap — admin review actions now audited)
+
+Verified: functions `tsc` ✓, admin `tsc` ✓ + `next build` ✓. **NOT committed.
+NOT deployed** (functions + admin Vercel).
+
+**Gap (money-flow cert, Medium):** admin property-doc verify/reject and
+inspection-review resolve were raw client `updateDoc`s → never hit the immutable
+`admin_audit_log` (which is `create: if false`, admin-SDK-only), so there was no
+record of which admin made these trust/money decisions.
+
+**Fix — route them through admin-SDK callables** (NEW `admin_review_ops.ts`):
+- `adminReviewPropertyDoc({propertyId, action:'verify'|'reject'|'publish', reason?})`
+  — derives the building link server-side, updates property (+building) in a txn,
+  writes `admin_property_doc_{action}` audit entry.
+- `adminResolveInspection({requestId, action:'refund'|'complete', refundAmount?})`
+  — refund re-validates amount ≤ totalFee server-side and sets
+  paymentStatus=refunded (still triggers `onInspectionRefundTriggered`); complete
+  marks completed; writes `admin_inspection_{action}` audit entry (amount =
+  refund amount).
+- Admin repo rewired: `properties/page.tsx` (verify/reject/publish → one
+  `reviewDoc` helper calling the CF) and `inspection-reviews/page.tsx`
+  (submitRefund/markCompleted → CF). Removed the now-unused firestore write
+  imports.
+
+No rules change (kept `allow update: if isAdmin()`; the fix is accountability for
+the normal admin workflow, not blocking a trusted admin from a direct write).
+
+**DEPLOY:** `cd functions && npm run build && firebase deploy --only functions:adminReviewPropertyDoc,functions:adminResolveInspection` + admin Vercel.
+
+**Follow-up (noted):** the USER-verification approve/reject
+(`verifications/page.tsx` handleApprove/handleReject) is the same pattern and
+still writes client-side without an audit entry — extend with an
+`adminReviewUserVerification` callable if you want full audit coverage.
+
+---
+
+## ▶ START HERE — 2026-07-11c (rent gaps G1–G4 — full)
+
+Verified: functions `tsc` ✓, firestore rules **92/92** ✓, admin `next build` ✓.
+**NOT committed. NOT deployed** (functions + rules + admin Vercel + app rebuild
+for the sweep's notifications to route — client unchanged though).
+User policy decisions: G1 = reminder→admin-review-queue (no auto money);
+payout escape hatch = admin force-finalize.
+
+**G2/G3 — payout gate (`admin_money_ops.ts`).** `markRentLandlordPayoutPaid` /
+`markRentAgentCommissionPaid` only guarded payout-status idempotency — nothing
+checked the agreement, so admin could pay before finalize or DURING a dispute.
+New `assertAgreementFinalized(data)` in both txns: payout allowed ONLY when
+`agreementStatus == 'finalized'`; `disputed` → distinct block; other/absent →
+"not finalized yet." Agreement lifecycle (active_rentals): uploaded →
+pending_review → (tenant) accepted → (landlord) **finalized**; dispute → disputed.
+
+**G1 — strand sweep (NEW `rent_interest_ops.ts` → `rentalInterestStrandSweep`,
+09:00 Africa/Lagos).** For `rental_interests` at `payment_verified` (paid, not
+yet accepted): day 3 & 6 → remind the LANDLORD to accept; day 7 → set
+`strandedForReview: true` + `strandedAt` and reassure the tenant. Moves NO money
+(policy). Mirrors leaseLifecycleSweep (deduped `writeNotificationOnce`).
+
+**Escape hatch — `adminForceFinalizeAgreement` callable (`admin_money_ops.ts`).**
+assertAdmin + required reason; sets `agreementStatus:'finalized'` +
+`agreementFinalizedByAdmin` + `adminFinalizedReason/By`, clears dispute reason;
+audit-logged (`admin_force_finalize_agreement`); blocks if already finalized.
+Unblocks the payout gate for offline-settled / stuck deals.
+
+**G4 — admin "Rent Attention" view (`clearrent_admin`
+`dashboard/rent-attention/page.tsx`, nav item after Inspection Reviews).**
+Realtime: (1) **stranded** — `rental_interests` at `payment_verified`, sorted
+longest-waiting, flagged ones float up; (2) **disputed** — `active_rentals`
+`agreementStatus=='disputed'` with the tenant's reason + payout-held amount + a
+**Resolve & force-finalize** action (calls the callable with a reason).
+Tenant/landlord cross-link to `/dashboard/users/{uid}`.
+
+**Rules:** reordered `rental_interests` read to put `isAdmin()` FIRST (short-
+circuits before per-doc `get()`s for admin list) — 92/92 still pass.
+
+**DEPLOY:**
+```
+cd functions && npm run build && firebase deploy --only functions:markRentLandlordPayoutPaid,functions:markRentAgentCommissionPaid,functions:adminForceFinalizeAgreement,functions:rentalInterestStrandSweep
+firebase deploy --only firestore:rules
+# admin Vercel deploy
+```
+
+**Follow-ups (noted, not built):** (a) rental-refund tooling — for a truly
+unresponsive landlord the admin currently refunds the stranded tenant OUT OF BAND
+(no in-app rental-refund action yet; inspection refunds have one, rentals don't);
+(b) a distinct "tenant moved in" signal — the gate uses `finalized` as the
+move-in proxy.
+
+---
+
+## ▶ START HERE — 2026-07-11b (admin repo — Phase-2b address fix)
+
+Repo: **admin** (`clearrent_admin`). Verified: `tsc` ✓, `next build` ✓.
+**NOT committed. NOT deployed (Vercel).** Clears the required 2b follow-up.
+
+**Why:** Phase 2b moved the exact street address off the world-readable property
+doc into the gated `properties/{id}/private/location` subdoc, so the admin
+dashboard (which read `property.address`) showed blank addresses.
+
+**Fix (mirrors the app's list-vs-detail split; admin is entitled by rules):**
+- `properties/page.tsx` — list card + search now use area-level (city/state);
+  the **detail slide-over** (`PropertyDetailPanel`) fetches the
+  `private/location` subdoc via `getDoc` and shows the exact address (falls back
+  to `property.address` for un-migrated docs, then area-level). Search placeholder
+  updated.
+- `users/[uid]/page.tsx` — owned/handled property rows show area-level (added
+  `city`/`state` to `PropertyRow`).
+- `payments/page.tsx` — listing-fee row `propertyAddress` now area-level.
+- `types/index.ts` Property.address left as-is (still exists on legacy parents;
+  used only as fallback). No rules change (2b rules already allow admin subdoc read).
+
+**DEPLOY:** admin Vercel. Phase-4 admin dependency CONFIRMED OK (no change
+needed): `verifications/page.tsx` `handleReject` writes `rejectionReason` via
+`updateDoc` (partial update → `verificationPaymentReference` preserved), so the
+app shows the reason and detects free re-apply.
+
+---
+
+## ▶ START HERE — 2026-07-11 (G6 — Paystack webhook / server-authoritative payments)
+
+Verified: functions `tsc` ✓, `flutter analyze` (paystack_service) ✓, HMAC signature
+logic unit-checked (accepts genuine, rejects tampered/wrong-secret/empty).
+**NOT committed. NOT deployed.**
+
+**Context:** Paystack business **not yet approved** — app is on TEST keys (user
+has submitted everything, awaiting Paystack). This is fully buildable/testable on
+TEST keys now (test mode delivers webhooks + verify API); go-live just needs the
+live webhook URL + live `PAYSTACK_SECRET_KEY`.
+
+**The gap (G6, from money-flow certification):** the app already has server-side
+`initializePayment`/`verifyPayment` CFs, BUT the `payments` record + all
+downstream effects are CLIENT-written and there was NO webhook — so a charge
+could succeed with the app then dying/offline/tampered ⇒ money moved, no record.
+
+**What changed:**
+- **NEW `paystackWebhook` CF** (`index.ts`, `onRequest`, binds `PAYSTACK_SECRET_KEY`).
+  Verifies the `x-paystack-signature` (HMAC-SHA512 over `req.rawBody`,
+  `timingSafeEqual`) BEFORE any work — that signature is the only auth (App Check
+  can't apply; caller is Paystack). On `charge.success` it idempotently
+  reconciles `payments/{reference}` in a txn:
+  - record present → stamps gateway-authoritative `gatewayStatus`/`gatewayAmount`/
+    `gatewayPaidAt` + `webhookVerified:true`; sets `amountMismatch` (+`clientAmount`)
+    if the client's amount differs (tamper/underpay signal).
+  - record MISSING → creates it (`source:"webhook"`, `status:"completed"`,
+    `clientRecorded:false`, `needsReconciliation:true`) so no charge goes
+    untracked and admin can finish the downstream effect the client missed.
+- **`paystack_service.dart` `recordPayment`** now writes with `SetOptions(merge:true)`
+  so a webhook-first record isn't clobbered by the later client write.
+
+**DEPLOY:**
+```
+cd functions && npm run build && firebase deploy --only functions:paystackWebhook
+# app rebuild (client recordPayment merge change)
+```
+Then in the **Paystack dashboard → Settings → API Keys & Webhooks**, set the
+Webhook URL to the deployed function URL (gen2 Cloud Run URL, e.g.
+`https://paystackwebhook-<hash>-uc.a.run.app` — copy the exact URL from the
+deploy output / console) for **both test and live** modes. `PAYSTACK_SECRET_KEY`
+secret must match the active mode.
+
+**Scope note (deliberate):** this guarantees a server-authoritative payment
+RECORD + tamper/omission flags. It does NOT yet auto-drive the per-type downstream
+effect (verification submit / inspection create / rent record) from the webhook —
+a `needsReconciliation` payment is surfaced for admin to finish. Fuller
+webhook-driven fulfilment per payment type = follow-up. Also optional: a
+reconciliation view/filter on the admin Payments page for
+`needsReconciliation`/`amountMismatch`.
+
+---
+
+## ▶ START HERE — 2026-07-10g (Admin collusion-analytics VIEW — consumes Phase 3)
+
+Repo: **admin** (`clearrent_admin`, Next.js/Vercel). Verified: `next build` ✓
+(route compiled, lint clean). **NOT committed. NOT deployed** (Vercel).
+
+**What:** new route `src/app/dashboard/collusion/page.tsx` — "Collusion Watch"
+(nav item added to `dashboard-shell.tsx`, ShieldAlert icon, between Inspection
+Day and Properties). Consumes the Phase-3 pairing key.
+
+**How it works:** one-shot `getDocs` of `inspection_requests` + `active_rentals`
+(both allow admin `list`). Groups inspections by the **tenant↔handler pair**
+(`handlerId` from the doc, or derived `agentId ?? landlordId` so it works even
+before the backfill runs). Per inspection it derives an outcome from the raw
+signals (paymentStatus=refunded + arrival flags → handler_no_show / no_show_both;
+completed + met → met; completed + handler-only → tenant_no_show; etc.) and joins
+`active_rentals` by `tenantId+propertyId` to know if the tenant actually rented
+the property they inspected.
+
+**Signals per pair** (only pairs with ≥2 inspections and ≥1 signal shown):
+- **Met, no rental** — distinct properties the pair confirmed a meeting on but the
+  tenant never rented on ClearRent (repeat = off-platform dealing).
+- **Handler no-show refunds** — tenant-attended/handler-absent refunds (the
+  forgeable collusion refund).
+- Risk tiers: high (metNoRental≥3 or refunds≥2), medium (≥2 / ≥1 / ≥4 insp & 0
+  rentals), low. Sorted by risk then a transparent score. Summary tiles +
+  search + per-pair expandable inspection list; tenant & handler cross-link to
+  `/dashboard/users/{uid}`. Advisory, not proof (stated on-page).
+
+**DEPLOY:** admin **Vercel** deploy. Reads only — no rules/functions change.
+Scale note: full-collection client reads are fine pre-launch; if inspections
+grow large, move aggregation server-side (CF or scheduled rollup).
+
+**This closes the inspection-integrity track end-to-end** (capture in the app →
+view in admin). Next open item: **G6** Paystack webhook / server-authoritative
+payments (pre-launch gate, from money-flow certification).
+
+---
+
+## ▶ START HERE — 2026-07-10f (Phase 4 — verification rejection reason + free re-apply)
+
+Verified: `flutter analyze` ✓ (full tree). **NOT committed. NOT deployed.**
+Client-only (app rebuild); no functions, no rules change.
+
+**Finding:** "show reason" was ALREADY done — `verification_center_screen`
+`_buildRejectedState` renders `rejectionReason` (stored on the user doc + the
+`verification_request` by `VerificationService.rejectVerification`). The gap was
+**free re-apply**: the rejected "Try Again" reset the form back to the full
+pay-again flow.
+
+**What changed (`verification_center_screen.dart` only):**
+- "Try Again" now calls `_startReapply()`: if the user has a prior payment
+  reference (they paid, then got rejected), it sets `_isFreeReapply=true` and
+  carries the original `paymentReference`/`amount`.
+- Free re-apply skips Paystack, submits the corrected docs with the original
+  payment reference, and does NOT record a new `payments` entry (no money
+  moved). First-time applicants are unchanged (still pay).
+- Upload form swaps the fee/Paystack section for a green "No payment needed —
+  resubmitting is free" note; the sticky button reads "Resubmit for free".
+- Detection is client-side off `_verificationData.paymentReference`; a user
+  can't reach `rejected` without having submitted (+paid) once, so the gate is
+  sound on the happy path. First-time / never-paid → `paymentReference` absent →
+  falls back to paying (safe default).
+
+**No rules change:** the user self-update rule already allows setting
+`verificationStatus:'pending'` (only `verified`/`rejected` are admin-gated), and
+a free re-apply writes the exact same shape as a first-time submit.
+
+**DEPLOY:** app rebuild only.
+
+**⚠️ Admin-repo dependency (verify):** the admin dashboard's REJECT action
+(`clearrent_admin`) must (a) write `rejectionReason` on the user doc — so the
+app shows it — and (b) PRESERVE `verificationPaymentReference` (don't clear it) —
+so free re-apply is detected. The in-app `rejectVerification` already does both;
+confirm the admin repo mirrors it.
+
+**Inspection-integrity roadmap COMPLETE (Phases 1–4).** Next candidates: the
+admin collusion-analytics VIEW (consumes Phase 3 signals, lives in
+`clearrent_admin`); G6 Paystack webhook / server-authoritative payments
+(pre-launch gate, per money-flow certification).
+
+---
+
+## ▶ START HERE — 2026-07-10e (Phase 3 — collusion-analytics data capture)
+
+Verified: functions `tsc` ✓. **NOT committed. NOT deployed.** Small phase.
+
+**Finding first:** two of the three Phase-3 signals were ALREADY captured —
+- **Arrival flags**: on the inspection doc (`tenantArrived`/`handlerArrived`/
+  `tenantOnWay`/`handlerOnWay` + timestamps, `met`/`metBy`, `tenantNoShow`).
+- **Refund reason**: normalized on the `refunds` doc (`source`+`reason` via
+  `deriveRefundReason`, `admin_money_ops.ts`), joinable to the inspection by
+  `requestId` (= refund doc id / `sourceDocId`).
+
+The genuine gap was **tenant↔handler pairing**: the handler is `agentId`
+(agent-handled) OR `landlordId` (self-handled), so you couldn't group
+inspections by pair. Fixed:
+
+**What changed (functions only):** `onInspectionRequestCreated` (index.ts) now
+stamps `handlerId` (= `agentId ?? landlordId`) + `handlerType`
+(`'agent'`|`'landlord'`) on every inspection, server-authoritative, before the
+`pendingPayment` early-return. Admin analytics can now query
+`where('handlerId','==',X)` and group by `tenantId` in code to surface
+repeat-pairing collusion (met-but-never-rents; ₦7k farming with fake tenants).
+No composite index introduced (single-field auto-index + in-code grouping; the
+project has no `firestore.indexes.json` and I didn't want to change deploy
+behavior). No rules change (inspection reads already allow `isAdmin()`; the
+stamp is an admin-SDK write).
+
+**DEPLOY:** `cd functions && npm run build && firebase deploy --only functions:onInspectionRequestCreated`.
+Optional backfill for existing inspections (test data):
+`npx ts-node scripts/backfill-inspection-handler.ts [--apply]`.
+
+**NOT built (this is capture only):** the admin analytics VIEW that scores
+pairs / flags collusion lives in `clearrent_admin` (next phase). The raw
+signals are now all present: pairing key (inspection) + arrival flags
+(inspection) + refund reason (refunds) + rental join (active_rentals by
+tenantId+propertyId, for met-but-no-rental).
+
+**Remaining:** Phase 4 = verification rejection reason + free re-apply.
+
+---
+
+## ▶ START HERE — 2026-07-10d (Phase 2b — reveal-on-approval, server-enforced)
+
+Verified: `flutter analyze` ✓ (full tree), firestore rules tests **92/92** ✓
+(was 81; +11 new). **NOT committed. NOT deployed.** Functions `src/` untouched.
+
+**Decision (user):** full server enforcement. The old reveal was cosmetic — the
+client hid the address but the exact street `address` + precise `lat/lng` were
+still in the world-readable property doc (`firestore.rules:142` = any authed
+user) AND were written into the tenant's own inspection_request at booking
+(pre-approval). Both closed.
+
+**Design:** exact street `address` + `latitude`/`longitude` no longer live on
+the parent `properties/{id}` doc. They move to a gated subdoc
+`properties/{id}/private/location`. A **reveal grant** `properties/{id}/reveals/{tenantId}`
+is written when the handler approves that tenant's inspection; the subdoc's read
+rule honors it. Parent doc keeps only area-level `city`/`state`/`lga`.
+
+**What changed (app):**
+- **`property_service.dart`** — new `getExactLocation(propertyId)` (reads the
+  subdoc; returns null when not entitled). `createProperty` writes parent first
+  then the subdoc (can't batch — the subdoc write rule `get()`s the parent's
+  landlordId, invisible for a same-batch create). `updateProperty` intercepts
+  `address`/`latitude`/`longitude` and routes them to the subdoc (batched; parent
+  pre-exists).
+- **`inspection_service.dart`** — `approveRequest` now (1) reads the exact
+  location from the subdoc (handler is entitled) and fills `propertyAddress` +
+  coords into the request = the reveal, so handler & tenant both see the exact
+  address post-approval and it flows into the rental chain; (2) writes the
+  reveal grant. `createInspectionRequest` writes `property.approximateAddress`
+  at booking (was exact). Fee calc (`calculateInspectionFee`) now prefers the
+  public `inspectionPropertyCluster` (address is hidden; cluster is area-level).
+- **`property_model.dart`** — already tolerated absent `address`/coords (defaults
+  ''/null). Added public `inspectionPropertyCluster` (field + fromFirestore +
+  copyWith) for the fee calc.
+- **Entitled read sites** now fetch the subdoc: property_detail (tenant reveal
+  when `_addressUnlocked`, + owner), edit_property (prefill in
+  `_loadFreshPropertyData`; save guarded so a failed load can't blank the
+  address), property_health, agent_property_detail. Agent assigned-list +
+  tenant_home search show area-level only (no per-row subdoc reads).
+- **Rules** — new `match /properties/{pid}/private/{doc}` (read: owner /
+  assigned agent / admin / reveal-grant; write: owner or assigned agent) and
+  `match /properties/{pid}/reveals/{tid}` (read: tenant / handler / admin;
+  create/update: handler only). Helpers `propertyOwner()`/`propertyAgent()`.
+
+**DEPLOY:**
+```
+firebase deploy --only firestore:rules
+# app rebuild (flutter run / appbundle). NO functions/src change this phase.
+```
+⚠️ **MIGRATION:** existing properties still have `address`/`lat/lng` on the parent
+and NO subdoc → after rules deploy, entitled screens show blank/area-level for
+them and their tenants can't get an exact address. **All property data is test
+data** (user confirmed — only the super-admin *user* `oredugbamide@gmail.com` is
+real), so this is a non-issue; recreate listings or run the optional backfill:
+`cd functions && npx ts-node scripts/backfill-gated-location.ts [--apply]`
+(moves exact fields into the subdoc, strips them from the parent; dry-run default).
+
+**⚠️ ADMIN-REPO FOLLOW-UP (required, separate repo `clearrent_admin`):** the admin
+dashboard reads `property.address` off the parent doc — now absent, so addresses
+render blank. Admin must fetch `properties/{id}/private/location` (rules already
+allow `isAdmin()`). Sites: properties list/detail + the users/[uid] correlation
+page. Not doable from this repo.
+
+**Follow-up (out of scope, noted):** `buildings/{id}.address` (compound address)
+is still world-readable — a parallel leak if a tenant reads the building doc.
+Not part of 2b.
+
+**Remaining inspection-integrity phases:** 3 = collusion analytics capture
+(per-inspection arrival flags, refund reason, tenant↔handler pairing);
+4 = verification rejection reason + free re-apply.
+
+---
+
+## ▶ START HERE — 2026-07-10c (Phase 2 — property readiness gate)
+
+Verified clean: functions `tsc` ✓, `flutter analyze` ✓ (full), admin `tsc` ✓,
+firestore rules tests **81/81** ✓. **NOT committed. NOT deployed.**
+
+**Decision (user):** EVERY property — agent-handled AND self-handled — must be
+vetted by its handler before it's bookable for inspection. Short checklist.
+Unvetted ⇒ block the tenant with a message. (Caveat: self-handled = the landlord
+self-attests, not an independent check; a true independent vet would be a
+separate admin/agent physical-vetting flow — not built.)
+
+**What it does:** a property is only bookable once `readyForInspections == true`.
+- **Model:** `property.readyForInspections` (bool, default false) +
+  `readinessCheckedAt`/`readinessCheckedBy` (`property_model.dart`). Absent ⇒ not
+  ready (legacy properties must be vetted).
+- **Resets to false on ANY handler change** — `assignAgent`, `removeAgent`,
+  `updateInspectionHandler` (`property_service.dart`) and CF
+  `revertPropertyToSelf` (`agent_property_ops.ts`, used by
+  `agentUnassignFromProperty` + the delete cascade) — so a new handler re-vets.
+- **Vet action:** `PropertyService.markReadyForInspections` +
+  `readinessChecklistItems` (4 items). New sheet
+  `lib/shared/widgets/property_readiness_sheet.dart`. Shown to the **agent**
+  (`agent_property_detail_screen._buildReadinessCard`) and the **landlord**
+  (`property_detail_screen._buildReadinessCard`: self-handled → vet CTA;
+  agent-handled → "waiting on your agent" info; ready → confirmation).
+- **Gate:** tenant is blocked BEFORE payment in `request_inspection_sheet`
+  (`_notReady` → button disabled + banner); `createInspectionRequest` also
+  returns `property_not_ready`. **Rules:** `propertyIsReady()` on
+  `inspection_requests` create + an agent-scoped readiness-update clause on
+  `properties` (the agent doesn't own the doc). Admin properties page shows a
+  **Vetted / Not vetted** badge.
+
+**DEPLOY:**
+```
+cd functions && npm run build && firebase deploy --only functions:agentUnassignFromProperty,functions:deleteMyAccount
+firebase deploy --only firestore:rules
+# app rebuild (flutter run / appbundle) + admin Vercel deploy
+```
+⚠️ **MIGRATION CLIFF:** the moment the rules deploy, every EXISTING property (no
+`readyForInspections` field) becomes **unbookable** until its handler opens it
+and confirms readiness. Intended per "every property must be checked." If you'd
+rather grandfather existing listings, run a one-off backfill setting
+`readyForInspections: true` on current properties BEFORE deploying the rules.
+
+**Deploy status (2026-07-10):** ✅ rules deployed · ✅ functions deployed
+(`agentUnassignFromProperty`, `deleteMyAccount`). Pending: app rebuild + admin push.
+
+**Follow-ups added while testing (2026-07-10):**
+- Landlord readiness card (agent-handled, not-ready) now NAMES the agent +
+  a **Message agent** button → `getOrCreateAgentLandlordConversation` → `/chat`,
+  so the landlord can ask when the agent will come review
+  (`property_detail_screen._messageAssignedAgent`). **Client-only** (app rebuild).
+- Agent-assignment push copy (`onPropertyAgentAssigned`, index.ts) now says
+  "confirm it's ready — tenants can't book until you do." **Needs deploy:**
+  `firebase deploy --only functions:onPropertyAgentAssigned`.
+
+---
+
+## ▶ START HERE — 2026-07-10b (admin observability A + inspection-day awareness B)
+
+Both repos build clean: functions `tsc` ✓, admin `next build` ✓. **NOT committed.**
+**Deploy:** `cd functions && npm run build && firebase deploy --only functions:nudgeInspectionParty`
+(new callable) + admin **Vercel** deploy. **No firestore.rules change** (all reads already
+allow `isAdmin()`; pin uses the blanket admin update rule at `firestore.rules:709`).
+
+**A) Admin correlation layer (relationship-navigable).** New route
+`clearrent_admin/src/app/dashboard/users/[uid]/page.tsx`: a per-user profile that
+one-shot parallel-loads everything touching a user and stitches it together —
+properties **owned** (`landlordId`) / **handled** as agent (`assignedAgentId`);
+**active_rentals + tenancy_links** both as tenant AND as landlord (who's in each
+unit); **inspections** across tenant/agent/landlord roles; **issues**
+(tenant+landlord); **payments** (`userId`); **refunds** (`beneficiaryId`).
+Counterparty names resolve into clickable `PersonLink`s → `/dashboard/users/{uid}`,
+so admin can walk the graph ("who's tenant where, who owns where, who inspects
+where"). Role-adaptive: only non-empty sections render. Reached via a new
+"View full profile" button in the existing Users-list slide-over.
+
+**B) Inspection-day awareness.** New route `.../dashboard/inspections/page.tsx`
+(nav item **"Inspection Day"**): realtime `inspection_requests where
+status=='approved'`, grouped **Pinned / Overdue / Today / Upcoming**, with
+tenant+handler arrival-progress pills (onWay → arrived). Two admin actions:
+- **Nudge** tenant or handler → NEW callable **`nudgeInspectionParty`**
+  (`functions/src/inspection_admin_ops.ts`, exported in index.ts). A CF is
+  REQUIRED because notifications carry `create: if false` (admin SDK only).
+  It's admin-gated (`assertAdmin`), resolves the recipient (tenant→tenantId,
+  handler→agentId ?? landlordId), writes a `notifications` doc (auto-id — a
+  double-press SHOULD send twice) that `onNotificationCreated` turns into an FCM
+  push, and audit-logs. Complements the existing AUTO reminders
+  (`inspectionMorningReminders` 07:00, `inspectionSoonReminders` hourly).
+- **Pin** to follow up → admin `updateDoc adminPinned` on the inspection (pinned
+  rows float to the top group).
+
+---
+
+## ▶ START HERE — 2026-07-10 (money-flow certification + inspection anti-collusion Phase 1 + bank visibility)
+
+Both repos `tsc` ✓. **NOT committed. Functions `lib/` rebuilt — re-run `firebase deploy --only functions`; admin needs a Vercel deploy.**
+
+⚠️ **Deploy gotcha (new):** `firebase.json` has NO predeploy build hook. You MUST
+`cd functions && npm run build` BEFORE `firebase deploy --only functions`, or it
+ships the stale `lib/` and reports "No changes detected" (happened first try).
+
+**Money-flow certification** (memory: `money-flow-certification-2026-07`): traced
+every money flow. Clean = renewals, rent-review, payout mechanics, refund
+creation, earnings ledger, inspection + lease sweeps. Gap register G1–G7.
+**G6 = PRE-LAUNCH GATE:** every Paystack payment is client-recorded, there is NO
+webhook, so on live keys a charge can succeed with no record. G1–G4 = rent
+(abandoned `payment_verified` interest never swept/refunded; landlord payout not
+gated on move-in; disputed agreement only notifies). G7 = verification no refund.
+
+**Phase 1 — inspection anti-collusion refund (DONE in tree, needs deploy):**
+- **Invariant:** money auto-moves ONLY when both parties confirm they met
+  (`met===true` → auto-completed, handler credited ₦7k). EVERY one-sided/no-show
+  outcome now → admin review queue (`awaitingOutcome`). Changed the sweep
+  (`functions/src/inspection_lifecycle_ops.ts`): handler-absence AND
+  tenant-no-show branches → `awaitingOutcome` (were auto-refund / auto-complete).
+  Closes the collusion honeypot (handler *absence* was a forgeable free-refund).
+- Fee always **₦10k = handler ₦7k + ClearRent ₦3k flat**. Admin resolves in
+  Inspection Reviews: tenant-showed/handler-didn't → **Full refund ₦10k**;
+  neither showed → **Minus ₦3k** (tenant ₦7k, ClearRent ₦3k); handler-showed/
+  tenant-no-show → **Mark completed** (agent ₦7k, tenant ₦0).
+- `onInspectionRefundTriggered` (`admin_money_ops.ts`) honors a `refundAmount`
+  override (clamped ≤ totalFee); refund source tagged `inspection_admin_review`.
+  Admin inspection-reviews page: refund modal with Full / Minus-₦3k presets.
+
+**Bank-visibility fix (admin only, DONE):** `MarkPaidModal` now shows a "Send to"
+block (account **name** + bank + number + copy) — wired into refunds, payouts,
+rent-payouts. Inspection-review refund modal loads the tenant's bank + a note
+that the transfer completes in the Refunds tab.
+
+**NEXT (planned, specced in memory `inspection-integrity-build-2026-07`):**
+- **A) Admin observability / correlation layer** (user's pick) — per-user view:
+  who owns / occupies / handles which property, + their issues/payments.
+- **B) Admin inspection-day awareness** — today's inspections view + nudge
+  tenant/handler + pin. NOTE tenant+handler auto-reminders already exist
+  (`inspectionMorningReminders` 07:00, `inspectionSoonReminders` hourly).
+- Remaining: agent readiness gate (vet at assignment → bookable), reveal-on-
+  approval, collusion analytics capture, verification rejection reason + free
+  re-apply.
+
+---
+
 ## ▶ START HERE — 2026-07-07 (security-audit fixes + Naira glyph + occupancy)
 
 All committed to `develop` and pushed. Flutter `analyze` ✓, functions `tsc` ✓.
