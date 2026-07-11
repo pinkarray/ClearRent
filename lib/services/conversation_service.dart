@@ -692,20 +692,28 @@ class ConversationService {
         'unreadCounts.$userId': 0,
       });
 
-      // Mark all messages as read (optional - for message-level tracking)
+      // Mark all messages as read (for the sender's double-tick receipt).
+      // Query on a single equality field only — combining it with a
+      // `senderId != userId` inequality would require a composite index we
+      // don't deploy, so that query silently failed. We instead skip our
+      // own messages client-side below.
       final unreadMessages = await _firestore
           .collection('conversations')
           .doc(conversationId)
           .collection('messages')
-          .where('senderId', isNotEqualTo: userId)
           .where('isRead', isEqualTo: false)
           .get();
 
       final batch = _firestore.batch();
+      var updates = 0;
       for (final doc in unreadMessages.docs) {
+        if (doc.data()['senderId'] == userId) continue;
         batch.update(doc.reference, {'isRead': true});
+        updates++;
       }
-      await batch.commit();
+      if (updates > 0) {
+        await batch.commit();
+      }
 
       developer.log(
         '✅ Marked conversation as read: $conversationId',
@@ -1181,10 +1189,22 @@ class ConversationData {
   }
 
   String getOtherPersonName(String currentUserId) {
-    if (currentUserId == tenantId) {
-      return landlordName;
+    // Return the counterpart's name — never the current user's own name.
+    // Mirrors the other-party precedence used in chat_screen.dart.
+    if (currentUserId == landlordId) {
+      // Landlord sees the tenant if there is one, else the agent.
+      if (tenantName.isNotEmpty) return tenantName;
+      return (agentName != null && agentName!.isNotEmpty)
+          ? agentName!
+          : 'Unknown';
     }
-    return tenantName.isNotEmpty ? tenantName : (agentName ?? 'Unknown');
+    if (currentUserId == agentId) {
+      // Agent sees the tenant if there is one, else the landlord.
+      if (tenantName.isNotEmpty) return tenantName;
+      return landlordName.isNotEmpty ? landlordName : 'Unknown';
+    }
+    // Tenant (or any fallback) sees the landlord.
+    return landlordName.isNotEmpty ? landlordName : 'Unknown';
   }
 
   String getOtherPersonInitials(String currentUserId) {

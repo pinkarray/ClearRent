@@ -41,6 +41,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final VerificationService _verificationService = VerificationService();
   final PropertyService _propertyService = PropertyService();
 
+  // Cached once (conversationId is fixed for this screen) so sending/typing
+  // setState()s don't recreate the stream and reload the message list.
+  late final Stream<List<MessageData>> _messagesStream =
+      _conversationService.getMessagesStream(widget.conversationId);
+
   ConversationData? _conversation;
   List<MessageData> _messages = [];
   bool _isLoading = true;
@@ -360,15 +365,24 @@ class _ChatScreenState extends State<ChatScreen> {
     final otherPersonName = _conversation?.getOtherPersonName(_currentUserId ?? '') ?? 'Chat';
     final otherPersonInitials = _conversation?.getOtherPersonInitials(_currentUserId ?? '') ?? '?';
     
-    // Determine the other person's role for display in app bar
+    // Determine the other person's role for display in app bar.
+    // Mirrors getOtherPersonName's counterpart precedence so the label
+    // matches the name shown (e.g. an agent↔landlord chat isn't labelled
+    // "Tenant").
     String otherPersonRole = 'User';
     if (_conversation != null && _currentUserId != null) {
-      if (_currentUserId == _conversation!.landlordId) {
-        otherPersonRole = 'Tenant';
-      } else if (_currentUserId == _conversation!.tenantId) {
-        otherPersonRole = _conversation!.agentId != null ? 'Landlord / Agent' : 'Landlord';
-      } else if (_currentUserId == _conversation!.agentId) {
-        otherPersonRole = 'Tenant';
+      final c = _conversation!;
+      final hasTenant = c.tenantId.isNotEmpty;
+      final hasAgent = c.agentId != null && c.agentId!.isNotEmpty;
+      if (_currentUserId == c.landlordId) {
+        // Landlord's counterpart: tenant if present, else agent.
+        otherPersonRole = hasTenant ? 'Tenant' : (hasAgent ? 'Agent' : 'User');
+      } else if (_currentUserId == c.agentId) {
+        // Agent's counterpart: tenant if present, else landlord.
+        otherPersonRole = hasTenant ? 'Tenant' : 'Landlord';
+      } else if (_currentUserId == c.tenantId) {
+        // Tenant's counterpart: landlord (plus agent if one is on the thread).
+        otherPersonRole = hasAgent ? 'Landlord / Agent' : 'Landlord';
       }
     }
 
@@ -485,7 +499,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // Messages list (real-time stream)
           Expanded(
             child: StreamBuilder<List<MessageData>>(
-              stream: _conversationService.getMessagesStream(widget.conversationId),
+              stream: _messagesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting && _messages.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
@@ -500,7 +514,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   return GuidanceEmptyState(
                     icon: Icons.chat_bubble_outline,
                     title: 'Start the conversation',
-                    subtitle: _canSendMessages
+                    subtitle: _isCheckingVerification || _canSendMessages
                         ? 'Send a message to begin chatting'
                         : 'Both parties need to be verified to chat',
                   );
@@ -1083,7 +1097,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageInput() {
     final bool inputEnabled = _canSendMessages;
-    
+    // While the verification check is still in flight we don't yet know the
+    // real status, so present a neutral (non-blocked) bar instead of flashing
+    // "Verification required" and then clearing it once the check resolves.
+    final bool showBlocked = !_isCheckingVerification && !_canSendMessages;
+
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -1113,8 +1131,8 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             child: IconButton(
               icon: Icon(
-                Icons.attach_file, 
-                color: inputEnabled ? AppColors.textSecondary : AppColors.textHint,
+                Icons.attach_file,
+                color: showBlocked ? AppColors.textHint : AppColors.textSecondary,
               ),
               onPressed: inputEnabled ? _openPropertyPicker : null,
             ),
@@ -1133,11 +1151,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 textCapitalization: TextCapitalization.sentences,
                 maxLines: 4,
                 minLines: 1,
-                enabled: inputEnabled,
+                enabled: !showBlocked,
                 decoration: InputDecoration(
-                  hintText: inputEnabled 
-                      ? 'Type a message...'
-                      : 'Verification required to send messages',
+                  hintText: showBlocked
+                      ? 'Verification required to send messages'
+                      : 'Type a message...',
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textHint,
                   ),
@@ -1155,12 +1173,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Send button
           GestureDetector(
-            onTap: inputEnabled ? _sendMessage : _showVerificationRequired,
+            onTap: inputEnabled
+                ? _sendMessage
+                : (showBlocked ? _showVerificationRequired : null),
             child: Container(
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: inputEnabled ? AppColors.primary : AppColors.textHint,
+                color: showBlocked ? AppColors.textHint : AppColors.primary,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
