@@ -7,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../services/property_service.dart';
 
 /// Property Health Dashboard — the landlord's "back office" view of a property.
 ///
@@ -30,11 +31,38 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final AuthService _authService = AuthService();
+  final PropertyService _propertyService = PropertyService();
+  String? _exactAddress; // exact street address from the gated subdoc
+
+  // Cached once (widget.property is immutable) so tab changes and issue-stream
+  // emissions don't recreate these and flash their sections.
+  late final Stream<QuerySnapshot> _issuesStream = FirebaseFirestore.instance
+      .collection('issues')
+      .where('landlordId', isEqualTo: widget.property.landlordId)
+      .where('propertyId', isEqualTo: widget.property.id)
+      .snapshots();
+  late final Stream<QuerySnapshot> _maintenanceStream = FirebaseFirestore
+      .instance
+      .collection('maintenance_logs')
+      .where('landlordId', isEqualTo: widget.property.landlordId)
+      .where('propertyId', isEqualTo: widget.property.id)
+      .orderBy('loggedAt', descending: true)
+      .limit(10)
+      .snapshots();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadExactAddress();
+  }
+
+  /// The owner is entitled to the exact street address (gated subdoc).
+  Future<void> _loadExactAddress() async {
+    final loc = await _propertyService.getExactLocation(widget.property.id);
+    if (mounted && loc != null && loc.address.isNotEmpty) {
+      setState(() => _exactAddress = loc.address);
+    }
   }
 
   @override
@@ -104,14 +132,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('issues')
-            // landlordId-scoped so the query satisfies the ownership-constrained
-            // list rule. This is the landlord's own property, so
-            // property.landlordId == the caller's uid.
-            .where('landlordId', isEqualTo: widget.property.landlordId)
-            .where('propertyId', isEqualTo: widget.property.id)
-            .snapshots(),
+        stream: _issuesStream,
         builder: (context, issueSnap) {
           final issueDocs = issueSnap.data?.docs ?? [];
           final issues = issueDocs
@@ -131,6 +152,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   categories: _coreCategories,
                   onLogMaintenance: _showMaintenanceLogSheet,
                   onViewIssues: _navigateToIssues,
+                  maintenanceStream: _maintenanceStream,
                 ),
                 _IssueHistoryTab(issues: issues),
               ],
@@ -216,7 +238,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    widget.property.address,
+                    _exactAddress ?? widget.property.approximateAddress,
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.textSecondary),
                     maxLines: 1,
@@ -363,7 +385,10 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-            child: Column(
+            // Scrollable so the content never overflows when the keyboard
+            // opens on the note field (was: bottom overflowed by 8px).
+            child: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -454,6 +479,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                 TextField(
                   controller: noteController,
                   maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText:
                         'e.g. "Generator serviced by Adekunle Electric. Oil changed, filters replaced."',
@@ -524,6 +550,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),
@@ -563,6 +590,8 @@ class _HealthTab extends StatelessWidget {
   final List<_CategoryDef> categories;
   final void Function(String category) onLogMaintenance;
   final void Function(String category, _CategoryIssueState issueState) onViewIssues;
+  // Cached by the parent so rebuilds don't recreate it.
+  final Stream<QuerySnapshot> maintenanceStream;
 
   const _HealthTab({
     required this.property,
@@ -570,6 +599,7 @@ class _HealthTab extends StatelessWidget {
     required this.categories,
     required this.onLogMaintenance,
     required this.onViewIssues,
+    required this.maintenanceStream,
   });
 
   @override
@@ -716,17 +746,7 @@ class _HealthTab extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('maintenance_logs')
-              // landlordId-scoped so the query satisfies the ownership-constrained
-              // list rule. This is the landlord's own property, so
-              // property.landlordId == the caller's uid. Requires the composite
-              // index (landlordId, propertyId, loggedAt desc).
-              .where('landlordId', isEqualTo: property.landlordId)
-              .where('propertyId', isEqualTo: property.id)
-              .orderBy('loggedAt', descending: true)
-              .limit(10)
-              .snapshots(),
+          stream: maintenanceStream,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return Center(

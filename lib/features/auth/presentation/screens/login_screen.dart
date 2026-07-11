@@ -9,6 +9,7 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/biometric_service.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -527,10 +528,11 @@ class _LoginScreenState extends State<LoginScreen>
                         color: AppColors.primary,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Icon(
-                        Icons.home_rounded,
-                        size: 40,
-                        color: Colors.white,
+                      child: Center(
+                        child: SvgPicture.asset(
+                          'assets/images/branding/clearrent_mark_white.svg',
+                          height: 40,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),

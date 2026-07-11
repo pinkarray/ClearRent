@@ -744,6 +744,24 @@ class AuthService {
     }
   }
 
+  /// Cheap gate for flows that need a payout destination on file — a tenant
+  /// requesting an inspection or a handler accepting one. Reads the
+  /// non-sensitive `hasBankDetails` flag on the user doc (not the locked
+  /// subcollection). Fails closed (returns false) so we never let a tenant
+  /// pay for an inspection we can't confirm a refund destination for; the
+  /// Firestore rules enforce the same requirement server-side.
+  Future<bool> hasBankDetails() async {
+    try {
+      if (currentUser == null) return false;
+      final doc =
+          await _firestore.collection('users').doc(currentUser!.uid).get();
+      return doc.data()?['hasBankDetails'] == true;
+    } catch (e) {
+      developer.log('⚠️ hasBankDetails failed: $e', name: 'AuthService');
+      return false;
+    }
+  }
+
   /// Read the owner's bank details from the locked private subcollection.
   Future<Map<String, dynamic>?> getBankDetails() async {
     try {

@@ -194,6 +194,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   //   - create new    → [_creatingNewBuilding] true, name/address + the
   //     ownership-doc picker above feed BuildingService.createBuilding
   final BuildingService _buildingService = BuildingService();
+  // Cached so the form's frequent setState()s don't recreate this stream and
+  // flash the building picker.
+  late final Stream<List<BuildingModel>> _landlordBuildingsStream =
+      _buildingService.streamLandlordBuildings();
   bool _isInBuilding = false;
   bool _creatingNewBuilding = false;
   String? _selectedBuildingId;
@@ -3431,6 +3435,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             SizedBox(
               height: 44,
               child: TextField(
+                textCapitalization: TextCapitalization.words,
                 onChanged: (v) {
                   final index = _customDues.indexWhere(
                     (c) => c['controllerId'] == controllerId,
@@ -3800,7 +3805,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // buildings (join one) plus a "create new building" option.
   Widget _buildBuildingPicker() {
     return StreamBuilder<List<BuildingModel>>(
-      stream: _buildingService.streamLandlordBuildings(),
+      stream: _landlordBuildingsStream,
       builder: (context, snap) {
         final buildings = snap.data ?? const <BuildingModel>[];
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

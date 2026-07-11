@@ -286,7 +286,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   }
 }
 
-class _IssuesTab extends StatelessWidget {
+class _IssuesTab extends StatefulWidget {
   final String status;
   final AuthService authService;
   final String? propertyId;
@@ -302,29 +302,42 @@ class _IssuesTab extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final currentUserId = authService.currentUserId;
-    if (currentUserId == null) {
-      return const Center(child: Text('Not authenticated'));
-    }
+  State<_IssuesTab> createState() => _IssuesTabState();
+}
 
-    // Build the query with optional filters
+class _IssuesTabState extends State<_IssuesTab> {
+  // Built once — the filters are fixed for this tab instance, so caching the
+  // query avoids recreating it (and flashing the spinner) whenever the parent
+  // issues screen rebuilds.
+  late final Stream<QuerySnapshot>? _issuesStream = _buildStream();
+
+  Stream<QuerySnapshot>? _buildStream() {
+    final currentUserId = widget.authService.currentUserId;
+    if (currentUserId == null) return null;
     Query query = FirebaseFirestore.instance
         .collection('issues')
         .where('landlordId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: status);
-
-    if (propertyId != null) {
-      query = query.where('propertyId', isEqualTo: propertyId);
+        .where('status', isEqualTo: widget.status);
+    if (widget.propertyId != null) {
+      query = query.where('propertyId', isEqualTo: widget.propertyId);
     }
-    if (category != null) {
-      query = query.where('category', isEqualTo: category);
+    if (widget.category != null) {
+      query = query.where('category', isEqualTo: widget.category);
     }
+    return query.orderBy('createdAt', descending: true).snapshots();
+  }
 
-    query = query.orderBy('createdAt', descending: true);
+  @override
+  Widget build(BuildContext context) {
+    final status = widget.status;
+    final onMoved = widget.onMoved;
+    final issuesStream = _issuesStream;
+    if (issuesStream == null) {
+      return const Center(child: Text('Not authenticated'));
+    }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: query.snapshots(),
+      stream: issuesStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(

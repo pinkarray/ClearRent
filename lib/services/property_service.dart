@@ -27,6 +27,53 @@ class PropertyService {
   // Get current user ID
   String? get _currentUserId => _auth.currentUser?.uid;
 
+  // ============ EXACT LOCATION (reveal-on-approval) ============
+  //
+  // The exact street address + precise coordinates are NEVER stored on the
+  // parent property doc (which is world-readable). They live in a gated
+  // subdoc `properties/{id}/private/location`, readable only by the owner, the
+  // assigned agent, an admin, or a tenant whose inspection was approved (a
+  // reveal grant at `properties/{id}/reveals/{tenantId}`). Everyone else sees
+  // only the area-level `city`/`state`/`lga` on the parent doc.
+
+  DocumentReference _exactLocationRef(String propertyId) =>
+      _propertiesRef.doc(propertyId).collection('private').doc('location');
+
+  /// Reads the exact street address + coordinates for [propertyId]. Returns
+  /// null when the caller isn't entitled (rules deny the read) or the subdoc
+  /// is absent. Callers that already gate on entitlement (owner/agent screens,
+  /// or a tenant with an approved inspection) can safely surface the result.
+  Future<({String address, double? latitude, double? longitude})?>
+      getExactLocation(String propertyId) async {
+    try {
+      final snap = await _exactLocationRef(propertyId).get();
+      if (!snap.exists) return null;
+      final d = snap.data() as Map<String, dynamic>? ?? {};
+      return (
+        address: d['address'] as String? ?? '',
+        latitude: (d['latitude'] as num?)?.toDouble(),
+        longitude: (d['longitude'] as num?)?.toDouble(),
+      );
+    } catch (e) {
+      // permission-denied for a tenant without an approved inspection, etc.
+      developer.log('ℹ️ Exact location not available for $propertyId: $e',
+          name: 'PropertyService');
+      return null;
+    }
+  }
+
+  Map<String, dynamic> _exactLocationData({
+    required String address,
+    double? latitude,
+    double? longitude,
+  }) =>
+      {
+        'address': address,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
   // ============ CREATE ============
 
   /// Upload an ownership document (C of O / deed) to PRIVATE Firebase Storage,
@@ -259,12 +306,12 @@ class PropertyService {
         'guestRooms': guestRooms,
         'kitchens': kitchens,
         'images': imageUrls,
-        'address': address,
+        // Exact street address + precise coords are NOT stored here — they go
+        // to the gated `private/location` subdoc below. Only area-level
+        // city/state/lga live on the world-readable parent doc.
         'city': city,
         'state': state,
         'lga': '', // Can be added later
-        'latitude': latitude,
-        'longitude': longitude,
         'rent': rent,
         'rentFrequency': rentFrequency,
         'agentFee': agentFee,
@@ -312,7 +359,18 @@ class PropertyService {
         if (listingFeePaymentReference != null) 'listingFeePaymentReference': listingFeePaymentReference,
       };
 
+      // Create the parent doc first, then the gated location subdoc. These
+      // can't be batched: the subdoc's write rule reads the parent's
+      // landlordId via get(), which isn't visible for a doc created in the
+      // same batch. Sequential writes let the rule see the committed parent.
       final docRef = await _propertiesRef.add(propertyData);
+      await _exactLocationRef(docRef.id).set(
+        _exactLocationData(
+          address: address,
+          latitude: latitude,
+          longitude: longitude,
+        ),
+      );
       developer.log(
         '✅ Property created with ID: ${docRef.id}',
         name: 'PropertyService',
@@ -839,8 +897,29 @@ class PropertyService {
     Map<String, dynamic> updates,
   ) async {
     try {
+      // Route any exact-location fields to the gated subdoc — they must never
+      // be written back onto the world-readable parent doc.
+      final hasExact = updates.containsKey('address') ||
+          updates.containsKey('latitude') ||
+          updates.containsKey('longitude');
+
       updates['updatedAt'] = FieldValue.serverTimestamp();
-      await _propertiesRef.doc(propertyId).update(updates);
+
+      if (hasExact) {
+        final batch = _firestore.batch();
+        final exact = <String, dynamic>{
+          if (updates.containsKey('address')) 'address': updates.remove('address'),
+          if (updates.containsKey('latitude')) 'latitude': updates.remove('latitude'),
+          if (updates.containsKey('longitude')) 'longitude': updates.remove('longitude'),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        batch.set(_exactLocationRef(propertyId), exact, SetOptions(merge: true));
+        // updates always carries updatedAt, so the parent update is never empty.
+        batch.update(_propertiesRef.doc(propertyId), updates);
+        await batch.commit();
+      } else {
+        await _propertiesRef.doc(propertyId).update(updates);
+      }
       developer.log('✅ Property updated', name: 'PropertyService');
       return true;
     } catch (e) {
@@ -874,6 +953,11 @@ class PropertyService {
         // Assigning an agent means the agent handles inspections — keep the
         // handler consistent so it doesn't read back as 'self'.
         'inspectionHandler': 'agent',
+        // Readiness gate (Phase 2): the handler changed, so the new agent must
+        // re-vet before the property is bookable again.
+        'readyForInspections': false,
+        'readinessCheckedAt': FieldValue.delete(),
+        'readinessCheckedBy': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       // Restore the agent fee preserved when a previous agent stepped away, so
@@ -893,6 +977,55 @@ class PropertyService {
         stackTrace: StackTrace.current,
       );
       return false;
+    }
+  }
+
+  /// Readiness checklist items the handler must affirm before a property
+  /// becomes bookable for inspection. Keys are stored on the property as the
+  /// attestation trail; labels are shown in the vetting sheet.
+  static const Map<String, String> readinessChecklistItems = {
+    'visited': "I've visited/inspected this property in person",
+    'accurate_media': 'The photos, video and description match the property',
+    'accurate_address': 'The address and location are correct',
+    'accessible': "It's accessible and ready to show tenants",
+  };
+
+  /// The current handler (assigned agent, or the landlord when self-handled)
+  /// vets the property against [confirmedItems] and marks it bookable. Returns
+  /// null on success, or an error message.
+  ///
+  /// Writes are handler-scoped by rules: the landlord path rides the owner
+  /// update rule; the agent path uses the dedicated readiness clause. Every
+  /// checklist item must be confirmed.
+  Future<String?> markReadyForInspections({
+    required String propertyId,
+    required Map<String, bool> confirmedItems,
+  }) async {
+    final uid = _currentUserId;
+    if (uid == null) return 'You must be signed in.';
+
+    final allConfirmed = readinessChecklistItems.keys
+        .every((k) => confirmedItems[k] == true);
+    if (!allConfirmed) {
+      return 'Please confirm every item before marking the property ready.';
+    }
+
+    try {
+      await _propertiesRef.doc(propertyId).update({
+        'readyForInspections': true,
+        'readinessCheckedAt': FieldValue.serverTimestamp(),
+        'readinessCheckedBy': uid,
+        'readinessChecklist':
+            readinessChecklistItems.keys.where((k) => confirmedItems[k] == true).toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Property marked ready for inspections',
+          name: 'PropertyService');
+      return null;
+    } catch (e) {
+      developer.log('❌ Failed to mark property ready: $e',
+          name: 'PropertyService', error: e, stackTrace: StackTrace.current);
+      return 'Could not update the property. Please try again.';
     }
   }
 
@@ -929,6 +1062,10 @@ class PropertyService {
         'assignedAgentId': null,
         'assignedAgentName': null,
         'assignedAgentPhone': null,
+        // Handler changed → the landlord must re-vet before it's bookable.
+        'readyForInspections': false,
+        'readinessCheckedAt': FieldValue.delete(),
+        'readinessCheckedBy': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       developer.log('✅ Agent removed from property', name: 'PropertyService');
@@ -952,6 +1089,11 @@ class PropertyService {
     try {
       final updates = <String, dynamic>{
         'inspectionHandler': handler,
+        // Handler changed → reset the readiness gate; the new handler must
+        // re-vet before the property is bookable again.
+        'readyForInspections': false,
+        'readinessCheckedAt': FieldValue.delete(),
+        'readinessCheckedBy': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 

@@ -11,6 +11,8 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/inspection_readiness_dialog.dart';
+import '../../../../shared/widgets/bank_details_gate.dart';
 import '../../../../shared/widgets/highlight_wrap.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
@@ -175,7 +177,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
 // ============================================================
 // PENDING TAB
 // ============================================================
-class _LandlordPendingTab extends StatelessWidget {
+class _LandlordPendingTab extends StatefulWidget {
   final InspectionService inspectionService;
   final TabController tabController;
   final String? highlightId;
@@ -186,9 +188,23 @@ class _LandlordPendingTab extends StatelessWidget {
   });
 
   @override
+  State<_LandlordPendingTab> createState() => _LandlordPendingTabState();
+}
+
+class _LandlordPendingTabState extends State<_LandlordPendingTab> {
+  // Cache the stream once so parent rebuilds (driven by badge-count
+  // subscriptions when the other party acts) don't reset StreamBuilder to
+  // ConnectionState.waiting and flash the loading spinner — that's the flicker.
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getLandlordRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final tabController = widget.tabController;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getLandlordRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -252,6 +268,18 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
   bool _isMessageLoading = false;
 
   Future<void> _approve() async {
+    // Gate: a landlord accepting an inspection needs a payout account on file,
+    // so their inspection earnings and any dispute payout have a destination.
+    final canProceed = await ensureBankDetailsOnFile(
+      context,
+      bankDetailsRoute: '/landlord/bank-details',
+      reason: 'Add your bank account first — it\'s where your inspection '
+          'earnings and any dispute payouts are sent.',
+    );
+    if (!canProceed || !mounted) return;
+
+    final ready = await confirmInspectionReadiness(context);
+    if (!ready || !mounted) return;
     setState(() => _isLoading = true);
     final ok = await widget.inspectionService.approveRequest(widget.request.id);
     if (!mounted) return;
@@ -299,6 +327,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
                 TextField(
                   controller: c,
                   maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Reason (optional)',
                     filled: true,
@@ -636,16 +665,27 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
 // ============================================================
 // UPCOMING TAB
 // ============================================================
-class _LandlordUpcomingTab extends StatelessWidget {
+class _LandlordUpcomingTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
   const _LandlordUpcomingTab(
       {required this.inspectionService, this.highlightId});
 
   @override
+  State<_LandlordUpcomingTab> createState() => _LandlordUpcomingTabState();
+}
+
+class _LandlordUpcomingTabState extends State<_LandlordUpcomingTab> {
+  // Cached stream — see _LandlordPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getLandlordRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getLandlordRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -811,7 +851,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('You\'ve been marked as arrived! âœ“'),
+          content: const Text('You\'ve been marked as arrived!'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -1490,16 +1530,27 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
 // ============================================================
 // HISTORY TAB WITH RENTAL INTEREST TRACKING
 // ============================================================
-class _LandlordHistoryTab extends StatelessWidget {
+class _LandlordHistoryTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
   const _LandlordHistoryTab(
       {required this.inspectionService, this.highlightId});
 
   @override
+  State<_LandlordHistoryTab> createState() => _LandlordHistoryTabState();
+}
+
+class _LandlordHistoryTabState extends State<_LandlordHistoryTab> {
+  // Cached stream — see _LandlordPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getLandlordRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getLandlordRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(

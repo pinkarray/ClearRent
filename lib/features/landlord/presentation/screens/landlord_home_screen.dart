@@ -676,7 +676,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             // Properties - Real data
             _buildPropertiesPreview(),
 
-            const SizedBox(height: 80),
+            // Clears the floating "Add Property" button (~64px) with a small
+            // gap; the padding above already adds 20, so 52 → ~72 total.
+            const SizedBox(height: 52),
           ],
         ),
       ),
@@ -1167,7 +1169,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     onRefresh: _refreshData,
                     color: AppColors.primary,
                     child: ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      // Bottom clears the floating "Add Property" button; was
+                      // 100 (excess dead space at the end of the list).
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 72),
                       itemCount: _myProperties.length,
                       itemBuilder: (context, index) {
                         final property = _myProperties[index];

@@ -9,6 +9,7 @@ import '../../../../core/utils/app_logger.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/building_service.dart';
@@ -53,6 +54,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   late final VerificationService _verificationService;
   late final TenancyLinkService _tenancyLinkService;
 
+  // Cached once (widget.property is immutable) so the screen's frequent
+  // setState()s — image carousel, video position, save toggle — don't recreate
+  // the tenant-management streams and flash that section.
+  late final Stream<QuerySnapshot> _activeRentalsForPropertyStream;
+  late final Stream<List<TenancyLinkModel>> _propertyTenantsStream;
+
   // For a unit grouped under a building, the shared ownership doc lives on the
   // building. Loaded async; null until then (or for standalone listings).
   String? _buildingDocStatus;
@@ -69,12 +76,19 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   String? _currentUserId;
   String? _currentUserType;
   bool _isOwner = false;
+  // Set true after the owner marks the property ready this session, so the card
+  // updates without a full reload (widget.property is immutable).
+  bool _markedReadyThisSession = false;
   bool _isLoading = true;
 
   bool _hasExistingRequest = false;
   bool _isCheckingRequest = true;
   // Address gate: false = approximate (LGA/city/state), true = exact street.
   bool _addressUnlocked = false;
+  // Exact street address, loaded from the property's gated `private/location`
+  // subdoc only when the viewer is entitled (owner, or a tenant whose
+  // inspection was approved). Null until loaded / when not entitled.
+  String? _exactAddress;
 
   // Verification status
   bool _isCurrentUserVerified = false;
@@ -102,6 +116,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     _conversationService = ConversationService();
     _verificationService = VerificationService();
     _tenancyLinkService = TenancyLinkService();
+    _activeRentalsForPropertyStream = FirebaseFirestore.instance
+        .collection('active_rentals')
+        .where('landlordId', isEqualTo: widget.property.landlordId)
+        .where('propertyId', isEqualTo: widget.property.id)
+        .where('status', isEqualTo: 'active')
+        .snapshots();
+    _propertyTenantsStream =
+        _tenancyLinkService.propertyTenantsStream(widget.property.id);
     _determineUserContext();
     _checkExistingRequest();
     _checkVerificationStatus();
@@ -224,6 +246,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         setState(() => _isLoading = false);
       }
 
+      if (_isOwner) {
+        _loadExactAddressIfEntitled();
+      }
+
       if (!_isOwner && _currentUserType == 'tenant') {
         _trackView();
       }
@@ -312,6 +338,18 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         _addressUnlocked = approved && !passed;
         _isCheckingRequest = false;
       });
+      if (_addressUnlocked) _loadExactAddressIfEntitled();
+    }
+  }
+
+  /// Loads the exact street address from the property's gated subdoc when the
+  /// viewer is entitled (owner, or a tenant whose inspection was approved).
+  /// A denied read (non-entitled tenant) simply leaves the approximate address.
+  Future<void> _loadExactAddressIfEntitled() async {
+    if (!_isOwner && !_addressUnlocked) return;
+    final loc = await _propertyService.getExactLocation(widget.property.id);
+    if (mounted && loc != null && loc.address.isNotEmpty) {
+      setState(() => _exactAddress = loc.address);
     }
   }
 
@@ -857,7 +895,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               Expanded(
                                 child: Text(
                                   (_isOwner || _addressUnlocked)
-                                      ? property.exactAddress
+                                      ? (_exactAddress ??
+                                          property.approximateAddress)
                                       : property.approximateAddress,
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.textSecondary,
@@ -872,6 +911,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           _buildFeaturesRow(property),
 
                           const SizedBox(height: 24),
+
+                          if (_isOwner) ...[
+                            _buildReadinessCard(property),
+                          ],
 
                           if (_isOwner) ...[
                             _buildOwnerStatsCard(property),
@@ -1536,6 +1579,209 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
+  Future<void> _openReadinessSheet(PropertyModel property) async {
+    final done = await PropertyReadinessSheet.show(context, property);
+    if (done == true && mounted) {
+      setState(() => _markedReadyThisSession = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Property is now bookable for inspections.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Open (or start) the landlord↔agent chat for this property so the landlord
+  /// can ask the assigned agent when they'll come review it. Reuses the
+  /// existing conversation + chat-push infrastructure.
+  Future<void> _messageAssignedAgent(PropertyModel property) async {
+    final agentId = property.assignedAgentId;
+    final landlordId = _currentUserId;
+    if (agentId == null || landlordId == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    final conversationId =
+        await _conversationService.getOrCreateAgentLandlordConversation(
+      propertyId: property.id,
+      landlordId: landlordId,
+      agentId: agentId,
+    );
+
+    if (!mounted) return;
+    if (conversationId == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not start the chat. Please try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    router.push('/chat', extra: {
+      'conversationId': conversationId,
+      'propertyTitle': property.title,
+      'propertyImage':
+          property.images.isNotEmpty ? property.images.first : '',
+    });
+  }
+
+  /// Readiness gate (Phase 2), owner view. Self-handled: the landlord vets it
+  /// here. Agent-handled: the assigned agent vets it, so the landlord only sees
+  /// status. Until vetted the property can't take inspections.
+  Widget _buildReadinessCard(PropertyModel property) {
+    final isReady = property.readyForInspections || _markedReadyThisSession;
+    final isSelfHandled = property.inspectionHandler != 'agent';
+
+    if (isReady) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.success.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.success.withAlpha(77)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.verified, color: AppColors.success, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Ready for inspections — tenants can book this property.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Agent-handled but not yet vetted: it's the agent's job to confirm. Show
+    // WHO the agent is and let the landlord message them to ask when they'll
+    // come review.
+    if (!isSelfHandled) {
+      final agentName = property.assignedAgentName;
+      final hasName = agentName != null && agentName.isNotEmpty;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.info.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.info.withAlpha(77)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.hourglass_top, color: AppColors.info, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      hasName ? 'Waiting on $agentName' : 'Waiting on your agent',
+                      style: AppTextStyles.labelLarge
+                          .copyWith(color: AppColors.info),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${hasName ? agentName : 'Your assigned agent'} needs to review '
+                'this property and confirm it\'s ready before tenants can book it.',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+              if (property.assignedAgentId != null) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _messageAssignedAgent(property),
+                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                    label: Text(hasName ? 'Message $agentName' : 'Message agent'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.info,
+                      side: BorderSide(color: AppColors.info.withAlpha(120)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Self-handled, not vetted: the landlord confirms readiness.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(90)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.hourglass_top, color: AppColors.warning, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Not bookable yet',
+                    style: AppTextStyles.labelLarge
+                        .copyWith(color: AppColors.warning),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Confirm this property meets the readiness checklist to make it '
+              'bookable for inspections.',
+              style: AppTextStyles.bodySmall
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _openReadinessSheet(property),
+                icon: const Icon(Icons.checklist, size: 18),
+                label: const Text('Confirm readiness'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildOwnerStatsCard(PropertyModel property) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1636,12 +1882,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     // landlordId-scoped for the ownership-constrained list rule — this is the
     // owner's tenant-management view, so property.landlordId == the caller's uid.
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('active_rentals')
-          .where('landlordId', isEqualTo: property.landlordId)
-          .where('propertyId', isEqualTo: property.id)
-          .where('status', isEqualTo: 'active')
-          .snapshots(),
+      stream: _activeRentalsForPropertyStream,
       builder: (context, rentalSnapshot) {
         if (rentalSnapshot.hasError) {
           AppLogger.e(
@@ -1659,7 +1900,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
         // Inner stream: tenancy links for this property (landlord-link path)
         return StreamBuilder<List<TenancyLinkModel>>(
-          stream: _tenancyLinkService.propertyTenantsStream(property.id),
+          stream: _propertyTenantsStream,
           builder: (context, snapshot) {
             // Surface, don't swallow. A stream error here (e.g. a rules/query
             // regression) previously rendered as "0 tenants" — making the
@@ -3709,10 +3950,17 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
       _sendingUserId = tenant.userId;
     });
 
+    // The exact address now lives in the gated subdoc; the landlord is entitled.
+    // Fetch it so the linked tenant's lease record carries the real address.
+    final loc = await PropertyService().getExactLocation(widget.property.id);
+    final exactAddress = (loc != null && loc.address.isNotEmpty)
+        ? loc.address
+        : widget.property.approximateAddress;
+
     final success = await widget.tenancyLinkService.sendLinkRequest(
       propertyId: widget.property.id,
       propertyTitle: widget.property.title,
-      propertyAddress: widget.property.address,
+      propertyAddress: exactAddress,
       propertyCity: widget.property.city,
       tenantId: tenant.userId,
       tenantName: tenant.fullName,

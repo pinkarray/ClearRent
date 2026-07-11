@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
+import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
 
@@ -31,6 +32,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   PropertyModel? _property;
+  String? _exactAddress; // exact street address from the gated subdoc
   bool _isLoading = true;
   String? _error;
   int _currentImageIndex = 0;
@@ -77,8 +79,14 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
       // Load inspection stats
       await _loadInspectionStats();
 
+      // The assigned agent is entitled to the exact address (gated subdoc).
+      final loc = await _propertyService.getExactLocation(widget.propertyId);
+
       setState(() {
         _property = property;
+        _exactAddress = (loc != null && loc.address.isNotEmpty)
+            ? loc.address
+            : null;
         _isLoading = false;
       });
     } catch (e) {
@@ -456,7 +464,9 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              '${property.address}, ${property.city}, ${property.state}',
+                              _exactAddress != null
+                                  ? '$_exactAddress, ${property.city}, ${property.state}'
+                                  : property.approximateAddress,
                               style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
                             ),
                           ),
@@ -474,6 +484,9 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                     ],
                   ),
                 ),
+
+                // Readiness gate (Phase 2)
+                _buildReadinessCard(property),
 
                 // Landlord info card
                 _buildLandlordCard(property),
@@ -503,6 +516,101 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
         ],
       ),
       bottomNavigationBar: _buildBottomBar(),
+    );
+  }
+
+  Future<void> _openReadinessSheet(PropertyModel property) async {
+    final done = await PropertyReadinessSheet.show(context, property);
+    if (done == true && mounted) {
+      // Reflect the new readiness state without a full reload.
+      setState(() => _property = property.copyWith(readyForInspections: true));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Property is now bookable for inspections.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Readiness gate (Phase 2): until the agent vets the property it can't take
+  /// inspections. Show a call-to-action when not ready, a confirmation when it is.
+  Widget _buildReadinessCard(PropertyModel property) {
+    if (property.readyForInspections) {
+      return Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.success.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.success.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.verified, color: AppColors.success, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'You\'ve marked this property ready — tenants can book inspections.',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withAlpha(90)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hourglass_top, color: AppColors.warning, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Not bookable yet',
+                  style: AppTextStyles.labelLarge
+                      .copyWith(color: AppColors.warning),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Vet this property against the readiness checklist to make it '
+            'bookable for inspections.',
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _openReadinessSheet(property),
+              icon: const Icon(Icons.checklist, size: 18),
+              label: const Text('Confirm readiness'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -787,6 +895,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
               TextField(
                 controller: controller,
                 maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'Reason (e.g. too far, schedule conflict)',
                   border: OutlineInputBorder(

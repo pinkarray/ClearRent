@@ -295,6 +295,9 @@ class PaystackService {
     Map<String, dynamic>? extra,
   }) async {
     try {
+      // Merge so we never clobber the server-authoritative fields the
+      // paystackWebhook CF may have already written for this reference (it can
+      // land first if the client was slow/offline after the charge).
       await _firestore.collection('payments').doc(reference).set({
         'reference': reference,
         'userId': _currentUserId,
@@ -305,7 +308,7 @@ class PaystackService {
         'relatedId': relatedId,
         'createdAt': FieldValue.serverTimestamp(),
         ...?extra,
-      });
+      }, SetOptions(merge: true));
 
       AppLogger.i('Payment recorded: ${_redactRef(reference)} ($type, ₦$amount, $status)',
           name: 'PaystackService');

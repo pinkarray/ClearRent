@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -138,10 +139,11 @@ class AboutScreen extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(
-            Icons.home_rounded,
-            size: 50,
-            color: Colors.white,
+          child: Center(
+            child: SvgPicture.asset(
+              'assets/images/branding/clearrent_mark_white.svg',
+              height: 52,
+            ),
           ),
         ),
 

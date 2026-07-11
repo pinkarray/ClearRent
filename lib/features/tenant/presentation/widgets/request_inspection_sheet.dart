@@ -6,6 +6,7 @@ import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/date_time_slot_picker.dart';
 import '../../../../services/inspection_service.dart';
+import '../../../../services/auth_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import 'package:go_router/go_router.dart';
 
@@ -35,6 +36,7 @@ class RequestInspectionSheet extends StatefulWidget {
 
 class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
   final InspectionService _inspectionService = InspectionService();
+  final AuthService _authService = AuthService();
   final TextEditingController _notesController = TextEditingController();
 
   DateTime? _selectedDate;
@@ -133,14 +135,43 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       widget.property.inspectionHandler == 'agent' &&
       widget.property.assignedAgentId != null;
 
+  // Readiness gate (Phase 2): a property is only bookable once its handler has
+  // vetted it. Block before payment so the tenant is never charged and blocked.
+  bool get _notReady => !widget.property.readyForInspections;
+
   bool get _canSubmit =>
       _selectedDate != null &&
       _selectedTimeSlot != null &&
       !_isSubmitting &&
-      !_hasExistingRequest;
+      !_hasExistingRequest &&
+      !_notReady;
 
   Future<void> _submitRequest() async {
     if (!_canSubmit) return;
+
+    // Gate: the tenant must have a payout account on file before requesting.
+    // If an inspection falls through in dispute (e.g. handler no-show), the
+    // refund needs somewhere to go — and admin can only settle it if the
+    // account exists. Enforced server-side in firestore.rules too. Checked
+    // before payment so the tenant is never charged and then blocked.
+    final hasBank = await _authService.hasBankDetails();
+    if (!mounted) return;
+    if (!hasBank) {
+      final router = GoRouter.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.pop(context); // close the sheet
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Add your bank account first — it\'s where your money goes if an '
+            'inspection is refunded.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      router.push('/tenant/bank-details');
+      return;
+    }
 
     // Build the fee breakdown — use calculated or a sensible fallback
     final feeBreakdown = _feeBreakdown ?? (_isAgentHandled
@@ -246,6 +277,38 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Not-ready gate — the handler hasn't vetted this property yet.
+                  if (_notReady) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.info.withAlpha(26),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.info.withAlpha(77)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.hourglass_top,
+                              color: AppColors.info, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _isAgentHandled
+                                  ? 'The agent is preparing this property for '
+                                      'inspections. Check back soon.'
+                                  : 'The landlord is preparing this property '
+                                      'for inspections. Check back soon.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.info,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
                   // Already has request warning
                   if (_hasExistingRequest) ...[
                     Container(
@@ -317,6 +380,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                     controller: _notesController,
                     maxLines: 3,
                     maxLength: 200,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       hintText: 'Any special requests or questions...',
                       hintStyle: AppTextStyles.bodyMedium.copyWith(

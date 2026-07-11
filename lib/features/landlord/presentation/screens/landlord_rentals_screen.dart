@@ -311,6 +311,7 @@ class _RentalCardState extends State<_RentalCard> {
               TextField(
                 controller: controller,
                 maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'Reason (e.g. lease expired, not renewed)',
                   border: OutlineInputBorder(

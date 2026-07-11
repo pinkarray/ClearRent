@@ -8,7 +8,9 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/inspection_readiness_dialog.dart';
 import '../../../../shared/widgets/highlight_wrap.dart';
+import '../../../../shared/widgets/bank_details_gate.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
 import '../../../../shared/widgets/reschedule_propose_sheet.dart';
@@ -180,7 +182,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
 }
 
 // ============ PENDING REQUESTS TAB ============
-class _AgentPendingTab extends StatelessWidget {
+class _AgentPendingTab extends StatefulWidget {
   final InspectionService inspectionService;
   final TabController tabController;
   final String? highlightId;
@@ -192,9 +194,23 @@ class _AgentPendingTab extends StatelessWidget {
   });
 
   @override
+  State<_AgentPendingTab> createState() => _AgentPendingTabState();
+}
+
+class _AgentPendingTabState extends State<_AgentPendingTab> {
+  // Cache the stream once so parent rebuilds (driven by badge-count
+  // subscriptions when the other party acts) don't reset StreamBuilder to
+  // ConnectionState.waiting and flash the loading spinner — that's the flicker.
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getAgentRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final tabController = widget.tabController;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getAgentRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -253,6 +269,18 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
   bool _isLoading = false;
 
   Future<void> _acceptRequest() async {
+    // Gate: a handler needs a payout account on file before accepting, so their
+    // inspection earnings and any dispute payout have somewhere to go.
+    final canProceed = await ensureBankDetailsOnFile(
+      context,
+      bankDetailsRoute: '/agent/bank-details',
+      reason: 'Add your bank account first — it\'s where your inspection '
+          'earnings and any dispute payouts are sent.',
+    );
+    if (!canProceed || !mounted) return;
+
+    final ready = await confirmInspectionReadiness(context);
+    if (!ready || !mounted) return;
     setState(() => _isLoading = true);
 
     final success = await widget.inspectionService.approveRequest(
@@ -342,6 +370,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                 TextField(
                   controller: controller,
                   maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Reason (optional but helpful)',
                     hintStyle: AppTextStyles.bodySmall.copyWith(
@@ -686,7 +715,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
 }
 
 // ============ SCHEDULED TAB ============
-class _AgentScheduledTab extends StatelessWidget {
+class _AgentScheduledTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
 
@@ -694,9 +723,20 @@ class _AgentScheduledTab extends StatelessWidget {
       {required this.inspectionService, this.highlightId});
 
   @override
+  State<_AgentScheduledTab> createState() => _AgentScheduledTabState();
+}
+
+class _AgentScheduledTabState extends State<_AgentScheduledTab> {
+  // Cached stream — see _AgentPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getAgentRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getAgentRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -1459,7 +1499,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
 }
 
 // ============ COMPLETED TAB ============
-class _AgentCompletedTab extends StatelessWidget {
+class _AgentCompletedTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
 
@@ -1467,9 +1507,19 @@ class _AgentCompletedTab extends StatelessWidget {
       {required this.inspectionService, this.highlightId});
 
   @override
+  State<_AgentCompletedTab> createState() => _AgentCompletedTabState();
+}
+
+class _AgentCompletedTabState extends State<_AgentCompletedTab> {
+  // Cached stream — see _AgentPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getAgentRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getAgentRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(

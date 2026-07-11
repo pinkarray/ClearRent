@@ -577,6 +577,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               TextField(
                 controller: controller,
                 maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: 'Describe what happened from your perspective...',
                   border: OutlineInputBorder(

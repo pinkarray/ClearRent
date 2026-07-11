@@ -330,6 +330,7 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
                             controller: _reasonController,
                             maxLines: 3,
                             maxLength: 200,
+                            textCapitalization: TextCapitalization.sentences,
                             decoration: InputDecoration(
                               hintText:
                                   'Why are you proposing this change?',

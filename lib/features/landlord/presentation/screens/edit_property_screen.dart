@@ -176,6 +176,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _rentController = TextEditingController(text: _formatRentForInput(p.rent));
     _agentFeeController = TextEditingController(text: _formatRentForInput(p.agentFee));
     _cautionDepositController = TextEditingController(text: _formatRentForInput(p.cautionDeposit));
+    // Exact street address lives in the gated subdoc — loaded in
+    // _loadFreshPropertyData(). Start empty to avoid showing a stale value.
     _addressController = TextEditingController(text: p.address);
     _cityController = TextEditingController(text: p.city);
     _stateController = TextEditingController(text: p.state);
@@ -231,6 +233,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         if (_assignedAgentId != null) {
           _loadAgentInfo();
         }
+      }
+
+      // Load the exact street address from the gated subdoc (the owner is
+      // entitled) so the field prefills with the real address for editing.
+      final loc = await _propertyService.getExactLocation(widget.property.id);
+      if (mounted && loc != null && loc.address.isNotEmpty) {
+        _addressController.text = loc.address;
+        // Loading the stored value isn't a user edit — don't flag unsaved.
+        setState(() => _hasChanges = false);
       }
     } catch (e) {
       debugPrint('❌ Error loading fresh property data: $e');
@@ -554,7 +565,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'guestRooms': _guestRooms,
         'kitchens': _kitchens,
         'images': allImageUrls,
-        'address': _addressController.text.trim(),
+        // Only write the address when non-empty, so a failed subdoc load can
+        // never blank out the stored address. Routed to the gated subdoc by
+        // PropertyService.updateProperty.
+        if (_addressController.text.trim().isNotEmpty)
+          'address': _addressController.text.trim(),
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim(),
         if (!hasActiveTenants) ...{

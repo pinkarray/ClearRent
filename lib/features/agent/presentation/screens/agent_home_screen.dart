@@ -43,6 +43,14 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   StreamSubscription? _profileSubscription;
   StreamSubscription? _unreadCountSubscription;
 
+  // Cached streams — created once. The profile + unread-count subscriptions
+  // setState() often; if these were built inside build() each rebuild would
+  // hand StreamBuilder a new stream and flash its loading state.
+  late final Stream<QuerySnapshot> _assignedPropertiesStream;
+  late final Stream<List<InspectionRequest>> _agentRequestsStream;
+  late final Stream<List<InspectionRequest>> _agentPendingRequestsStream;
+  late final Stream<List<InspectionRequest>> _agentPendingConfirmationsStream;
+
   // Bottom nav
   int _currentNavIndex = 0;
   DateTime? _lastBackPressed;
@@ -60,6 +68,16 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   @override
   void initState() {
     super.initState();
+    final uid = _auth.currentUser?.uid;
+    _assignedPropertiesStream = _firestore
+        .collection('properties')
+        .where('assignedAgentId', isEqualTo: uid)
+        .limit(3)
+        .snapshots();
+    _agentRequestsStream = _inspectionService.getAgentRequests();
+    _agentPendingRequestsStream = _inspectionService.getAgentPendingRequests();
+    _agentPendingConfirmationsStream =
+        _inspectionService.getAgentPendingConfirmations();
     _startProfileStream();
     _loadVerificationData();
     _startUnreadCountStream();
@@ -404,7 +422,9 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
           ),
         ),
         SliverToBoxAdapter(child: _buildInspectionRequestsSection()),
-        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        // Small end-of-list breathing room; was 100 (dead space — the agent
+        // dashboard has no floating button needing clearance).
+        const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ],
     );
   }
@@ -868,12 +888,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream:
-          _firestore
-              .collection('properties')
-              .where('assignedAgentId', isEqualTo: userId)
-              .limit(3)
-              .snapshots(),
+      stream: _assignedPropertiesStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -1038,7 +1053,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     if (!_isVerified) return const SizedBox.shrink();
 
     return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionService.getAgentRequests(),
+      stream: _agentRequestsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SizedBox.shrink();
@@ -1327,7 +1342,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     }
 
     return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionService.getAgentPendingRequests(),
+      stream: _agentPendingRequestsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -1559,7 +1574,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
     if (!_isVerified) return const SizedBox.shrink();
 
     return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionService.getAgentPendingConfirmations(),
+      stream: _agentPendingConfirmationsStream,
       builder: (context, snapshot) {
         final requests = snapshot.data ?? [];
         if (requests.isEmpty) return const SizedBox.shrink();
@@ -2274,7 +2289,7 @@ class _PaymentConfirmCardState extends State<_PaymentConfirmCard> {
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Payment confirmed! Thank you. âœ“'),
+          content: const Text('Payment confirmed! Thank you.'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(

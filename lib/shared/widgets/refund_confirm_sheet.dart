@@ -192,6 +192,7 @@ class _RefundConfirmSheetState extends State<RefundConfirmSheet> {
                       controller: _reasonController,
                       maxLines: 3,
                       maxLength: 200,
+                      textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
                         hintText: 'Why are you declining?',
                         hintStyle: AppTextStyles.bodyMedium.copyWith(

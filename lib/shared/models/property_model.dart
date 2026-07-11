@@ -47,9 +47,25 @@ class PropertyModel {
   final String? assignedAgentName;
   final int maxTenants;
 
+  // Readiness gate (Phase 2): a property is only bookable for inspection once
+  // its current handler (the assigned agent, or the landlord when self-handled)
+  // has vetted it against a standard checklist. Reset to false whenever the
+  // handler changes (agent assigned / agent steps back / switched to self), so
+  // a new handler must re-vet. Absent field ⇒ not ready (legacy properties must
+  // be vetted before they can take new inspections).
+  final bool readyForInspections;
+  final DateTime? readinessCheckedAt;
+  final String? readinessCheckedBy;
+
   // Inspection availability
   final List<String> inspectionDays;
   final List<String> inspectionTimeSlots;
+
+  // Pre-resolved inspection pricing cluster for this property (area-level, safe
+  // to expose on the public doc). Computed from the address at creation and
+  // used for fee calculation, since the exact street address now lives in the
+  // gated `private/location` subdoc and isn't available for cluster resolution.
+  final String? inspectionPropertyCluster;
 
   // Ownership verification document
   final String? ownershipDocUrl;    // Cloudinary URL of uploaded C of O / deed
@@ -122,6 +138,9 @@ class PropertyModel {
     this.assignedAgentId,
     this.assignedAgentName,
     this.maxTenants = 1,
+    this.readyForInspections = false,
+    this.readinessCheckedAt,
+    this.readinessCheckedBy,
     this.inspectionDays = const [
       'Monday',
       'Tuesday',
@@ -131,6 +150,7 @@ class PropertyModel {
       'Saturday',
     ],
     this.inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
+    this.inspectionPropertyCluster,
     this.landlordLivesInProperty = false,
     this.videoUrl,
     this.ceilingType,
@@ -318,8 +338,12 @@ class PropertyModel {
     String? assignedAgentId,
     String? assignedAgentName,
     int? maxTenants,
+    bool? readyForInspections,
+    DateTime? readinessCheckedAt,
+    String? readinessCheckedBy,
     List<String>? inspectionDays,
     List<String>? inspectionTimeSlots,
+    String? inspectionPropertyCluster,
     bool? landlordLivesInProperty,
     bool? landlordLivesOnPremises,
     int? currentTenantsCount,
@@ -377,8 +401,13 @@ class PropertyModel {
       assignedAgentId: assignedAgentId ?? this.assignedAgentId,
       assignedAgentName: assignedAgentName ?? this.assignedAgentName,
       maxTenants: maxTenants ?? this.maxTenants,
+      readyForInspections: readyForInspections ?? this.readyForInspections,
+      readinessCheckedAt: readinessCheckedAt ?? this.readinessCheckedAt,
+      readinessCheckedBy: readinessCheckedBy ?? this.readinessCheckedBy,
       inspectionDays: inspectionDays ?? this.inspectionDays,
       inspectionTimeSlots: inspectionTimeSlots ?? this.inspectionTimeSlots,
+      inspectionPropertyCluster:
+          inspectionPropertyCluster ?? this.inspectionPropertyCluster,
       landlordLivesInProperty: landlordLivesInProperty ?? this.landlordLivesInProperty,
       videoUrl: videoUrl ?? this.videoUrl,
       ceilingType: ceilingType ?? this.ceilingType,
@@ -449,6 +478,9 @@ class PropertyModel {
       assignedAgentId: json['assignedAgentId'],
       assignedAgentName: json['assignedAgentName'],
       maxTenants: json['maxTenants'] ?? 1,
+      readyForInspections: json['readyForInspections'] ?? false,
+      readinessCheckedAt: _dateFromJson(json['readinessCheckedAt']),
+      readinessCheckedBy: json['readinessCheckedBy'] as String?,
       inspectionDays: List<String>.from(
         json['inspectionDays'] ??
             [
@@ -541,6 +573,9 @@ class PropertyModel {
       assignedAgentId: data['assignedAgentId'],
       assignedAgentName: data['assignedAgentName'],
       maxTenants: data['maxTenants'] ?? 1,
+      readyForInspections: data['readyForInspections'] ?? false,
+      readinessCheckedAt: (data['readinessCheckedAt'] as Timestamp?)?.toDate(),
+      readinessCheckedBy: data['readinessCheckedBy'] as String?,
       inspectionDays: List<String>.from(
         data['inspectionDays'] ??
             [
@@ -556,6 +591,7 @@ class PropertyModel {
         data['inspectionTimeSlots'] ??
             ['morning', 'afternoon', 'late_afternoon'],
       ),
+      inspectionPropertyCluster: data['inspectionPropertyCluster'] as String?,
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
       videoUrl: data['videoUrl'] as String?,
       ceilingType: data['ceilingType'] as String?,
@@ -689,6 +725,10 @@ class PropertyModel {
       'assignedAgentId': assignedAgentId,
       'assignedAgentName': assignedAgentName,
       'maxTenants': maxTenants,
+      'readyForInspections': readyForInspections,
+      if (readinessCheckedAt != null)
+        'readinessCheckedAt': Timestamp.fromDate(readinessCheckedAt!),
+      if (readinessCheckedBy != null) 'readinessCheckedBy': readinessCheckedBy,
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,

@@ -20,6 +20,7 @@ import '../../../../services/agreement_access_service.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
+import '../../../../shared/widgets/option_picker_sheet.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import '../../../../shared/widgets/notification_bell.dart';
@@ -71,6 +72,23 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final TenancyLinkService _tenancyLinkService;
   final AgreementAccessService _agreementAccess = AgreementAccessService();
   StreamSubscription<ActiveRental?>? _activeRentalSub;
+
+  // Cached streams for the home body. Created ONCE in initState — the many
+  // init-time setState() calls (profile, saved, unread, properties, rental
+  // count, active rental) rebuild this screen repeatedly, and if these streams
+  // were created inside build() each rebuild would hand StreamBuilder a fresh
+  // instance, resetting it to ConnectionState.waiting and flashing a spinner.
+  // That was the "browse flickers ~3 times on login" bug.
+  late final Stream<TenancyLinkModel?> _activeLinkStream;
+  late final Stream<List<TenancyLinkModel>> _pendingLinksStream;
+  // Tenant rentals are driven by a lifetime subscription (not a StreamBuilder):
+  // this branch's widget subtree unmounts/remounts as the tenant switches nav
+  // tabs, and a StreamBuilder re-listening to the stored single-subscription
+  // stream threw "Stream has already been listened to". Caching the latest list
+  // in state survives remounts.
+  List<TenantRental> _tenantRentals = const [];
+  bool _tenantRentalsLoaded = false;
+  StreamSubscription<List<TenantRental>>? _tenantRentalsSub;
   // Saved properties
   Set<String> _savedProperties = {};
   bool _isLoadingSaved = true;
@@ -81,6 +99,19 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   int _currentNavIndex = 0;
   String _selectedType = 'all';
   String _selectedArea = 'All Areas';
+  // "More filters" sheet (opened by the tune button). 0/empty = unset.
+  double _minRent = 0;
+  double _maxRent = 0; // 0 = no upper cap
+  int _minBedrooms = 0;
+  int _minBathrooms = 0;
+  final Set<String> _filterAmenities = {};
+
+  bool get _hasExtraFilters =>
+      _minRent > 0 ||
+      _maxRent > 0 ||
+      _minBedrooms > 0 ||
+      _minBathrooms > 0 ||
+      _filterAmenities.isNotEmpty;
 
   // Properties
   List<PropertyModel> _realProperties = [];
@@ -117,6 +148,16 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _propertyService = PropertyService();
     _activeRentalService = ActiveRentalService();
     _tenancyLinkService = TenancyLinkService();
+    _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
+    _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
+    _tenantRentalsSub = _activeRentalService.streamTenantRentals().listen((rentals) {
+      if (mounted) {
+        setState(() {
+          _tenantRentals = rentals;
+          _tenantRentalsLoaded = true;
+        });
+      }
+    });
     _loadUserProfile();
     _loadSavedProperties();
     _loadUnreadCount();
@@ -141,6 +182,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   @override
   void dispose() {
     _activeRentalSub?.cancel();
+    _tenantRentalsSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -350,15 +392,313 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       _filteredProperties = _allProperties.where((property) {
         if (_selectedType != 'all' && property.propertyType != _selectedType) return false;
         if (_selectedArea != 'All Areas' && property.city != _selectedArea) return false;
+        // More-filters (price / bedrooms / bathrooms / amenities).
+        if (_minRent > 0 && property.rent < _minRent) return false;
+        if (_maxRent > 0 && property.rent > _maxRent) return false;
+        if (_minBedrooms > 0 && property.bedrooms < _minBedrooms) return false;
+        if (_minBathrooms > 0 && property.bathrooms < _minBathrooms) return false;
+        if (_filterAmenities.isNotEmpty &&
+            !_filterAmenities.every((a) => property.amenities.contains(a))) {
+          return false;
+        }
         if (_searchController.text.isNotEmpty) {
           final query = _searchController.text.toLowerCase();
+          // Exact street address lives in the gated subdoc and isn't available
+          // when browsing — match on the area-level fields only.
           return property.title.toLowerCase().contains(query) ||
               property.city.toLowerCase().contains(query) ||
-              property.address.toLowerCase().contains(query);
+              property.state.toLowerCase().contains(query);
         }
         return true;
       }).toList();
     });
+  }
+
+  /// Area filter — the shared height-capped bottom-sheet picker instead of a
+  /// dropdown menu that balloons to cover the screen.
+  void _showAreaPicker() {
+    showOptionPicker(
+      context,
+      title: 'Filter by area',
+      options: lagosAreas,
+      selected: _selectedArea,
+      searchHint: 'Search area...',
+      iconBuilder: (option, _) =>
+          option == 'All Areas' ? Icons.public : Icons.location_on_outlined,
+      onSelected: (area) {
+        setState(() => _selectedArea = area);
+        _filterProperties();
+      },
+    );
+  }
+
+  /// Upper bound for the price slider — the highest rent in view, rounded up to
+  /// the nearest ₦100k (with a sensible floor so the slider isn't degenerate).
+  double get _rentBound {
+    double maxR = 0;
+    for (final p in _allProperties) {
+      if (p.rent > maxR) maxR = p.rent;
+    }
+    if (maxR < 500000) return 500000;
+    return (maxR / 100000).ceil() * 100000;
+  }
+
+  /// Amenities actually present across the listings in view, so the filter
+  /// chips never offer an option that can't match anything.
+  List<String> get _availableAmenities {
+    final set = <String>{};
+    for (final p in _allProperties) {
+      set.addAll(p.amenities);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  static String _fmtNaira(double v) {
+    if (v >= 1000000) {
+      final m = v / 1000000;
+      return '₦${m == m.roundToDouble() ? m.toStringAsFixed(0) : m.toStringAsFixed(1)}M';
+    }
+    if (v >= 1000) return '₦${(v / 1000).round()}k';
+    return '₦${v.round()}';
+  }
+
+  /// "More filters" sheet behind the tune button: price range, bedrooms,
+  /// bathrooms and amenities. Edits are local until Apply.
+  void _showFiltersSheet() {
+    final bound = _rentBound;
+    final amenities = _availableAmenities;
+    double tempMin = _minRent.clamp(0, bound).toDouble();
+    double tempMax =
+        (_maxRent == 0 ? bound : _maxRent).clamp(0, bound).toDouble();
+    if (tempMax < tempMin) tempMax = bound;
+    int tempBed = _minBedrooms;
+    int tempBath = _minBathrooms;
+    final tempAmenities = {..._filterAmenities};
+    final divisions = (bound / 100000).round().clamp(1, 200);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheet) {
+            Widget chip(String label, bool selected, VoidCallback onTap) {
+              return GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : AppColors.background,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AppColors.primary : AppColors.border,
+                    ),
+                  ),
+                  child: Text(
+                    label,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: selected ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            Widget group(String title, Widget child) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTextStyles.labelLarge),
+                  const SizedBox(height: 12),
+                  child,
+                  const SizedBox(height: 24),
+                ],
+              );
+            }
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    child: Row(
+                      children: [
+                        Text('Filters', style: AppTextStyles.h4),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => setSheet(() {
+                            tempMin = 0;
+                            tempMax = bound;
+                            tempBed = 0;
+                            tempBath = 0;
+                            tempAmenities.clear();
+                          }),
+                          child: Text('Reset',
+                              style: AppTextStyles.bodyMedium
+                                  .copyWith(color: AppColors.primary)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          group(
+                            'Price (per year)',
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_fmtNaira(tempMin)} — ${tempMax >= bound ? '${_fmtNaira(bound)}+' : _fmtNaira(tempMax)}',
+                                  style: AppTextStyles.bodyMedium
+                                      .copyWith(color: AppColors.primary),
+                                ),
+                                RangeSlider(
+                                  values: RangeValues(tempMin, tempMax),
+                                  min: 0,
+                                  max: bound,
+                                  divisions: divisions,
+                                  activeColor: AppColors.primary,
+                                  labels: RangeLabels(
+                                    _fmtNaira(tempMin),
+                                    tempMax >= bound
+                                        ? '${_fmtNaira(bound)}+'
+                                        : _fmtNaira(tempMax),
+                                  ),
+                                  onChanged: (v) => setSheet(() {
+                                    tempMin = v.start;
+                                    tempMax = v.end;
+                                  }),
+                                ),
+                              ],
+                            ),
+                          ),
+                          group(
+                            'Bedrooms',
+                            Wrap(
+                              spacing: 8,
+                              children: [0, 1, 2, 3, 4].map((n) {
+                                return chip(
+                                  n == 0 ? 'Any' : '$n+',
+                                  tempBed == n,
+                                  () => setSheet(() => tempBed = n),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          group(
+                            'Bathrooms',
+                            Wrap(
+                              spacing: 8,
+                              children: [0, 1, 2, 3].map((n) {
+                                return chip(
+                                  n == 0 ? 'Any' : '$n+',
+                                  tempBath == n,
+                                  () => setSheet(() => tempBath = n),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          if (amenities.isNotEmpty)
+                            group(
+                              'Amenities',
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: amenities.map((a) {
+                                  final on = tempAmenities.contains(a);
+                                  return chip(a, on, () => setSheet(() {
+                                        if (on) {
+                                          tempAmenities.remove(a);
+                                        } else {
+                                          tempAmenities.add(a);
+                                        }
+                                      }));
+                                }).toList(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                        20, 8, 20, MediaQuery.of(context).padding.bottom + 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            _minRent = tempMin;
+                            _maxRent = tempMax >= bound ? 0 : tempMax;
+                            _minBedrooms = tempBed;
+                            _minBathrooms = tempBath;
+                            _filterAmenities
+                              ..clear()
+                              ..addAll(tempAmenities);
+                          });
+                          _filterProperties();
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text('Show ${_matchCount(tempMin, tempMax >= bound ? 0 : tempMax, tempBed, tempBath, tempAmenities)} results',
+                            style: AppTextStyles.labelLarge
+                                .copyWith(color: Colors.white)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Live count for the sheet's Apply button — how many listings the pending
+  /// (not-yet-applied) filter selection would show.
+  int _matchCount(double minRent, double maxRent, int minBed, int minBath,
+      Set<String> amenities) {
+    return _allProperties.where((property) {
+      if (_selectedType != 'all' && property.propertyType != _selectedType) return false;
+      if (_selectedArea != 'All Areas' && property.city != _selectedArea) return false;
+      if (minRent > 0 && property.rent < minRent) return false;
+      if (maxRent > 0 && property.rent > maxRent) return false;
+      if (minBed > 0 && property.bedrooms < minBed) return false;
+      if (minBath > 0 && property.bathrooms < minBath) return false;
+      if (amenities.isNotEmpty &&
+          !amenities.every((a) => property.amenities.contains(a))) {
+        return false;
+      }
+      return true;
+    }).length;
   }
 
   Future<void> _toggleSave(String propertyId) async {
@@ -394,11 +734,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       },
       child: ConnectivityWrapper(
         child: StreamBuilder<TenancyLinkModel?>(
-          stream: _tenancyLinkService.tenantActiveLinkStream(),
+          stream: _activeLinkStream,
           builder: (context, activeLinkSnap) {
             final activeLink = activeLinkSnap.data;
             return StreamBuilder<List<TenancyLinkModel>>(
-              stream: _tenancyLinkService.tenantPendingLinksStream(),
+              stream: _pendingLinksStream,
               builder: (context, pendingSnap) {
                 final pendingLinks = pendingSnap.data ?? [];
                 final isVerified = _verificationStatus == VerificationStatus.verified;
@@ -448,36 +788,32 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     if (_currentNavIndex == 0 &&
         !_browsingFromDashboard &&
         !_browsingFromLinkedDashboard) {
+      // First delivery hasn't landed yet — show a spinner rather than flashing
+      // the browse home before the real list arrives.
+      if (!_tenantRentalsLoaded) {
+        return SafeArea(
+          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        );
+      }
+      if (_tenantRentals.isEmpty) {
+        // No occupied rentals — fall through to browse home.
+        return SafeArea(child: _buildHomeTab(pendingLinks));
+      }
       return SafeArea(
-        child: StreamBuilder<List<TenantRental>>(
-          stream: _activeRentalService.streamTenantRentals(),
-          builder: (context, snap) {
-            // First frame: stream hasn't delivered yet. Show a spinner rather
-            // than flashing the browse home before the real list arrives.
-            if (snap.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator(color: AppColors.primary));
-            }
-            final rentals = snap.data ?? const [];
-            if (rentals.isEmpty) {
-              // No occupied rentals — fall through to browse home.
-              return _buildHomeTab(pendingLinks);
-            }
-            return MultiRentalDashboard(
-              rentals: rentals,
-              activeBuilder: (tr) => TenantRentalDashboard(
-                rental: tr.rental,
-                userName: _userName,
-                userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
-                isLoadingProfile: _isLoadingProfile,
-                onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
-              ),
-              linkedBuilder: (tr) => _buildLinkedVerifiedDashboard(
-                tr.link!,
-                pendingLinks,
-              ),
-              onRenew: (tr) => context.push('/tenant/renew', extra: tr),
-            );
-          },
+        child: MultiRentalDashboard(
+          rentals: _tenantRentals,
+          activeBuilder: (tr) => TenantRentalDashboard(
+            rental: tr.rental,
+            userName: _userName,
+            userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+            isLoadingProfile: _isLoadingProfile,
+            onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
+          ),
+          linkedBuilder: (tr) => _buildLinkedVerifiedDashboard(
+            tr.link!,
+            pendingLinks,
+          ),
+          onRenew: (tr) => context.push('/tenant/renew', extra: tr),
         ),
       );
     }
@@ -1615,26 +1951,50 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(children: [
           Expanded(
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
-              child: DropdownButton<String>(
-                underline: const SizedBox.shrink(),
-                value: _selectedArea,
-                isExpanded: true,
-                icon: const Icon(Icons.keyboard_arrow_down),
-                style: AppTextStyles.bodyMedium,
-                items: lagosAreas.map((area) => DropdownMenuItem(value: area, child: Text(area))).toList(),
-                onChanged: (value) { if (value != null) { setState(() => _selectedArea = value); _filterProperties(); } },
+            child: GestureDetector(
+              onTap: _showAreaPicker,
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+                child: Row(children: [
+                  Icon(Icons.location_on_outlined, size: 18, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(_selectedArea, style: AppTextStyles.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+                ]),
               ),
             ),
           ),
           const SizedBox(width: 12),
-          Container(
-            height: 44, width: 44,
-            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.tune, color: Colors.white, size: 20),
+          GestureDetector(
+            onTap: _showFiltersSheet,
+            child: Container(
+              height: 44, width: 44,
+              decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(Icons.tune, color: Colors.white, size: 20),
+                  // Little dot to show extra filters are active.
+                  if (_hasExtraFilters)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ]),
       ),
@@ -2357,6 +2717,7 @@ class _LinkedPendingConfirmationCardState
         content: TextField(
           controller: reasonController,
           maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
           decoration: InputDecoration(
             hintText: 'Describe what hasn\'t been fixed yet...',
             border:

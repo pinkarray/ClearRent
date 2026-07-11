@@ -24,6 +24,12 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Cached once so parent (agent home) rebuilds don't recreate it and flash.
+  late final Stream<QuerySnapshot> _assignedStream = _firestore
+      .collection('properties')
+      .where('assignedAgentId', isEqualTo: _auth.currentUser?.uid)
+      .snapshots();
+
   @override
   Widget build(BuildContext context) {
     if (!widget.isVerified) {
@@ -40,10 +46,7 @@ class _AgentAssignedPropertiesTabState extends State<AgentAssignedPropertiesTab>
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('properties')
-          .where('assignedAgentId', isEqualTo: userId)
-          .snapshots(),
+      stream: _assignedStream,
       builder: (context, snapshot) {
         // Debug logging
         debugPrint('🏠 AgentAssignedProperties - userId: $userId');
@@ -310,7 +313,9 @@ class _AssignedPropertyCard extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          '${property.address}, ${property.city}',
+                          // Area-level here; the exact address (gated subdoc)
+                          // is shown on the property detail screen.
+                          property.approximateAddress,
                           style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

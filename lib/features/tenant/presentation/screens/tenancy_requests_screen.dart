@@ -13,6 +13,9 @@ class TenancyRequestsScreen extends StatefulWidget {
 
 class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
   final TenancyLinkService _linkService = TenancyLinkService();
+  // Cached so any rebuild doesn't recreate the stream and flash the list.
+  late final Stream<List<TenancyLinkModel>> _pendingLinksStream =
+      _linkService.tenantPendingLinksStream();
 
   Future<void> _handleConfirm(TenancyLinkModel link) async {
     final confirmed = await showDialog<bool>(
@@ -120,7 +123,7 @@ class _TenancyRequestsScreenState extends State<TenancyRequestsScreen> {
         ),
       ),
       body: StreamBuilder<List<TenancyLinkModel>>(
-        stream: _linkService.tenantPendingLinksStream(),
+        stream: _pendingLinksStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(

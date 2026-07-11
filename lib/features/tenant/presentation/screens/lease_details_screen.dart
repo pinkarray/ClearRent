@@ -586,6 +586,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             TextField(
               controller: controller,
               maxLines: 4,
+              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: 'e.g. The maintenance clause needs to be clarified...',
                 filled: true,

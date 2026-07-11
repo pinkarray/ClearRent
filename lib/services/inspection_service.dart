@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
 import '../shared/models/inspection_request_model.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/foundation.dart';
 class InspectionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
@@ -98,9 +100,12 @@ class InspectionService {
 
         final agentCluster = InspectionPricing.getClusterForArea(agentBaseLocation);
         final propertyArea = _resolvePropertyArea(property);
-        final propertyCluster = propertyArea != null
-            ? InspectionPricing.getClusterForArea(propertyArea)
-            : null;
+        // Prefer the cluster resolved at listing time — the exact street
+        // address now lives in the gated subdoc and isn't on the property here.
+        final propertyCluster = property.inspectionPropertyCluster ??
+            (propertyArea != null
+                ? InspectionPricing.getClusterForArea(propertyArea)
+                : null);
 
         if (agentCluster == null) {
           if (kDebugMode) {
@@ -136,9 +141,11 @@ class InspectionService {
     // Self-handled by landlord
     if (property.inspectionHandler == 'self') {
       final propertyArea = _resolvePropertyArea(property);
-      final propertyCluster = propertyArea != null
-          ? InspectionPricing.getClusterForArea(propertyArea)
-          : null;
+      // Prefer the cluster resolved at listing time (see agent path above).
+      final propertyCluster = property.inspectionPropertyCluster ??
+          (propertyArea != null
+              ? InspectionPricing.getClusterForArea(propertyArea)
+              : null);
 
       if (property.landlordLivesInProperty == true) {
         return InspectionPricing.calculateSelfHandledFee(
@@ -237,6 +244,14 @@ class InspectionService {
         return 'landlord_not_verified';
       }
 
+      // Readiness gate (Phase 2): a property is only bookable once its handler
+      // has vetted it. Rules enforce this server-side too; this is the UX gate.
+      if (!property.readyForInspections) {
+        developer.log('❌ Property not vetted for inspections',
+            name: 'InspectionService');
+        return 'property_not_ready';
+      }
+
       final tenantName = tenantData?['fullName'] ?? 'Tenant';
       final tenantPhone = tenantData?['phone'];
 
@@ -297,9 +312,10 @@ class InspectionService {
         'propertyTitle': property.title,
         'propertyImage':
             property.images.isNotEmpty ? property.images.first : '',
-        'propertyAddress': '${property.address}, ${property.city}',
-        'propertyLatitude': property.latitude,
-        'propertyLongitude': property.longitude,
+        // Reveal-on-approval: store only the area-level address at booking. The
+        // exact street address + coordinates stay in the gated `private/location`
+        // subdoc; the tenant is granted read access when the handler approves.
+        'propertyAddress': property.approximateAddress,
 
         'tenantId': _currentUserId,
         'tenantName': tenantName,
@@ -718,6 +734,40 @@ class InspectionService {
         updates['overriddenBy'] = _currentUserId;
       }
 
+      // Reveal-on-approval: fill in the exact street address + coordinates now
+      // that the handler has approved. Read from the property's gated
+      // `private/location` subdoc (the approving handler is entitled). Both the
+      // tenant and the handler see the exact location from this point on, and
+      // it flows into the rental record if the tenant goes on to rent.
+      final propertyId = existing.data()?['propertyId'] as String?;
+      if (propertyId != null) {
+        try {
+          final locSnap = await _firestore
+              .collection('properties')
+              .doc(propertyId)
+              .collection('private')
+              .doc('location')
+              .get();
+          final loc = locSnap.data();
+          if (loc != null) {
+            final exactAddress = loc['address'] as String?;
+            if (exactAddress != null && exactAddress.isNotEmpty) {
+              updates['propertyAddress'] = exactAddress;
+            }
+            if (loc['latitude'] != null) {
+              updates['propertyLatitude'] = (loc['latitude'] as num).toDouble();
+            }
+            if (loc['longitude'] != null) {
+              updates['propertyLongitude'] =
+                  (loc['longitude'] as num).toDouble();
+            }
+          }
+        } catch (e) {
+          developer.log('⚠️ Could not load exact location on approval: $e',
+              name: 'InspectionService');
+        }
+      }
+
       await _firestore
           .collection('inspection_requests')
           .doc(requestId)
@@ -742,6 +792,29 @@ class InspectionService {
       final requestData = verifyDoc.data();
 
       if (requestData != null) {
+        // Reveal-on-approval: grant this tenant read access to the property's
+        // exact address (the gated `private/location` subdoc). Writing this doc
+        // is what ties the exact-address reveal to the handler approving.
+        final propertyId = requestData['propertyId'] as String?;
+        final tenantId = requestData['tenantId'] as String?;
+        if (propertyId != null && tenantId != null) {
+          try {
+            await _firestore
+                .collection('properties')
+                .doc(propertyId)
+                .collection('reveals')
+                .doc(tenantId)
+                .set({
+              'revealedAt': FieldValue.serverTimestamp(),
+              'requestId': requestId,
+              'grantedBy': _currentUserId,
+            }, SetOptions(merge: true));
+          } catch (e) {
+            developer.log('⚠️ Failed to write address reveal grant: $e',
+                name: 'InspectionService');
+          }
+        }
+
         final approvedBy =
             isLandlordOverride
                 ? 'Landlord'
@@ -1259,12 +1332,10 @@ class InspectionService {
         'ratedUserName': ratedUserName,
       });
 
-      developer.log('🔵 RATING: about to call _updateAgentRating/Landlord. isAgentHandled=$isAgentHandled', name: 'InspectionService');
-
+      // Rating aggregation is server-side: the onInspectionRated CF recomputes
+      // the ratee's Bayesian rating from the inspection_requests write above.
+      // The client no longer writes rating/totalRatings (locked in rules).
       if (isAgentHandled) {
-        developer.log('🔵 RATING: calling _updateAgentRating for $ratedUserId', name: 'InspectionService');
-        await _updateAgentRating(ratedUserId, rating);
-        developer.log('🟢 RATING: _updateAgentRating returned', name: 'InspectionService' );
         await _createActivity(
           userId: ratedUserId,
           type: 'new_rating',
@@ -1285,7 +1356,6 @@ class InspectionService {
           propertyId: requestData['propertyId'],
         );
       } else {
-        await _updateLandlordRating(ratedUserId, rating);
         await _createActivity(
           userId: ratedUserId,
           type: 'new_rating',
@@ -1308,72 +1378,10 @@ class InspectionService {
     }
   }
 
-  /// Recalculates and corrects a user's rating by scanning all completed
-  /// inspections they handled. Use this to fix agents whose past ratings
-  /// were incorrectly written to the landlord document.
-  Future<void> recalculateUserRating(String userId, String userType) async {
-    developer.log('🔵 RECALC START: userId=$userId userType=$userType', name: 'InspectionService');
-    try {
-      final field = userType == 'agent' ? 'agentId' : 'landlordId';
-      final snapshot = await _firestore
-          .collection('inspection_requests')
-          .where(field, isEqualTo: userId)
-          .where('tenantRated', isEqualTo: true)
-          .get();
-
-      developer.log('🔵 RECALC: query returned ${snapshot.docs.length} docs with tenantRated=true', name: 'InspectionService');
-      for (final doc in snapshot.docs) {
-        final d = doc.data();
-        developer.log('  doc ${doc.id}: agentId=${d['agentId']} tenantRating=${d['tenantRating']}', name: 'InspectionService');
-      }
-
-      final relevantDocs = snapshot.docs.where((doc) {
-        final data = doc.data();
-        if (userType == 'agent') {
-          return data['agentId'] == userId;
-        } else {
-          final rawAgentId = data['agentId'];
-          return rawAgentId == null || (rawAgentId is String && rawAgentId.isEmpty);
-        }
-      }).toList();
-
-      developer.log('🔵 RECALC: ${relevantDocs.length} docs after filtering for $userType');
-
-      if (relevantDocs.isEmpty) {
-        developer.log('🟡 RECALC: no relevant docs — writing rating=0', name: 'InspectionService');
-        await _firestore.collection('users').doc(userId).update({
-          'rating': 0.0,
-          'totalRatings': 0,
-        });
-        return;
-      }
-
-      final ratings = relevantDocs
-          .map((doc) => (doc.data()['tenantRating'] ?? 0) as int)
-          .where((r) => r > 0)
-          .toList();
-
-      developer.log('🔵 RECALC: extracted ratings=$ratings', name: 'InspectionService');
-
-      if (ratings.isEmpty) {
-        developer.log('🟡 RECALC: all ratings were 0 — writing rating=0', name: 'InspectionService');
-        await _firestore.collection('users').doc(userId).update({'rating': 0.0, 'totalRatings': 0});
-        return;
-      }
-
-      final average = ratings.reduce((a, b) => a + b) / ratings.length;
-      developer.log('🟢 RECALC: writing rating=${average.toStringAsFixed(2)} totalRatings=${ratings.length} to users/$userId', name: 'InspectionService');
-
-      await _firestore.collection('users').doc(userId).update({
-        'rating': average,
-        'totalRatings': ratings.length,
-      });
-
-      developer.log('🟢 RECALC DONE: $userType $userId = ${average.toStringAsFixed(2)} stars', name: 'InspectionService');
-    } catch (e) {
-      developer.log('🔴 RECALC ERROR: $e', name: 'InspectionService');
-    }
-  }
+  // Rating recomputation moved server-side to the onInspectionRated Cloud
+  // Function (functions/src/rating_ops.ts): it recomputes a Bayesian average
+  // from all of a user's rated inspections whenever tenantRated flips true,
+  // and is the sole writer of users.rating/totalRatings (locked in rules).
 
   // ============ CANCEL ============
 
@@ -1784,6 +1792,29 @@ class InspectionService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // Tell the handler the tenant is on the way (mirrors markTenantArrived).
+      // Self-handled ⇒ agentId is null, so only the landlord is notified.
+      final tenantName = data['tenantName'] ?? 'The tenant';
+      final propertyTitle = data['propertyTitle'] ?? 'the property';
+      if (data['agentId'] != null) {
+        await _createActivity(
+          userId: data['agentId'],
+          type: 'tenant_on_way',
+          title: 'Tenant On the Way',
+          message: '$tenantName is on the way to $propertyTitle for the inspection',
+          relatedId: requestId,
+          propertyId: data['propertyId'],
+        );
+      }
+      await _createActivity(
+        userId: data['landlordId'],
+        type: 'tenant_on_way',
+        title: 'Tenant On the Way',
+        message: '$tenantName is on the way to $propertyTitle for the inspection',
+        relatedId: requestId,
+        propertyId: data['propertyId'],
+      );
+
       developer.log(
         '✅ Tenant on way for $requestId',
         name: 'InspectionService',
@@ -1830,6 +1861,20 @@ class InspectionService {
         'handlerOnWayAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // Tell the tenant the handler is on the way (mirrors markHandlerArrived).
+      final handlerName = data['agentId'] != null
+          ? (data['agentName'] ?? 'The agent')
+          : (data['landlordName'] ?? 'The landlord');
+      await _createActivity(
+        userId: data['tenantId'],
+        type: 'handler_on_way',
+        title: 'Handler On the Way',
+        message:
+            '$handlerName is on the way to ${data['propertyTitle'] ?? 'the property'} for your inspection',
+        relatedId: requestId,
+        propertyId: data['propertyId'],
+      );
 
       developer.log(
         'Handler on way for $requestId',
@@ -2112,98 +2157,36 @@ class InspectionService {
     return dates;
   }
 
+  /// Available inspection slots for [property] on [date].
+  ///
+  /// Delegates to the getAvailableInspectionSlots Cloud Function, which
+  /// computes availability server-side (landlord ∩ agent slots minus the
+  /// times the handler is already booked for). This MUST be server-side: a
+  /// tenant isn't allowed to list another handler's inspections to find taken
+  /// slots (that would leak other tenants' bookings), so the old client query
+  /// was silently denied and every slot looked free — letting a tenant book
+  /// a taken slot and pay before the server conflict-guard declined it.
   Future<List<String>> getAvailableTimeSlots(
     PropertyModel property,
     DateTime date,
   ) async {
-    final landlordSlots = property.inspectionTimeSlots;
-    List<String> agentSlots = [];
-
-    if (property.inspectionHandler == 'agent' &&
-        property.assignedAgentId != null) {
-      try {
-        final agentDoc =
-            await _firestore
-                .collection('users')
-                .doc(property.assignedAgentId)
-                .get();
-
-        if (agentDoc.exists) {
-          agentSlots = List<String>.from(
-            agentDoc.data()!['availableTimeSlots'] ?? [],
-          );
-        }
-      } catch (e) {
-        developer.log(
-          'âš ï¸ Could not get agent time slots: $e',
-          name: 'InspectionService',
-        );
-      }
-    }
-
-    final eligible = agentSlots.isEmpty
-        ? List<String>.from(landlordSlots)
-        : landlordSlots.where((slot) => agentSlots.contains(slot)).toList();
-
-    // Remove slots already booked for this handler on this date.
-    final bookedSlots = await _getBookedSlotsForHandler(
-      property: property,
-      date: date,
-    );
-    return eligible.where((slot) => !bookedSlots.contains(slot)).toList();
-  }
-
-  /// Statuses that "hold" a slot — a tenant cannot double-book any
-  /// of these. Cancelled/declined/refunded/completed do not hold.
-  static const Set<String> _slotHoldingStatuses = {
-    'pendingPayment',
-    'pendingVerification',
-    'pending',
-    'declinedByAgent', // still in 12hr landlord-override window
-    'approved',
-  };
-
-  /// Returns the slot strings already booked for the handler (agent
-  /// if agent-handled, else landlord) on the given date.
-  Future<Set<String>> _getBookedSlotsForHandler({
-    required PropertyModel property,
-    required DateTime date,
-  }) async {
-    final isAgentHandled = property.inspectionHandler == 'agent' &&
-        property.assignedAgentId != null;
-    final handlerField = isAgentHandled ? 'agentId' : 'landlordId';
-    final handlerId =
-        isAgentHandled ? property.assignedAgentId! : property.landlordId;
-
     try {
-      final snap = await _firestore
-          .collection('inspection_requests')
-          .where(handlerField, isEqualTo: handlerId)
-          .where('status', whereIn: _slotHoldingStatuses.toList())
-          .get();
-
-      final taken = <String>{};
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final ts = data['requestedDate'];
-        final slot = data['requestedTimeSlot'] as String?;
-        if (ts is! Timestamp || slot == null) continue;
-        final d = ts.toDate();
-        if (d.year == date.year &&
-            d.month == date.month &&
-            d.day == date.day) {
-          taken.add(slot);
-        }
-      }
-      return taken;
+      final callable = _functions.httpsCallable('getAvailableInspectionSlots');
+      final result = await callable.call<Map<String, dynamic>>({
+        'propertyId': property.id,
+        'dateMillis': date.millisecondsSinceEpoch,
+      });
+      final slots = result.data['slots'];
+      if (slots is List) return slots.map((e) => e.toString()).toList();
+      return const [];
     } catch (e) {
       developer.log(
-        'Could not load booked slots: $e',
+        'getAvailableInspectionSlots failed: $e',
         name: 'InspectionService',
       );
-      // On error, return empty — let the server-side CF catch any
-      // conflict rather than blocking all booking.
-      return {};
+      // Fallback: the landlord's offered slots without booked-exclusion. The
+      // server-side rejectIfSlotConflict guard still backstops a double-book.
+      return List<String>.from(property.inspectionTimeSlots);
     }
   }
 
@@ -2279,16 +2262,6 @@ class InspectionService {
     } catch (e) {
       developer.log('❌ Error processing refund: $e', name: 'InspectionService');
     }
-  }
-
-  Future<void> _updateAgentRating(String agentId, int newRating) async {
-    // Use recalculateUserRating to recompute from all rated inspections.
-    // This avoids Firestore transaction conflicts that silently fail.
-    await recalculateUserRating(agentId, 'agent');
-  }
-
-  Future<void> _updateLandlordRating(String landlordId, int newRating) async {
-    await recalculateUserRating(landlordId, 'landlord');
   }
 
   // ============ PAYMENT VERIFICATION (ADMIN) ============

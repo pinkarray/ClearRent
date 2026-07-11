@@ -819,6 +819,7 @@ class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
           TextField(
             controller: controller,
             maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
               hintText: 'What\'s still wrong?',
               border: OutlineInputBorder(

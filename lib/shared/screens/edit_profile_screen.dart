@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
+import '../widgets/option_picker_sheet.dart';
 import '../../services/auth_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -757,21 +758,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+    return GestureDetector(
+      onTap: () => showOptionPicker(
+        context,
+        title: hint,
+        options: items,
+        selected: value,
+        onSelected: (v) => onChanged(v),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          hint: Text(hint, style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
-          isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-          items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: AppTextStyles.bodyMedium))).toList(),
-          onChanged: onChanged,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                value ?? hint,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: value == null
+                      ? AppColors.textSecondary
+                      : AppColors.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
+          ],
         ),
       ),
     );

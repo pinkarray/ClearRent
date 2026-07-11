@@ -782,6 +782,7 @@ class _AddBlockedDatesDialogState extends State<_AddBlockedDatesDialog> {
             TextField(
               controller: _reasonController,
               maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: 'e.g., Family vacation, Medical appointment',
                 hintStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),

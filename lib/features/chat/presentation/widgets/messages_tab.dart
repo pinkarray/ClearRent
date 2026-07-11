@@ -21,6 +21,9 @@ class MessagesTabReal extends StatefulWidget {
 
 class _MessagesTabRealState extends State<MessagesTabReal> {
   final ConversationService _conversationService = ConversationService();
+  // Cached so a retry/refresh setState() doesn't recreate the stream.
+  late final Stream<List<ConversationData>> _conversationsStream =
+      _conversationService.getConversationsStream();
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +41,7 @@ class _MessagesTabRealState extends State<MessagesTabReal> {
         ),
         Expanded(
           child: StreamBuilder<List<ConversationData>>(
-            stream: _conversationService.getConversationsStream(),
+            stream: _conversationsStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(

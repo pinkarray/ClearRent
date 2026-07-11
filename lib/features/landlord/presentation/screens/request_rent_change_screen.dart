@@ -50,6 +50,12 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
   final _justificationController = TextEditingController();
   final RentReviewService _service = RentReviewService();
   final PropertyService _propertyService = PropertyService();
+
+  // Cached once — the justification field's onChanged: setState() rebuilds this
+  // screen on every keystroke, which would otherwise recreate the tenancy
+  // stream and flash the picker.
+  late final Stream<List<ActiveRental>> _rentalsStream =
+      _service.streamLandlordRentalsForProperty(widget.propertyId);
   final _naira = NumberFormat.decimalPattern('en_NG');
 
   // Occupancy branch: null = still resolving, true = scheduled, false = immediate.
@@ -483,6 +489,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
             TextFormField(
               controller: _justificationController,
               maxLines: 4,
+              textCapitalization: TextCapitalization.sentences,
               style: AppTextStyles.bodyLarge,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
@@ -570,7 +577,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
   Widget _buildTenancyPicker() {
     return StreamBuilder<List<ActiveRental>>(
-      stream: _service.streamLandlordRentalsForProperty(widget.propertyId),
+      stream: _rentalsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {

@@ -30,6 +30,14 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   bool _isLoading = true;
   bool _isSubmitting = false;
 
+  // Free re-apply: a user who already PAID and was then rejected can resubmit
+  // corrected documents without paying again (business decision). Set when the
+  // user taps "Try Again" from the rejected state; carries the original payment
+  // reference/amount so the resubmission stays tied to the paid slot.
+  bool _isFreeReapply = false;
+  String? _priorPaymentReference;
+  double _priorPaymentAmount = 0;
+
   // Document files
   File? _ninFile;
   File? _utilityBillFile;
@@ -220,27 +228,38 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       return;
     }
 
-    AppLogger.i('About to launch Paystack checkout for $_verificationFeeLabel', name: 'VerificationCenter');
+    // Step 1: Resolve payment. A free re-apply (already paid, then rejected)
+    // skips Paystack and reuses the original payment reference; a first-time
+    // application collects the fee.
+    late final String paymentReference;
+    late final double paymentAmount;
 
-    // Step 1: Launch Paystack checkout
-    final paymentResult = await PaystackCheckoutScreen.launch(
-      context: context,
-      amount: _verificationFee,
-      type: PaystackService.typeVerification,
-      metadata: {
-        'accountType': _accountType,
-        'description': '$_accountType verification fee',
-      },
-    );
+    if (_isFreeReapply) {
+      paymentReference = _priorPaymentReference ?? 'free_reapply';
+      paymentAmount = _priorPaymentAmount;
+    } else {
+      AppLogger.i('About to launch Paystack checkout for $_verificationFeeLabel', name: 'VerificationCenter');
+      final paymentResult = await PaystackCheckoutScreen.launch(
+        context: context,
+        amount: _verificationFee,
+        type: PaystackService.typeVerification,
+        metadata: {
+          'accountType': _accountType,
+          'description': '$_accountType verification fee',
+        },
+      );
 
-    if (paymentResult == null) return; // User cancelled
+      if (paymentResult == null) return; // User cancelled
 
-    if (!paymentResult.success) {
-      if (mounted) _showError('Payment was not completed. Please try again.');
-      return;
+      if (!paymentResult.success) {
+        if (mounted) _showError('Payment was not completed. Please try again.');
+        return;
+      }
+      paymentReference = paymentResult.reference;
+      paymentAmount = paymentResult.amountPaid ?? _verificationFee;
     }
 
-    // Step 2: Payment succeeded — now submit verification docs
+    // Step 2: Payment resolved — now submit verification docs
     if (!mounted) return;
     setState(() => _isSubmitting = true);
 
@@ -255,16 +274,16 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         result = await _verificationService.submitLandlordVerification(
           ninFile: _ninFile!,
           utilityBillFile: _utilityBillFile!,
-          paymentReference: paymentResult.reference,
-          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
+          paymentReference: paymentReference,
+          paymentAmount: paymentAmount,
         );
         break;
       case 'tenant':
         result = await _verificationService.submitTenantVerification(
           ninFile: _ninFile!,
           proofOfIncomeFile: _proofOfIncomeFile!,
-          paymentReference: paymentResult.reference,
-          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
+          paymentReference: paymentReference,
+          paymentAmount: paymentAmount,
         );
         break;
       case 'agent':
@@ -275,8 +294,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           guarantorName: _guarantorNameController.text.trim(),
           guarantorPhone: _guarantorPhoneController.text.trim(),
           guarantorAddress: _guarantorAddressController.text.trim(),
-          paymentReference: paymentResult.reference,
-          paymentAmount: paymentResult.amountPaid ?? _verificationFee,
+          paymentReference: paymentReference,
+          paymentAmount: paymentAmount,
           experienceProofFile: _experienceProofFile,
         );
         break;
@@ -284,16 +303,23 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         result = VerificationResult(success: false, error: 'Unknown account type');
     }
 
-    // Step 3: Record payment in Firestore payments collection
-    await PaystackService().recordPayment(
-      reference: paymentResult.reference,
-      type: PaystackService.typeVerification,
-      amount: paymentResult.amountPaid ?? _verificationFee,
-      status: result.success && ninStored
-          ? 'completed'
-          : 'docs_upload_failed',
-      extra: {'accountType': _accountType},
-    );
+    // Step 3: Record payment in Firestore payments collection — first-time only.
+    // A free re-apply moved no money, so there's nothing new to record.
+    if (!_isFreeReapply) {
+      await PaystackService().recordPayment(
+        reference: paymentReference,
+        type: PaystackService.typeVerification,
+        amount: paymentAmount,
+        status: result.success && ninStored
+            ? 'completed'
+            : 'docs_upload_failed',
+        extra: {'accountType': _accountType},
+      );
+    }
+
+    if (result.success && _isFreeReapply) {
+      _isFreeReapply = false; // consumed
+    }
 
     setState(() => _isSubmitting = false);
 
@@ -301,7 +327,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _showSuccess('Verification submitted! We\'ll review your documents within 24-48 hours.');
       await _loadUserDataAndVerificationStatus();
     } else {
-      _showError(result.error ?? 'Failed to submit verification. Your payment was recorded — please contact support.');
+      _showError(result.error ?? 'Failed to submit verification. Please contact support.');
     }
   }
 
@@ -465,7 +491,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _resetForm,
+              onPressed: _startReapply,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -477,6 +503,18 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         ],
       ),
     );
+  }
+
+  /// Begin a re-application after a rejection. If the user already paid for the
+  /// earlier attempt, the resubmission is free — carry the original payment
+  /// reference so it stays tied to that paid slot.
+  void _startReapply() {
+    final data = _verificationData;
+    final priorRef = data?.paymentReference;
+    _isFreeReapply = priorRef != null && priorRef.isNotEmpty;
+    _priorPaymentReference = priorRef;
+    _priorPaymentAmount = data?.paymentAmount ?? 0;
+    _resetForm();
   }
 
   void _resetForm() {
@@ -520,75 +558,115 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                 const SizedBox(height: 32),
 
                 // ── PAYMENT INFO ──
-                Text('Verification Payment', style: AppTextStyles.h4),
-                const SizedBox(height: 8),
-                Text('A one-time verification fee is required to process your application.',
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-                const SizedBox(height: 16),
-
-                // Fee display
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(13),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary.withAlpha(51)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withAlpha(26),
-                          borderRadius: BorderRadius.circular(12),
+                // Free re-apply (already paid, then rejected) shows a "no charge"
+                // note instead of the fee + Paystack section.
+                if (_isFreeReapply) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withAlpha(13),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.success.withAlpha(51)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48, height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withAlpha(26),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.check_circle_outline, color: AppColors.success, size: 24),
                         ),
-                        child: Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${_getUserTypeLabel()} Verification Fee',
-                                style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
-                            const SizedBox(height: 4),
-                            Text(_verificationFeeLabel,
-                                style: AppTextStyles.h3.copyWith(color: AppColors.primary)),
-                          ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('No payment needed',
+                                  style: AppTextStyles.labelLarge.copyWith(color: AppColors.success)),
+                              const SizedBox(height: 4),
+                              Text('You already paid the verification fee. Resubmitting your corrected documents is free.',
+                                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                            ],
+                          ),
                         ),
-                      ),
-                      Icon(Icons.lock_outline, size: 18, color: AppColors.success),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 32),
+                ] else ...[
+                  Text('Verification Payment', style: AppTextStyles.h4),
+                  const SizedBox(height: 8),
+                  Text('A one-time verification fee is required to process your application.',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  const SizedBox(height: 16),
 
-                const SizedBox(height: 12),
-
-                // Paystack secure payment note
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withAlpha(13),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.success.withAlpha(51)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.shield_outlined, size: 18, color: AppColors.success),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Payment is processed securely via Paystack. You can pay with card or bank transfer.',
-                          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                  // Fee display
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withAlpha(13),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primary.withAlpha(51)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48, height: 48,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withAlpha(26),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.receipt_outlined, color: AppColors.primary, size: 24),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${_getUserTypeLabel()} Verification Fee',
+                                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.textSecondary)),
+                              const SizedBox(height: 4),
+                              Text(_verificationFeeLabel,
+                                  style: AppTextStyles.h3.copyWith(color: AppColors.primary)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.lock_outline, size: 18, color: AppColors.success),
+                      ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 32),
+                  const SizedBox(height: 12),
+
+                  // Paystack secure payment note
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withAlpha(13),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.success.withAlpha(51)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.shield_outlined, size: 18, color: AppColors.success),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Payment is processed securely via Paystack. You can pay with card or bank transfer.',
+                            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+                ],
 
                 // Privacy note
                 _buildPrivacyNote(),
@@ -613,9 +691,13 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
               icon: _isSubmitting
                   ? const SizedBox(width: 20, height: 20,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Icon(Icons.payment, color: Colors.white, size: 20),
+                  : Icon(_isFreeReapply ? Icons.send : Icons.payment, color: Colors.white, size: 20),
               label: Text(
-                _isSubmitting ? 'Submitting...' : 'Pay $_verificationFeeLabel & Submit',
+                _isSubmitting
+                    ? 'Submitting...'
+                    : _isFreeReapply
+                        ? 'Resubmit for free'
+                        : 'Pay $_verificationFeeLabel & Submit',
                 style: AppTextStyles.labelLarge.copyWith(
                   color: _allRequiredDocsUploaded ? Colors.white : AppColors.textHint,
                 ),
@@ -1043,7 +1125,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           ),
           const SizedBox(height: 16),
           _buildTextField(controller: _guarantorNameController, label: 'Guarantor\'s Full Name',
-              hint: 'Enter their full name', icon: Icons.person_outline),
+              hint: 'Enter their full name', icon: Icons.person_outline,
+              textCapitalization: TextCapitalization.words),
           const SizedBox(height: 12),
           _buildTextField(
             controller: _guarantorPhoneController, 
@@ -1055,7 +1138,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           ),
           const SizedBox(height: 12),
           _buildTextField(controller: _guarantorAddressController, label: 'Guarantor\'s Address',
-              hint: 'Enter their home or work address', icon: Icons.location_on_outlined, maxLines: 2),
+              hint: 'Enter their home or work address', icon: Icons.location_on_outlined, maxLines: 2,
+              textCapitalization: TextCapitalization.words),
           const SizedBox(height: 16),
           _DocumentUploadCard(
             title: 'Guarantor\'s ID', subtitle: 'Photo of your guarantor\'s NIN or Government ID',
@@ -1073,6 +1157,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     required TextEditingController controller, required String label,
     required String hint, required IconData icon,
     TextInputType? keyboardType, int maxLines = 1, int? maxLength,  // Add maxLength
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1082,6 +1167,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         TextField(
           controller: controller, keyboardType: keyboardType, maxLines: maxLines,
           maxLength: maxLength,
+          textCapitalization: textCapitalization,
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,

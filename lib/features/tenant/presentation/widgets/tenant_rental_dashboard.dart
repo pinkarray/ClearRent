@@ -40,6 +40,34 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
 
   ActiveRental get rental => widget.rental;
 
+  // Cached, but refreshed when the shown rental changes — MultiRentalDashboard
+  // reuses this State and swaps widget.rental on switch. Caching stops the
+  // pending-confirmation card blinking on unrelated rebuilds; the didUpdateWidget
+  // refresh keeps it correct across rental switches.
+  late Stream<QuerySnapshot> _pendingConfirmationsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _pendingConfirmationsStream = _buildPendingConfirmationsStream();
+  }
+
+  @override
+  void didUpdateWidget(TenantRentalDashboard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.rental.id != widget.rental.id) {
+      _pendingConfirmationsStream = _buildPendingConfirmationsStream();
+    }
+  }
+
+  Stream<QuerySnapshot> _buildPendingConfirmationsStream() =>
+      FirebaseFirestore.instance
+          .collection('issues')
+          .where('tenantId', isEqualTo: widget.rental.tenantId)
+          .where('propertyId', isEqualTo: widget.rental.propertyId)
+          .where('status', isEqualTo: 'pending_confirmation')
+          .snapshots();
+
   String get _firstName {
     final parts = widget.userName.split(' ');
     return parts.isNotEmpty ? parts.first : widget.userName;
@@ -333,6 +361,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                   TextField(
                     controller: otherController,
                     maxLines: 2,
+                    textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       hintText: 'Tell us a bit more (optional)',
                       border: OutlineInputBorder(
@@ -810,12 +839,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
   // Renders a confirmation card for each — tenant confirms or disputes.
   Widget _buildPendingConfirmations() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('issues')
-          .where('tenantId', isEqualTo: rental.tenantId)
-          .where('propertyId', isEqualTo: rental.propertyId)
-          .where('status', isEqualTo: 'pending_confirmation')
-          .snapshots(),
+      stream: _pendingConfirmationsStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const SizedBox.shrink();
@@ -1220,6 +1244,7 @@ class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
         content: TextField(
           controller: reasonController,
           maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
           decoration: InputDecoration(
             hintText: 'Describe what hasn\'t been fixed yet...',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),

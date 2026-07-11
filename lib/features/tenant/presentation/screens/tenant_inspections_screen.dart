@@ -183,15 +183,29 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
 // ============================================================
 // PENDING REQUESTS TAB
 // ============================================================
-class _TenantPendingTab extends StatelessWidget {
+class _TenantPendingTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
   const _TenantPendingTab({required this.inspectionService, this.highlightId});
 
   @override
+  State<_TenantPendingTab> createState() => _TenantPendingTabState();
+}
+
+class _TenantPendingTabState extends State<_TenantPendingTab> {
+  // Cache the stream once. The parent rebuilds this tab whenever a badge-count
+  // subscription fires (e.g. the other party marks "on my way"); recreating the
+  // stream inside build() would hand StreamBuilder a fresh instance, resetting
+  // it to ConnectionState.waiting and flashing the loading spinner — the flicker.
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getTenantRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getTenantRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -712,15 +726,25 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
 // ============================================================
 // UPCOMING TAB
 // ============================================================
-class _TenantUpcomingTab extends StatelessWidget {
+class _TenantUpcomingTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
   const _TenantUpcomingTab({required this.inspectionService, this.highlightId});
 
   @override
+  State<_TenantUpcomingTab> createState() => _TenantUpcomingTabState();
+}
+
+class _TenantUpcomingTabState extends State<_TenantUpcomingTab> {
+  // Cached stream — see _TenantPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getTenantRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getTenantRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -1216,15 +1240,26 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
 // ============================================================
 // HISTORY TAB MANDATORY RATING + INTEREST FLOW
 // ============================================================
-class _TenantHistoryTab extends StatelessWidget {
+class _TenantHistoryTab extends StatefulWidget {
   final InspectionService inspectionService;
   final String? highlightId;
   const _TenantHistoryTab({required this.inspectionService, this.highlightId});
 
   @override
+  State<_TenantHistoryTab> createState() => _TenantHistoryTabState();
+}
+
+class _TenantHistoryTabState extends State<_TenantHistoryTab> {
+  // Cached stream — see _TenantPendingTabState for why (avoids the rebuild flicker).
+  late final Stream<List<InspectionRequest>> _stream =
+      widget.inspectionService.getTenantRequests();
+
+  @override
   Widget build(BuildContext context) {
+    final inspectionService = widget.inspectionService;
+    final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
-      stream: inspectionService.getTenantRequests(),
+      stream: _stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -1862,6 +1897,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
             TextField(
               controller: reviewController,
               maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: 'Write a review (optional)',
                 hintStyle: AppTextStyles.bodySmall

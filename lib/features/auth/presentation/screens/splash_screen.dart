@@ -5,6 +5,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/biometric_service.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -167,10 +168,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           ),
                         ],
                       ),
-                      child: Icon(
-                        Icons.home_rounded,
-                        size: 50,
-                        color: AppColors.primary,
+                      child: Center(
+                        child: SvgPicture.asset(
+                          'assets/images/branding/clearrent_mark_color.svg',
+                          height: 56,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
