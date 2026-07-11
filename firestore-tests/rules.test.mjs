@@ -900,3 +900,253 @@ test("other user lists a landlord's conversations (landlordId) — denied", asyn
     getDocs(query(collection(otherDb(), "conversations"), where("landlordId", "==", LANDLORD)))
   );
 });
+
+// ─── audit #5: message create requires a VERIFIED sender ─────────────────────
+// The client (ConversationService) blocks unverified users from sending, but
+// that gate was client-only. These prove the rule now enforces it server-side.
+// Seed state: conv_party has participants [LANDLORD, TENANT, AGENT]; only
+// LANDLORD (and OTHER) have a verified user doc — TENANT/AGENT are unverified.
+
+test("verified participant sends a message — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "conversations/conv_party/messages/m1"), {
+      senderId: LANDLORD,
+      senderName: "Landlord One",
+      text: "hello",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+test("unverified participant sends a message — denied", async () => {
+  // AGENT is a participant but has no verified user doc.
+  await assertFails(
+    setDoc(doc(agentDb(), "conversations/conv_party/messages/m2"), {
+      senderId: AGENT,
+      senderName: "Agent One",
+      text: "hello",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+test("unverified participant posts a system message — allowed", async () => {
+  // System status lines are app-generated and exempt from the verify gate.
+  await assertSucceeds(
+    setDoc(doc(agentDb(), "conversations/conv_party/messages/m3"), {
+      senderId: "system",
+      text: "Inspection rescheduled",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+test("verified NON-participant sends a message — denied", async () => {
+  // OTHER is verified but not in conv_party.participants.
+  await assertFails(
+    setDoc(doc(otherDb(), "conversations/conv_party/messages/m4"), {
+      senderId: OTHER,
+      senderName: "Other One",
+      text: "hello",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+test("verified participant forging another's senderId — denied", async () => {
+  // LANDLORD is verified, but the message claims TENANT sent it.
+  await assertFails(
+    setDoc(doc(landlordDb(), "conversations/conv_party/messages/m5"), {
+      senderId: TENANT,
+      senderName: "Tenant One",
+      text: "hello",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+test("admin sends in a support convo without a verified doc — allowed", async () => {
+  // Admin support messages unverified users; the admin (no verified user doc)
+  // must still be able to send via the isAdmin() escape hatch.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "conversations/conv_support"), {
+      participants: ["admin1", OTHER],
+      landlordId: "admin1",
+      tenantId: OTHER,
+      conversationType: "admin_support",
+      lastMessage: "",
+    });
+  });
+  await assertSucceeds(
+    setDoc(doc(adminDb(), "conversations/conv_support/messages/ms1"), {
+      senderId: "admin1",
+      senderName: "Support",
+      text: "How can we help?",
+      timestamp: serverTimestamp(),
+      isRead: false,
+    })
+  );
+});
+
+// ─── reveal-on-approval: gated exact location ────────────────────────────────
+// The exact street address lives in `properties/{id}/private/location`, hidden
+// from browsing tenants. It's readable by the owner, the assigned agent, an
+// admin, or a tenant whose inspection was approved (a `reveals/{tenantId}`
+// grant written by the handler on approval).
+
+// Seeds an agent-handled property, its exact-location subdoc, and a reveal
+// grant for TENANT (unless withGrant=false).
+async function seedGatedProperty({ withGrant = true } = {}) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "properties/pg"), {
+      landlordId: LANDLORD,
+      assignedAgentId: AGENT,
+      title: "Gated flat",
+      rent: 200000,
+    });
+    await setDoc(doc(db, "properties/pg/private/location"), {
+      address: "12 Secret Street, Lekki",
+      latitude: 6.4,
+      longitude: 3.5,
+    });
+    if (withGrant) {
+      await setDoc(doc(db, "properties/pg/reveals/" + TENANT), {
+        revealedAt: serverTimestamp(),
+      });
+    }
+  });
+}
+
+test("owner reads exact location subdoc — allowed", async () => {
+  await seedGatedProperty();
+  await assertSucceeds(getDoc(doc(landlordDb(), "properties/pg/private/location")));
+});
+
+test("assigned agent reads exact location subdoc — allowed", async () => {
+  await seedGatedProperty();
+  await assertSucceeds(getDoc(doc(agentDb(), "properties/pg/private/location")));
+});
+
+test("admin reads exact location subdoc — allowed", async () => {
+  await seedGatedProperty();
+  await assertSucceeds(getDoc(doc(adminDb(), "properties/pg/private/location")));
+});
+
+test("tenant WITH reveal grant reads exact location subdoc — allowed", async () => {
+  await seedGatedProperty({ withGrant: true });
+  await assertSucceeds(getDoc(doc(tenantDb(), "properties/pg/private/location")));
+});
+
+test("tenant WITHOUT reveal grant reads exact location subdoc — denied", async () => {
+  await seedGatedProperty({ withGrant: false });
+  await assertFails(getDoc(doc(tenantDb(), "properties/pg/private/location")));
+});
+
+test("unrelated user reads exact location subdoc — denied", async () => {
+  await seedGatedProperty();
+  await assertFails(getDoc(doc(otherDb(), "properties/pg/private/location")));
+});
+
+test("owner writes exact location subdoc — allowed", async () => {
+  await seedGatedProperty();
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "properties/pg/private/location"), {
+      address: "12 Secret Street, Lekki",
+      latitude: 6.4,
+      longitude: 3.5,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant (even with grant) writes exact location subdoc — denied", async () => {
+  await seedGatedProperty({ withGrant: true });
+  await assertFails(
+    setDoc(doc(tenantDb(), "properties/pg/private/location"), {
+      address: "hijacked",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("handler (assigned agent) grants a reveal on approval — allowed", async () => {
+  await seedGatedProperty({ withGrant: false });
+  await assertSucceeds(
+    setDoc(doc(agentDb(), "properties/pg/reveals/" + TENANT), {
+      revealedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord (owner) grants a reveal on approval — allowed", async () => {
+  await seedGatedProperty({ withGrant: false });
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "properties/pg/reveals/" + TENANT), {
+      revealedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant self-grants a reveal — denied", async () => {
+  await seedGatedProperty({ withGrant: false });
+  await assertFails(
+    setDoc(doc(tenantDb(), "properties/pg/reveals/" + TENANT), {
+      revealedAt: serverTimestamp(),
+    })
+  );
+});
+
+// ─── assigned-agent inspection scheduling clause ─────────────────────────────
+// The assigned agent may edit ONLY inspection availability on a property they
+// handle (they don't own the doc). Field-scoped so rent/ownership can't ride along.
+
+async function seedAgentProperty(id) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/" + id), {
+      landlordId: LANDLORD,
+      assignedAgentId: AGENT,
+      title: "Flat",
+      rent: 200000,
+      inspectionDays: ["Monday"],
+      inspectionTimeSlots: ["morning"],
+    });
+  });
+}
+
+test("assigned agent updates inspection availability — allowed", async () => {
+  await seedAgentProperty("p_sched_ok");
+  await assertSucceeds(
+    updateDoc(doc(agentDb(), "properties/p_sched_ok"), {
+      inspectionDays: ["Monday", "Tuesday"],
+      inspectionTimeSlots: ["morning", "afternoon"],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("assigned agent sneaking a rent change via schedule clause — denied", async () => {
+  await seedAgentProperty("p_sched_rent");
+  await assertFails(
+    updateDoc(doc(agentDb(), "properties/p_sched_rent"), {
+      inspectionDays: ["Monday", "Tuesday"],
+      rent: 1,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("non-assigned user updates inspection availability — denied", async () => {
+  await seedAgentProperty("p_sched_other");
+  await assertFails(
+    updateDoc(doc(otherDb(), "properties/p_sched_other"), {
+      inspectionDays: ["Monday", "Tuesday"],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
