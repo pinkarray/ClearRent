@@ -144,7 +144,10 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => context.go('/tenant/home'),
+          // Preserve normal back navigation when there's history; only force
+          // the tenant home when deep-linked as the stack root (nothing to pop).
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/tenant/home'),
         ),
         title: Text('My Inspections', style: AppTextStyles.h4),
         centerTitle: true,
@@ -1427,11 +1430,13 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       statusText = r.statusDisplay;
     }
 
-    final needsRating = r.isCompleted && !r.tenantRated;
+    // Rating is optional and no longer gates the decision — a tenant who
+    // inspected can choose to rent / keep looking regardless of whether they
+    // rated the handler's conduct.
     final needsDecision = r.isCompleted &&
-        r.tenantRated &&
         _hasCheckedInterest &&
-        _rentalInterest == null;
+        _rentalInterest == null &&
+        !_hasPassed;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1439,35 +1444,38 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: needsRating
-            ? Border.all(color: AppColors.warning, width: 2)
+        border: r.isUnderReview
+            ? Border.all(color: AppColors.info, width: 1.5)
             : needsDecision
                 ? Border.all(color: AppColors.primary, width: 1.5)
                 : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // âš¡ ACTION REQUIRED BANNER
-        if (needsRating) ...[
+        // Dispute under review — the tenant reported a problem; an admin is on
+        // it. Takes priority over any rating/decision prompt.
+        if (r.isUnderReview) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: AppColors.warning.withAlpha(26),
+                color: AppColors.info.withAlpha(26),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.warning.withAlpha(77))),
+                border: Border.all(color: AppColors.info.withAlpha(77))),
             child: Row(children: [
-              Icon(Icons.bolt, size: 20, color: AppColors.warning),
+              Icon(Icons.shield_outlined, size: 20, color: AppColors.info),
               const SizedBox(width: 8),
               Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text('ACTION REQUIRED',
+                    Text('UNDER REVIEW',
                         style: AppTextStyles.labelSmall.copyWith(
-                            color: AppColors.warning,
+                            color: AppColors.info,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 2),
-                    Text('Rate your inspection to unlock next steps',
+                    Text(
+                        'You reported a problem. Our team is reviewing it and '
+                        'will sort out any refund.',
                         style: AppTextStyles.caption
                             .copyWith(color: AppColors.textSecondary)),
                   ])),
@@ -1612,8 +1620,8 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
           ),
         ],
 
-        // ============ RATING SECTION (ALL completed, not just agent-handled) ============
-        if (r.isCompleted) ...[
+        // ============ RATING SECTION — optional, scoped to handler conduct ============
+        if (r.isCompleted && !r.isUnderReview) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 12),
@@ -1627,13 +1635,22 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                       size: 18,
                       color: AppColors.warning)),
             ])
-          else
+          else ...[
+            Text('How was your agent? (optional)',
+                style: AppTextStyles.labelMedium),
+            const SizedBox(height: 2),
+            Text(
+                'On time, knew the property, professional? This isn\'t about '
+                'whether you liked the place.',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () => _showRatingDialog(),
                 icon: const Icon(Icons.star, size: 20),
-                label: const Text('Rate Your Experience'),
+                label: const Text('Rate Your Agent'),
                 style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.warning,
                     foregroundColor: Colors.white,
@@ -1642,11 +1659,33 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                         borderRadius: BorderRadius.circular(10))),
               ),
             ),
+          ],
+        ],
+
+        // ============ REPORT A PROBLEM (DISPUTE) ============
+        // A distinct channel from rating: something went wrong (misrepresented
+        // listing, no-show, unprofessional, safety, refund). Routes to admin.
+        if ((r.isCompleted || r.isAwaitingOutcome || r.isApproved) &&
+            !r.isUnderReview &&
+            !r.isRefunded) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _showReportDialog(r),
+              icon: Icon(Icons.flag_outlined,
+                  size: 18, color: AppColors.error),
+              label: Text('Report a problem',
+                  style: AppTextStyles.labelMedium
+                      .copyWith(color: AppColors.error)),
+              style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 4)),
+            ),
+          ),
         ],
 
         // ============ DECISION SECTION ============
         if (r.isCompleted &&
-            r.tenantRated &&
             _hasCheckedInterest &&
             _rentalInterest == null &&
             !_hasPassed) ...[
@@ -1933,7 +1972,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(success
-                              ? 'Thanks for your feedback! Now make your decision.'
+                              ? 'Thanks for your feedback!'
                               : 'Failed to submit rating. Please try again.'),
                           backgroundColor:
                               success ? AppColors.success : AppColors.error,
@@ -1969,6 +2008,149 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       case 5: return 'Excellent!';
       default: return '';
     }
+  }
+
+  // ---- Report a problem (dispute) ----
+  // The category values MUST match the reportInspectionIssue Cloud Function's
+  // allowed set (functions/src/inspection_dispute_ops.ts).
+  static const List<(String, String, IconData)> _disputeCategories = [
+    ('misrepresented', 'Property was misrepresented', Icons.error_outline),
+    ('no_show', 'The agent/landlord didn\'t show up', Icons.person_off_outlined),
+    ('unprofessional', 'Unprofessional conduct', Icons.sentiment_dissatisfied_outlined),
+    ('safety', 'Safety concern', Icons.gpp_maybe_outlined),
+    ('refund_request', 'I want a refund', Icons.replay),
+  ];
+
+  void _showReportDialog(InspectionRequest r) {
+    String? selectedCategory;
+    final detailsController = TextEditingController();
+    bool submitting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Report a problem'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                  'Tell us what went wrong. This goes to our team to review — '
+                  'it\'s separate from rating your agent.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 12),
+              ..._disputeCategories.map((c) {
+                final selected = selectedCategory == c.$1;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: GestureDetector(
+                    onTap: () =>
+                        setDialogState(() => selectedCategory = c.$1),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary.withAlpha(20)
+                            : AppColors.background,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.border),
+                      ),
+                      child: Row(children: [
+                        Icon(c.$3,
+                            size: 20,
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.textSecondary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                            child: Text(c.$2,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                    color: selected
+                                        ? AppColors.primary
+                                        : AppColors.textPrimary))),
+                        if (selected)
+                          Icon(Icons.check_circle,
+                              size: 18, color: AppColors.primary),
+                      ]),
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 4),
+              TextField(
+                controller: detailsController,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  hintText: 'Add details (optional)',
+                  hintStyle: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textHint),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.border)),
+                ),
+              ),
+            ]),
+          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          actions: [
+            TextButton(
+                onPressed:
+                    submitting ? null : () => Navigator.pop(ctx),
+                child: Text('Cancel',
+                    style: TextStyle(color: AppColors.textSecondary))),
+            ElevatedButton(
+              onPressed: (selectedCategory == null || submitting)
+                  ? null
+                  : () async {
+                      setDialogState(() => submitting = true);
+                      final ok = await widget.inspectionService
+                          .reportInspectionIssue(
+                        r.id,
+                        selectedCategory!,
+                        details: detailsController.text.trim(),
+                      );
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(ok
+                              ? 'Reported. Our team will review it shortly.'
+                              : 'Couldn\'t submit your report. Please try again.'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.error,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ));
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: selectedCategory == null
+                      ? AppColors.textHint
+                      : AppColors.error,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10))),
+              child: submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Submit report'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---- Express interest ----

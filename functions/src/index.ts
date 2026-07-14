@@ -18,6 +18,7 @@ import {getMessaging} from "firebase-admin/messaging";
 import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
 import {writeNotificationOnce} from "./notification_helpers";
+import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
 
 initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
@@ -34,7 +35,12 @@ interface NotificationDoc {
   payload?: Record<string, string>;
 }
 
-export {nudgeInspectionParty} from "./inspection_admin_ops";
+export {nudgeInspectionParty, messageInspectionParties}
+  from "./inspection_admin_ops";
+export {reportInspectionIssue} from "./inspection_dispute_ops";
+export {inspectionTodayAdminDigest} from "./admin_digest_ops";
+export {onRentReviewRequested, onUserProfileUpdated}
+  from "./admin_alert_triggers";
 
 export const onNotificationCreated = onDocumentCreated(
   "notifications/{notificationId}",
@@ -369,6 +375,30 @@ export const onInspectionRequestCreated = onDocumentCreated(
       }
     }
 
+    // Admin lifecycle awareness: one evolving alert per inspection, opened here
+    // at request time and walked through paid → approved/declined below.
+    const awaitingPayment = status === "pendingPayment";
+    await upsertAdminAlert(`insplc_${requestId}`, {
+      type: "inspection_lifecycle",
+      severity: "info",
+      title: awaitingPayment ?
+        "Inspection requested — awaiting payment" :
+        "Inspection requested",
+      body:
+        `${(data.tenantName as string | undefined) ?? "A tenant"} requested ` +
+        `to inspect ${(data.propertyTitle as string | undefined) ??
+          "a property"}` +
+        (awaitingPayment ? " — awaiting payment." : "."),
+      targetCollection: "inspection_requests",
+      targetId: requestId,
+      actors: {
+        tenantId: (data.tenantId as string | undefined) || undefined,
+        agentId: (data.agentId as string | undefined) || undefined,
+        landlordId: (data.landlordId as string | undefined) || undefined,
+      },
+      meta: {state: awaitingPayment ? "requested_unpaid" : "requested"},
+    });
+
     if (status === "pendingPayment") {
       logger.info("Skipping notification — pendingPayment", {requestId});
       return;
@@ -502,6 +532,21 @@ export const onIssueCreated = onDocumentCreated(
       },
     );
 
+    // Admin oversight of maintenance issues.
+    await writeAdminAlert({
+      type: "issue_reported",
+      severity: "warning",
+      title: "Tenant reported an issue",
+      body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+      targetCollection: "issues",
+      targetId: event.params.issueId,
+      actors: {
+        tenantId: (data.tenantId as string | undefined) || undefined,
+        landlordId,
+      },
+      meta: {category, propertyTitle},
+    });
+
     logger.info("Issue-reported notification queued", {
       issueId: event.params.issueId,
       landlordId,
@@ -553,6 +598,18 @@ export const onIssueUpdated = onDocumentUpdated(
       body = `${propertyTitle}: the tenant reports the ${category} issue ` +
         "isn't resolved.";
       payload = {...landlordRoute, initialTab: "1"}; // → In Progress tab
+      // A contested fix is a dispute — surface it to the admin too.
+      await writeAdminAlert({
+        type: "issue_fix_disputed",
+        severity: "warning",
+        title: "Tenant disputes a fix",
+        body: `A tenant says the ${category} issue at ${propertyTitle} ` +
+          "still isn't resolved.",
+        targetCollection: "issues",
+        targetId: issueId,
+        actors: {tenantId, landlordId},
+        meta: {category, propertyTitle},
+      });
     } else if (to === "in_progress") {
       userId = tenantId; // landlord acknowledged
       title = "Issue acknowledged";
@@ -676,6 +733,19 @@ export const onActiveRentalUpdated = onDocumentUpdated(
           `${tenantName} raised concerns about the agreement for ` +
           `${propertyTitle}${reason ? `: "${reason}"` : "."}`;
         payload = landlordAgreementsRoute;
+        // Agreement disputes need admin visibility too.
+        await writeAdminAlert({
+          type: "agreement_disputed",
+          severity: "warning",
+          title: "Tenancy agreement disputed",
+          body:
+            `${tenantName} raised concerns about the agreement for ` +
+            `${propertyTitle}${reason ? `: "${reason}"` : "."}`,
+          targetCollection: "active_rentals",
+          targetId: rentalId,
+          actors: {tenantId, landlordId},
+          meta: {propertyTitle, reason},
+        });
       } else if (agrAfter === "finalized") {
         uid = tenantId;
         type = "agreement_finalized";
@@ -769,6 +839,19 @@ export const onActiveRentalUpdated = onDocumentUpdated(
           payload: landlordRentalsRoute,
         },
       );
+      // A contested tenancy end is a two-sided dispute — loop in the admin.
+      await writeAdminAlert({
+        type: "rental_end_contested",
+        severity: "warning",
+        title: "Tenancy end contested",
+        body:
+          `${tenantName} contested the ended tenancy for ${propertyTitle}` +
+          `${statement ? `: "${statement}"` : "."}`,
+        targetCollection: "active_rentals",
+        targetId: rentalId,
+        actors: {tenantId, landlordId},
+        meta: {propertyTitle, statement},
+      });
     }
 
     logger.info("Active-rental notification check done", {rentalId});
@@ -882,6 +965,24 @@ export const onRentPaymentRecorded = onDocumentCreated(
         amount: agentPayout,
       });
     }
+
+    // Money visibility: surface each completed rent payment to the admin feed.
+    await writeAdminAlert({
+      type: "rent_payment",
+      severity: "info",
+      title: "Rent payment received",
+      body:
+        `${tenantName} paid rent for ${propertyTitle} ` +
+        `(₦${landlordPayout.toLocaleString("en-NG")} to the landlord).`,
+      targetCollection: "payments",
+      targetId: reference,
+      actors: {
+        tenantId: tenantId || undefined,
+        landlordId: landlordId || undefined,
+        agentId: agentId || undefined,
+      },
+      meta: {landlordPayout, agentPayout, propertyTitle},
+    });
 
     logger.info("Rent earnings ledger written", {reference, landlordId, agentId});
   },
@@ -1106,6 +1207,50 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           },
         );
       }
+      // Admin lifecycle: tenant has paid, now awaiting handler approval.
+      await upsertAdminAlert(`insplc_${requestId}`, {
+        type: "inspection_lifecycle",
+        severity: "info",
+        title: "Inspection paid — awaiting approval",
+        body:
+          `${tenantName} paid for the inspection of ${propertyTitle}. ` +
+          "Awaiting the handler's approval.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {state: "paid"},
+      });
+    }
+
+    // ---- Admin lifecycle: approved / declined outcome ----
+    // Walk the same per-inspection alert to its outcome so the admin sees
+    // whether it was approved or not. Covers both the regular approval and the
+    // landlord override (declinedByAgent → approved).
+    if (statusChanged && afterStatus === "approved") {
+      await upsertAdminAlert(`insplc_${requestId}`, {
+        type: "inspection_lifecycle",
+        severity: "info",
+        title: "Inspection approved",
+        body: `The inspection of ${propertyTitle} for ${tenantName} was ` +
+          "approved.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {state: "approved"},
+      });
+    }
+    if (statusChanged && afterStatus === "declined") {
+      await upsertAdminAlert(`insplc_${requestId}`, {
+        type: "inspection_lifecycle",
+        severity: "info",
+        title: "Inspection declined",
+        body: `The inspection of ${propertyTitle} for ${tenantName} was ` +
+          "declined.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {state: "declined"},
+      });
     }
 
     // ---- Status: → approved (regular, not override) ----

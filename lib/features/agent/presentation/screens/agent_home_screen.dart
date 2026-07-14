@@ -368,18 +368,22 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
       },
       child: Scaffold(
         backgroundColor: AppColors.background,
-        body:
-            _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _currentNavIndex == 0
-                ? SafeArea(child: _buildHomeTab())
-                : _currentNavIndex == 1
-                ? const SafeArea(child: AgentDiscoverPropertiesScreen())
-                : _currentNavIndex == 2
-                ? SafeArea(child: _buildPropertiesTab())
-                : _currentNavIndex == 3
-                ? SafeArea(child: _buildMessagesTab())
-                : _buildProfileTab(),
+        // IndexedStack keeps every tab alive so switching between them (or
+        // returning from a pushed detail screen) preserves each tab's state and
+        // live streams — no re-subscribe, no reload spinner on the Discover /
+        // Properties tabs.
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : IndexedStack(
+                index: _currentNavIndex,
+                children: [
+                  SafeArea(child: _buildHomeTab()),
+                  const SafeArea(child: AgentDiscoverPropertiesScreen()),
+                  SafeArea(child: _buildPropertiesTab()),
+                  SafeArea(child: _buildMessagesTab()),
+                  _buildProfileTab(),
+                ],
+              ),
         bottomNavigationBar: _buildBottomNav(),
       ),
     );

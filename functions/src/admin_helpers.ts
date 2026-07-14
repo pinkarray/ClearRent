@@ -29,12 +29,16 @@ const SUPER_ADMIN_UID = "hEKsYuKKdzLlPD0QWOP2CvAxYlq2";
 /**
  * Throws HttpsError if the caller is not an admin.
  *
- * Accepts the caller as admin if EITHER:
+ * Accepts the caller as admin if ANY of:
  *   (a) their auth token has a custom claim `admin === true`, OR
- *   (b) their UID matches SUPER_ADMIN_UID.
+ *   (b) their auth token has a custom claim `superAdmin === true`, OR
+ *   (c) their UID matches SUPER_ADMIN_UID.
  *
- * (b) is the fallback so admin CFs keep working even if the custom-claim
- * mechanism is misconfigured or a claim is accidentally removed.
+ * (b) keeps this in lockstep with firestore.rules isAdmin(), which accepts
+ * either the admin or superAdmin claim — otherwise a superAdmin-claim holder
+ * could pass every rule gate yet be denied by these callables.
+ * (c) is the bootstrap fallback so admin CFs keep working even if the
+ * custom-claim mechanism is misconfigured or a claim is accidentally removed.
  */
 export function assertAdmin(
   auth: {uid: string; token?: Record<string, unknown>} | undefined,
@@ -44,9 +48,10 @@ export function assertAdmin(
   }
 
   const hasAdminClaim = auth.token?.admin === true;
+  const hasSuperAdminClaim = auth.token?.superAdmin === true;
   const isSuperAdmin = auth.uid === SUPER_ADMIN_UID;
 
-  if (!hasAdminClaim && !isSuperAdmin) {
+  if (!hasAdminClaim && !hasSuperAdminClaim && !isSuperAdmin) {
     throw new HttpsError("permission-denied", "Admin access required");
   }
 }

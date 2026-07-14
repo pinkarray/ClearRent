@@ -158,6 +158,12 @@ class InspectionRequest {
   final String? ratedUserType; // 'agent' or 'landlord'
   final String? ratedUserName;
 
+  // Tenant dispute ("Report a problem") — distinct from rating. Written by the
+  // reportInspectionIssue Cloud Function; an admin resolves it from the queue.
+  final bool disputed;
+  final String? disputeStatus; // 'open' | 'resolved'
+  final String? disputeCategory;
+
   // Agent payout
   final String agentPayoutStatus; // pending, paid
   final DateTime? agentPaidAt;
@@ -251,6 +257,9 @@ class InspectionRequest {
     this.ratedUserId,
     this.ratedUserType,
     this.ratedUserName,
+    this.disputed = false,
+    this.disputeStatus,
+    this.disputeCategory,
     this.agentPayoutStatus = 'pending',
     this.agentPaidAt,
     this.agentPaidBy,
@@ -288,7 +297,9 @@ class InspectionRequest {
   bool get isExpiredUnapproved =>
       status == InspectionStatus.expiredUnapproved;
   bool get isAwaitingOutcome => status == InspectionStatus.awaitingOutcome;
-  
+  /// The tenant filed a dispute that an admin hasn't resolved yet.
+  bool get isUnderReview => disputed && disputeStatus == 'open';
+
   bool get isPaid => paymentStatus == 'paid';
   bool get isPaymentPendingVerification => paymentStatus == 'pending_verification';
   bool get canBeOverridden => isDeclinedByAgent && 
@@ -463,6 +474,9 @@ class InspectionRequest {
     String? ratedUserId,
     String? ratedUserType,
     String? ratedUserName,
+    bool? disputed,
+    String? disputeStatus,
+    String? disputeCategory,
     String? agentPayoutStatus,
     DateTime? agentPaidAt,
     String? agentPaidBy,
@@ -543,6 +557,9 @@ class InspectionRequest {
       ratedUserId: ratedUserId ?? this.ratedUserId,
       ratedUserType: ratedUserType ?? this.ratedUserType,
       ratedUserName: ratedUserName ?? this.ratedUserName,
+      disputed: disputed ?? this.disputed,
+      disputeStatus: disputeStatus ?? this.disputeStatus,
+      disputeCategory: disputeCategory ?? this.disputeCategory,
       agentPayoutStatus: agentPayoutStatus ?? this.agentPayoutStatus,
       agentPaidAt: agentPaidAt ?? this.agentPaidAt,
       agentPaidBy: agentPaidBy ?? this.agentPaidBy,
@@ -633,6 +650,9 @@ class InspectionRequest {
       ratedUserId: data['ratedUserId'],
       ratedUserType: data['ratedUserType'],
       ratedUserName: data['ratedUserName'],
+      disputed: data['disputed'] ?? false,
+      disputeStatus: data['disputeStatus'],
+      disputeCategory: data['disputeCategory'],
       agentPayoutStatus: data['agentPayoutStatus'] ?? 'pending',
       agentPaidAt: (data['agentPaidAt'] as Timestamp?)?.toDate(),
       agentPaidBy: data['agentPaidBy'],
@@ -721,6 +741,9 @@ class InspectionRequest {
       'ratedUserId': ratedUserId,
       'ratedUserType': ratedUserType,
       'ratedUserName': ratedUserName,
+      'disputed': disputed,
+      'disputeStatus': disputeStatus,
+      'disputeCategory': disputeCategory,
       'agentPayoutStatus': agentPayoutStatus,
       'agentPaidAt': agentPaidAt != null ? Timestamp.fromDate(agentPaidAt!) : null,
       'agentPaidBy': agentPaidBy,

@@ -13,6 +13,21 @@ import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
 
+/// One loaded property's detail data, kept in a small in-memory cache so that
+/// leaving and re-opening the same property paints instantly instead of
+/// showing the spinner and refetching from scratch. Refreshed silently on
+/// every open, so it can't stay stale for long.
+class _CachedDetail {
+  final PropertyModel property;
+  final String? exactAddress;
+  final int pending;
+  final int completed;
+  const _CachedDetail(
+      this.property, this.exactAddress, this.pending, this.completed);
+}
+
+final Map<String, _CachedDetail> _detailCache = {};
+
 class AgentPropertyDetailScreen extends StatefulWidget {
   final String propertyId;
 
@@ -45,6 +60,16 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // Seed from cache for an instant paint on re-entry; _loadProperty() then
+    // refreshes in the background without a spinner.
+    final cached = _detailCache[widget.propertyId];
+    if (cached != null) {
+      _property = cached.property;
+      _exactAddress = cached.exactAddress;
+      _pendingInspections = cached.pending;
+      _completedInspections = cached.completed;
+      _isLoading = false;
+    }
     _loadProperty();
   }
 
@@ -55,24 +80,31 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   }
 
   Future<void> _loadProperty() async {
+    // When we already have data on screen (seeded from cache), this is a silent
+    // background refresh — don't replace good data with an error if it fails.
+    final hasData = _property != null;
     try {
       final property = await _propertyService.getProperty(widget.propertyId);
-      
+
       if (property == null) {
-        setState(() {
-          _error = 'Property not found';
-          _isLoading = false;
-        });
+        if (!hasData) {
+          setState(() {
+            _error = 'Property not found';
+            _isLoading = false;
+          });
+        }
         return;
       }
 
       // Verify this agent is assigned to this property
       final currentUserId = _auth.currentUser?.uid;
       if (property.assignedAgentId != currentUserId) {
-        setState(() {
-          _error = 'You are not assigned to this property';
-          _isLoading = false;
-        });
+        if (!hasData) {
+          setState(() {
+            _error = 'You are not assigned to this property';
+            _isLoading = false;
+          });
+        }
         return;
       }
 
@@ -82,6 +114,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
       // The assigned agent is entitled to the exact address (gated subdoc).
       final loc = await _propertyService.getExactLocation(widget.propertyId);
 
+      if (!mounted) return;
       setState(() {
         _property = property;
         _exactAddress = (loc != null && loc.address.isNotEmpty)
@@ -89,12 +122,28 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
             : null;
         _isLoading = false;
       });
+      _cacheCurrent();
     } catch (e) {
       debugPrint('❌ Error loading property: $e');
-      setState(() {
-        _error = 'Failed to load property';
-        _isLoading = false;
-      });
+      if (!hasData) {
+        setState(() {
+          _error = 'Failed to load property';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Store the currently-loaded data so re-entry can paint it instantly.
+  void _cacheCurrent() {
+    final p = _property;
+    if (p != null) {
+      _detailCache[widget.propertyId] = _CachedDetail(
+        p,
+        _exactAddress,
+        _pendingInspections,
+        _completedInspections,
+      );
     }
   }
 
@@ -524,6 +573,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
     if (done == true && mounted) {
       // Reflect the new readiness state without a full reload.
       setState(() => _property = property.copyWith(readyForInspections: true));
+      _cacheCurrent();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Property is now bookable for inspections.'),
@@ -538,7 +588,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   Widget _buildReadinessCard(PropertyModel property) {
     if (property.readyForInspections) {
       return Container(
-        margin: const EdgeInsets.only(top: 16),
+        margin: const EdgeInsets.only(top: 16, left: 20, right: 20),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.success.withAlpha(20),
@@ -562,7 +612,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.only(top: 16),
+      margin: const EdgeInsets.only(top: 16, left: 20, right: 20),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.warning.withAlpha(20),

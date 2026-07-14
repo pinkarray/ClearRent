@@ -28,6 +28,7 @@ import {
   writeAuditLog,
 } from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
+import {resolveAdminAlertsForTarget} from "./admin_alerts";
 
 // Lighter options than renewal_ops — no Paystack secret needed here.
 const callableOptions = {
@@ -195,6 +196,15 @@ export const approveRentReview = onCall(
       paymentReference: "",
     });
 
+    // Close the "rent change request" admin alert now that it's decided.
+    await resolveAdminAlertsForTarget(requestId, request.auth!.uid).catch(
+      (e) =>
+        logger.error("Closing rent-review alert failed", {
+          requestId,
+          e: `${e}`,
+        }),
+    );
+
     await writeNotificationOnce(
       `rent_review_${requestId}_approved_${result.tenantId}`,
       {
@@ -289,6 +299,14 @@ export const rejectRentReview = onCall(
       amount: 0,
       paymentReference: "",
     });
+
+    await resolveAdminAlertsForTarget(requestId, request.auth!.uid).catch(
+      (e) =>
+        logger.error("Closing rent-review alert failed", {
+          requestId,
+          e: `${e}`,
+        }),
+    );
 
     // Notify the LANDLORD who filed the request — the tenant is intentionally
     // NOT told about a rejected increase (nothing changed on their tenancy).
@@ -435,6 +453,14 @@ export const approveImmediateRentChange = onCall(
       amount: proposedRent,
       paymentReference: "",
     });
+
+    await resolveAdminAlertsForTarget(requestId, request.auth!.uid).catch(
+      (e) =>
+        logger.error("Closing rent-review alert failed", {
+          requestId,
+          e: `${e}`,
+        }),
+    );
 
     // Notify the landlord who filed it (no tenant on a vacant property).
     const landlordId = (pre.landlordId as string | undefined) ?? "";

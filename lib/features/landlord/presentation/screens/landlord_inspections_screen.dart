@@ -136,7 +136,11 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => context.pop(),
+          // When deep-linked from a push (cold start, or after the splash
+          // redirect collapses the stack) there may be nothing to pop, which
+          // left the back button dead. Fall back to the landlord home instead.
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/landlord/home'),
         ),
         title: Text('Inspection Requests', style: AppTextStyles.h4),
         centerTitle: true,

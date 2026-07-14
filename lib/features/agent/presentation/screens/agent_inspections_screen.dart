@@ -45,6 +45,10 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
   int _upcomingCount = 0;
   final InspectionService _inspectionService = InspectionService();
 
+  // Deep-link highlight target. Cleared once the agent accepts the highlighted
+  // request so the emphasis frame doesn't carry over onto the Scheduled tab.
+  late String? _highlightId = widget.initialRequestId;
+
   @override
   void initState() {
     super.initState();
@@ -143,7 +147,11 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => context.pop(),
+          // When deep-linked from a push (cold start, or after the splash
+          // redirect collapses the stack) there may be nothing to pop, which
+          // left the back button dead. Fall back to the agent home instead.
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/agent/home'),
         ),
         title: Text('My Inspections', style: AppTextStyles.h4),
         centerTitle: true,
@@ -166,15 +174,22 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
         children: [
           _AgentPendingTab(
             inspectionService: _inspectionService,
-            tabController: _tabController,
-            highlightId: widget.initialRequestId,
+            highlightId: _highlightId,
+            onApproved: () {
+              _tabController.animateTo(1);
+              // Drop the deep-link highlight once the agent acts on it, so the
+              // emphasis frame doesn't follow the card onto the Scheduled tab.
+              if (_highlightId != null) {
+                setState(() => _highlightId = null);
+              }
+            },
           ),
           _AgentScheduledTab(
               inspectionService: _inspectionService,
-              highlightId: widget.initialRequestId),
+              highlightId: _highlightId),
           _AgentCompletedTab(
               inspectionService: _inspectionService,
-              highlightId: widget.initialRequestId),
+              highlightId: _highlightId),
         ],
       ),
     );
@@ -184,12 +199,12 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
 // ============ PENDING REQUESTS TAB ============
 class _AgentPendingTab extends StatefulWidget {
   final InspectionService inspectionService;
-  final TabController tabController;
+  final VoidCallback onApproved;
   final String? highlightId;
 
   const _AgentPendingTab({
     required this.inspectionService,
-    required this.tabController,
+    required this.onApproved,
     this.highlightId,
   });
 
@@ -207,7 +222,6 @@ class _AgentPendingTabState extends State<_AgentPendingTab> {
   @override
   Widget build(BuildContext context) {
     final inspectionService = widget.inspectionService;
-    final tabController = widget.tabController;
     final highlightId = widget.highlightId;
     return StreamBuilder<List<InspectionRequest>>(
       stream: _stream,
@@ -240,7 +254,7 @@ class _AgentPendingTabState extends State<_AgentPendingTab> {
               child: _AgentPendingCard(
                 request: ordered[index],
                 inspectionService: inspectionService,
-                onApproved: () => tabController.animateTo(1),
+                onApproved: widget.onApproved,
               ),
             );
           },
@@ -287,6 +301,13 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
       widget.request.id,
     );
 
+    // Fire the parent callback (switch to Scheduled + clear the deep-link
+    // highlight) as soon as the write succeeds. The live stream frequently
+    // drops this now-approved card from the Pending list before the future
+    // resolves, disposing this card — gating it on the `mounted` check below
+    // would silently skip it and strand the emphasis frame on the next tab.
+    if (success) widget.onApproved?.call();
+
     if (!mounted) return;
     setState(() => _isLoading = false);
 
@@ -303,7 +324,6 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
           ),
         ),
       );
-      widget.onApproved?.call();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

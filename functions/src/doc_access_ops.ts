@@ -32,9 +32,12 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     throw new HttpsError("unauthenticated", "You must be signed in.");
   }
   const uid = request.auth.uid;
-  const isAdmin =
+  // Read access mirrors canRead() in firestore.rules: full admins OR a
+  // read-only viewer. Viewing a signed agreement is a read, so viewers pass.
+  const canRead =
     request.auth.token?.admin === true ||
-    request.auth.token?.superAdmin === true;
+    request.auth.token?.superAdmin === true ||
+    request.auth.token?.viewer === true;
 
   const data = (request.data ?? {}) as {collection?: string; docId?: string};
   const collection = data.collection ?? "";
@@ -56,7 +59,7 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
   // Authorize: a party to the agreement (landlord or tenant) or an admin.
   const isParty =
     doc.landlordId === uid || doc.tenantId === uid;
-  if (!isParty && !isAdmin) {
+  if (!isParty && !canRead) {
     throw new HttpsError(
       "permission-denied",
       "You are not a party to this agreement.",

@@ -1383,6 +1383,38 @@ class InspectionService {
   // from all of a user's rated inspections whenever tenantRated flips true,
   // and is the sole writer of users.rating/totalRatings (locked in rules).
 
+  // ============ REPORT A PROBLEM (DISPUTE) ============
+
+  /// File a dispute on an inspection that went wrong. This is distinct from
+  /// rating: it routes the case to the admin review queue (via the
+  /// reportInspectionIssue Cloud Function) which raises an admin alert and
+  /// lets an admin decide a refund — the tenant can't self-refund.
+  ///
+  /// [category] is one of: misrepresented, no_show, unprofessional, safety,
+  /// refund_request. Returns true on success (including an idempotent no-op
+  /// when a dispute is already open).
+  Future<bool> reportInspectionIssue(
+    String requestId,
+    String category, {
+    String details = '',
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('reportInspectionIssue');
+      await callable.call<Map<String, dynamic>>({
+        'requestId': requestId,
+        'category': category,
+        'details': details,
+      });
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ reportInspectionIssue failed: $e',
+        name: 'InspectionService',
+      );
+      return false;
+    }
+  }
+
   // ============ CANCEL ============
 
   Future<bool> cancelRequest(String requestId) async {

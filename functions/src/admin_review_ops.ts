@@ -16,8 +16,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {assertAdmin, writeAuditLog} from "./admin_helpers";
+import {resolveAdminAlertsForTarget} from "./admin_alerts";
 
 const callableOptions = {timeoutSeconds: 30, enforceAppCheck: false};
 
@@ -117,7 +119,7 @@ export const adminReviewPropertyDoc = onCall(callableOptions, async (request) =>
 
 interface ResolveInspectionInput {
   requestId?: unknown;
-  action?: unknown; // 'refund' | 'complete'
+  action?: unknown; // 'refund' | 'complete' | 'dismiss'
   refundAmount?: unknown; // required for 'refund', in Naira
 }
 
@@ -128,8 +130,9 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
 
   const requestId = reqString(raw.requestId, "requestId");
   const action = reqString(raw.action, "action");
-  if (!["refund", "complete"].includes(action)) {
-    throw new HttpsError("invalid-argument", "action must be refund|complete.");
+  if (!["refund", "complete", "dismiss"].includes(action)) {
+    throw new HttpsError(
+      "invalid-argument", "action must be refund|complete|dismiss.");
   }
 
   const db = getFirestore();
@@ -142,6 +145,25 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
     }
     const data = snap.data()!;
     const now = FieldValue.serverTimestamp();
+    // If there's an open dispute, any resolution closes it.
+    const closesDispute = data.disputeStatus === "open" ?
+      {disputeStatus: "resolved"} : {};
+
+    if (action === "dismiss") {
+      // Unfounded dispute: no money moves, status is untouched. This exists
+      // purely to close the dispute + its admin alert with an audit trail.
+      if (data.disputeStatus !== "open") {
+        throw new HttpsError(
+          "failed-precondition", "No open dispute to dismiss.");
+      }
+      tx.update(ref, {
+        disputeStatus: "resolved",
+        disputeDismissedAt: now,
+        resolvedByAdmin: true,
+        updatedAt: now,
+      });
+      return 0;
+    }
 
     if (action === "complete") {
       tx.update(ref, {
@@ -149,6 +171,7 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
         completedAt: now,
         resolvedByAdmin: true,
         updatedAt: now,
+        ...closesDispute,
       });
       return 0;
     }
@@ -177,9 +200,22 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
       resolvedByAdmin: true,
       refundedAt: now,
       updatedAt: now,
+      ...closesDispute,
     });
     return amount;
   });
+
+  // Close any open admin_alerts for this inspection (e.g. the dispute alert)
+  // now that it's resolved, so the dashboard queue clears. Best-effort —
+  // a failure here shouldn't undo the resolution above.
+  try {
+    await resolveAdminAlertsForTarget(requestId, adminUid);
+  } catch (err) {
+    logger.error("Failed to close admin alerts after resolution", {
+      requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   const auditLogId = await writeAuditLog({
     actorId: adminUid,

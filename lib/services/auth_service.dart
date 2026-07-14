@@ -1012,6 +1012,9 @@ class AuthService {
         return 'Invalid email or password. Please try again.';
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'No internet connection. Please check your network and '
+            'try again.';
       default:
         return 'An error occurred. Please try again.';
     }

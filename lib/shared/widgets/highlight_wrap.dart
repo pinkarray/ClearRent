@@ -15,10 +15,16 @@ class HighlightWrap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!active) return child;
+    // A soft tinted "mat" around the card rather than a second border line.
+    // Some cards (e.g. the Scheduled inspection card) draw their own border; a
+    // bordered highlight here sat right against it and read as a doubled
+    // outline. A translucent fill with a gap emphasises the card without ever
+    // looking like two borders, regardless of the child's own decoration.
     return Container(
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.primary, width: 2),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.primary.withAlpha(56),
+        borderRadius: BorderRadius.circular(22),
       ),
       child: child,
     );

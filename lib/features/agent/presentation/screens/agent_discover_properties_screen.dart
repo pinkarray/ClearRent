@@ -42,6 +42,9 @@ class _AgentDiscoverPropertiesScreenState
   PropertyModel? _selectedProperty;
   List<Map<String, dynamic>> _matchingTenants = [];
   bool _isLoadingTenants = false;
+  // Matching tenants cached per property so re-selecting one paints instantly
+  // instead of showing the spinner and re-querying every time.
+  final Map<String, List<Map<String, dynamic>>> _tenantsCache = {};
 
   @override
   void initState() {
@@ -127,7 +130,14 @@ class _AgentDiscoverPropertiesScreenState
   }
 
   Future<void> _loadMatchingTenants(PropertyModel property) async {
-    setState(() { _selectedProperty = property; _isLoadingTenants = true; _matchingTenants = []; });
+    // Seed from cache for an instant list; only spin on the first load for a
+    // property. Either way we re-query below and refresh silently.
+    final cached = _tenantsCache[property.id];
+    setState(() {
+      _selectedProperty = property;
+      _matchingTenants = cached ?? [];
+      _isLoadingTenants = cached == null;
+    });
     try {
       final snap = await _firestore.collection('users').where('accountType', isEqualTo: 'tenant').where('verificationStatus', isEqualTo: 'verified').get();
       final tenants = <Map<String, dynamic>>[];
@@ -137,8 +147,15 @@ class _AgentDiscoverPropertiesScreenState
         if (score > 0) { data['_matchScore'] = score; data['_matchReasons'] = _getMatchReasons(data, property); tenants.add(data); }
       }
       tenants.sort((a, b) => (b['_matchScore'] as int).compareTo(a['_matchScore'] as int));
+      _tenantsCache[property.id] = tenants;
+      // Ignore if the user has since switched to a different property.
+      if (!mounted || _selectedProperty?.id != property.id) return;
       setState(() { _matchingTenants = tenants; _isLoadingTenants = false; });
-    } catch (e) { debugPrint('❌ Error loading tenants: $e'); setState(() => _isLoadingTenants = false); }
+    } catch (e) {
+      debugPrint('❌ Error loading tenants: $e');
+      if (!mounted || _selectedProperty?.id != property.id) return;
+      setState(() => _isLoadingTenants = false);
+    }
   }
 
   int _calculateMatchScore(Map<String, dynamic> t, PropertyModel p) {
