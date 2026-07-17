@@ -15,10 +15,14 @@ bool firebaseInitialized = false;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Keep more decoded images resident so property images don't re-decode and
-  // flash a placeholder when navigating between list and detail screens.
-  // (Default is ~100 MB; bumping it lets a full property list stay cached.)
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 200 << 20; // 200 MB
+  // Cap decoded-image memory. This was 200 MB to stop property images
+  // re-decoding between list and detail, but a cache that large makes the app
+  // the first thing Android's low-memory killer drops when something else
+  // needs RAM (an incoming call) — the process dies and the app cold-restarts
+  // to the splash screen, losing the user's place. 64 MB (under Flutter's
+  // 100 MB default) keeps a useful working set on the low-RAM devices most of
+  // our users are on.
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 64 << 20; // 64 MB
 
   // Initialize Firebase with error handling
   try {

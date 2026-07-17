@@ -1253,6 +1253,61 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       });
     }
 
+    // ---- Status: → cancelled ----
+    // Catches every cancel path (tenant, handler, or the nightly sweep). Keeps
+    // the admin lifecycle alert current AND — the gap this fixes — writes a
+    // Recent-Activities row for the landlord, which no cancel path did before.
+    if (statusChanged && afterStatus === "cancelled") {
+      await upsertAdminAlert(`insplc_${requestId}`, {
+        type: "inspection_lifecycle",
+        severity: "info",
+        title: "Inspection cancelled",
+        body: `The inspection of ${propertyTitle} for ${tenantName} was ` +
+          "cancelled.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {state: "cancelled"},
+      });
+
+      // Only surface it to the landlord for inspections they already knew
+      // about — skip the unpaid-abandon (pendingPayment) case they never saw.
+      const knownStates = [
+        "pending", "pendingVerification", "approved", "declinedByAgent",
+      ];
+      if (landlordId && knownStates.includes(beforeStatus ?? "")) {
+        const propertyId = (after.propertyId as string | undefined) ?? "";
+        const by = (after.cancelledBy as string | undefined) ?? "";
+        const byWhom =
+          by === "agent" ? ` by ${agentName}` :
+            by === "landlord" ? " by you" :
+              by === "tenant" ? ` by ${tenantName}` : "";
+        try {
+          await getFirestore()
+            .collection("activities")
+            .doc(`insp_${requestId}_cancelled`)
+            .create({
+              landlordId,
+              type: "inspection_declined",
+              title: "Inspection cancelled",
+              subtitle:
+                `${tenantName}'s inspection for ${propertyTitle} was ` +
+                `cancelled${byWhom}.`,
+              propertyId,
+              actorId: tenantId ?? null,
+              actorName: tenantName,
+              isRead: false,
+              createdAt: FieldValue.serverTimestamp(),
+            });
+        } catch (err) {
+          const code = (err as {code?: number | string})?.code;
+          if (code !== 6 && code !== "already-exists") {
+            logger.warn("Failed to write cancel activity", {requestId});
+          }
+        }
+      }
+    }
+
     // ---- Status: → approved (regular, not override) ----
     // Tenant gets pushed. Agent overrides covered by the next block.
     if (

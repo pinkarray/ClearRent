@@ -108,6 +108,40 @@ async function main() {
   check("two inspections → two lifecycle alerts total",
     (await alertCount()) === 2);
 
+  // ── cancelled from a KNOWN state → landlord activity written ──────────
+  const path3 = "inspection_requests/req3";
+  await wrappedUpdate({
+    data: {
+      before: snapOf({...base, status: "approved"}, path3),
+      after: snapOf(
+        {...base, status: "cancelled", cancelledBy: "agent"}, path3),
+    },
+    params: {requestId: "req3"},
+  });
+  const c = await lc("req3");
+  check("cancelled: lifecycle alert state=cancelled",
+    c && c.meta.state === "cancelled");
+  const act = await db.collection("activities")
+    .doc("insp_req3_cancelled").get();
+  check("cancelled: landlord activity written", act.exists);
+  check("cancelled: activity keyed to landlord + right type",
+    act.exists && act.data().landlordId === "L1" &&
+    act.data().type === "inspection_declined" &&
+    act.data().title === "Inspection cancelled");
+
+  // ── cancelled from pendingPayment (abandon) → NO landlord activity ────
+  const path4 = "inspection_requests/req4";
+  await wrappedUpdate({
+    data: {
+      before: snapOf({...base, status: "pendingPayment"}, path4),
+      after: snapOf({...base, status: "cancelled"}, path4),
+    },
+    params: {requestId: "req4"},
+  });
+  const act4 = await db.collection("activities")
+    .doc("insp_req4_cancelled").get();
+  check("abandon-cancel: NO landlord activity (never knew)", !act4.exists);
+
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);
   process.exit(failures === 0 ? 0 : 1);
 }

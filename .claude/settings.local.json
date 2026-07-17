@@ -102,7 +102,21 @@
       "Bash(echo \"===== clearrent \\(branch: $\\(git -C /c/Users/MIDE/clearrent rev-parse --abbrev-ref HEAD\\)\\) =====\")",
       "Bash(git -C /c/Users/MIDE/clearrent status --short)",
       "Bash(git -C /c/Users/MIDE/clearrent_admin rev-parse --abbrev-ref HEAD)",
-      "Bash(echo \"===== clearrent_admin \\(branch: $\\(git -C /c/Users/MIDE/clearrent_admin rev-parse --abbrev-ref HEAD\\)\\) =====\")"
+      "Bash(echo \"===== clearrent_admin \\(branch: $\\(git -C /c/Users/MIDE/clearrent_admin rev-parse --abbrev-ref HEAD\\)\\) =====\")",
+      "Bash(awk -F: '$2>=1255 && $2<=1320')",
+      "Bash(time node -e \"require\\('./lib/index.js'\\); console.log\\('LOADED OK — exports:', Object.keys\\(require\\('./lib/index.js'\\)\\).length\\)\")",
+      "Bash(awk -F: '{print $NF}')",
+      "Bash(node scripts/verify_doc_rules.js)",
+      "Bash(grep -v \"//\")",
+      "Bash(echo \"=== property model file ===\"; find lib -name \"property_model.dart\" | head; echo \"=== isVerified in functions ===\"; grep -rn \"isVerified\" functions/src | head; echo \"=== isVerified in admin dashboard ===\"; grep -rn \"isVerified\" /c/Users/MIDE/clearrent_admin/src 2>/dev/null | head -6; echo \"=== isVerified in rules ===\"; grep -n \"isVerified\" firestore.rules | head)",
+      "Bash(ls -la /c/Users/MIDE/clearrent_admin 2>/dev/null | head -30)",
+      "Bash(command -v rg)",
+      "Bash(cd /c/Users/MIDE/clearrent_admin *)",
+      "Bash(netstat -ano)",
+      "Bash(ls functions/scripts/ && echo \"--- service account keys ---\" && ls functions/*.json 2>/dev/null; ls *.json 2>/dev/null; echo \"--- gcloud adc ---\"; ls ~/AppData/Roaming/gcloud/application_default_credentials.json 2>/dev/null && echo \"ADC PRESENT\" || echo \"no ADC\")",
+      "Read(//c/Users/MIDE/AppData/Roaming/gcloud/**)",
+      "Bash(node -e \"const k=require\\('./serviceAccountKey.json'\\); console.log\\('project_id:', k.project_id\\); console.log\\('client_email:', k.client_email\\);\")",
+      "Bash(node \"C:/Users/MIDE/AppData/Local/Temp/claude/c--Users-MIDE-clearrent/5753e060-36fc-452e-9895-9497e24493b2/scratchpad/dump_doc_state.js\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\MIDE\\clearrent_admin\\src\\app\\api\\verification-image",
