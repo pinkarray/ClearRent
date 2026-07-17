@@ -500,7 +500,44 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       _showError('Please select an agent to handle inspections');
       return false;
     }
+    // An admin approved a specific FILE as a specific type. Relabelling it
+    // without uploading the matching document would make the record lie about
+    // what was actually reviewed, so firestore.rules rejects that write —
+    // catch it here and say why, instead of letting the save fail silently and
+    // snap back to the old label.
+    if (_ownershipDocType != widget.property.ownershipDocType &&
+        _isDocApproved &&
+        _newOwnershipDocFile == null) {
+      _showError(
+        'Your ${_docTypeLabel(widget.property.ownershipDocType)} was already '
+        'approved. To change the document type, upload the '
+        '${_docTypeLabel(_ownershipDocType)} itself — it will go back for '
+        'review.',
+      );
+      return false;
+    }
     return true;
+  }
+
+  /// The admin has already reviewed and approved the document on file. Grouped
+  /// units inherit their building's status, so this only governs standalone
+  /// listings — the same scope the save path uses.
+  bool get _isDocApproved =>
+      widget.property.ownershipDocStatus == 'verified' &&
+      widget.property.buildingId == null;
+
+  /// Human label for a stored ownership-doc type value.
+  String _docTypeLabel(String? type) {
+    switch (type) {
+      case 'c_of_o':
+        return 'C of O';
+      case 'deed':
+        return 'Deed of Assignment';
+      case 'other':
+        return 'other document';
+      default:
+        return 'document';
+    }
   }
 
   void _showError(String message) {
@@ -589,10 +626,17 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         if (_ownershipDocType != null) 'ownershipDocType': _ownershipDocType,
       };
 
-      // A re-uploaded ownership doc must go back through admin review — never
-      // keep the old 'verified' status on a new document. Standalone listings
-      // only; grouped units inherit their building's doc status.
-      if (_newOwnershipDocFile != null && widget.property.buildingId == null) {
+      // A changed ownership doc must go back through admin review — never keep
+      // the old 'verified' status over a document the admin didn't approve.
+      // This covers RE-LABELLING too, not just re-uploading: admin approves a
+      // file as 'c_of_o' and the owner silently switches it to 'other'/'deed',
+      // and the verification now vouches for something it never reviewed. The
+      // matching firestore.rules guard rejects the write outright, so this must
+      // stay in step or a legitimate relabel fails with a permission error.
+      // Standalone listings only; grouped units inherit their building's status.
+      final docChanged = _newOwnershipDocFile != null ||
+          _ownershipDocType != widget.property.ownershipDocType;
+      if (docChanged && widget.property.buildingId == null) {
         updates['ownershipDocStatus'] = 'pending';
         updates['isAvailable'] = false;
       }
@@ -1912,6 +1956,35 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             _DocTypeChip(label: 'Other', value: 'other', selected: _ownershipDocType == 'other', onTap: () => setState(() { _ownershipDocType = 'other'; _hasChanges = true; })),
           ],
         ),
+
+        // Once approved, the label is tied to the file the admin actually
+        // reviewed — say so up front rather than failing on save.
+        if (_isDocApproved) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.info.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.info.withAlpha(60)),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.lock_outline, size: 15, color: AppColors.info),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Approved as '
+                  '${_docTypeLabel(widget.property.ownershipDocType)}. '
+                  'To change the type you must upload the matching document — '
+                  'it goes back for review and your listing is offline until '
+                  'approved.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ]),
+          ),
+        ],
         const SizedBox(height: 16),
 
         if (hasDoc) ...[

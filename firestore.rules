@@ -201,6 +201,36 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownershipDocStatus'])
           || !(request.resource.data.ownershipDocStatus in ['verified', 'rejected'])
         )
+        // Changing the DOCUMENT ITSELF (file or type) must send it back for
+        // review — the guard above only bites when status is among the changed
+        // keys, so an owner could otherwise swap the file (or relabel the type)
+        // and keep a 'verified' the admin never gave to that document.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocUrl', 'ownershipDocType'])
+          || !(request.resource.data.ownershipDocStatus in ['verified', 'rejected'])
+        )
+        // isVerified is admin-granted (adminReviewPropertyDoc writes it). The
+        // owner may never self-set it true — mirrors the users/{userId} rule.
+        // Without this an unverified listing could show a verified badge with
+        // no document review at all.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['isVerified'])
+          || request.resource.data.isVerified == false
+        )
+        // Once an admin has REVIEWED the document, its type can't be relabelled
+        // on its own — the file is whatever it is, so calling an approved C of O
+        // a 'deed' just makes the record lie. Changing the type after review
+        // requires uploading the matching document. Before review (pending /
+        // none / rejected) the owner is still free to correct the label.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocType'])
+          || resource.data.get('ownershipDocStatus', 'none') != 'verified'
+          || request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocUrl'])
+        )
         && (
           (resource.data.get('currentTenantsCount', 0) <= 0)
           || (
@@ -337,6 +367,25 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['ownershipDocStatus'])
           || request.resource.data.ownershipDocStatus == 'pending'
+        )
+        // Changing the DOCUMENT ITSELF (file or type) must send it back for
+        // review. Without this, the status guard above only bites when status
+        // is among the changed keys — so an owner could swap the file, or
+        // relabel c_of_o → deed, while 'verified' silently stuck, keeping an
+        // approval the admin never gave to that document.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocUrl', 'ownershipDocType'])
+          || request.resource.data.ownershipDocStatus == 'pending'
+        )
+        // After review, the type can't be relabelled on its own — changing it
+        // requires uploading the matching document. Mirrors properties.
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocType'])
+          || resource.data.get('ownershipDocStatus', 'none') != 'verified'
+          || request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['ownershipDocUrl'])
         );
 
       // No client deletes — a building may have units; admin SDK handles cleanup.
