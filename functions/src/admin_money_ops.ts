@@ -887,6 +887,19 @@ function deriveRefundReason(
     };
   }
 
+  // System slot-conflict decline: ClearRent double-booked the handler and
+  // auto-declined the newer request. Distinct source so the amount logic can
+  // issue a FULL refund (our error) instead of keeping the platform charge.
+  if (data.declineSource === "system_slot_conflict") {
+    return {
+      source: "inspection_slot_conflict",
+      reason:
+        (data.refundReason as string | undefined) ??
+        (data.declineReason as string | undefined) ??
+        "Slot conflict — automatic full refund",
+    };
+  }
+
   // Handler exit ramp: agent or landlord cancelled on tenant's behalf.
   const cancelledBy = data.cancelledBy as string | undefined;
   if (cancelledBy === "agent" || cancelledBy === "landlord") {
@@ -947,11 +960,6 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
       return;
     }
 
-    // Amount to refund: an admin partial refund (full fee minus the
-    // non-refundable cut, decided in the inspection-review queue) sets
-    // `refundAmount` explicitly; every other path refunds the full totalFee.
-    // The override is clamped to (0, totalFee] so it can only ever REDUCE the
-    // refund, never inflate it.
     const totalFee = after.totalFee;
     if (
       typeof totalFee !== "number" ||
@@ -961,15 +969,35 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
       logger.error("Refund trigger: invalid totalFee", {requestId, totalFee});
       return;
     }
+
+    const {source, reason} = deriveRefundReason(after);
+
+    // Refund amount policy. The ₦3,000 platform service charge (=
+    // InspectionPricing.clearrentTake) is NON-REFUNDABLE once a booking is
+    // made — when an inspection falls through for reasons not attributable to
+    // the tenant, only the handler's ₦7,000 portion is returned. Two sources
+    // get the FULL fee back:
+    //   • inspection_admin_review — the admin sets the exact refundAmount from
+    //     the review queue (honored via the override below).
+    //   • inspection_slot_conflict — ClearRent double-booked the handler, so it
+    //     is our error and we do not keep our cut.
+    // An explicit `refundAmount` override still wins when present, clamped to
+    // (0, totalFee] so it can only ever REDUCE the refund, never inflate it.
+    const PLATFORM_NON_REFUNDABLE = 3000;
+    const fullRefundSource =
+      source === "inspection_admin_review" ||
+      source === "inspection_slot_conflict";
+    const baseAmount = fullRefundSource ?
+      totalFee :
+      Math.max(0, totalFee - PLATFORM_NON_REFUNDABLE);
+
     const override = after.refundAmount;
     const useOverride =
       typeof override === "number" &&
       Number.isFinite(override) &&
       override > 0 &&
       override <= totalFee;
-    const amount = useOverride ? override : totalFee;
-
-    const {source, reason} = deriveRefundReason(after);
+    const amount = useOverride ? override : baseAmount;
 
     const db = getFirestore();
     const beneficiaryBank = await readBeneficiaryBank(db, tenantId);
