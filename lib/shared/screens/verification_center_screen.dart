@@ -73,6 +73,11 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   double get _verificationFee => VerificationFees.getFee(_accountType);
   String get _verificationFeeLabel => VerificationFees.getFeeLabel(_accountType);
 
+  // Renewal: an expired user re-verifies their role proof + re-pays. Their
+  // NIN is permanent and already on file, so the NIN steps are skipped.
+  bool get _isRenewal =>
+      _verificationData?.status == VerificationStatus.expired;
+
   Future<void> _loadUserDataAndVerificationStatus() async {
     final profile = await _authService.getUserProfile();
     if (profile != null && mounted) {
@@ -203,8 +208,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   }
 
   bool get _allRequiredDocsUploaded {
-    // All roles require a valid NIN number + NIN slip photo
-    if (!_isNinNumberValid || _ninFile == null) return false;
+    // All roles require a valid NIN number + NIN slip photo — except a
+    // renewal, where the NIN is already on file and not re-collected.
+    if (!_isRenewal && (!_isNinNumberValid || _ninFile == null)) return false;
 
     switch (_accountType) {
       case 'landlord':
@@ -263,16 +269,18 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = true);
 
-    // Encrypt + store NIN via Cloud Function (never plaintext).
+    // Encrypt + store NIN via Cloud Function (never plaintext). A renewal
+    // reuses the NIN already on file, so there's nothing to (re)store.
     final ninNumber = _ninNumberController.text.trim();
-    final ninStored = await _verificationService.submitNin(ninNumber);
+    final ninStored =
+        _isRenewal ? true : await _verificationService.submitNin(ninNumber);
 
     VerificationResult result;
 
     switch (_accountType) {
       case 'landlord':
         result = await _verificationService.submitLandlordVerification(
-          ninFile: _ninFile!,
+          ninFile: _ninFile,
           utilityBillFile: _utilityBillFile!,
           paymentReference: paymentReference,
           paymentAmount: paymentAmount,
@@ -280,7 +288,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         break;
       case 'tenant':
         result = await _verificationService.submitTenantVerification(
-          ninFile: _ninFile!,
+          ninFile: _ninFile,
           proofOfIncomeFile: _proofOfIncomeFile!,
           paymentReference: paymentReference,
           paymentAmount: paymentAmount,
@@ -288,7 +296,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         break;
       case 'agent':
         result = await _verificationService.submitAgentVerification(
-          ninFile: _ninFile!,
+          ninFile: _ninFile,
           proofOfAddressFile: _proofOfAddressFile!,
           guarantorIdFile: _guarantorIdFile!,
           guarantorName: _guarantorNameController.text.trim(),
@@ -380,8 +388,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   // ============ RENEWAL STATE (annual verification lapsed) ============
   Widget _buildRenewalState() {
     // Renewal re-collects the role proof + fee only — NIN is permanent and
-    // already on file. TODO(renewal): suppress the NIN upload for renewals;
-    // for now the standard upload flow is reused beneath a renewal notice.
+    // already on file, so the upload form suppresses the NIN steps for
+    // renewals (see _isRenewal).
     return Column(
       children: [
         Container(
@@ -1035,16 +1043,18 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   List<Widget> _buildLandlordDocs() {
     return [
-      _buildNinNumberField(),
-      const SizedBox(height: 16),
-      _DocumentUploadCard(
-        title: 'NIN Slip Photo',
-        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
-        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
-        icon: Icons.badge_outlined, file: _ninFile,
-        onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
-      ),
-      const SizedBox(height: 16),
+      if (!_isRenewal) ...[
+        _buildNinNumberField(),
+        const SizedBox(height: 16),
+        _DocumentUploadCard(
+          title: 'NIN Slip Photo',
+          subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+          whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
+          icon: Icons.badge_outlined, file: _ninFile,
+          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+        ),
+        const SizedBox(height: 16),
+      ],
       _DocumentUploadCard(
         title: 'Recent Utility Bill',
         subtitle: 'Electricity (PHCN), Water, or Waste bill from the last 3 months',
@@ -1057,16 +1067,18 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   List<Widget> _buildTenantDocs() {
     return [
-      _buildNinNumberField(),
-      const SizedBox(height: 16),
-      _DocumentUploadCard(
-        title: 'NIN Slip Photo',
-        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
-        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
-        icon: Icons.badge_outlined, file: _ninFile,
-        onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
-      ),
-      const SizedBox(height: 16),
+      if (!_isRenewal) ...[
+        _buildNinNumberField(),
+        const SizedBox(height: 16),
+        _DocumentUploadCard(
+          title: 'NIN Slip Photo',
+          subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+          whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
+          icon: Icons.badge_outlined, file: _ninFile,
+          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+        ),
+        const SizedBox(height: 16),
+      ],
       _DocumentUploadCard(
         title: 'Proof of Income',
         subtitle: 'Employment letter, Bank statement, or Recent pay slip',
@@ -1079,16 +1091,18 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   List<Widget> _buildAgentDocs() {
     return [
-      _buildNinNumberField(),
-      const SizedBox(height: 16),
-      _DocumentUploadCard(
-        title: 'NIN Slip Photo',
-        subtitle: 'Upload a clear photo of your physical or digital NIN slip',
-        whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
-        icon: Icons.badge_outlined, file: _ninFile,
-        onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
-      ),
-      const SizedBox(height: 16),
+      if (!_isRenewal) ...[
+        _buildNinNumberField(),
+        const SizedBox(height: 16),
+        _DocumentUploadCard(
+          title: 'NIN Slip Photo',
+          subtitle: 'Upload a clear photo of your physical or digital NIN slip',
+          whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
+          icon: Icons.badge_outlined, file: _ninFile,
+          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+        ),
+        const SizedBox(height: 16),
+      ],
       _DocumentUploadCard(
         title: 'Proof of Address',
         subtitle: 'Utility bill or Bank statement showing your residential address',

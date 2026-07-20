@@ -254,9 +254,19 @@ class VerificationService {
     }
   }
 
+  /// The NIN document URL already stored for the current user (from their
+  /// original verification). Used on renewal, where the NIN — a permanent
+  /// number — is not re-collected, so the existing slip is carried forward.
+  Future<String?> _existingNinUrl() async {
+    if (_currentUserId == null) return null;
+    final snap =
+        await _firestore.collection('users').doc(_currentUserId).get();
+    return ((snap.data()?['verificationDocs'] as Map?)?['nin']) as String?;
+  }
+
   // ============ LANDLORD VERIFICATION ============
   Future<VerificationResult> submitLandlordVerification({
-    required File ninFile,
+    File? ninFile,
     required File utilityBillFile,
     required String paymentReference,
     required double paymentAmount,
@@ -266,7 +276,11 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      final ninUrl = await _uploadDocument(ninFile, 'nin');
+      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // changes. First-time verification uploads the NIN slip.
+      final ninUrl = ninFile != null
+          ? await _uploadDocument(ninFile, 'nin')
+          : await _existingNinUrl();
       final utilityBillUrl = await _uploadDocument(utilityBillFile, 'utility_bill');
 
       if (ninUrl == null || utilityBillUrl == null) {
@@ -308,7 +322,7 @@ class VerificationService {
 
   // ============ TENANT VERIFICATION ============
   Future<VerificationResult> submitTenantVerification({
-    required File ninFile,
+    File? ninFile,
     required File proofOfIncomeFile,
     required String paymentReference,
     required double paymentAmount,
@@ -318,7 +332,11 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      final ninUrl = await _uploadDocument(ninFile, 'nin');
+      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // changes. First-time verification uploads the NIN slip.
+      final ninUrl = ninFile != null
+          ? await _uploadDocument(ninFile, 'nin')
+          : await _existingNinUrl();
       final proofOfIncomeUrl = await _uploadDocument(proofOfIncomeFile, 'proof_of_income');
 
       if (ninUrl == null || proofOfIncomeUrl == null) {
@@ -360,7 +378,7 @@ class VerificationService {
 
   // ============ AGENT VERIFICATION ============
   Future<VerificationResult> submitAgentVerification({
-    required File ninFile,
+    File? ninFile,
     required File proofOfAddressFile,
     required File guarantorIdFile,
     required String guarantorName,
@@ -375,7 +393,11 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      final ninUrl = await _uploadDocument(ninFile, 'nin');
+      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // changes. First-time verification uploads the NIN slip.
+      final ninUrl = ninFile != null
+          ? await _uploadDocument(ninFile, 'nin')
+          : await _existingNinUrl();
       final proofOfAddressUrl = await _uploadDocument(proofOfAddressFile, 'proof_of_address');
       final guarantorIdUrl = await _uploadDocument(guarantorIdFile, 'guarantor_id');
 
@@ -443,7 +465,7 @@ class VerificationService {
 
   // ============ LEGACY METHOD ============
   Future<VerificationResult> submitVerification({
-    required File ninFile,
+    File? ninFile,
     required File utilityBillFile,
   }) async {
     developer.log('⚠️ Legacy submitVerification called — use Paystack payment flow', name: 'VerificationService');
