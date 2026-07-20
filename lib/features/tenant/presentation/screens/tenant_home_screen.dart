@@ -205,6 +205,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           verStatus = VerificationStatus.pending;
         } else if (status == 'rejected') {
           verStatus = VerificationStatus.rejected;
+        } else if (status == 'expired') {
+          verStatus = VerificationStatus.expired;
         } else {
           verStatus = VerificationStatus.none;
         }
@@ -1813,6 +1815,13 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         icon = Icons.error_outline;
         color = AppColors.error;
         bgColor = AppColors.error.withAlpha(26);
+        break;
+      case VerificationStatus.expired:
+        title = 'Verification Expired';
+        subtitle = 'Renew to keep booking inspections';
+        icon = Icons.autorenew;
+        color = AppColors.warning;
+        bgColor = AppColors.warningLight;
         break;
       case VerificationStatus.verified:
         return const SizedBox.shrink();

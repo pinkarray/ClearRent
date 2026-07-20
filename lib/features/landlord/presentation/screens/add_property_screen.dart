@@ -590,6 +590,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         icon = Icons.error_outline;
         color = AppColors.error;
         break;
+      case VerificationStatus.expired:
+        title = 'Verification Expired';
+        message =
+            'Your annual verification has expired. Renew it to continue listing properties.';
+        buttonText = 'Renew Now';
+        icon = Icons.autorenew;
+        color = AppColors.warning;
+        break;
       case VerificationStatus.verified:
         setState(() => _isCheckingVerification = false);
         return;

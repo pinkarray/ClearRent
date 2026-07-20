@@ -373,7 +373,38 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       case VerificationStatus.pending: return _buildPendingState();
       case VerificationStatus.rejected: return _buildRejectedState();
       case VerificationStatus.none: return _buildUploadForm();
+      case VerificationStatus.expired: return _buildRenewalState();
     }
+  }
+
+  // ============ RENEWAL STATE (annual verification lapsed) ============
+  Widget _buildRenewalState() {
+    // Renewal re-collects the role proof + fee only — NIN is permanent and
+    // already on file. TODO(renewal): suppress the NIN upload for renewals;
+    // for now the standard upload flow is reused beneath a renewal notice.
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          color: AppColors.warningLight,
+          child: Row(
+            children: [
+              Icon(Icons.autorenew, color: AppColors.warning),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Your annual verification has expired. Renew below to '
+                  'restore full access to bookings, listings, and messaging.',
+                  style: AppTextStyles.bodyMedium,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(child: _buildUploadForm()),
+      ],
+    );
   }
 
   // ============ VERIFIED STATE ============

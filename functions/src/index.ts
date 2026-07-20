@@ -3572,6 +3572,11 @@ export {
   approveImmediateRentChange,
 } from "./rent_review_ops";
 
+export {
+  onVerificationVerified,
+  verificationExpirySweep,
+} from "./verification_ops";
+
 export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";

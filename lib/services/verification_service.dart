@@ -7,13 +7,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../core/utils/phone_utils.dart';
 
 
-enum VerificationStatus { none, pending, verified, rejected }
+enum VerificationStatus { none, pending, verified, rejected, expired }
 
 // Verification fee structure
 class VerificationFees {
-  static const double landlordFee = 15000;
-  static const double tenantFee = 5000;
-  static const double agentFee = 10000;
+  static const double landlordFee = 12000;
+  static const double tenantFee = 3000;
+  static const double agentFee = 7000;
 
   static double getFee(String accountType) {
     switch (accountType) {
@@ -26,9 +26,9 @@ class VerificationFees {
 
   static String getFeeLabel(String accountType) {
     switch (accountType) {
-      case 'landlord': return '₦15,000';
-      case 'tenant': return '₦5,000';
-      case 'agent': return '₦10,000';
+      case 'landlord': return '₦12,000';
+      case 'tenant': return '₦3,000';
+      case 'agent': return '₦7,000';
       default: return '₦0';
     }
   }
@@ -131,6 +131,7 @@ class VerificationData {
       case 'pending': return VerificationStatus.pending;
       case 'verified': return VerificationStatus.verified;
       case 'rejected': return VerificationStatus.rejected;
+      case 'expired': return VerificationStatus.expired;
       default: return VerificationStatus.none;
     }
   }

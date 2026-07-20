@@ -125,6 +125,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         case 'verified':  vStatus = VerificationStatus.verified;  break;
         case 'pending':   vStatus = VerificationStatus.pending;   break;
         case 'rejected':  vStatus = VerificationStatus.rejected;  break;
+        case 'expired':   vStatus = VerificationStatus.expired;   break;
         default:          vStatus = VerificationStatus.none;
       }
       if (isVerifiedFlag) vStatus = VerificationStatus.verified;
@@ -1134,6 +1135,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         color = AppColors.error;
         bgColor = AppColors.error.withAlpha(26);
         break;
+      case VerificationStatus.expired:
+        title = 'Verification Expired';
+        subtitle = 'Renew to keep listing & messaging';
+        icon = Icons.autorenew;
+        color = AppColors.warning;
+        bgColor = AppColors.warningLight;
+        break;
       case VerificationStatus.verified:
         return const SizedBox.shrink();
     }
@@ -1409,6 +1417,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       case VerificationStatus.pending: return 'Under review';
       case VerificationStatus.verified: return 'Identity verified';
       case VerificationStatus.rejected: return 'Verification failed - tap to retry';
+      case VerificationStatus.expired: return 'Verification expired - tap to renew';
     }
   }
 

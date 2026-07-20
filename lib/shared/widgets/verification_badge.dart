@@ -85,6 +85,13 @@ class VerificationBadge extends StatelessWidget {
           color: AppColors.error,
           backgroundColor: AppColors.error.withAlpha(26),
         );
+      case VerificationStatus.expired:
+        return _BadgeConfig(
+          icon: Icons.autorenew,
+          label: 'Renewal due',
+          color: AppColors.warning,
+          backgroundColor: AppColors.warningLight,
+        );
       case VerificationStatus.none:
         return _BadgeConfig(
           icon: Icons.help_outline,
@@ -177,6 +184,14 @@ class VerificationBadgeLarge extends StatelessWidget {
           color: Colors.white,
           backgroundColor: AppColors.error.withAlpha(77),
           borderColor: AppColors.error.withAlpha(128),
+        );
+      case VerificationStatus.expired:
+        return _BadgeConfigLarge(
+          icon: Icons.autorenew,
+          label: 'Renewal Due',
+          color: Colors.white,
+          backgroundColor: AppColors.warning.withAlpha(77),
+          borderColor: AppColors.warning.withAlpha(128),
         );
       case VerificationStatus.none:
         return _BadgeConfigLarge(
