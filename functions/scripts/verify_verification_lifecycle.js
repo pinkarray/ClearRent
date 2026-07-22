@@ -8,20 +8,25 @@
  * warning buckets, untouched healthy users, exempt accounts, and idempotency
  * on a second run.
  *
- * Emulator must be running on 8080, and functions must be built:
+ * Needs BOTH the firestore (8080) and auth (9099) emulators — platform admin
+ * status lives in Auth custom claims, so proving admins are never soft-locked
+ * requires Auth. firebase.json must have an "auth" entry under "emulators".
  *   npm run build
- *   firebase emulators:start --only firestore     (separate shell)
+ *   firebase emulators:start --only firestore,auth --project demo-clearrent
  *   node scripts/verify_verification_lifecycle.js
  */
 
 process.env.FIRESTORE_EMULATOR_HOST =
   process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8080";
+process.env.FIREBASE_AUTH_EMULATOR_HOST =
+  process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
 process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || "demo-clearrent";
 
 const admin = require("firebase-admin");
 admin.initializeApp({projectId: process.env.GCLOUD_PROJECT});
 
 const {getFirestore, Timestamp} = require("firebase-admin/firestore");
+const {getAuth} = require("firebase-admin/auth");
 const {
   runVerificationExpirySweep,
   VERIFICATION_PERIOD_MS,
@@ -38,10 +43,14 @@ const db = getFirestore();
 
 const USERS = [
   "u_backfill", "u_expired", "u_warn7", "u_warn14", "u_safe", "u_exempt",
+  "u_admin",
 ];
 
 async function wipe() {
   for (const uid of USERS) await db.collection("users").doc(uid).delete();
+  try {
+    await getAuth().deleteUser("u_admin");
+  } catch (_) { /* no Auth record yet */ }
   const notifs = await db.collection("notifications").get();
   for (const d of notifs.docs) {
     if (USERS.some((u) => d.id.includes(u))) await d.ref.delete();
@@ -72,6 +81,12 @@ async function seed(now) {
       verificationExempt: true,
       verificationExpiresAt: Timestamp.fromMillis(now - DAY),
     }));
+  // Lapsed superAdmin — admin status lives in Auth claims only, so the sweep
+  // must consult Auth and refuse to soft-lock them out of their own platform.
+  await getAuth().createUser({uid: "u_admin", email: "admin@clearrent.test"});
+  await getAuth().setCustomUserClaims("u_admin", {superAdmin: true});
+  await db.collection("users").doc("u_admin").set(
+    v({verificationExpiresAt: Timestamp.fromMillis(now - DAY)}));
 }
 
 const get = async (uid) => (await db.collection("users").doc(uid).get()).data();
@@ -128,8 +143,14 @@ async function main() {
     exempt.verificationStatus === "verified" && exempt.isVerified === true,
     exempt.verificationStatus);
 
-  check("counts: 1 backfilled, 1 expired, 2 warned",
-    c1.backfilled === 1 && c1.expired === 1 && c1.warned === 2,
+  const adminUser = await get("u_admin");
+  check("superAdmin: NOT expired despite lapsed clock",
+    adminUser.verificationStatus === "verified" &&
+    adminUser.isVerified === true, adminUser.verificationStatus);
+
+  check("counts: 1 backfilled, 1 expired, 2 warned, 1 admin skipped",
+    c1.backfilled === 1 && c1.expired === 1 && c1.warned === 2 &&
+    c1.skippedAdmins === 1,
     JSON.stringify(c1));
 
   // ── Second sweep: must be idempotent ──
