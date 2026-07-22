@@ -802,20 +802,31 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         return SafeArea(child: _buildHomeTab(pendingLinks));
       }
       return SafeArea(
-        child: MultiRentalDashboard(
-          rentals: _tenantRentals,
-          activeBuilder: (tr) => TenantRentalDashboard(
-            rental: tr.rental,
-            userName: _userName,
-            userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
-            isLoadingProfile: _isLoadingProfile,
-            onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
-          ),
-          linkedBuilder: (tr) => _buildLinkedVerifiedDashboard(
-            tr.link!,
-            pendingLinks,
-          ),
-          onRenew: (tr) => context.push('/tenant/renew', extra: tr),
+        child: Column(
+          children: [
+            // This branch returns before _buildHomeTab, where the verification
+            // prompt normally lives — so a tenant WITH rentals would otherwise
+            // never see that their verification lapsed. Surface it here too.
+            if (_verificationStatus != VerificationStatus.verified)
+              _buildVerificationPrompt(),
+            Expanded(
+              child: MultiRentalDashboard(
+                rentals: _tenantRentals,
+                activeBuilder: (tr) => TenantRentalDashboard(
+                  rental: tr.rental,
+                  userName: _userName,
+                  userInitial: _userName.isNotEmpty ? _userName[0].toUpperCase() : 'T',
+                  isLoadingProfile: _isLoadingProfile,
+                  onBrowseProperties: () => setState(() => _browsingFromDashboard = true),
+                ),
+                linkedBuilder: (tr) => _buildLinkedVerifiedDashboard(
+                  tr.link!,
+                  pendingLinks,
+                ),
+                onRenew: (tr) => context.push('/tenant/renew', extra: tr),
+              ),
+            ),
+          ],
         ),
       );
     }
