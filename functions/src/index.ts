@@ -19,6 +19,7 @@ import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
 import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
+import {resolveServerAmount} from "./pricing";
 
 initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
@@ -2297,7 +2298,22 @@ export const initializePayment = onCall(
     }
 
     const reference = generatePaymentReference(type);
-    const amountInKobo = Math.round(amount * 100);
+
+    // Server-authoritative pricing. For fixed-price types the client's amount
+    // is display-only and must never decide what we charge — otherwise a
+    // tampered client could pay ₦100 for verification. Variable types (rent,
+    // renewal) still carry the caller's amount; see resolveServerAmount.
+    const serverAmount = await resolveServerAmount(type, uid);
+    if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
+      logger.warn("Client/server amount mismatch — charging server amount", {
+        uid,
+        type,
+        clientAmount: amount,
+        serverAmount,
+      });
+    }
+    const chargeAmount = serverAmount ?? amount;
+    const amountInKobo = Math.round(chargeAmount * 100);
 
     // Reproduce the metadata block the client used to build, including the
     // custom_fields Paystack displays on the dashboard. Caller metadata is
