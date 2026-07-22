@@ -38,6 +38,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   String? _priorPaymentReference;
   double _priorPaymentAmount = 0;
 
+  // Renewal context, captured from the loaded profile. Held separately from
+  // _verificationData because _resetForm() blanks that object to surface the
+  // upload form — which would otherwise lose the fact that this is a renewal
+  // and wrongly re-ask for a NIN we already hold. Sticky once true.
+  bool _renewalContext = false;
+
   // Document files
   File? _ninFile;
   File? _utilityBillFile;
@@ -75,8 +81,13 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   // Renewal: an expired user re-verifies their role proof + re-pays. Their
   // NIN is permanent and already on file, so the NIN steps are skipped.
+  // Also honours the persisted isRenewal flag: a renewal that was REJECTED
+  // has status 'rejected', not 'expired', and would otherwise fall back to the
+  // full first-time form and re-ask for a NIN we already hold.
   bool get _isRenewal =>
-      _verificationData?.status == VerificationStatus.expired;
+      _renewalContext ||
+      _verificationData?.status == VerificationStatus.expired ||
+      _verificationData?.isRenewal == true;
 
   Future<void> _loadUserDataAndVerificationStatus() async {
     final profile = await _authService.getUserProfile();
@@ -93,6 +104,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         if (mounted) {
           setState(() {
             _verificationData = data;
+            if (data.status == VerificationStatus.expired || data.isRenewal) {
+              _renewalContext = true;
+            }
             _isLoading = false;
           });
         }
@@ -433,11 +447,60 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Text(_getVerifiedDescription(),
               style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
               textAlign: TextAlign.center),
+          _buildExpiryNotice(),
           const SizedBox(height: 40),
           ..._getVerifiedBenefits(),
         ],
       ),
     );
+  }
+
+  /// Surfaces the annual clock in-app. Without this a user's first hint that
+  /// verification lapses is being soft-locked — the yearly cadence was stated
+  /// only in the Terms and on the website, never in the app itself.
+  Widget _buildExpiryNotice() {
+    final expires = _verificationData?.expiresAt;
+    if (expires == null) return const SizedBox.shrink();
+
+    final daysLeft = expires.difference(DateTime.now()).inDays;
+    final soon = daysLeft <= 30;
+    final color = soon ? AppColors.warning : AppColors.textSecondary;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: soon ? AppColors.warningLight : AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(soon ? Icons.autorenew : Icons.event_available_outlined,
+              size: 18, color: color),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              soon
+                  ? 'Expires in $daysLeft day${daysLeft == 1 ? '' : 's'} — '
+                      'renew to keep full access'
+                  : 'Verified until ${_formatExpiry(expires)} · renews annually',
+              style: AppTextStyles.bodySmall.copyWith(color: color),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatExpiry(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]} ${d.year}';
   }
 
   // ============ PENDING STATE ============
@@ -638,7 +701,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                 ] else ...[
                   Text('Verification Payment', style: AppTextStyles.h4),
                   const SizedBox(height: 8),
-                  Text('A one-time verification fee is required to process your application.',
+                  Text('A verification fee is required to process your application.',
                       style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
                   const SizedBox(height: 16),
 

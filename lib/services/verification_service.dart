@@ -74,6 +74,14 @@ class VerificationData {
   final VerificationStatus status;
   final VerificationDocument documents;
   final bool isVerified;
+  // True once the user has submitted an annual renewal. Persisted so the
+  // renewal shape (role proof only, no NIN) survives the status moving on to
+  // pending/rejected — a rejected renewal is still a renewal.
+  final bool isRenewal;
+  /// When the current verification lapses. Written server-side by the
+  /// onVerificationVerified trigger; null for records verified before the
+  /// annual clock shipped (the sweep backfills those).
+  final DateTime? expiresAt;
   final DateTime? submittedAt;
   final DateTime? reviewedAt;
   final String? rejectionReason;
@@ -92,6 +100,8 @@ class VerificationData {
   VerificationData({
     this.status = VerificationStatus.none,
     this.isVerified = false,
+    this.isRenewal = false,
+    this.expiresAt,
     VerificationDocument? documents,
     this.submittedAt,
     this.reviewedAt,
@@ -111,6 +121,8 @@ class VerificationData {
     return VerificationData(
       status: _parseStatus(map['verificationStatus']),
       isVerified: map['isVerified'] == true,
+      isRenewal: map['isRenewal'] == true,
+      expiresAt: (map['verificationExpiresAt'] as Timestamp?)?.toDate(),
       documents: VerificationDocument.fromMap(map['verificationDocs'] ?? map),
       submittedAt: (map['verificationSubmittedAt'] as Timestamp?)?.toDate(),
       reviewedAt: (map['verificationReviewedAt'] as Timestamp?)?.toDate(),
@@ -218,7 +230,11 @@ class VerificationService {
   Future<String?> _uploadDocument(File file, String folder) async {
     try {
       developer.log('📤 Uploading to $folder...', name: 'VerificationService');
-      final path = 'verification/$_currentUserId/$folder';
+      // Timestamped so every submission is a distinct object: an approved
+      // document is never overwritten, and an annual renewal keeps the
+      // previous year's document for the admin to compare against.
+      final version = DateTime.now().millisecondsSinceEpoch;
+      final path = 'verification/$_currentUserId/$folder/$version';
       final ref = FirebaseStorage.instance.ref(path);
       await ref.putFile(file);
       developer.log('✅ Upload successful: $path', name: 'VerificationService');
