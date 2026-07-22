@@ -5,6 +5,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/biometric_service.dart';
+import '../../../../services/pricing_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -70,9 +71,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       debugPrint('🔍 Auth check: hasOnboarding=$hasCompletedOnboarding, isLoggedIn=${currentUser != null}');
 
       if (currentUser != null) {
+        // Load the remote fee schedule once per session, here rather than in
+        // main(): config/pricing requires an authenticated read, so loading it
+        // before sign-in would just be denied and silently fall back to the
+        // compiled-in prices. Failures are swallowed inside load().
+        await PricingService().load();
+
         // User is logged in - check if they have a complete profile
         final profile = await _authService.getUserProfile();
-        
+
         if (profile != null && profile['profileCompleted'] == true) {
           // Check if biometric is enabled for quick login
           final biometricEnabled = await _biometricService.isBiometricEnabled();

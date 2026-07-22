@@ -132,6 +132,42 @@ export async function resolveServerAmount(
     return typeof stored === "number" && stored > 0 ? stored : null;
   }
 
+  if (type === "renewal") {
+    // A renewal charges the rental's own rent plus the tenant's deal fee. The
+    // client sends only `sourceId`, which is either an active_rentals or a
+    // tenancy_links doc without saying which, so try both. Anything unexpected
+    // returns null and falls back to the caller's amount — no worse than now.
+    const sourceId = typeof metadata?.sourceId === "string" ?
+      metadata.sourceId :
+      null;
+    if (!sourceId) {
+      logger.warn("Renewal payment without sourceId", {uid});
+      return null;
+    }
+    const db = getFirestore();
+    let snap = await db.collection("active_rentals").doc(sourceId).get();
+    if (!snap.exists) {
+      snap = await db.collection("tenancy_links").doc(sourceId).get();
+    }
+    if (!snap.exists) {
+      logger.warn("Renewal payment for unknown sourceId", {uid, sourceId});
+      return null;
+    }
+    if (snap.get("tenantId") !== uid) {
+      logger.error("Renewal payment by non-tenant of the rental", {
+        uid,
+        sourceId,
+      });
+      return null;
+    }
+    const rent = snap.get("rentAmount");
+    if (typeof rent !== "number" || !(rent > 0)) {
+      logger.warn("Renewal source has no usable rentAmount", {uid, sourceId});
+      return null;
+    }
+    return rent + pricing.dealFee;
+  }
+
   if (type === "verification") {
     const snap = await getFirestore().collection("users").doc(uid).get();
     const accountType = snap.data()?.accountType as string | undefined;

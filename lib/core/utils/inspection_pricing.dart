@@ -17,14 +17,35 @@ class InspectionPricing {
   //  FEE CONSTANTS (FLAT-FEE MODEL)
   // ══════════════════════════════════════════════
 
+  // Remote-overridable from Firestore config/pricing via PricingService, so a
+  // fee change does not need a Play Store release. The values below are the
+  // offline fallback and MUST mirror DEFAULT_PRICING in functions/src/
+  // pricing.ts — the server derives what it actually charges from that same
+  // document, so a drift here shows the user one price and bills another.
+  static double _bookingFee = 10000.0;
+  static double _handlerEarnings = 7000.0;
+  static double _clearrentTake = 3000.0;
+
   /// Total inspection booking fee the tenant pays.
-  static const double inspectionBookingFee = 10000.0;
+  static double get inspectionBookingFee => _bookingFee;
 
   /// Handler's earnings per inspection (agent or landlord).
-  static const double handlerEarnings = 7000.0;
+  static double get handlerEarnings => _handlerEarnings;
 
   /// ClearRent's take per inspection.
-  static const double clearrentTake = 3000.0;
+  static double get clearrentTake => _clearrentTake;
+
+  /// Apply the remote schedule. Called once by PricingService after it loads
+  /// config/pricing so every inspection fee display uses the live numbers.
+  static void applyRemote({
+    required double total,
+    required double handler,
+    required double platform,
+  }) {
+    _bookingFee = total;
+    _handlerEarnings = handler;
+    _clearrentTake = platform;
+  }
 
   // ── Legacy constants (kept for back-compat) ──
   // These no longer drive new fee calculations. The

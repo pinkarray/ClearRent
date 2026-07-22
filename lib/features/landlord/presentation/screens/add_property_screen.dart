@@ -17,6 +17,7 @@ import '../../../../services/building_service.dart';
 import '../../../../shared/models/building_model.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/paystack_service.dart';
+import '../../../../services/pricing_service.dart';
 import '../../../../services/agent_service.dart';
 import '../../../../services/property_draft_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
@@ -87,8 +88,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   bool _isRestoringDraft = false;
   Timer? _draftSaveTimer;
 
-  // Listing fee state
-  static const int _listingFeeAmount = 10000;
+  // Listing fee state. Read from the remote schedule (config/pricing) so the
+  // price can change without a Play Store release; PricingService falls back to
+  // the compiled-in value when config is unreachable. The server charges from
+  // the same document, so displaying a stale number would bill a different one.
+  int get _listingFeeAmount => PricingService().current.listing.round();
   bool _requiresListingFee = false;
   String? _listingFeePaymentReference;
 

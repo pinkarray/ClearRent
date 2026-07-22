@@ -9,6 +9,7 @@ import '../../../../shared/models/tenant_rental.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/paystack_service.dart';
+import '../../../../services/pricing_service.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
 
 /// Renewal / promotion payment screen (System D). Forked from
@@ -35,7 +36,9 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   bool _isProcessing = false;
   String? _paymentReference;
 
-  static const double _dealFee = 5000;
+  // Remote fee schedule (config/pricing) rather than a hardcoded constant, so
+  // the deal-completion fee can change without a store release.
+  double get _dealFee => PricingService().current.dealFee;
 
   double get _rent => widget.rental.rental.rentAmount;
   double get _amount => _rent + _dealFee;

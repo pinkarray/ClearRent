@@ -56,6 +56,7 @@ import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue, Firestore} from "firebase-admin/firestore";
 import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
+import {getPricing} from "./pricing";
 
 interface BeneficiaryBank {
   bankName: string | null;
@@ -983,13 +984,16 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
     //     is our error and we do not keep our cut.
     // An explicit `refundAmount` override still wins when present, clamped to
     // (0, totalFee] so it can only ever REDUCE the refund, never inflate it.
-    const PLATFORM_NON_REFUNDABLE = 3000;
+    // The non-refundable platform charge comes from config/pricing — the same
+    // document the tenant is charged from — so it can never drift from the
+    // booking fee. Was a hardcoded 3000 kept in sync by hand.
+    const platformCharge = (await getPricing()).inspection.platform;
     const fullRefundSource =
       source === "inspection_admin_review" ||
       source === "inspection_slot_conflict";
     const baseAmount = fullRefundSource ?
       totalFee :
-      Math.max(0, totalFee - PLATFORM_NON_REFUNDABLE);
+      Math.max(0, totalFee - platformCharge);
 
     const override = after.refundAmount;
     const useOverride =

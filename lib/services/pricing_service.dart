@@ -2,6 +2,8 @@ import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/utils/inspection_pricing.dart';
+
 /// Platform fee schedule.
 ///
 /// Read from Firestore `config/pricing` so prices can be changed from the
@@ -22,6 +24,10 @@ class PlatformPricing {
   final double inspectionHandler;
   final double inspectionPlatform;
 
+  /// Deal-completion fee charged per party on a completed rental. Also the
+  /// tenant's share added on top of rent at payment time.
+  final double dealFee;
+
   const PlatformPricing({
     required this.tenantVerification,
     required this.landlordVerification,
@@ -30,6 +36,7 @@ class PlatformPricing {
     required this.inspectionTotal,
     required this.inspectionHandler,
     required this.inspectionPlatform,
+    required this.dealFee,
   });
 
   /// Mirrors DEFAULT_PRICING in functions/src/pricing.ts.
@@ -41,6 +48,7 @@ class PlatformPricing {
     inspectionTotal: 10000,
     inspectionHandler: 7000,
     inspectionPlatform: 3000,
+    dealFee: 5000,
   );
 
   double verificationFee(String accountType) {
@@ -73,6 +81,7 @@ class PlatformPricing {
       inspectionHandler: _asDouble(i['handler'], fallback.inspectionHandler),
       inspectionPlatform:
           _asDouble(i['platform'], fallback.inspectionPlatform),
+      dealFee: _asDouble(map['dealFee'], fallback.dealFee),
     );
   }
 
@@ -113,6 +122,13 @@ class PricingService {
       developer.log('Pricing unreadable — using fallback: $e',
           name: 'PricingService');
     }
+    // Push the inspection numbers into InspectionPricing, whose static helpers
+    // are called from several screens that have no access to this service.
+    InspectionPricing.applyRemote(
+      total: _cached.inspectionTotal,
+      handler: _cached.inspectionHandler,
+      platform: _cached.inspectionPlatform,
+    );
     return _cached;
   }
 }
