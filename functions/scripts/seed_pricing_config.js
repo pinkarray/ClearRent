@@ -25,6 +25,9 @@ const PRICING = {
   verification: { tenant: 3000, landlord: 12000, agent: 7000 },
   listing: 10000,
   inspection: { total: 10000, handler: 7000, platform: 3000 },
+  // Deal-completion fee, charged per party on a completed rental. Drives the
+  // rent total the createRentalInterest CF computes.
+  dealFee: 5000,
 };
 
 async function main() {

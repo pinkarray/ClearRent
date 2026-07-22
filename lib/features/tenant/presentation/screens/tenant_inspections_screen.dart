@@ -2172,16 +2172,11 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       return;
     }
 
-    final rentAmount = property.rent;
-    final agentFee = property.agentFee;
-    const double tenantDealFee = 5000;
-    final totalAmount = rentAmount + agentFee + tenantDealFee;
-
+    // Amounts are derived server-side by the createRentalInterest CF from the
+    // property and config/pricing — the client no longer decides what the
+    // tenant will be charged for rent (HANDOVER H2).
     final interest = await _rentalInterestService.createRentalInterest(
       inspectionRequest: widget.request,
-      paymentAmount: totalAmount,
-      rentAmount: rentAmount,
-      agentFee: agentFee,
     );
 
     if (mounted) {

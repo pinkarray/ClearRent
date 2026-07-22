@@ -3596,6 +3596,8 @@ export {
   verificationExpirySweep,
 } from "./verification_ops";
 
+export {createRentalInterest} from "./rental_interest_ops";
+
 export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";

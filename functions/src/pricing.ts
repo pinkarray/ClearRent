@@ -20,6 +20,8 @@ export interface PricingConfig {
   verification: {tenant: number; landlord: number; agent: number};
   listing: number;
   inspection: {total: number; handler: number; platform: number};
+  /** Deal-completion fee charged per party on a completed rental. */
+  dealFee: number;
 }
 
 /**
@@ -32,6 +34,7 @@ export const DEFAULT_PRICING: PricingConfig = {
   verification: {tenant: 3000, landlord: 12000, agent: 7000},
   listing: 10000,
   inspection: {total: 10000, handler: 7000, platform: 3000},
+  dealFee: 5000,
 };
 
 /**
@@ -55,6 +58,9 @@ export async function getPricing(): Promise<PricingConfig> {
         d.listing :
         DEFAULT_PRICING.listing,
       inspection: {...DEFAULT_PRICING.inspection, ...(d.inspection ?? {})},
+      dealFee: typeof d.dealFee === "number" ?
+        d.dealFee :
+        DEFAULT_PRICING.dealFee,
     };
   } catch (err) {
     logger.warn("Pricing config unreadable — using defaults", {

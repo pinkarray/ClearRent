@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:developer' as developer;
 import '../shared/models/rental_interest_model.dart';
 import '../shared/models/inspection_request_model.dart';
@@ -6,90 +7,49 @@ import 'auth_service.dart';
 
 class RentalInterestService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final AuthService _authService = AuthService();
 
   // ============ CREATE ============
 
-  /// Create a rental interest when tenant says "I want to rent"
+  /// Create a rental interest when tenant says "I want to rent".
+  ///
+  /// Amounts are deliberately NOT passed from here. The createRentalInterest
+  /// Cloud Function derives every figure from the property and config/pricing,
+  /// because the client-supplied paymentAmount written here used to decide what
+  /// the tenant was later charged for rent — a modified client could mint an
+  /// interest claiming ₦100 against a ₦1.2m tenancy (HANDOVER H2). Direct
+  /// `create` on rental_interests is now denied by rule, so this MUST go
+  /// through the callable. Eligibility (caller is the tenant, inspection
+  /// completed + rated) is re-checked server-side.
   Future<RentalInterest?> createRentalInterest({
     required InspectionRequest inspectionRequest,
-    required double paymentAmount,
-    required double rentAmount,
-    required double agentFee,
   }) async {
     try {
-      final currentUserId = _authService.currentUserId;
-      if (currentUserId == null) {
-        throw Exception('User not authenticated');
-      }
-
-      // Verify this is the tenant who did the inspection
-      if (inspectionRequest.tenantId != currentUserId) {
-        throw Exception('Unauthorized: Only the tenant can express interest');
-      }
-
-      // Verify inspection is completed and rated
-      if (!inspectionRequest.isCompleted || !inspectionRequest.tenantRated) {
-        throw Exception('Inspection must be completed and rated first');
-      }
-
-      // Check if interest already exists
-      final existing = await getInterestForInspection(inspectionRequest.id);
-      if (existing != null) {
-        return existing; // Already created
-      }
-
-      // Calculate deal completion fees
-      const double dealFee = 5000;
-      final bool hasAgent = inspectionRequest.agentId != null &&
-          inspectionRequest.agentId!.isNotEmpty;
-      final double landlordPayout = rentAmount - dealFee;
-      final double agentPayout = hasAgent ? agentFee - dealFee : 0;
-      final double clearrentEarnings = dealFee + dealFee + (hasAgent ? dealFee : 0);
-
-      final interestData = {
+      final callable = _functions.httpsCallable('createRentalInterest');
+      final result = await callable.call<Map<String, dynamic>>({
         'inspectionRequestId': inspectionRequest.id,
-        'propertyId': inspectionRequest.propertyId,
-        'tenantId': inspectionRequest.tenantId,
-        'landlordId': inspectionRequest.landlordId,
-        'agentId': inspectionRequest.agentId,
-        'propertyTitle': inspectionRequest.propertyTitle,
-        'propertyImage': inspectionRequest.propertyImage,
-        'propertyAddress': inspectionRequest.propertyAddress,
-        'tenantName': inspectionRequest.tenantName,
-        'landlordName': inspectionRequest.landlordName,
-        'agentName': inspectionRequest.agentName,
-        'status': 'pending_payment',
-        'paymentAmount': paymentAmount,
-        'rentAmount': rentAmount,
-        'agentFee': agentFee,
-        'tenantDealFee': dealFee,
-        'landlordDealFee': dealFee,
-        'agentDealFee': hasAgent ? dealFee : 0,
-        'landlordPayout': landlordPayout,
-        'agentPayout': agentPayout,
-        'clearrentEarnings': clearrentEarnings,
-        'paymentReceiptUrl': null,
-        'paymentUploadedAt': null,
-        'paymentVerifiedAt': null,
-        'paymentVerifiedBy': null,
-        'paymentRejectionReason': null,
-        'acceptedAt': null,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+      });
 
-      final docRef =
-          await _firestore.collection('rental_interests').add(interestData);
+      final interestId = result.data['interestId'] as String?;
+      if (interestId == null) return null;
 
-      // Fetch the created document
-      final doc = await docRef.get();
+      final doc = await _firestore
+          .collection('rental_interests')
+          .doc(interestId)
+          .get();
       if (doc.exists) {
-        developer.log('✅ Rental interest created: ${docRef.id}',
+        developer.log('✅ Rental interest ready: $interestId',
             name: 'RentalInterestService');
         return RentalInterest.fromFirestore(doc.data()!, doc.id);
       }
-
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      // Server rejected it (not the tenant, inspection not completed/rated,
+      // property missing a rent). Logged with the real reason; the caller's
+      // contract is unchanged — null means "couldn't create".
+      developer.log('❌ createRentalInterest rejected: ${e.code} ${e.message}',
+          name: 'RentalInterestService');
       return null;
     } catch (e) {
       developer.log('❌ Error creating rental interest: $e',
