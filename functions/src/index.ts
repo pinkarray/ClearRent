@@ -2299,11 +2299,18 @@ export const initializePayment = onCall(
 
     const reference = generatePaymentReference(type);
 
-    // Server-authoritative pricing. For fixed-price types the client's amount
-    // is display-only and must never decide what we charge — otherwise a
-    // tampered client could pay ₦100 for verification. Variable types (rent,
-    // renewal) still carry the caller's amount; see resolveServerAmount.
-    const serverAmount = await resolveServerAmount(type, uid);
+    // Caller metadata is read first because the pricing resolver needs it
+    // (rent derives its amount from metadata.rentalInterestId).
+    const callerMetadata =
+      (data.metadata && typeof data.metadata === "object") ?
+        data.metadata :
+        {};
+
+    // Server-authoritative pricing. The client's amount is display-only and
+    // must never decide what we charge — otherwise a tampered client could pay
+    // ₦100 for verification, or ₦100 of rent. Only 'renewal' still falls back
+    // to the caller's amount; see resolveServerAmount.
+    const serverAmount = await resolveServerAmount(type, uid, callerMetadata);
     if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
       logger.warn("Client/server amount mismatch — charging server amount", {
         uid,
@@ -2319,10 +2326,6 @@ export const initializePayment = onCall(
     // custom_fields Paystack displays on the dashboard. Caller metadata is
     // merged last so per-payment fields (propertyId, accountType, etc.) are
     // preserved exactly as before.
-    const callerMetadata =
-      (data.metadata && typeof data.metadata === "object") ?
-        data.metadata :
-        {};
     const fullMetadata = {
       userId: uid,
       paymentType: type,

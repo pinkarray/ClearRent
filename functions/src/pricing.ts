@@ -65,24 +65,66 @@ export async function getPricing(): Promise<PricingConfig> {
 }
 
 /**
- * The authoritative amount (in Naira) for a fixed-price payment type.
+ * The authoritative amount (in Naira) for a payment.
  *
- * Returns null for variable-price types (rent, renewal), whose amount depends
- * on the specific rental and cannot come from a static schedule — those still
- * carry the caller's amount. TODO: derive those from the rental doc so no
- * payment type trusts a client-supplied amount.
+ * Fixed-price types come from the schedule. Rent comes from the frozen
+ * rental_interests record rather than being recomputed from the property:
+ * a rent change between interest-creation and payment (approveRentReview /
+ * approveImmediateRentChange) would otherwise charge an amount the tenant was
+ * never shown. The interest's figures are immutable post-create by rule, so
+ * they are a stable contract for this payment.
+ *
+ * Residual, deliberately not solved here: those figures are client-supplied at
+ * interest CREATION (see the rental_interests create rule / HANDOVER H2).
+ * Closing that needs interest creation to be server-authoritative; until then
+ * this at least pins the charge to the persisted record instead of an
+ * arbitrary number in the payment call.
  * @param {string} type The payment type.
  * @param {string} uid The paying user's id.
- * @return {Promise<number|null>} Amount in Naira, or null when variable.
+ * @param {object} metadata Caller metadata (may carry rentalInterestId).
+ * @return {Promise<number|null>} Amount in Naira, or null if underivable.
  */
 export async function resolveServerAmount(
   type: string,
   uid: string,
+  metadata?: Record<string, unknown>,
 ): Promise<number | null> {
   const pricing = await getPricing();
 
   if (type === "listing") return pricing.listing;
   if (type === "inspection") return pricing.inspection.total;
+
+  if (type === "rent") {
+    const interestId = typeof metadata?.rentalInterestId === "string" ?
+      metadata.rentalInterestId :
+      null;
+    if (!interestId) {
+      logger.warn("Rent payment without rentalInterestId", {uid});
+      return null;
+    }
+    const snap = await getFirestore()
+      .collection("rental_interests")
+      .doc(interestId)
+      .get();
+    const data = snap.data();
+    if (!data) {
+      logger.warn("Rent payment for missing rental_interest", {
+        uid,
+        interestId,
+      });
+      return null;
+    }
+    if (data.tenantId !== uid) {
+      logger.error("Rent payment by non-tenant of the interest", {
+        uid,
+        interestId,
+        tenantId: data.tenantId,
+      });
+      return null;
+    }
+    const stored = data.paymentAmount;
+    return typeof stored === "number" && stored > 0 ? stored : null;
+  }
 
   if (type === "verification") {
     const snap = await getFirestore().collection("users").doc(uid).get();
