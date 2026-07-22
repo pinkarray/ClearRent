@@ -8,6 +8,7 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../core/utils/app_logger.dart';
 import '../../services/verification_service.dart';
+import '../../services/pricing_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/paystack_service.dart';
 import 'paystack_checkout_screen.dart';
@@ -76,8 +77,13 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     super.dispose();
   }
 
-  double get _verificationFee => VerificationFees.getFee(_accountType);
-  String get _verificationFeeLabel => VerificationFees.getFeeLabel(_accountType);
+  // Fees come from config/pricing so they can change without a store release.
+  // _pricing holds the compiled-in fallback until the remote load lands.
+  PlatformPricing _pricing = PlatformPricing.fallback;
+
+  double get _verificationFee => _pricing.verificationFee(_accountType);
+  String get _verificationFeeLabel =>
+      PlatformPricing.formatNaira(_verificationFee);
 
   // Renewal: an expired user re-verifies their role proof + re-pays. Their
   // NIN is permanent and already on file, so the NIN steps are skipped.
@@ -96,6 +102,11 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         _accountType = profile['accountType'] ?? 'landlord';
       });
     }
+
+    // Remote fee schedule — falls back to the compiled-in values on failure,
+    // so the fee panel always renders something sane.
+    final pricing = await PricingService().load();
+    if (mounted) setState(() => _pricing = pricing);
 
     // Listen to verification status in real-time so admin approval
     // is reflected immediately without leaving and returning.
