@@ -289,6 +289,9 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
+        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // annual renewal from a first-time application in the review queue.
+        'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
         'verificationDocs': {
           'nin': ninUrl,
@@ -345,6 +348,9 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
+        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // annual renewal from a first-time application in the review queue.
+        'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
         'verificationDocs': {
           'nin': ninUrl,
@@ -423,6 +429,9 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
+        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // annual renewal from a first-time application in the review queue.
+        'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
         'verificationDocs': verificationDocs,
         'guarantorName': guarantorName,
