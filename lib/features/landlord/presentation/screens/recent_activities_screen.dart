@@ -123,11 +123,29 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
+    // Payment activities — the landlord accepts the tenant in
+    // Inspections → History (tab 2), not on the property page.
+    if (activity.type == ActivityType.payment) {
+      context.push('/landlord/inspections', extra: {
+        'initialTab': 2,
+        if (activity.relatedId != null) 'param_requestId': activity.relatedId,
+      });
+      return;
+    }
+
     if (activity.propertyId != null) {
       final property =
           await _propertyService.getProperty(activity.propertyId!);
-      if (property != null && mounted) {
+      if (!mounted) return;
+      if (property != null) {
         context.push('/property-detail', extra: property);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Could not open that property. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
       }
     }
   }

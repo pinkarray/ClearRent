@@ -184,7 +184,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
           icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
           tooltip: 'Edit Property',
           onPressed: () =>
-              context.push('/landlord/edit-property', extra: widget.property),
+              context.push('/landlord/edit-property/${widget.property.id}'),
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(

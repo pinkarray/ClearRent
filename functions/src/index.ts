@@ -19,7 +19,7 @@ import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
 import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
-import {resolveServerAmount} from "./pricing";
+import {resolveServerAmount, getPricing} from "./pricing";
 
 initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
@@ -748,14 +748,36 @@ export const onActiveRentalUpdated = onDocumentUpdated(
           meta: {propertyTitle, reason},
         });
       } else if (agrAfter === "finalized") {
+        // Finalizing is what unlocks rent payment, so the tenant's notice must
+        // actually tell them to pay — otherwise Pay Rent appears with nothing
+        // pointing at it. (Tenant acceptance now finalizes the agreement, so
+        // this is normally triggered by the tenant themselves.)
         uid = tenantId;
         type = "agreement_finalized";
-        title = "Agreement finalized";
+        title = "Agreement finalized — pay your rent";
         body =
-          `Your tenancy agreement for ${propertyTitle} is finalized. For ` +
-          "full legal protection, consider stamping it at your local tax " +
-          "office (LIRS/SIRS).";
-        payload = tenantDocsRoute;
+          `Your tenancy agreement for ${propertyTitle} is finalized. Pay ` +
+          "your rent now to complete your move-in. (For full legal " +
+          "protection, consider stamping it at your local tax office.)";
+        payload = tenantRentalsRoute;
+
+        // Tell the landlord too — they sent the agreement and would otherwise
+        // never learn the tenant accepted, since there's no finalize step now.
+        if (landlordId) {
+          await writeNotificationOnce(
+            `rental_${rentalId}_agr_finalized_landlord_${rev}`,
+            {
+              userId: landlordId,
+              type: "agreement_finalized",
+              title: "Tenant accepted — agreement finalized",
+              body:
+                `${tenantName} accepted the tenancy agreement for ` +
+                `${propertyTitle}. It's finalized — we'll let you know once ` +
+                "their rent payment comes through.",
+              payload: landlordAgreementsRoute,
+            },
+          );
+        }
       }
       if (uid && title) {
         await writeNotificationOnce(
@@ -1030,6 +1052,11 @@ export const onRentalInterestPaid = onDocumentUpdated(
     const propertyId = (after.propertyId as string | undefined) ?? "";
     const propertyTitle =
       (after.propertyTitle as string | undefined) ?? "your property";
+    // Carried into the activity row as relatedId so the tap can land on the
+    // exact inspection the landlord accepts from — the subtitle tells them to
+    // go to Inspections → History, so the tap must go there too.
+    const inspectionRequestId =
+      (after.inspectionRequestId as string | undefined) ?? "";
 
     // Push + bell inbox.
     await writeNotificationOnce(
@@ -1064,6 +1091,7 @@ export const onRentalInterestPaid = onDocumentUpdated(
             `${tenantName} paid to rent ${propertyTitle}. ` +
             "Accept them in Inspections → History.",
           propertyId,
+          ...(inspectionRequestId ? {relatedId: inspectionRequestId} : {}),
           actorId: tenantId,
           actorName: tenantName,
           isRead: false,
@@ -1220,6 +1248,49 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
         targetId: requestId,
         actors: {tenantId, agentId: agentId || undefined, landlordId},
         meta: {state: "paid"},
+      });
+    }
+
+    // ---- Payment received on an approved inspection (pay-after-approve) ----
+    // The handler already approved; the tenant has now PAID, so the visit is
+    // confirmed. Tell the handler (they committed by approving but didn't know
+    // whether the tenant would pay) and advance the admin lifecycle alert.
+    // Fires on the paymentStatus flip written by confirmInspectionPayment.
+    if (before.paymentStatus !== "paid" && after.paymentStatus === "paid") {
+      const slot =
+        (after.requestedTimeDisplay as string | undefined) ??
+        "the scheduled time";
+      const recipientId = agentId ?? landlordId;
+      if (recipientId) {
+        const route = agentId ? agentRoute : landlordRoute;
+        await writeNotificationOnce(
+          `req_${requestId}_confirmed_${recipientId}`,
+          {
+            userId: recipientId,
+            type: "inspection_confirmed",
+            title: "Inspection confirmed — tenant paid",
+            body:
+              `${tenantName} paid for the inspection of ${propertyTitle}. ` +
+              `The visit is confirmed for ${slot}.`,
+            payload: {
+              route,
+              initialTab: "1",
+              param_requestId: requestId,
+            },
+          },
+        );
+      }
+      await upsertAdminAlert(`insplc_${requestId}`, {
+        type: "inspection_lifecycle",
+        severity: "info",
+        title: "Inspection confirmed — tenant paid",
+        body:
+          `${tenantName} paid for the inspection of ${propertyTitle}. ` +
+          "The visit is confirmed.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {state: "paid_confirmed"},
       });
     }
 
@@ -1627,15 +1698,14 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       );
     }
 
-    // ---- Field: met false → true (by tenant) ----
-    // Notify the handler(s) so they know to complete the inspection.
-    // We only push when metBy is 'tenant' — when the handler marks
-    // met themselves, the tenant is right there with them and the
-    // next push (inspection_completed) follows soon after anyway.
+    // ---- Field: tenant confirms their half of the meeting ----
+    // Notify the handler(s) so they know to confirm their own half and
+    // complete the inspection. We push on the tenant's confirmation (not the
+    // handler's) — when the handler confirms, the tenant is right there and
+    // the inspection_completed push follows soon after anyway.
     if (
-      before.met !== true &&
-      after.met === true &&
-      after.metBy === "tenant"
+      before.tenantConfirmedMet !== true &&
+      after.tenantConfirmedMet === true
     ) {
       const agentHandled = !!agentId;
       const recipients: string[] = [];
@@ -3254,10 +3324,6 @@ export const setAdminClaim = onCall(
 // exits as no-op. This makes the trigger safe against re-firing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Flat handler fee per inspection. Mirrors InspectionPricing.handlerEarnings
-// in the mobile codebase. Keep in sync with lib/core/utils/inspection_pricing.dart.
-const HANDLER_EARNINGS = 7000;
-
 export const creditInspectionEarnings = onDocumentUpdated(
   "inspection_requests/{requestId}",
   async (event) => {
@@ -3290,6 +3356,12 @@ export const creditInspectionEarnings = onDocumentUpdated(
       return;
     }
 
+    // Handler fee comes from config/pricing — the same document the tenant is
+    // charged from — so the payout can never drift from the booking fee. Was a
+    // hardcoded 7000 that had to be kept in sync with the client by hand. Read
+    // before the transaction, since getPricing does its own get.
+    const handlerEarnings = (await getPricing()).inspection.handler;
+
     const db = getFirestore();
     const inspectionRef = db.collection("inspection_requests").doc(requestId);
     const handlerRef = db.collection("users").doc(handlerId);
@@ -3311,8 +3383,8 @@ export const creditInspectionEarnings = onDocumentUpdated(
         // Build the handler update. Agents track totalInspections too;
         // landlord-handled completions do not.
         const handlerUpdate: Record<string, unknown> = {
-          totalEarnings: FieldValue.increment(HANDLER_EARNINGS),
-          pendingEarnings: FieldValue.increment(HANDLER_EARNINGS),
+          totalEarnings: FieldValue.increment(handlerEarnings),
+          pendingEarnings: FieldValue.increment(handlerEarnings),
           completedInspections: FieldValue.increment(1),
         };
         if (handlerIsAgent) {
@@ -3323,7 +3395,7 @@ export const creditInspectionEarnings = onDocumentUpdated(
         tx.update(inspectionRef, {
           earningsCredited: true,
           earningsCreditedAt: FieldValue.serverTimestamp(),
-          earningsAmount: HANDLER_EARNINGS,
+          earningsAmount: handlerEarnings,
         });
       });
 
@@ -3331,7 +3403,7 @@ export const creditInspectionEarnings = onDocumentUpdated(
         requestId,
         handlerId,
         handlerIsAgent,
-        amount: HANDLER_EARNINGS,
+        amount: handlerEarnings,
       });
     } catch (err) {
       // Don't throw — we don't want the trigger to retry indefinitely on
@@ -3366,7 +3438,18 @@ export const creditInspectionEarnings = onDocumentUpdated(
 // active_rental statuses that occupy a slot. expired/terminated free it.
 // grace_locked still occupies — the tenant may still be living there while
 // they decide to renew or move out; the slot frees only on actual move-out.
-const OCCUPYING_RENTAL_STATUSES = ["active", "expiring_soon", "grace_locked"];
+// `pending_payment` is included so a property slot is HELD the moment a tenant
+// is accepted (rental created), not only once they pay — one slot = one tenant.
+// The unit goes off-market during the agreement window and comes back only if
+// the accept lapses unpaid (rentalInterestStrandSweep releases it). Note this is
+// occupancy only: the tenant is NOT flagged active on their dashboard until they
+// actually pay (recordRentPayment sets users.hasActiveRental).
+const OCCUPYING_RENTAL_STATUSES = [
+  "active",
+  "expiring_soon",
+  "grace_locked",
+  "pending_payment",
+];
 
 /**
  * Recompute currentTenantsCount + isAvailable for one property from both
@@ -3596,7 +3679,8 @@ export {
   verificationExpirySweep,
 } from "./verification_ops";
 
-export {createRentalInterest} from "./rental_interest_ops";
+export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
+export {confirmInspectionPayment} from "./inspection_payment_ops";
 
 export {submitNin} from "./nin_ops";
 

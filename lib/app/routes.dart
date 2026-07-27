@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import '../features/auth/presentation/screens/splash_screen.dart';
 import '../features/auth/presentation/screens/onboarding_screen.dart';
@@ -21,7 +22,7 @@ import '../shared/models/active_rental_model.dart';
 import '../shared/models/tenant_rental.dart';
 import '../features/landlord/presentation/screens/recent_activities_screen.dart';
 import '../shared/screens/edit_profile_screen.dart';
-import '../features/landlord/presentation/screens/edit_property_screen.dart';
+import '../features/landlord/presentation/screens/edit_property_loader_screen.dart';
 import '../shared/screens/settings_screen.dart';
 import '../features/landlord/presentation/screens/bank_details_screen.dart';
 import '../features/landlord/presentation/screens/earnings_screen.dart';
@@ -46,7 +47,6 @@ import '../features/landlord/presentation/screens/landlord_agreements_screen.dar
 import '../features/landlord/presentation/screens/property_health_screen.dart';
 import '../features/landlord/presentation/screens/select_agent_screen.dart';
 import '../features/landlord/presentation/screens/request_rent_change_screen.dart';
-import '../core/utils/inspection_pricing.dart';
 import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
 import '../services/route_observer_service.dart';
 import '../features/tenant/presentation/screens/renewal_payment_screen.dart';
@@ -133,7 +133,19 @@ final appRouter = GoRouter(
     // ============ TENANT ROUTES ============
     GoRoute(
       path: '/tenant/home',
-      builder: (context, state) => const TenantHomeScreen(),
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        final tab = _initialTab(extra?['initialTab']) ?? 0;
+        // A `reset` nonce forces a fresh home instance (new key) so the tab
+        // actually changes — otherwise go() reuses the existing home, which
+        // keeps whatever tab it was last on. Used by "Go to My Home" after
+        // paying rent so it lands on the dashboard, not the last-used tab.
+        final reset = extra?['reset'];
+        return TenantHomeScreen(
+          key: reset != null ? ValueKey('tenant_home_$reset') : null,
+          initialTab: tab,
+        );
+      },
     ),
     GoRoute(
       path: '/tenant/my-rentals',
@@ -205,12 +217,9 @@ final appRouter = GoRouter(
       path: '/tenant/inspection-payment',
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>;
+        // Pay-after-approve: pays for an already-approved inspection request.
         return InspectionPaymentScreen(
-          property: extra['property'] as PropertyModel,
-          selectedDate: extra['selectedDate'] as DateTime,
-          selectedTimeSlot: extra['selectedTimeSlot'] as String,
-          notes: extra['notes'] as String?,
-          feeBreakdown: extra['feeBreakdown'] as InspectionFeeBreakdown?,
+          request: extra['request'] as InspectionRequest,
         );
       },
     ),
@@ -220,7 +229,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>;
         return RentalPaymentScreen(
           rentalInterest: extra['rentalInterest'] as RentalInterest,
-          inspectionRequest: extra['inspectionRequest'] as InspectionRequest,
+          inspectionRequest: extra['inspectionRequest'] as InspectionRequest?,
         );
       },
     ),
@@ -245,11 +254,10 @@ final appRouter = GoRouter(
       builder: (context, state) => const AddPropertyScreen(),
     ),
     GoRoute(
-      path: '/landlord/edit-property',
-      builder: (context, state) {
-        final property = state.extra as PropertyModel;
-        return EditPropertyScreen(property: property);
-      },
+      path: '/landlord/edit-property/:id',
+      builder: (context, state) => EditPropertyLoaderScreen(
+        propertyId: state.pathParameters['id']!,
+      ),
     ),
     GoRoute(
       path: '/landlord/verification',
@@ -416,11 +424,13 @@ final appRouter = GoRouter(
         final propertyTitle = extra['propertyTitle'] as String?;
         final propertyImage = extra['propertyImage'] as String?;
         final initialDraft = extra['initialDraft'] as String?;
+        final suggestions = (extra['suggestions'] as List?)?.cast<String>();
         return ChatScreen(
           conversationId: conversationId,
           propertyTitle: propertyTitle,
           propertyImage: propertyImage,
           initialDraft: initialDraft,
+          suggestions: suggestions,
         );
       },
     ),

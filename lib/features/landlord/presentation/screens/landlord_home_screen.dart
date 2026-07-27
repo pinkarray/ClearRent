@@ -793,20 +793,34 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Payment activities — go to property
-    if (activity.type == ActivityType.payment && activity.propertyId != null) {
-      final property = await _propertyService.getProperty(activity.propertyId!);
-      if (property != null && mounted) {
-        context.push('/property-detail', extra: property);
-      }
+    // Payment activities — a tenant paid to rent. The landlord accepts them in
+    // Inspections → History (tab 2), which is what the activity subtitle and
+    // the matching push payload both say; this used to open the property
+    // instead, leaving no route to the accept box. relatedId is the inspection
+    // to highlight — rows written before it was stored just land on the tab.
+    if (activity.type == ActivityType.payment) {
+      context.push('/landlord/inspections', extra: {
+        'initialTab': 2,
+        if (activity.relatedId != null) 'param_requestId': activity.relatedId,
+      });
       return;
     }
 
     // Fallback — navigate to the property if available
     if (activity.propertyId != null) {
       final property = await _propertyService.getProperty(activity.propertyId!);
-      if (property != null && mounted) {
+      if (!mounted) return;
+      if (property != null) {
         context.push('/property-detail', extra: property);
+      } else {
+        // Never leave the tap unanswered — a missing/unreadable property used
+        // to fail silently, which reads as a dead tap.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Could not open that property. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
       }
     }
   }
@@ -1350,13 +1364,16 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _ProfileSection(title: 'Account', items: [
               _ProfileMenuItem(icon: Icons.person_outline, title: 'Edit Profile', subtitle: 'Update your personal information', onTap: () => context.push('/edit-profile')),
+              _ProfileMenuItem(icon: Icons.security_outlined, title: 'Verification', subtitle: _getVerificationSubtitle(), trailing: VerificationBadge(status: _verificationStatus, showLabel: true), onTap: () => context.push('/landlord/verification').then((_) => _loadVerificationStatus())),
               _ProfileMenuItem(
                 icon: Icons.account_balance_outlined,
                 title: 'Bank Details',
                 subtitle: 'Manage your payout account',
                 onTap: () => context.push('/landlord/bank-details'),
               ),
-              _ProfileMenuItem(icon: Icons.security_outlined, title: 'Verification', subtitle: _getVerificationSubtitle(), trailing: VerificationBadge(status: _verificationStatus, showLabel: true), onTap: () => context.push('/landlord/verification').then((_) => _loadVerificationStatus())),
+            ]),
+            const SizedBox(height: 24),
+            _ProfileSection(title: 'Activity', items: [
               _ProfileMenuItem(
                 icon: Icons.event_note_outlined,
                 title: 'Inspection Requests',
@@ -1383,14 +1400,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 subtitle: 'View reported maintenance issues',
                 onTap: () => context.push('/landlord/issues'),
               ),
-              ]),
-            const SizedBox(height: 24),
-            _ProfileSection(title: 'Finances', items: [
               _ProfileMenuItem(icon: Icons.account_balance_wallet_outlined, title: 'Earnings & Transactions', subtitle: _totalEarnings > 0 ? '₦${(_totalEarnings / 1000000).toStringAsFixed(1)}M total' : 'View your earnings and payment history', onTap: () => context.push('/landlord/earnings')),
               _ProfileMenuItem(icon: Icons.receipt_long_outlined, title: 'Payments & Documents', subtitle: 'Receipts and payment history', onTap: () => context.push('/landlord/documents')),
             ]),
             const SizedBox(height: 24),
-            _ProfileSection(title: 'Preferences', items: [
+            _ProfileSection(title: 'Support', items: [
               _ProfileMenuItem(
                 icon: Icons.help_outline,
                 title: 'Help & Support',
@@ -1970,7 +1984,7 @@ class _LandlordPropertyCard extends StatelessWidget {
             padding: EdgeInsets.zero,
             onSelected: (v) {
               if (v == 'edit') {
-                context.push('/landlord/edit-property', extra: property);
+                context.push('/landlord/edit-property/${property.id}');
               } else if (v == 'health') {
                 context.push('/landlord/property-health', extra: property);
               } else if (v == 'rent_change') {

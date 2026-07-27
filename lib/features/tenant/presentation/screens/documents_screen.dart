@@ -259,13 +259,23 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               decoration: BoxDecoration(
                 color: isActive
                     ? AppColors.success.withAlpha(26)
-                    : AppColors.error.withAlpha(26),
+                    : rental.isPendingPayment
+                        ? AppColors.warning.withAlpha(26)
+                        : AppColors.error.withAlpha(26),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                isActive ? 'Active' : 'Expired',
+                isActive
+                    ? 'Active'
+                    : rental.isPendingPayment
+                        ? 'Awaiting Payment'
+                        : 'Expired',
                 style: AppTextStyles.caption.copyWith(
-                    color: isActive ? AppColors.success : AppColors.error,
+                    color: isActive
+                        ? AppColors.success
+                        : rental.isPendingPayment
+                            ? AppColors.warning
+                            : AppColors.error,
                     fontWeight: FontWeight.w600,
                     fontSize: 10),
               ),
@@ -365,21 +375,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _viewAgreement('active_rentals', rental.id),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Icon(Icons.download_outlined,
-                      size: 18, color: AppColors.textSecondary),
-                ),
-              ),
             ]),
           ] else
             Container(
@@ -400,6 +395,25 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 ),
               ]),
             ),
+          // Direct path into the full lease (review/accept/pay/dispute/message)
+          // so the tenant doesn't have to go via inspection history to manage it.
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  context.push('/tenant/lease-details', extra: rental),
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open Lease Details'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
         ]),
       ),
     );
@@ -516,20 +530,6 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _viewAgreement('tenancy_links', link.id),
-              child: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Icon(Icons.download_outlined,
-                    size: 18, color: AppColors.textSecondary),
               ),
             ),
           ]),
@@ -1053,7 +1053,10 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     final uri = Uri.parse(url);
     try {
       if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        // In-app browser (Chrome Custom Tab / Safari View Controller) so the
+        // tenant views the agreement WITHOUT being thrown out to standalone
+        // Chrome. Was LaunchMode.externalApplication.
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(

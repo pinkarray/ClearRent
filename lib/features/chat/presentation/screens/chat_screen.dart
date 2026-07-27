@@ -21,12 +21,19 @@ class ChatScreen extends StatefulWidget {
   /// that want to draft a message for the user.
   final String? initialDraft;
 
+  /// Optional tappable openers shown in the empty state. Tapping one fills the
+  /// input so the user can edit it; like [initialDraft], nothing is sent until
+  /// they hit send. Used where a blank box is intimidating — e.g. a tenant
+  /// reaching a handler for the first time after paying.
+  final List<String>? suggestions;
+
   const ChatScreen({
     super.key,
     required this.conversationId,
     this.propertyTitle,
     this.propertyImage,
     this.initialDraft,
+    this.suggestions,
   });
 
   @override
@@ -511,12 +518,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
 
                 if (_messages.isEmpty) {
-                  return GuidanceEmptyState(
-                    icon: Icons.chat_bubble_outline,
-                    title: 'Start the conversation',
-                    subtitle: _isCheckingVerification || _canSendMessages
-                        ? 'Send a message to begin chatting'
-                        : 'Both parties need to be verified to chat',
+                  final showSuggestions = _canSendMessages &&
+                      widget.suggestions != null &&
+                      widget.suggestions!.isNotEmpty;
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: GuidanceEmptyState(
+                          icon: Icons.chat_bubble_outline,
+                          title: 'Start the conversation',
+                          subtitle: _isCheckingVerification || _canSendMessages
+                              ? 'Send a message to begin chatting'
+                              : 'Both parties need to be verified to chat',
+                        ),
+                      ),
+                      if (showSuggestions) _buildSuggestionChips(),
+                    ],
                   );
                 }
 
@@ -1093,6 +1110,42 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
     }
+  }
+
+  /// Tappable openers for an empty thread. Fills the input rather than
+  /// sending — the user stays the author and can edit before it goes.
+  Widget _buildSuggestionChips() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: widget.suggestions!.map((suggestion) {
+          return GestureDetector(
+            onTap: () {
+              _messageController.text = suggestion;
+              _messageController.selection = TextSelection.fromPosition(
+                TextPosition(offset: suggestion.length),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.primary.withAlpha(77)),
+              ),
+              child: Text(
+                suggestion,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   Widget _buildMessageInput() {

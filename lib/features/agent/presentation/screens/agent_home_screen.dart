@@ -1879,18 +1879,6 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                       onTap: () => context.push('/edit-profile'),
                     ),
                     _ProfileMenuItem(
-                      icon: Icons.map_outlined,
-                      title: 'Service Areas',
-                      subtitle: '${_serviceAreas.length} areas selected',
-                      onTap: () => context.push('/agent/service-areas'),
-                    ),
-                    _ProfileMenuItem(
-                      icon: Icons.account_balance_outlined,
-                      title: 'Bank Details',
-                      subtitle: 'Manage your payout account',
-                      onTap: () => context.push('/agent/bank-details'),
-                    ),
-                    _ProfileMenuItem(
                       icon: Icons.verified_user_outlined,
                       title: 'Verification',
                       subtitle: _isVerified ? 'Verified' : 'Tap to verify',
@@ -1911,6 +1899,24 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                 size: 20,
                               ),
                     ),
+                    _ProfileMenuItem(
+                      icon: Icons.account_balance_outlined,
+                      title: 'Bank Details',
+                      subtitle: 'Manage your payout account',
+                      onTap: () => context.push('/agent/bank-details'),
+                    ),
+                    _ProfileMenuItem(
+                      icon: Icons.map_outlined,
+                      title: 'Service Areas',
+                      subtitle: '${_serviceAreas.length} areas selected',
+                      onTap: () => context.push('/agent/service-areas'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _ProfileSection(
+                  title: 'Activity',
+                  items: [
                     _ProfileMenuItem(
                       icon: Icons.event_note_outlined,
                       title: 'My Inspections',

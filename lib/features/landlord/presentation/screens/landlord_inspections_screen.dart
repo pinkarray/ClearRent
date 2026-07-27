@@ -1366,6 +1366,30 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     onPressed: _markMet,
                   ),
                 ),
+              ] else if (r.handlerAwaitingTenantMet) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.hourglass_top,
+                          size: 18, color: AppColors.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Waiting for ${r.tenantName} to confirm you met. '
+                          'You can complete once they do.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ] else if (r.canMarkComplete)
                 SizedBox(
                   width: double.infinity,
@@ -1616,6 +1640,9 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
   RentalInterest? _rentalInterest;
   bool _isLoadingInterest = true;
   bool _isAccepting = false;
+  /// Whether the accepted interest already has its active_rental. False on an
+  /// accepted interest means a partial accept that needs finishing.
+  bool _hasActiveRental = true;
 
   @override
   void initState() {
@@ -1632,9 +1659,18 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       final interest = await _rentalInterestService.getInterestForInspection(
         widget.request.id,
       );
+      // An accepted interest should already have its rental record. If it
+      // doesn't, the accept only half-completed — surface a "finish setup"
+      // action instead of stranding the tenant with no rental.
+      final needsRentalCheck =
+          interest != null && interest.status == RentalInterestStatus.accepted;
+      final hasRental = needsRentalCheck ?
+          await _activeRentalService.hasRentalForInterest(interest.id) :
+          true;
       if (mounted) {
         setState(() {
           _rentalInterest = interest;
+          _hasActiveRental = hasRental;
           _isLoadingInterest = false;
         });
       }
@@ -1647,6 +1683,35 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
   Future<void> _acceptRental() async {
     final interest = _rentalInterest;
     if (interest == null) return;
+
+    // Slot hold (one slot = one tenant): refuse if the property is already
+    // taken by another tenant (accepted/paid/occupying). Checked BEFORE the
+    // accept write so we never strand an interest we can't fulfil. Skipped when
+    // finishing a half-completed accept (already this tenant's slot).
+    final finishingPartial =
+        interest.status == RentalInterestStatus.accepted && !_hasActiveRental;
+    if (!finishingPartial) {
+      final hasSlot = await _activeRentalService.propertyHasOpenSlot(
+        interest.propertyId,
+        interest.tenantId,
+      );
+      if (!mounted) return;
+      if (!hasSlot) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'This property is already taken by another tenant. You can\'t '
+              'accept a second applicant for it.',
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        return;
+      }
+    }
 
     // Step 1: Confirmation dialog
     final confirm = await showDialog<bool>(
@@ -1747,23 +1812,29 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     if (confirm != true) return;
 
     // (Multi-rental enabled) A tenant may hold more than one active rental,
-    // so there's no longer a one-rental-per-tenant guard here — a paid
-    // application always becomes a real rental rather than being blocked
-    // after the tenant has already paid.
+    // so there's no longer a one-rental-per-tenant guard here — an accepted
+    // application always becomes a real rental. Under pay-after-accept the
+    // tenant hasn't paid yet; they pay once the agreement is finalized.
 
-    // Step 2: Ask to upload agreement (optional)
+    // Step 2: Require the tenancy agreement — a deal can't close without it.
+    // A null/empty result means the landlord cancelled the upload step, so we
+    // abort the accept entirely (no agreement, no deal).
     String? agreementUrl;
     if (mounted) {
       agreementUrl = await _showAgreementUploadDialog();
     }
+    if (agreementUrl == null || agreementUrl.isEmpty) return;
 
     setState(() => _isAccepting = true);
 
     try {
-      // Accept the rental interest
-      final accepted = await _rentalInterestService.acceptRentalInterest(
-        interest.id,
-      );
+      // Accept the rental interest. If it's ALREADY accepted we're finishing a
+      // partial accept (the rental record never got created), so skip the
+      // status write and go straight to creating the rental below.
+      final alreadyAccepted =
+          interest.status == RentalInterestStatus.accepted;
+      final accepted = alreadyAccepted ||
+          await _rentalInterestService.acceptRentalInterest(interest.id);
       if (!accepted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1780,9 +1851,14 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         return;
       }
 
-      // Create the active rental
+      // Create the active rental.
+      // `interest` is the copy loaded BEFORE the accept above, so its status is
+      // still pending_acceptance — passing it as-is trips createActiveRental's
+      // "must be accepted" guard and strands the tenant with no rental record.
+      // Hand over the post-accept status explicitly.
       final rental = await _activeRentalService.createActiveRental(
-        rentalInterest: interest,
+        rentalInterest:
+            interest.copyWith(status: RentalInterestStatus.accepted),
         inspectionRequest: widget.request,
       );
 
@@ -1810,10 +1886,9 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         return;
       }
 
-      // If landlord uploaded agreement, attach it
-      if (agreementUrl != null && agreementUrl.isNotEmpty) {
-        await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
-      }
+      // Attach the agreement uploaded above (guaranteed present — the accept
+      // aborts earlier if it wasn't).
+      await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
 
       // Reload interest BEFORE showing success await it
       if (mounted) {
@@ -1823,11 +1898,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              agreementUrl != null
-                  ? 'Rental confirmed with agreement attached!'
-                  : 'Rental confirmed! You can upload the agreement later.',
-            ),
+            content: const Text('Rental confirmed with agreement attached!'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -1993,7 +2064,8 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
                       const SizedBox(height: 12),
                       Text(
-                        'You can also upload this later from your rental management screen.',
+                        'A signed tenancy agreement is required to finalize '
+                        'this rental.',
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.textHint,
                         ),
@@ -2004,10 +2076,14 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   actions: [
+                    // No "skip": a deal can't be closed without a signed
+                    // agreement. Cancel aborts the whole accept (null result),
+                    // so the landlord can back out but can't proceed without
+                    // uploading.
                     TextButton(
-                      onPressed: () => Navigator.pop(ctx, null), // Skip
+                      onPressed: () => Navigator.pop(ctx, null),
                       child: Text(
-                        'Skip for now',
+                        'Cancel',
                         style: TextStyle(color: AppColors.textSecondary),
                       ),
                     ),
@@ -2063,8 +2139,11 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       statusText = r.statusDisplay;
     }
 
-    final hasVerified =
-        _rentalInterest?.status == RentalInterestStatus.paymentVerified;
+    // Pay-after-accept: an applicant awaiting the landlord's decision is UNPAID.
+    // Accepting them starts the agreement flow; the tenant pays only after it's
+    // finalized. (Was gated on paymentVerified — tenants no longer pay first.)
+    final awaitingDecision =
+        _rentalInterest?.status == RentalInterestStatus.pendingAcceptance;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -2072,14 +2151,15 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border:
-            hasVerified ? Border.all(color: AppColors.success, width: 2) : null,
+        border: awaitingDecision
+            ? Border.all(color: AppColors.success, width: 2)
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ðŸ”’ LOCKED IN BANNER
-          if (hasVerified) ...[
+          if (awaitingDecision) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -2090,14 +2170,14 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.lock, size: 20, color: AppColors.success),
+                  Icon(Icons.how_to_reg, size: 20, color: AppColors.success),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'PAYMENT CONFIRMED LOCKED IN',
+                          'APPLICANT AWAITING YOUR DECISION',
                           style: AppTextStyles.labelSmall.copyWith(
                             color: AppColors.success,
                             fontWeight: FontWeight.w700,
@@ -2105,7 +2185,8 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Tenant has paid. Accept the rental below.',
+                          'Accept to finalize the agreement — the tenant pays '
+                          'only after that. Nothing has been charged yet.',
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textSecondary,
                           ),
@@ -2311,6 +2392,14 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     String subtitle;
 
     switch (interest.status) {
+      case RentalInterestStatus.pendingAcceptance:
+        statusColor = AppColors.success;
+        statusIcon = Icons.how_to_reg;
+        title = 'Tenant Interested — Accept Rental';
+        subtitle =
+            '${interest.tenantName} wants to rent. Accept below to start the '
+            'agreement — they pay after it\'s finalized.';
+        break;
       case RentalInterestStatus.pendingPayment:
         statusColor = AppColors.warning;
         statusIcon = Icons.payment;
@@ -2337,10 +2426,33 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         subtitle = 'Tenant needs to re-upload payment proof.';
         break;
       case RentalInterestStatus.accepted:
+        statusColor = AppColors.info;
+        statusIcon = Icons.description_outlined;
+        title = 'Accepted — Awaiting Payment';
+        subtitle =
+            'Finalize the tenancy agreement with ${interest.tenantName}. '
+            'They pay once it\'s finalized.';
+        break;
+      case RentalInterestStatus.rentPaid:
         statusColor = AppColors.success;
         statusIcon = Icons.celebration;
         title = 'Rental Active';
         subtitle = '${interest.tenantName} is now your tenant.';
+        break;
+      case RentalInterestStatus.notSelected:
+        statusColor = AppColors.textSecondary;
+        statusIcon = Icons.history;
+        title = 'Not Selected';
+        subtitle =
+            '${interest.tenantName} was not selected — they were not charged.';
+        break;
+      case RentalInterestStatus.expired:
+        statusColor = AppColors.textSecondary;
+        statusIcon = Icons.timer_off_outlined;
+        title = 'Reservation Expired';
+        subtitle =
+            '${interest.tenantName} didn\'t pay in time. The reservation was '
+            'released and the property is back on the market.';
         break;
       case RentalInterestStatus.lostToOther:
         statusColor = AppColors.textSecondary;
@@ -2387,9 +2499,35 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
               ),
             ],
           ),
-          // Accept button for paymentVerified status
-          if (interest.status == RentalInterestStatus.paymentVerified) ...[
+          // Accept button — the applicant is awaiting the landlord's decision
+          // (unpaid). Accepting starts the agreement flow; the tenant pays only
+          // after it's finalized.
+          // Also shown when an ALREADY-accepted interest has no rental record:
+          // that's a half-finished accept, and without this the landlord has no
+          // way to complete it (the tenant would sit on "no rental yet" forever).
+          if (interest.status == RentalInterestStatus.pendingAcceptance ||
+              (interest.status == RentalInterestStatus.accepted &&
+                  !_hasActiveRental)) ...[
             const SizedBox(height: 12),
+            if (interest.status == RentalInterestStatus.accepted) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.warning.withAlpha(64)),
+                ),
+                child: Text(
+                  'You accepted this tenant, but the rental record didn\'t '
+                  'finish setting up — they can\'t see the agreement yet. '
+                  'Tap below to complete it.',
+                  style:
+                      AppTextStyles.caption.copyWith(color: AppColors.warning),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -2405,7 +2543,11 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           ),
                         )
                         : const Icon(Icons.check_circle, size: 20),
-                label: Text(_isAccepting ? 'Processing...' : 'Accept Rental'),
+                label: Text(_isAccepting
+                    ? 'Processing...'
+                    : interest.status == RentalInterestStatus.accepted
+                        ? 'Finish Rental Setup'
+                        : 'Accept Rental'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.success,
                   foregroundColor: Colors.white,

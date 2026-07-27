@@ -72,6 +72,16 @@ export const inspectionLifecycleSweep = onSchedule(
       const propertyTitle =
         (data.propertyTitle as string | undefined) ?? "a property";
 
+      // Pay-after-approve: nothing is charged until AFTER the handler approves,
+      // so a request that lapses unapproved (or approved-but-unpaid) involves no
+      // money — it's cancelled, not refunded. `unpaid` distinguishes these from
+      // legacy pay-first records (which were paid up front and still get the
+      // reschedule/refund path).
+      const isPaid = data.paymentStatus === "paid";
+      const feeRequired =
+        typeof data.totalFee === "number" && data.totalFee > 0;
+      const unpaid = feeRequired && !isPaid;
+
       try {
         if (status === "pendingPayment") {
           await doc.ref.update({
@@ -81,25 +91,65 @@ export const inspectionLifecycleSweep = onSchedule(
           });
           counts.cancelled++;
         } else if (status === "pendingVerification" || status === "pending") {
-          await doc.ref.update({
-            status: "expiredUnapproved",
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-          if (tenantId) {
-            await writeNotificationOnce(`insp_${doc.id}_expired_${tenantId}`, {
-              userId: tenantId,
-              type: "inspection_expired",
-              title: "Inspection wasn't confirmed in time",
-              body:
-                `Your inspection for ${propertyTitle} wasn't approved before ` +
-                `the date. Reschedule for free or get a refund.`,
-              payload: {route: TENANT_INSPECTIONS_ROUTE},
+          if (unpaid) {
+            // Never approved before the date, and nothing was paid → close it.
+            await doc.ref.update({
+              status: "cancelled",
+              cancelReason: "Inspection date passed before it was approved",
+              updatedAt: FieldValue.serverTimestamp(),
             });
+            if (tenantId) {
+              await writeNotificationOnce(
+                `insp_${doc.id}_expired_${tenantId}`,
+                {
+                  userId: tenantId,
+                  type: "inspection_expired",
+                  title: "Inspection wasn't approved in time",
+                  body:
+                    `Your inspection for ${propertyTitle} wasn't approved ` +
+                    `before the date. You weren't charged — request a new ` +
+                    `time whenever you like.`,
+                  payload: {route: TENANT_INSPECTIONS_ROUTE},
+                },
+              );
+            }
+            counts.cancelled++;
+          } else {
+            // Legacy: paid up front but never approved → reschedule or refund.
+            await doc.ref.update({
+              status: "expiredUnapproved",
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            if (tenantId) {
+              await writeNotificationOnce(
+                `insp_${doc.id}_expired_${tenantId}`,
+                {
+                  userId: tenantId,
+                  type: "inspection_expired",
+                  title: "Inspection wasn't confirmed in time",
+                  body:
+                    `Your inspection for ${propertyTitle} wasn't approved ` +
+                    `before the date. Reschedule for free or get a refund.`,
+                  payload: {route: TENANT_INSPECTIONS_ROUTE},
+                },
+              );
+            }
+            counts.expired++;
           }
-          counts.expired++;
         } else if (status === "approved") {
-          const outcome = await resolveApproved(doc.ref, data);
-          counts[outcome]++;
+          if (unpaid) {
+            // Approved but the tenant never paid before the date → no money,
+            // just close it (no admin review, nothing to refund).
+            await doc.ref.update({
+              status: "cancelled",
+              cancelReason: "Inspection date passed before payment",
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+            counts.cancelled++;
+          } else {
+            const outcome = await resolveApproved(doc.ref, data);
+            counts[outcome]++;
+          }
         }
       } catch (e) {
         logger.error("Inspection sweep failed on a request", {
@@ -125,7 +175,9 @@ async function resolveApproved(
   ref: DocumentReference,
   data: DocumentData,
 ): Promise<"completed" | "refunded" | "review"> {
-  const met = data.met === true;
+  // A meeting is confirmed only when BOTH parties recorded their half.
+  const met =
+    data.tenantConfirmedMet === true && data.handlerConfirmedMet === true;
   const tenantArrived = data.tenantArrived === true;
   const handlerArrived = data.handlerArrived === true;
   const tenantId = data.tenantId as string | undefined;

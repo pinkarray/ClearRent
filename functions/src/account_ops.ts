@@ -13,12 +13,21 @@
 // delete a user, and data + auth are removed in one server pass. The caller can
 // only delete THEIR OWN account (uid is taken from the verified auth context,
 // never from the payload).
+//
+// Three rules govern what happens to the user's data:
+//   1. GUARD — anything mid-obligation (live tenancy, open inspection, rent
+//      payment in flight) blocks the delete outright. The counterparty must not
+//      be left holding a dangling link or a stranded payment.
+//   2. CASCADE — records that only exist to serve this user are removed.
+//   3. RETAIN + TOMBSTONE — financial records survive for audit, and
+//      `deleted_accounts/{uid}` records who the uid was, so the admin dashboard
+//      can render them as a deleted party rather than a live-looking ghost.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, Query} from "firebase-admin/firestore";
+import {getFirestore, Query, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
 import {getStorage} from "firebase-admin/storage";
 import {v2 as cloudinary} from "cloudinary";
@@ -118,6 +127,28 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     );
   }
 
+  // Money-in-flight guard. A rental interest past `payment_uploaded` means the
+  // tenant has paid real money that has not yet resolved into a tenancy — the
+  // exact state rentalInterestStrandSweep escalates to the admin Rent Attention
+  // queue. Letting either party walk away here strands the payment against a
+  // uid that no longer resolves: the admin sees a ghost row with a
+  // denormalized name and no way to reach the human. The counterparty must
+  // accept, or the tenant must be refunded, before the account can go.
+  const IN_FLIGHT_INTEREST = ["payment_uploaded", "payment_verified"];
+  const hasMoneyInFlight = (s: FirebaseFirestore.QuerySnapshot) =>
+    s.docs.some((d) => IN_FLIGHT_INTEREST.includes(d.get("status")));
+  const [riTenant, riLandlord] = await Promise.all([
+    db.collection("rental_interests").where("tenantId", "==", uid).get(),
+    db.collection("rental_interests").where("landlordId", "==", uid).get(),
+  ]);
+  if (hasMoneyInFlight(riTenant) || hasMoneyInFlight(riLandlord)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "You have a rent payment still being processed. It must be completed " +
+        "or refunded before you can delete your account.",
+    );
+  }
+
   // Agent cascade: revert every property this user is the assigned agent on to
   // landlord-handled (agent fee preserved) and notify each landlord. Safe here
   // because we've confirmed there are no in-flight inspections above. These are
@@ -164,6 +195,41 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     db.collection("rent_review_requests").where("landlordId", "==", uid));
   await deleteByQuery(
     db.collection("rent_review_requests").where("tenantId", "==", uid));
+  // The agent leg of an inspection — the tenant/landlord legs are queried
+  // above, but an agent deleting their account used to leave every inspection
+  // they ever handled pointing at a dead uid.
+  await deleteByQuery(
+    db.collection("inspection_requests").where("agentId", "==", uid));
+  await deleteByQuery(
+    db.collection("agent_ratings").where("agentId", "==", uid));
+  await deleteByQuery(
+    db.collection("agent_ratings").where("raterId", "==", uid));
+  await deleteByQuery(
+    db.collection("maintenance_logs").where("landlordId", "==", uid));
+  // Buildings group a landlord's own units; their properties are deleted above,
+  // so the grouping doc has nothing left to cover.
+  await deleteByQuery(
+    db.collection("buildings").where("landlordId", "==", uid));
+  // Rental interests that never touched money — an expression of interest the
+  // tenant abandoned, or one the landlord turned down. Explicit allowlist, not
+  // a "not payment_*" test: `accepted` also means money changed hands and must
+  // survive as a financial record, same as payment_uploaded/payment_verified.
+  // Those states are blocked outright by the in-flight guard above; `accepted`
+  // and pre-guard legacy rows are deliberately retained, and the
+  // deleted_accounts tombstone below is what lets the admin queue render them
+  // honestly instead of as a ghost.
+  const NO_MONEY_INTEREST = ["interested", "pending", "rejected", "cancelled"];
+  for (const field of ["tenantId", "landlordId"]) {
+    const snap = await db
+      .collection("rental_interests").where(field, "==", uid).get();
+    const stale = snap.docs.filter(
+      (d) => NO_MONEY_INTEREST.includes(d.get("status")));
+    for (let i = 0; i < stale.length; i += 400) {
+      const batch = db.batch();
+      for (const doc of stale.slice(i, i + 400)) batch.delete(doc.ref);
+      await batch.commit();
+    }
+  }
 
   // Conversations carry a `messages` subcollection — recursiveDelete clears the
   // subcollection and the parent doc together.
@@ -175,8 +241,20 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     await db.recursiveDelete(doc.ref);
   }
 
-  // The user profile doc itself.
-  await db.collection("users").doc(uid).delete();
+  // Capture the identity fields BEFORE the profile goes — the tombstone is
+  // written at the very end, once the account is definitively gone, but by then
+  // there is nothing left to read them from.
+  const userSnap = await db.collection("users").doc(uid).get();
+  const tombstone = {
+    uid,
+    fullName: userSnap.get("fullName") ?? null,
+    accountType: userSnap.get("accountType") ?? null,
+  };
+
+  // The user profile doc itself. recursiveDelete, NOT delete: `users/{uid}` has
+  // `private/{docId}` (bank details) and `savedProperties/` subcollections, and
+  // a plain doc delete leaves both behind, orphaned and unreachable.
+  await db.recursiveDelete(db.collection("users").doc(uid));
 
   // Cloud Storage: verification documents (verification/{uid}/) and ownership
   // documents — C of O / deed (ownership/{uid}/) + agreements/{uid}/. (Profile
@@ -216,6 +294,22 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
 
   // Auth account last. The admin SDK has no recent-login requirement.
   await getAuth().deleteUser(uid);
+
+  // Tombstone, only now that the account is definitively gone. Financial
+  // records (transactions, refunds, retained rental interests) outlive it for
+  // audit, carrying a denormalized name and a uid that no longer resolves — so
+  // the admin dashboard used to show a live-looking party who had long since
+  // left. This row is where those screens look up "this uid was deleted, here's
+  // who it was and when".
+  //
+  // Written after the delete, not before: an earlier write would mark a still
+  // live account as deleted if any step above threw, and a viewer would see a
+  // real user struck through. A missing tombstone degrades gracefully (the
+  // screen falls back to the denormalized name); a false one does not.
+  await db.collection("deleted_accounts").doc(uid).set({
+    ...tombstone,
+    deletedAt: FieldValue.serverTimestamp(),
+  });
 
   logger.info("Account deletion complete", {uid});
   return {success: true};

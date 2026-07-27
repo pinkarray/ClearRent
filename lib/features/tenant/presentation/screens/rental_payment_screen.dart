@@ -14,12 +14,15 @@ import '../../../../shared/screens/paystack_checkout_screen.dart';
 
 class RentalPaymentScreen extends StatefulWidget {
   final RentalInterest rentalInterest;
-  final InspectionRequest inspectionRequest;
+  // Optional: the pay-after-accept entry point (the finalized-agreement card in
+  // lease_details) has only the rental, not the original inspection request.
+  // The screen doesn't read it, so it's not required.
+  final InspectionRequest? inspectionRequest;
 
   const RentalPaymentScreen({
     super.key,
     required this.rentalInterest,
-    required this.inspectionRequest,
+    this.inspectionRequest,
   });
 
   @override
@@ -104,7 +107,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
 
   Future<void> _updateRentalInterest() async {
     try {
-      final success = await _rentalInterestService.markPaymentVerified(
+      final success = await _rentalInterestService.recordRentPayment(
         widget.rentalInterest.id,
         paymentReference: _paymentReference,
       );
@@ -153,7 +156,8 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Your rent payment has been confirmed. The landlord will finalize your rental shortly.',
+              'Your rent payment is confirmed and your tenancy is complete. '
+              'Welcome to your new home!',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -200,8 +204,15 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
+                  // Rent is paid — they're a tenant now, so send them to the
+                  // home DASHBOARD (tab 0). The `reset` nonce forces a fresh
+                  // home so it doesn't reuse whatever tab (e.g. Profile) the
+                  // tenant was last on.
                   Navigator.pop(ctx);
-                  context.go('/tenant/inspections');
+                  context.go('/tenant/home', extra: {
+                    'initialTab': 0,
+                    'reset': DateTime.now().millisecondsSinceEpoch,
+                  });
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
@@ -209,7 +220,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text('View My Inspections',
+                child: Text('Go to My Home',
                     style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
               ),
             ),
@@ -358,10 +369,13 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Refund note
+            // Commit note: payment happens only after the landlord has accepted
+            // you and the agreement is finalized, so this is the final step.
             Center(
               child: Text(
-                'Full refund if the landlord declines the rental',
+                'You\'re accepted and your agreement is finalized — this '
+                'completes your move-in.',
+                textAlign: TextAlign.center,
                 style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
               ),
             ),

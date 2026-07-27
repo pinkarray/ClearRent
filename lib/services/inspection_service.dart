@@ -211,15 +211,17 @@ class InspectionService {
 
   // ============ CREATE INSPECTION REQUEST ============
 
+  /// Pay-after-approve: creates the request UNPAID and awaiting the handler
+  /// (status 'pending'). The tenant pays only after the handler approves — the
+  /// fee breakdown is stored now so the amount is fixed, but nothing is charged
+  /// here. (Was pay-before-handler: the old callers passed paymentStatus:'paid'
+  /// after charging up front.)
   Future<String?> createInspectionRequest({
     required PropertyModel property,
     required DateTime requestedDate,
     required String requestedTimeSlot,
     String? notes,
     InspectionFeeBreakdown? feeBreakdown,
-    String? paymentReference,
-    String? paymentProofUrl,
-    String? paymentStatus,
   }) async {
     try {
       if (_currentUserId == null) {
@@ -354,29 +356,23 @@ class InspectionService {
         'isSelfHandled': property.inspectionHandler != 'agent',
         'landlordLivesInProperty': property.landlordLivesInProperty == true,
 
+        // Pay-after-approve: nothing is charged at creation. A fee-bearing
+        // request is 'unpaid' (the tenant pays after the handler approves); a
+        // free inspection is 'not_required'.
         'paymentStatus':
-            paymentStatus ??
-            (feeBreakdown != null && feeBreakdown.totalFee > 0
-                ? 'pending_verification'
-                : 'not_required'),
-        'paymentReference': paymentReference,
-        'paymentProofUrl': paymentProofUrl,
-        'paidAt': paymentStatus == 'paid' ? FieldValue.serverTimestamp() : null,
+            (feeBreakdown != null && feeBreakdown.totalFee > 0)
+                ? 'unpaid'
+                : 'not_required',
+        'paymentReference': null,
+        'paymentProofUrl': null,
+        'paidAt': null,
         'paymentVerifiedAt': null,
         'paymentVerifiedBy': null,
         'refundedAt': null,
         'refundReason': null,
 
-        // If payment proof was uploaded, go to pendingVerification.
-        // If fee is required but no proof yet, go to pendingPayment.
-        // If no fee at all, go straight to pending.
-        'status': paymentStatus == 'paid'
-            ? 'pending'
-            : paymentProofUrl != null
-                ? 'pendingVerification'
-                : (feeBreakdown != null && feeBreakdown.totalFee > 0
-                    ? 'pendingPayment'
-                    : 'pending'),
+        // Always awaiting the handler's decision — no money has moved yet.
+        'status': 'pending',
         'declinedBy': null,
         'declineReason': null,
         'declinedAt': null,
@@ -449,6 +445,36 @@ class InspectionService {
         name: 'InspectionService',
       );
       return null;
+    }
+  }
+
+  /// Pay-after-approve: confirm the inspection payment server-side after a
+  /// successful Paystack charge. The confirmInspectionPayment callable verifies
+  /// the caller is the tenant and the request is approved, flips it to paid, and
+  /// reveals the exact address (the reveal is handler-only by rule, so it must
+  /// run server-side). Returns false if the server rejects it.
+  Future<bool> confirmInspectionPayment(
+    String requestId, {
+    String? paymentReference,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('confirmInspectionPayment');
+      await callable.call<Map<String, dynamic>>({
+        'requestId': requestId,
+        'paymentReference': paymentReference,
+      });
+      developer.log('✅ Inspection payment confirmed: $requestId',
+          name: 'InspectionService');
+      return true;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log(
+          '❌ confirmInspectionPayment rejected: ${e.code} ${e.message}',
+          name: 'InspectionService');
+      return false;
+    } catch (e) {
+      developer.log('❌ confirmInspectionPayment error: $e',
+          name: 'InspectionService');
+      return false;
     }
   }
 
@@ -734,40 +760,11 @@ class InspectionService {
         updates['overriddenBy'] = _currentUserId;
       }
 
-      // Reveal-on-approval: fill in the exact street address + coordinates now
-      // that the handler has approved. Read from the property's gated
-      // `private/location` subdoc (the approving handler is entitled). Both the
-      // tenant and the handler see the exact location from this point on, and
-      // it flows into the rental record if the tenant goes on to rent.
-      final propertyId = existing.data()?['propertyId'] as String?;
-      if (propertyId != null) {
-        try {
-          final locSnap = await _firestore
-              .collection('properties')
-              .doc(propertyId)
-              .collection('private')
-              .doc('location')
-              .get();
-          final loc = locSnap.data();
-          if (loc != null) {
-            final exactAddress = loc['address'] as String?;
-            if (exactAddress != null && exactAddress.isNotEmpty) {
-              updates['propertyAddress'] = exactAddress;
-            }
-            if (loc['latitude'] != null) {
-              updates['propertyLatitude'] = (loc['latitude'] as num).toDouble();
-            }
-            if (loc['longitude'] != null) {
-              updates['propertyLongitude'] =
-                  (loc['longitude'] as num).toDouble();
-            }
-          }
-        } catch (e) {
-          developer.log('⚠️ Could not load exact location on approval: $e',
-              name: 'InspectionService');
-        }
-      }
-
+      // Pay-after-approve: the exact address is NOT revealed on approval any
+      // more. Approval alone doesn't unlock the property location — otherwise
+      // an approved-but-unpaid tenant would get the connection for free. The
+      // reveal (exact address fill + reveals/{tenantId} grant) now happens
+      // server-side when the tenant pays (confirmInspectionPayment callable).
       await _firestore
           .collection('inspection_requests')
           .doc(requestId)
@@ -792,40 +789,28 @@ class InspectionService {
       final requestData = verifyDoc.data();
 
       if (requestData != null) {
-        // Reveal-on-approval: grant this tenant read access to the property's
-        // exact address (the gated `private/location` subdoc). Writing this doc
-        // is what ties the exact-address reveal to the handler approving.
-        final propertyId = requestData['propertyId'] as String?;
-        final tenantId = requestData['tenantId'] as String?;
-        if (propertyId != null && tenantId != null) {
-          try {
-            await _firestore
-                .collection('properties')
-                .doc(propertyId)
-                .collection('reveals')
-                .doc(tenantId)
-                .set({
-              'revealedAt': FieldValue.serverTimestamp(),
-              'requestId': requestId,
-              'grantedBy': _currentUserId,
-            }, SetOptions(merge: true));
-          } catch (e) {
-            developer.log('⚠️ Failed to write address reveal grant: $e',
-                name: 'InspectionService');
-          }
-        }
-
+        // (Reveal moved to payment — see confirmInspectionPayment. Approval no
+        // longer writes the reveals grant or the exact address.)
         final approvedBy =
             isLandlordOverride
                 ? 'Landlord'
                 : (requestData['agentId'] != null ? 'Agent' : 'Landlord');
 
+        // Pay-after-approve: prompt the tenant to pay to confirm. The fee is
+        // charged only now, and the exact address unlocks once they pay.
+        final feeRequired = (requestData['totalFee'] as num?) != null &&
+            (requestData['totalFee'] as num) > 0 &&
+            requestData['paymentStatus'] != 'paid';
         await _createActivity(
           userId: requestData['tenantId'],
           type: 'inspection_approved',
           title: 'Inspection Approved!',
-          message:
-              'Your inspection for ${requestData['propertyTitle']} has been approved by $approvedBy',
+          message: feeRequired
+              ? 'Your inspection for ${requestData['propertyTitle']} was '
+                  'approved by $approvedBy. Pay the inspection fee to confirm '
+                  'and unlock the exact address.'
+              : 'Your inspection for ${requestData['propertyTitle']} has been '
+                  'approved by $approvedBy',
           relatedId: requestId,
           propertyId: requestData['propertyId'],
         );
@@ -1211,10 +1196,14 @@ class InspectionService {
       final requestData = requestDoc.data();
       if (requestData == null) return false;
 
-      // Eligibility gates: status must be approved, both parties
-      // must have confirmed they met, caller must be the handler.
+      // Eligibility gates: status must be approved, BOTH parties must have
+      // confirmed they met (a single party's flag can't unlock completion),
+      // and caller must be the handler. handlerArrived is implied by the
+      // handler's own confirmation, but we assert it defensively.
       if (requestData['status'] != 'approved') return false;
-      if (requestData['met'] != true) return false;
+      if (requestData['tenantConfirmedMet'] != true) return false;
+      if (requestData['handlerConfirmedMet'] != true) return false;
+      if (requestData['handlerArrived'] != true) return false;
       final role = _actorRole(requestData, userId);
       if (role != 'agent' && role != 'landlord') return false;
 
@@ -1924,12 +1913,12 @@ class InspectionService {
 
   // ============ MET CONFIRMATION ============
 
-  /// Either party marks "I've met the other person." Unlocks the
-  /// handler's Mark as Completed button.
-  ///
-  /// Tenant can call anytime after they've arrived. Handler can
-  /// only call when both have arrived (anti-fake-meet guard — handler
-  /// can't fake meeting a tenant who never showed up).
+  /// Records the CALLER's own half of the "we met" confirmation. A meeting is
+  /// a two-person fact, so neither party can assert it alone — completion is
+  /// gated on BOTH halves (see completeInspection). Either party may only
+  /// confirm once both have physically arrived: the handler can't fake a
+  /// meeting with a tenant who never showed, and a tenant's confirmation alone
+  /// can no longer unlock the handler's payout.
   Future<bool> markMet(String requestId) async {
     final userId = _currentUserId;
     if (userId == null) return false;
@@ -1945,32 +1934,32 @@ class InspectionService {
       final role = _actorRole(data, userId);
       if (role == 'unknown') return false;
       if (data['status'] != 'approved') return false;
-      if (data['met'] == true) return false;
 
+      // Both must be physically present before either can confirm the meeting.
+      if (data['tenantArrived'] != true) return false;
+      if (data['handlerArrived'] != true) return false;
+
+      final Map<String, dynamic> update = {
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
       if (role == 'tenant') {
-        if (data['tenantArrived'] != true) return false;
+        if (data['tenantConfirmedMet'] == true) return false;
+        update['tenantConfirmedMet'] = true;
+        update['tenantConfirmedMetAt'] = FieldValue.serverTimestamp();
       } else {
-        // agent or landlord
-        if (data['handlerArrived'] != true) return false;
-        if (data['tenantArrived'] != true) return false;
+        // agent or landlord — records the handler's half only.
+        if (data['handlerConfirmedMet'] == true) return false;
+        update['handlerConfirmedMet'] = true;
+        update['handlerConfirmedMetAt'] = FieldValue.serverTimestamp();
       }
-
-      // Normalize role: store 'handler' for both agent and landlord
-      // so downstream readers don't have to branch on it.
-      final metBy = role == 'tenant' ? 'tenant' : 'handler';
 
       await _firestore
           .collection('inspection_requests')
           .doc(requestId)
-          .update({
-        'met': true,
-        'metAt': FieldValue.serverTimestamp(),
-        'metBy': metBy,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+          .update(update);
 
       developer.log(
-        '✅ Met confirmed by $metBy for $requestId',
+        '✅ Met half confirmed by $role for $requestId',
         name: 'InspectionService',
       );
       return true;

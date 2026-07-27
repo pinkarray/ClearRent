@@ -49,6 +49,16 @@ service cloud.firestore {
     match /_rate_limits/{docId} {
       allow read, write: if false;
     }
+
+    // Platform config, currently the pricing schedule (config/pricing).
+    // Readable by any signed-in user so the app can DISPLAY current fees;
+    // writable only by admins. The server independently derives what it
+    // actually charges from this same document (functions/src/pricing.ts),
+    // so the client copy is display-only and is never trusted for money.
+    match /config/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
     
     // Users collection
     match /users/{userId} {
@@ -178,6 +188,31 @@ service cloud.firestore {
           );
       }
 
+      // True when this write attaches the listing to a building (a "grouped
+      // unit"). Such a unit owns NO document of its own — the building's C of O
+      // is the single artifact an admin reviews, and the unit inherits it.
+      function isGrouped() {
+        return 'buildingId' in request.resource.data
+          && request.resource.data.buildingId != null;
+      }
+
+      // Statuses an OWNER may write. 'verified'/'rejected' are the admin's
+      // verdict and are absent by construction. Written as an allowlist: a
+      // denylist of ['verified','rejected'] let 'inherited' (grouped units) and
+      // 'not_uploaded' (add-property) walk through every guard below.
+      function ownerDocStatus(s) {
+        return s in ['none', 'not_uploaded', 'pending', 'inherited'];
+      }
+
+      function docFieldsChanged() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['ownershipDocUrl', 'ownershipDocType']);
+      }
+
+      function changed(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+      }
+
       // Create: must self-assign ownership AND be a verified landlord.
       // The get() reads the user doc (source of truth) rather than the
       // client-supplied isVerified field, which a modified client could fake.
@@ -185,7 +220,24 @@ service cloud.firestore {
         && request.resource.data.landlordId == request.auth.uid
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verificationStatus == 'verified'
-        && buildingOwnedByCaller();
+        && buildingOwnedByCaller()
+        // A listing is BORN unreviewed. Without this the owner-update guards
+        // below are decoration: a modified client could simply CREATE the
+        // listing already 'verified' with isVerified true and never face an
+        // admin at all. isVerified is the admin's badge (adminReviewPropertyDoc
+        // writes it), not a mirror of the landlord's own verification.
+        && request.resource.data.get('isVerified', false) == false
+        && ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
+        // The rejection reason is the admin's words — never seeded by the owner.
+        && !request.resource.data.keys().hasAny(['ownershipDocRejectionReason'])
+        // A grouped unit carries no doc fields; a standalone listing has no
+        // building to inherit from, so it may not claim 'inherited'.
+        && (
+          isGrouped()
+            ? (request.resource.data.get('ownershipDocStatus', 'none') == 'inherited'
+                && !request.resource.data.keys().hasAny(['ownershipDocUrl', 'ownershipDocType']))
+            : request.resource.data.get('ownershipDocStatus', 'none') != 'inherited'
+        );
 
       // Update: owner can edit own listing, but cannot reassign
       // ownership (closes listing-hijack via landlordId rewrite) and cannot
@@ -194,42 +246,60 @@ service cloud.firestore {
         && resource.data.landlordId == request.auth.uid
         && request.resource.data.landlordId == resource.data.landlordId
         && buildingOwnedByCaller()
-        // Owner may move the doc back to review ('pending'/'not_uploaded' on
-        // re-upload) but may NOT self-verify or self-reject — those are
-        // admin-only (the admin clause below bypasses this). Mirrors buildings.
+        // buildingId is FIXED at creation. A grouped unit's doc status resolves
+        // to its building's, so a mutable buildingId is a skeleton key: attach a
+        // rejected listing to any building you own that's already approved and
+        // it silently reads as verified, with no admin ever tying that unit to
+        // that building. Mis-picked the building? Delete and re-add the listing.
+        && request.resource.data.get('buildingId', null)
+             == resource.data.get('buildingId', null)
+        // isVerified is the admin's badge (adminReviewPropertyDoc writes it) and
+        // is immutable for the owner. The create rule pins it false at birth.
+        && !changed(['isVerified'])
+        // The rejection reason is the admin's words. The owner may not rewrite
+        // or clear it to hide why they were turned down.
+        && !changed(['ownershipDocRejectionReason'])
+        // Owner may move the doc back to review but may NOT self-verify or
+        // self-reject — those are admin-only (the admin clause below bypasses
+        // this). Allowlisted, so 'inherited'/'not_uploaded' can't slip past.
         && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownershipDocStatus'])
-          || !(request.resource.data.ownershipDocStatus in ['verified', 'rejected'])
+          !changed(['ownershipDocStatus'])
+          || ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
         )
+        // A standalone listing has no building to inherit from. Enforced at
+        // create; it must hold on UPDATE too. Otherwise an owner creates
+        // legitimately, gets REJECTED by an admin, then relabels the status to
+        // 'inherited' — which is in the owner allowlist, leaves buildingId and
+        // isVerified untouched, and resolves (standalone) to its own raw value,
+        // so every status-keyed gate downstream passes trivially and the
+        // rejection is escaped.
+        && (
+          isGrouped()
+          || request.resource.data.get('ownershipDocStatus', 'none') != 'inherited'
+        )
+        // A grouped unit owns no document — the building's is the reviewed
+        // artifact. Its own doc fields must never be written: with status
+        // 'inherited' (never the literal 'verified') every status-keyed guard
+        // below passes trivially, which is how a unit came to be labelled
+        // 'c_of_o' under a building the admin approved as a 'deed'.
+        && (!isGrouped() || !docFieldsChanged())
         // Changing the DOCUMENT ITSELF (file or type) must send it back for
-        // review — the guard above only bites when status is among the changed
-        // keys, so an owner could otherwise swap the file (or relabel the type)
-        // and keep a 'verified' the admin never gave to that document.
+        // review. Keyed on the FIELD changing, not on the current status, so an
+        // owner can't swap the file and keep an approval the admin never gave to
+        // that document.
         && (
-          !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['ownershipDocUrl', 'ownershipDocType'])
-          || !(request.resource.data.ownershipDocStatus in ['verified', 'rejected'])
+          !docFieldsChanged()
+          || request.resource.data.get('ownershipDocStatus', 'none') == 'pending'
         )
-        // isVerified is admin-granted (adminReviewPropertyDoc writes it). The
-        // owner may never self-set it true — mirrors the users/{userId} rule.
-        // Without this an unverified listing could show a verified badge with
-        // no document review at all.
-        && (
-          !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['isVerified'])
-          || request.resource.data.isVerified == false
-        )
-        // Once an admin has REVIEWED the document, its type can't be relabelled
+        // Once an admin has APPROVED the document, its type can't be relabelled
         // on its own — the file is whatever it is, so calling an approved C of O
-        // a 'deed' just makes the record lie. Changing the type after review
+        // a 'deed' just makes the record lie. Changing the type after approval
         // requires uploading the matching document. Before review (pending /
         // none / rejected) the owner is still free to correct the label.
         && (
-          !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['ownershipDocType'])
+          !changed(['ownershipDocType'])
           || resource.data.get('ownershipDocStatus', 'none') != 'verified'
-          || request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['ownershipDocUrl'])
+          || changed(['ownershipDocUrl'])
         )
         && (
           (resource.data.get('currentTenantsCount', 0) <= 0)
@@ -673,14 +743,15 @@ service cloud.firestore {
         && inspFields(['handlerArrived', 'handlerArrivedAt', 'updatedAt']);
       
       // [Row 6] Handler marks inspection complete. Triggers W1
-      // creditInspectionEarnings CF.
-      // Site: inspection_service.dart:1035
-      // Defensive: 'met' may be absent on legacy/test docs; use
-      // `in` check pattern.
+      // creditInspectionEarnings CF. A meeting requires BOTH halves, so the
+      // handler can't complete until the tenant has also confirmed.
+      // Defensive: the flags may be absent on legacy/test docs; use `in`.
       allow update: if isHandler()
         && resource.data.status == 'approved'
-        && 'met' in resource.data
-        && resource.data.met == true
+        && 'tenantConfirmedMet' in resource.data
+        && resource.data.tenantConfirmedMet == true
+        && 'handlerConfirmedMet' in resource.data
+        && resource.data.handlerConfirmedMet == true
         && request.resource.data.status == 'completed'
         && inspFields(['status', 'completedAt', 'agentPayoutStatus',
                        'completedBy', 'completedByType', 'updatedAt']);
@@ -734,24 +805,28 @@ service cloud.firestore {
         && inspFields(['agentConfirmedPayment', 'agentConfirmedAt',
                        'updatedAt']);
       
-      // [Row 15a] Tenant marks they met.
-      // Site: inspection_service.dart:~1758
+      // [Row 15a] Tenant records THEIR half of the meeting. Both must have
+      // arrived, and the tenant may only set their own flag — the rule's
+      // field allow-list makes it impossible to also flip the handler's.
+      // Site: inspection_service.dart markMet
       allow update: if isTenant()
         && resource.data.status == 'approved'
         && resource.data.tenantArrived == true
-        && request.resource.data.met == true
-        && request.resource.data.metBy == 'tenant'
-        && inspFields(['met', 'metAt', 'metBy', 'updatedAt']);
-      
-      // [Row 15b] Handler marks they met.
-      // Site: inspection_service.dart:~1758
+        && resource.data.handlerArrived == true
+        && request.resource.data.tenantConfirmedMet == true
+        && inspFields(['tenantConfirmedMet', 'tenantConfirmedMetAt',
+                       'updatedAt']);
+
+      // [Row 15b] Handler records THEIR half of the meeting. Same both-arrived
+      // gate; can only set the handler's own flag.
+      // Site: inspection_service.dart markMet
       allow update: if isHandler()
         && resource.data.status == 'approved'
         && resource.data.tenantArrived == true
         && resource.data.handlerArrived == true
-        && request.resource.data.met == true
-        && request.resource.data.metBy == 'handler'
-        && inspFields(['met', 'metAt', 'metBy', 'updatedAt']);
+        && request.resource.data.handlerConfirmedMet == true
+        && inspFields(['handlerConfirmedMet', 'handlerConfirmedMetAt',
+                       'updatedAt']);
       
       // [Row 16] Propose a reschedule.
       // Site: inspection_service.dart:1358
@@ -875,16 +950,14 @@ service cloud.firestore {
     
     // Rental interests collection
     match /rental_interests/{interestId} {
-      // Create (H2): the tenant files their own interest, and it must START
-      // unpaid. A modified client can no longer mint an already
-      // 'payment_verified'/'accepted' interest out of thin air — the payment
-      // and acceptance state machine is driven by later updates (and admin).
-      // NOTE: payout figures are still client-denormalized here; making them
-      // server-authoritative requires the Paystack-verification CF (tracked
-      // separately, see HANDOVER H2).
-      allow create: if request.auth != null
-        && request.resource.data.tenantId == request.auth.uid
-        && request.resource.data.status == 'pending_payment';
+      // Create (H2 CLOSED): server-only. The figures on this document decide
+      // what the tenant is charged for rent, and a client could previously set
+      // them — minting an interest claiming ₦100 against a ₦1.2m tenancy, which
+      // the rules then froze as immutable and initializePayment charged.
+      // Creation now runs through the createRentalInterest callable, which
+      // derives every amount from the property and config/pricing (Admin SDK
+      // writes bypass this rule).
+      allow create: if false;
 
       // canRead() first so an admin list/read short-circuits BEFORE the per-doc
       // get() lookups below (avoids their cost and a deny if a referenced
@@ -1261,6 +1334,19 @@ service cloud.firestore {
       allow read, list: if canRead();
       allow update: if isAdmin();         // mark read / resolve
       allow delete: if isAdmin();
+    }
+
+    // Deleted-account tombstones — written by deleteMyAccount (admin SDK) as
+    // the account goes. Financial records outlive the account for audit and
+    // still reference its uid; this is how the dashboard tells "deleted
+    // account" apart from a live party instead of rendering a ghost row.
+    // Read-only to admins and viewers; nothing may write or remove one from a
+    // client, or the audit trail could be erased.
+    match /deleted_accounts/{uid} {
+      allow create: if false;             // Admin SDK only
+      allow read, list: if canRead();
+      allow update: if false;             // Immutable
+      allow delete: if false;             // Immutable
     }
   }
 }

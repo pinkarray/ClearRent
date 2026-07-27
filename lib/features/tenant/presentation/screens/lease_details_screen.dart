@@ -7,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/rental_interest_service.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
 
@@ -21,9 +22,11 @@ class LeaseDetailsScreen extends StatefulWidget {
 class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   late ActiveRental _rental;
   final ActiveRentalService _rentalService = ActiveRentalService();
+  final RentalInterestService _rentalInterestService = RentalInterestService();
   final AgreementAccessService _agreementAccess = AgreementAccessService();
   bool _isAccepting = false;
   bool _isDisputing = false;
+  bool _isLoadingPayment = false;
 
   @override
   void initState() {
@@ -37,6 +40,30 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     if (updated != null && mounted) {
       setState(() => _rental = updated);
     }
+  }
+
+  /// Pay-after-accept: the accepted tenant pays rent only once the agreement is
+  /// finalized. Loads the frozen rental interest (the amount + breakdown) and
+  /// opens the payment screen; on return, refreshes so the button hides once
+  /// the server has recorded the payment (rentPaymentStatus → paid).
+  Future<void> _payRent() async {
+    setState(() => _isLoadingPayment = true);
+    final interest =
+        await _rentalInterestService.getInterestById(_rental.rentalInterestId);
+    if (!mounted) return;
+    setState(() => _isLoadingPayment = false);
+    if (interest == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not load your rental. Please try again.'),
+        ),
+      );
+      return;
+    }
+    await context.push('/tenant/rental-payment', extra: {
+      'rentalInterest': interest,
+    });
+    if (mounted) await _refreshRental();
   }
 
   String _formatAmount(double amount) => NumberFormat('#,###').format(amount);
@@ -265,7 +292,9 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
           ]),
           const SizedBox(height: 16),
-          Text('Your landlord has sent the tenancy agreement. Please review it carefully before accepting.',
+          Text('Your landlord has sent the tenancy agreement. Review it '
+              'carefully — accepting finalizes it, and you\'ll then pay your '
+              'rent to complete the move-in.',
               style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 16),
 
@@ -283,7 +312,23 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+
+          // Message the landlord — a question about the lease shouldn't have to
+          // become a formal dispute to get asked.
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: () => _messageLandlord(),
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Message Landlord'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
 
           // Accept + Raise Concern buttons
           Row(children: [
@@ -459,6 +504,41 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
           ]),
           const SizedBox(height: 12),
+          // Pay-after-accept: rent is collected now the agreement is finalized —
+          // and only from you, the accepted tenant. Hidden once paid (and for
+          // legacy rentals, which have no rentPaymentStatus and read as paid).
+          if (_rental.rentPaymentStatus == 'pending') ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isLoadingPayment ? null : _payRent,
+                icon: _isLoadingPayment
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.lock_open, size: 18),
+                label: Text(
+                    _isLoadingPayment ? 'Loading…' : 'Pay Rent to Secure Your Home'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your agreement is finalized — pay now to complete your move-in.',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+          ],
           _viewAgreementButton(),
         ],
       ),
@@ -517,6 +597,11 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           children: [
             Text('By tapping "I Accept", you acknowledge that you have read and agree to the terms in this tenancy agreement.',
                 style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 12),
+            Text('This finalizes the agreement. You\'ll then be asked to pay '
+                'your rent to complete the move-in.',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.textPrimary)),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),

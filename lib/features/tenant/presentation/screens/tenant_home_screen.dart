@@ -18,7 +18,9 @@ import '../../../../services/verification_service.dart';
 import '../../../../services/tenancy_link_service.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/inspection_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
+import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/option_picker_sheet.dart';
 import '../../../../shared/widgets/user_avatar.dart';
@@ -54,7 +56,11 @@ const List<String> lagosAreas = [
 ];
 
 class TenantHomeScreen extends StatefulWidget {
-  const TenantHomeScreen({super.key});
+  /// Which bottom-nav tab to open on (0 = Home/dashboard). Lets callers land the
+  /// tenant on the dashboard rather than whatever tab a reused home instance was
+  /// last on — e.g. "Go to My Home" after paying rent must not land on Profile.
+  final int initialTab;
+  const TenantHomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<TenantHomeScreen> createState() => _TenantHomeScreenState();
@@ -71,7 +77,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final ActiveRentalService _activeRentalService;
   late final TenancyLinkService _tenancyLinkService;
   final AgreementAccessService _agreementAccess = AgreementAccessService();
+  final InspectionService _inspectionService = InspectionService();
   StreamSubscription<ActiveRental?>? _activeRentalSub;
+  // Approved inspections for the tenant — powers the "inspection today" banner
+  // on the home tab. Created once in initState (see cached-streams note below).
+  late final Stream<List<InspectionRequest>> _inspectionsStream;
 
   // Cached streams for the home body. Created ONCE in initState — the many
   // init-time setState() calls (profile, saved, unread, properties, rental
@@ -142,6 +152,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _currentNavIndex = widget.initialTab;
     _authService = AuthService();
     _savedService = SavedPropertiesService();
     _conversationService = ConversationService();
@@ -150,6 +161,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _tenancyLinkService = TenancyLinkService();
     _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
     _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
+    _inspectionsStream = _inspectionService.getTenantRequests();
     _tenantRentalsSub = _activeRentalService.streamTenantRentals().listen((rentals) {
       if (mounted) {
         setState(() {
@@ -1745,6 +1757,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         // Pending link requests banner — replaces the old route-based banner
         if (pendingLinks.isNotEmpty)
           _buildPendingLinksBanner(pendingLinks),
+        _buildTodaysInspectionBanner(),
         if (_verificationStatus != VerificationStatus.verified)
           _buildVerificationPrompt(),
         if (!_hasBankDetails && !_isLoadingProfile && _verificationStatus == VerificationStatus.verified)
@@ -1759,6 +1772,64 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   : _buildPropertyList(),
         ),
       ]),
+    );
+  }
+
+  /// Compact reminder shown on the day of an approved inspection — the tenant's
+  /// lightweight counterpart to the agent's "Today's Inspections" section. A
+  /// tenant typically has a single booking, so this stays a one-line banner
+  /// rather than a card list. Only renders on the inspection day itself.
+  Widget _buildTodaysInspectionBanner() {
+    return StreamBuilder<List<InspectionRequest>>(
+      stream: _inspectionsStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final todays = snapshot.data!.where((r) {
+          final day = DateTime(r.requestedDate.year, r.requestedDate.month, r.requestedDate.day);
+          return r.isApproved && day.isAtSameMomentAs(today);
+        }).toList()
+          ..sort((a, b) => a.requestedTimeSlot.compareTo(b.requestedTimeSlot));
+        if (todays.isEmpty) return const SizedBox.shrink();
+        final r = todays.first;
+        final more = todays.length - 1;
+
+        return GestureDetector(
+          onTap: () => context.push('/tenant/inspections'),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withAlpha(77)),
+            ),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), shape: BoxShape.circle),
+                child: Icon(Icons.event_available_outlined, size: 18, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  'Inspection today · ${r.requestedTimeDisplay}',
+                  style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  more > 0 ? '${r.propertyTitle} +$more more' : r.propertyTitle,
+                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ])),
+              Icon(Icons.chevron_right, color: AppColors.primary, size: 20),
+            ]),
+          ),
+        );
+      },
     );
   }
 
@@ -2165,80 +2236,77 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       child: Column(children: [
         Container(
           width: double.infinity,
-          color: AppColors.surface,
+          decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [AppColors.primary, AppColors.primary.withAlpha(204), AppColors.primaryLight])),
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 60),
               child: Column(children: [
                 Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                   GestureDetector(
                     onTap: () => context.push('/settings'),
                     child: Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(10)),
-                      child: Icon(Icons.settings_outlined, color: AppColors.textPrimary, size: 20),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(51),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
                     ),
                   ),
                 ]),
-                const SizedBox(height: 30),
-                Row(children: [
-                  UserAvatar(
-                    name: _userName,
-                    imageUrl: _profileImageUrl,
-                    imageFile: _localProfileImage,
-                    size: 80,
-                    showEditBadge: !_isLoadingProfile && !_isUploadingImage,
-                    onTap: _pickProfileImage,
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _isLoadingProfile
-                        ? Container(width: 100, height: 24, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(4)))
-                        : Text(_userName, style: AppTextStyles.h3),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(color: AppColors.primary.withAlpha(26), borderRadius: BorderRadius.circular(6)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.person, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 4),
-                        Text('Tenant', style: AppTextStyles.labelSmall.copyWith(color: AppColors.primary)),
-                      ]),
-                    ),
-                  ])),
-                  GestureDetector(
-                    onTap: () => context.push('/edit-profile'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(border: Border.all(color: AppColors.primary), borderRadius: BorderRadius.circular(8)),
-                      child: Text('Edit', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
-                    ),
-                  ),
-                ]),
+                const SizedBox(height: 24),
+                UserAvatarProfile(
+                  name: _userName,
+                  imageUrl: _profileImageUrl,
+                  imageFile: _localProfileImage,
+                  size: 90,
+                  showEditBadge: true,
+                  isLoading: _isLoadingProfile || _isUploadingImage,
+                  onTap: _pickProfileImage,
+                ),
+                const SizedBox(height: 16),
+                _isLoadingProfile
+                    ? Container(width: 120, height: 24, decoration: BoxDecoration(color: Colors.white.withAlpha(77), borderRadius: BorderRadius.circular(4)))
+                    : Text(_userName, style: AppTextStyles.h3.copyWith(color: Colors.white)),
+                const SizedBox(height: 8),
+                VerificationBadgeLarge(status: _verificationStatus, role: 'Tenant', onTap: () => context.push('/tenant/verification').then((_) => _loadVerificationStatus())),
+              ]),
+            ),
+          ),
+        ),
+        Transform.translate(
+          offset: const Offset(0, -30),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withAlpha(13), blurRadius: 20, offset: const Offset(0, 5))]),
+              child: Row(children: [
+                Expanded(child: _ProfileStat(icon: Icons.favorite_outline, value: _isLoadingSaved ? '...' : '${_savedProperties.length}', label: 'Saved', color: AppColors.error)),
+                Container(width: 1, height: 40, color: AppColors.border),
+                Expanded(child: _ProfileStat(icon: Icons.home_outlined, value: '$_activeRentalCount', label: 'Rentals', color: AppColors.primary)),
+                Container(width: 1, height: 40, color: AppColors.border),
+                Expanded(child: _ProfileStat(icon: Icons.chat_bubble_outline, value: '$_unreadCount', label: 'Unread', color: AppColors.info)),
               ]),
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(children: [
-            Expanded(child: _TenantStatCard(icon: Icons.favorite_outline, value: _isLoadingSaved ? '...' : '${_savedProperties.length}', label: 'Saved', color: AppColors.error)),
-            const SizedBox(width: 12),
-            Expanded(child: _TenantStatCard(icon: Icons.home_outlined, value: '$_activeRentalCount', label: 'Rentals', color: AppColors.primary)),
-            const SizedBox(width: 12),
-            Expanded(child: _TenantStatCard(icon: Icons.chat_bubble_outline, value: '$_unreadCount', label: 'Unread', color: AppColors.info)),
-          ]),
-        ),
-        Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _TenantProfileSection(title: 'Account', items: [
+              _TenantProfileMenuItem(icon: Icons.person_outline, title: 'Edit Profile', subtitle: 'Update your personal information', onTap: () => context.push('/edit-profile')),
+              _TenantProfileMenuItem(icon: Icons.verified_user_outlined, title: 'Verification', subtitle: 'Verify your identity', onTap: () => context.push('/tenant/verification').then((_) => _loadVerificationStatus())),
+              _TenantProfileMenuItem(icon: Icons.account_balance_outlined, title: 'Bank Details', subtitle: 'Manage your refund account', onTap: () => context.push('/tenant/bank-details').then((_) => _loadUserProfile())),
+            ]),
+            const SizedBox(height: 20),
             _TenantProfileSection(title: 'Activity', items: [
               _TenantProfileMenuItem(icon: Icons.event_note_outlined, title: 'My Inspections', subtitle: 'Track your inspection requests', onTap: () => context.push('/tenant/inspections')),
-              _TenantProfileMenuItem(icon: Icons.report_problem_outlined, title: 'My Issues', subtitle: 'Issues you\'ve reported across all properties', onTap: () => context.push('/tenant/issue-history')),
-              _TenantProfileMenuItem(icon: Icons.favorite_outline, title: 'Saved Properties', subtitle: '${_savedProperties.length} properties saved', onTap: () => setState(() => _currentNavIndex = 1)),
-              _TenantProfileMenuItem(icon: Icons.verified_user_outlined, title: 'Verification', subtitle: 'Verify your identity', onTap: () => context.push('/tenant/verification')),
               _TenantProfileMenuItem(icon: Icons.history, title: 'My Rentals', subtitle: 'View your rental history', onTap: () => context.push('/tenant/my-rentals')),
+              _TenantProfileMenuItem(icon: Icons.favorite_outline, title: 'Saved Properties', subtitle: '${_savedProperties.length} properties saved', onTap: () => setState(() => _currentNavIndex = 1)),
+              _TenantProfileMenuItem(icon: Icons.report_problem_outlined, title: 'My Issues', subtitle: 'Issues you\'ve reported across all properties', onTap: () => context.push('/tenant/issue-history')),
               _TenantProfileMenuItem(icon: Icons.payment_outlined, title: 'Payment History', subtitle: 'View all your payments', onTap: () => context.push('/tenant/payment-history')),
               _TenantProfileMenuItem(icon: Icons.description_outlined, title: 'Documents', subtitle: 'Rental agreements and receipts', onTap: () => context.push('/tenant/documents')),
             ]),
@@ -2567,27 +2635,20 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-class _TenantStatCard extends StatelessWidget {
+class _ProfileStat extends StatelessWidget {
   final IconData icon;
-  final String value;
-  final String label;
+  final String value, label;
   final Color color;
-
-  const _TenantStatCard({required this.icon, required this.value, required this.label, required this.color});
-
+  const _ProfileStat({required this.icon, required this.value, required this.label, required this.color});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-      child: Column(children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: color.withAlpha(26), shape: BoxShape.circle), child: Icon(icon, color: color, size: 20)),
-        const SizedBox(height: 8),
-        Text(value, style: AppTextStyles.h4),
-        const SizedBox(height: 2),
-        Text(label, style: AppTextStyles.caption),
-      ]),
-    );
+    return Column(children: [
+      Icon(icon, color: color, size: 22),
+      const SizedBox(height: 8),
+      Text(value, style: AppTextStyles.h4),
+      const SizedBox(height: 2),
+      Text(label, style: AppTextStyles.caption),
+    ]);
   }
 }
 

@@ -3136,6 +3136,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
             const SizedBox(height: 24),
 
+            // Agreement-readiness heads-up. Closing a deal on ClearRent requires
+            // a signed tenancy agreement, so remind the landlord to have one
+            // ready before a tenant reaches the finalize step.
+            _buildAgreementReadinessNote(),
+
+            const SizedBox(height: 24),
+
             // Inspection availability section
             _buildInspectionAvailabilitySection(),
 
@@ -4621,6 +4628,55 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               );
             },
           ),
+    );
+  }
+
+  Widget _buildAgreementReadinessNote() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withAlpha(77)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(26),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.description_outlined,
+              size: 18,
+              color: AppColors.warning,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Have your tenancy agreement ready',
+                  style: AppTextStyles.labelMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'You\'ll need a signed tenancy agreement to close a deal '
+                  'with a tenant. Prepare it now so you can upload it when a '
+                  'tenant is ready to finalize.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

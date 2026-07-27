@@ -217,6 +217,29 @@ function assertAgreementFinalized(
 }
 
 /**
+ * Gate a rent payout on the tenant's rent having actually been collected.
+ *
+ * Under pay-after-accept the active_rental is created UNPAID at acceptance and
+ * only becomes paid once the accepted tenant pays (recordRentPayment stamps
+ * rentPaymentStatus="paid"). A payout must never leave before the money is in —
+ * previously acceptance implied payment, but it no longer does.
+ *
+ * Legacy rentals created under the old pay-before-accept flow have no
+ * rentPaymentStatus field; treat its absence as paid so those in-flight payouts
+ * are not blocked.
+ * @param {FirebaseFirestore.DocumentData} data active_rental doc data.
+ */
+function assertRentPaid(data: FirebaseFirestore.DocumentData): void {
+  const status = data.rentPaymentStatus;
+  if (status === undefined || status === "paid") return;
+  throw new HttpsError(
+    "failed-precondition",
+    "The tenant hasn't paid rent for this rental yet — no payout can be sent " +
+      "until the rent is collected.",
+  );
+}
+
+/**
  * Read an optional string from a doc snapshot. Returns null if missing
  * or non-string. Used for display-only fields (propertyTitle, etc) that
  * are nice-to-have on activities/receipts but not blocking.
@@ -428,8 +451,10 @@ export const markRentLandlordPayoutPaid = onCall(
         }
         const data = snap.data()!;
         // G2/G3: never pay the landlord before the agreement is finalized, and
-        // never while it's disputed.
+        // never while it's disputed. Pay-after-accept: also never before the
+        // tenant's rent has actually been collected.
         assertAgreementFinalized(data);
+        assertRentPaid(data);
         guardStatusTransition(
           data.landlordPayoutStatus,
           "pending",
@@ -520,8 +545,9 @@ export const markRentAgentCommissionPaid = onCall(
         const data = snap.data()!;
         // G2/G3: gate the agent commission on the same finalized-agreement
         // condition as the landlord payout — no money leaves until the deal is
-        // done and any dispute resolved.
+        // done and any dispute resolved — and on the rent having been collected.
         assertAgreementFinalized(data);
+        assertRentPaid(data);
         guardStatusTransition(
           data.agentPayoutStatus,
           "pending",
@@ -1110,8 +1136,90 @@ export const onRentalInterestAccepted = onDocumentUpdated(
 
     const db = getFirestore();
 
-    // Find sibling interests still locked in (paid + verified) on the
-    // same property. These are the losers.
+    // ── Pay-after-accept: close the UNPAID applicants ──
+    // Under the current flow only the accepted tenant ever pays, so every other
+    // applicant is sitting at "pending_acceptance" having paid nothing. There is
+    // no refund to issue — just mark them "not_selected" and tell them they were
+    // not charged. Idempotent: a re-fire re-runs the query, but already-closed
+    // siblings no longer match "pending_acceptance", so the second pass no-ops.
+    const unpaidSnap = await db
+      .collection("rental_interests")
+      .where("propertyId", "==", propertyId)
+      .where("status", "==", "pending_acceptance")
+      .get();
+
+    for (const doc of unpaidSnap.docs) {
+      if (doc.id === winnerId) continue; // never touch the winner
+      const applicant = doc.data();
+      const tenantId = applicant.tenantId as string | undefined;
+
+      try {
+        await doc.ref.update({
+          status: "not_selected",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        logger.error("Failed to close unpaid applicant", {
+          loserId: doc.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+
+      if (!tenantId) {
+        logger.error("Unpaid applicant has no tenantId", {loserId: doc.id});
+        continue;
+      }
+
+      // Push notification — deterministic key so a re-fire is a no-op.
+      await writeNotificationOnce(
+        `interest_${doc.id}_notSelected_${tenantId}`,
+        {
+          userId: tenantId,
+          type: "rental_not_selected",
+          title: "Another applicant was chosen",
+          body:
+            `The landlord chose another applicant for ${propertyTitle}. ` +
+            "You were not charged.",
+          payload: {route: "/tenant/inspections"},
+        },
+      );
+
+      // Activity feed entry (feed queries by landlordId — set to the
+      // recipient regardless of role; same schema quirk documented elsewhere).
+      try {
+        await db.collection("activities").add({
+          userId: tenantId,
+          landlordId: tenantId,
+          type: "rental_not_selected",
+          title: "Not Selected",
+          message:
+            `The landlord chose another applicant for ${propertyTitle}. ` +
+            "You were not charged.",
+          relatedId: doc.id,
+          propertyId,
+          isRead: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (err) {
+        logger.error("not_selected activity write failed", {
+          loserId: doc.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      logger.info("Unpaid applicant closed (not_selected)", {
+        loserId: doc.id,
+        tenantId,
+        propertyId,
+      });
+    }
+
+    // ── LEGACY paid-loser refunds ──
+    // Retained only for interests created under the OLD pay-before-accept flow,
+    // where multiple tenants could reach "payment_verified" (paid in full). New
+    // interests never enter that state, so this query is empty for them and the
+    // block no-ops. Do not remove until all in-flight legacy interests drain.
     const snap = await db
       .collection("rental_interests")
       .where("propertyId", "==", propertyId)
@@ -1119,7 +1227,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
       .get();
 
     if (snap.empty) {
-      logger.info("No losing interests to refund", {winnerId, propertyId});
+      logger.info("No legacy paid losers to refund", {winnerId, propertyId});
       return;
     }
 

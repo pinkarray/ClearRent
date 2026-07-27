@@ -14,6 +14,7 @@
  */
 
 import * as logger from "firebase-functions/logger";
+import {HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 
 export interface PricingConfig {
@@ -88,7 +89,10 @@ export async function getPricing(): Promise<PricingConfig> {
  * @param {string} type The payment type.
  * @param {string} uid The paying user's id.
  * @param {object} metadata Caller metadata (may carry rentalInterestId).
- * @return {Promise<number|null>} Amount in Naira, or null if underivable.
+ * @return {Promise<number|null>} Amount in Naira, or null if underivable (which
+ *   makes initializePayment fall back to the client amount). The "rent" branch
+ *   never returns null — it THROWS on any failure so an unauthorised/unready
+ *   rent payment can never fall back to a client-supplied amount.
  */
 export async function resolveServerAmount(
   type: string,
@@ -101,24 +105,25 @@ export async function resolveServerAmount(
   if (type === "inspection") return pricing.inspection.total;
 
   if (type === "rent") {
+    // Rent THROWS on every failure mode instead of returning null. A null here
+    // would let initializePayment fall back to the client-supplied amount
+    // (chargeAmount = serverAmount ?? amount) — for rent that is precisely the
+    // hole this whole flow closes, so an unauthorised/unready rent payment must
+    // hard-fail, never charge an arbitrary number.
     const interestId = typeof metadata?.rentalInterestId === "string" ?
       metadata.rentalInterestId :
       null;
     if (!interestId) {
-      logger.warn("Rent payment without rentalInterestId", {uid});
-      return null;
+      throw new HttpsError(
+        "invalid-argument",
+        "Rent payment requires a rentalInterestId.",
+      );
     }
-    const snap = await getFirestore()
-      .collection("rental_interests")
-      .doc(interestId)
-      .get();
+    const db = getFirestore();
+    const snap = await db.collection("rental_interests").doc(interestId).get();
     const data = snap.data();
     if (!data) {
-      logger.warn("Rent payment for missing rental_interest", {
-        uid,
-        interestId,
-      });
-      return null;
+      throw new HttpsError("not-found", "Rental interest not found.");
     }
     if (data.tenantId !== uid) {
       logger.error("Rent payment by non-tenant of the interest", {
@@ -126,10 +131,58 @@ export async function resolveServerAmount(
         interestId,
         tenantId: data.tenantId,
       });
-      return null;
+      throw new HttpsError(
+        "permission-denied",
+        "Only the tenant on this rental can pay it.",
+      );
     }
+
+    // Pay-after-accept gate: rent is payable ONLY once the landlord has
+    // accepted this applicant (status "accepted") AND the tenancy agreement has
+    // been finalized in-app. Awaiting acceptance, not finalized, or already paid
+    // are all non-chargeable states.
+    if (data.status !== "accepted") {
+      throw new HttpsError(
+        "failed-precondition",
+        "This rental isn't ready for payment yet.",
+      );
+    }
+    const rentalSnap = await db
+      .collection("active_rentals")
+      .where("rentalInterestId", "==", interestId)
+      .limit(1)
+      .get();
+    const rental = rentalSnap.docs[0]?.data();
+    if (!rental || rental.agreementStatus !== "finalized") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Finalize your tenancy agreement before paying rent.",
+      );
+    }
+    if (rental.rentPaymentStatus === "paid") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Rent for this rental has already been paid.",
+      );
+    }
+    // Slot hold: rent is only payable while the rental is holding the slot
+    // (pending_payment). If it was released (terminated because the accept
+    // lapsed unpaid) the slot is gone and it must not be chargeable.
+    if (rental.status !== "pending_payment") {
+      throw new HttpsError(
+        "failed-precondition",
+        "This rental is no longer awaiting payment.",
+      );
+    }
+
     const stored = data.paymentAmount;
-    return typeof stored === "number" && stored > 0 ? stored : null;
+    if (typeof stored !== "number" || !(stored > 0)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This rental has no valid amount. Contact support.",
+      );
+    }
+    return stored;
   }
 
   if (type === "renewal") {

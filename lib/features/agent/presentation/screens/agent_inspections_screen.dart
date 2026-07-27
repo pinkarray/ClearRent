@@ -1441,6 +1441,30 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                     onPressed: _markMet,
                   ),
                 ),
+              ] else if (request.handlerAwaitingTenantMet) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(26),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.hourglass_top,
+                          size: 18, color: AppColors.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Waiting for ${request.tenantName} to confirm you '
+                          'met. You can complete once they do.',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.info),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ] else if (request.canMarkComplete)
                 SizedBox(
                   width: double.infinity,

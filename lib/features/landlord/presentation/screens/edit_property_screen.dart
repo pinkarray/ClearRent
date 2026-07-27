@@ -519,12 +519,18 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     return true;
   }
 
+  /// This listing is a unit inside a building. The building holds the single
+  /// ownership document an admin reviews; the unit owns none of its own. A
+  /// per-unit doc type could only ever agree with the building's redundantly or
+  /// contradict it misleadingly — which is exactly what happened in production —
+  /// so the whole doc section is hidden and never written for a grouped unit.
+  bool get _isGrouped => widget.property.buildingId != null;
+
   /// The admin has already reviewed and approved the document on file. Grouped
   /// units inherit their building's status, so this only governs standalone
   /// listings — the same scope the save path uses.
   bool get _isDocApproved =>
-      widget.property.ownershipDocStatus == 'verified' &&
-      widget.property.buildingId == null;
+      widget.property.ownershipDocStatus == 'verified' && !_isGrouped;
 
   /// Human label for a stored ownership-doc type value.
   String _docTypeLabel(String? type) {
@@ -622,8 +628,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'inspectionHandler': _inspectionHandler,
         'inspectionDays': _availableDays,
         'inspectionTimeSlots': _availableTimeSlots,
-        if (finalDocUrl != null) 'ownershipDocUrl': finalDocUrl,
-        if (_ownershipDocType != null) 'ownershipDocType': _ownershipDocType,
+        // A grouped unit owns no document — the building's is the reviewed
+        // artifact, and firestore.rules now rejects any doc field on a unit.
+        if (!_isGrouped && finalDocUrl != null) 'ownershipDocUrl': finalDocUrl,
+        if (!_isGrouped && _ownershipDocType != null)
+          'ownershipDocType': _ownershipDocType,
       };
 
       // A changed ownership doc must go back through admin review — never keep
@@ -636,7 +645,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       // Standalone listings only; grouped units inherit their building's status.
       final docChanged = _newOwnershipDocFile != null ||
           _ownershipDocType != widget.property.ownershipDocType;
-      if (docChanged && widget.property.buildingId == null) {
+      if (docChanged && !_isGrouped) {
         updates['ownershipDocStatus'] = 'pending';
         updates['isAvailable'] = false;
       }
@@ -654,6 +663,41 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         updates['assignedAgentPhone'] = null;
       }
       // Note: If a new agent was assigned via the selection screen, it's already saved
+
+      // Guard: don't strand a tenant mid-inspection. If the agent currently
+      // handling this property is being removed or swapped out while they have
+      // a pending or scheduled inspection here, block the change — mirrors the
+      // agent's own self-unassign guard (agentHasActiveInspectionOnProperty).
+      // Query by propertyId only and filter in code, to avoid a composite index.
+      final currentAgentId = widget.property.assignedAgentId;
+      final removingAgent = currentAgentId != null &&
+          (_inspectionHandler == 'self' || _assignedAgentId != currentAgentId);
+      if (removingAgent) {
+        const activeStatuses = [
+          'pending',
+          'pendingVerification',
+          'pendingPayment',
+          'approved',
+        ];
+        final snap = await _firestore
+            .collection('inspection_requests')
+            .where('propertyId', isEqualTo: widget.property.id)
+            .get();
+        final hasActive = snap.docs.any((d) {
+          final data = d.data();
+          return data['agentId'] == currentAgentId &&
+              activeStatuses.contains(data['status']);
+        });
+        if (hasActive) {
+          if (!mounted) return;
+          _showError(
+            'This agent has a pending or scheduled inspection on this property. '
+            'Wait for it to be completed or declined before changing the '
+            'handler — otherwise the tenant would be left without a handler.',
+          );
+          return;
+        }
+      }
 
       _showProgress('Saving changes...');
 
@@ -788,11 +832,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               _buildSectionTitle('Ownership Document'),
               const SizedBox(height: 4),
               Text(
-                'Upload a Certificate of Occupancy, Deed of Assignment, or other proof of ownership. This gives tenants confidence and earns your listing a verified badge.',
+                _isGrouped
+                    ? 'This unit is part of a building. One ownership document is held and verified for the whole building, so there is nothing to upload here.'
+                    : 'Upload a Certificate of Occupancy, Deed of Assignment, or other proof of ownership. This gives tenants confidence and earns your listing a verified badge.',
                 style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary, height: 1.5),
               ),
               const SizedBox(height: 12),
-              _buildOwnershipDocSection(),
+              if (!_isGrouped) _buildOwnershipDocSection(),
               const SizedBox(height: 24),
 
               // Basic info

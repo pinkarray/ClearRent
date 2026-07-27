@@ -160,6 +160,38 @@ class RentalInterestService {
     }
   }
 
+  /// Record a successful rent payment (pay-after-accept).
+  ///
+  /// Replaces the old client-side `markPaymentVerified` write: the money-status
+  /// fields are now written server-side by the recordRentPayment callable, which
+  /// verifies the caller is the accepted tenant and the agreement is finalized
+  /// before flipping the interest to `rent_paid` and stamping the active_rental
+  /// as paid. Mirrors how createRentalInterest took interest creation off the
+  /// client (HANDOVER H2). Returns false if the server rejects it.
+  Future<bool> recordRentPayment(
+    String interestId, {
+    String? paymentReference,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('recordRentPayment');
+      await callable.call<Map<String, dynamic>>({
+        'rentalInterestId': interestId,
+        'paymentReference': paymentReference,
+      });
+      developer.log('✅ Rent payment recorded: $interestId',
+          name: 'RentalInterestService');
+      return true;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('❌ recordRentPayment rejected: ${e.code} ${e.message}',
+          name: 'RentalInterestService');
+      return false;
+    } catch (e) {
+      developer.log('❌ recordRentPayment error: $e',
+          name: 'RentalInterestService');
+      return false;
+    }
+  }
+
   /// Stream of pending rental payment verifications (admin screen)
   Stream<List<RentalInterest>> getPendingRentalVerifications() {
     return _firestore
@@ -220,6 +252,23 @@ class RentalInterestService {
           name: 'RentalInterestService');
       return null;
     }
+  }
+
+  /// Live stream of the rental interest for one inspection (or null if none
+  /// yet). Lets the inspection card update itself the moment the interest state
+  /// changes — e.g. the landlord accepting flips it to `accepted`, so "Review
+  /// Agreement" appears without the tenant having to leave and come back.
+  Stream<RentalInterest?> streamInterestForInspection(
+      String inspectionRequestId) {
+    return _firestore
+        .collection('rental_interests')
+        .where('inspectionRequestId', isEqualTo: inspectionRequestId)
+        .limit(1)
+        .snapshots()
+        .map((snap) => snap.docs.isEmpty
+            ? null
+            : RentalInterest.fromFirestore(
+                snap.docs.first.data(), snap.docs.first.id));
   }
 
   /// Get rental interest by ID

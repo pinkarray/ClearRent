@@ -648,18 +648,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       return;
     }
 
-    // Block if no doc uploaded yet — landlord must provide it first
-    if (docStatus == 'none') {
+    // ALLOWLIST — never a denylist. Only an admin-VERIFIED ownership document
+    // opens booking, which is the promise the platform is sold on. As a
+    // denylist ('rejected'/'none' only), 'inherited', 'not_uploaded' and
+    // 'pending' all fell straight through to booking — exactly the trap
+    // documented on PropertyModel.ownershipDocStatus.
+    if (docStatus != 'verified') {
       _showDocBlockedDialog(
-        title: 'Document Required',
+        title: 'Under Review',
         message:
-            'The landlord has not yet uploaded an ownership document for this property. '
-            'Inspections cannot be booked until ownership is verified.',
+            'The ownership document for this property is still being verified '
+            'by our team. Inspections can be booked once it is approved.',
       );
       return;
     }
 
-    // Both verified - proceed with inspection request
     _showRequestInspectionSheet();
   }
 
@@ -688,7 +691,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   Future<void> _showRequestInspectionSheet() async {
-    final result = await RequestInspectionSheet.show(context, widget.property);
+    // Re-fetch the property fresh first: this screen holds an immutable snapshot
+    // from navigation, so if the landlord changed the handler (e.g. removed the
+    // agent) after the tenant opened it, booking off the stale copy would name
+    // the wrong handler. Fall back to the snapshot if the refresh fails.
+    final fresh = await _propertyService.getProperty(widget.property.id);
+    if (!mounted) return;
+    final result =
+        await RequestInspectionSheet.show(context, fresh ?? widget.property);
     if (result == true && mounted) {
       _checkExistingRequest();
     }
@@ -696,8 +706,15 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   // ============ LANDLORD ACTIONS ============
 
-  void _editProperty() {
-    context.push('/landlord/edit-property', extra: widget.property);
+  Future<void> _editProperty() async {
+    final saved = await context.push<bool>(
+      '/landlord/edit-property/${widget.property.id}',
+    );
+    if (saved != true || !mounted) return;
+    // widget.property is immutable and this screen never re-reads it, so after a
+    // save it would keep showing the pre-edit listing. Re-enter through the
+    // by-id loader, which fetches the stored state fresh.
+    context.pushReplacement('/landlord/property/${widget.property.id}');
   }
 
   void _requestRentChange() {

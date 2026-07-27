@@ -27,6 +27,10 @@ class ActiveRental {
   final DateTime? pendingRentEffectiveDate;
   final double agentFee;
   final double totalPaid;
+  // Pay-after-accept: 'pending' until the accepted tenant pays rent (after the
+  // agreement is finalized), then 'paid'. Legacy rentals created under the old
+  // pay-before-accept flow have no field — treated as already paid.
+  final String rentPaymentStatus;    // pending | paid
   final double inspectionFeeCredit;
   final String rentFrequency;
   
@@ -89,6 +93,7 @@ class ActiveRental {
     this.pendingRentEffectiveDate,
     required this.agentFee,
     required this.totalPaid,
+    this.rentPaymentStatus = 'paid',
     this.inspectionFeeCredit = 5000,
     this.rentFrequency = 'yearly',
     this.landlordPayout = 0,
@@ -129,6 +134,11 @@ class ActiveRental {
   bool get isEndedByTenant => status == ActiveRentalStatus.endedByTenant;
   bool get isEndedByLandlord => status == ActiveRentalStatus.endedByLandlord;
   bool get isEnded => isEndedByTenant || isEndedByLandlord;
+  /// Accepted, agreement in progress, rent not yet paid. A LIVE, current rental
+  /// — must be shown as such, never bucketed with past/ended rentals.
+  bool get isPendingPayment => status == ActiveRentalStatus.pendingPayment;
+  /// A rental that belongs in the "current" section (in-progress or occupying).
+  bool get isCurrent => isActive || isExpiringSoon || isPendingPayment;
 
   // Agreement helpers
   bool get hasAgreement => agreementUrl != null && agreementUrl!.isNotEmpty;
@@ -162,6 +172,7 @@ class ActiveRental {
       case ActiveRentalStatus.terminated: return 'Terminated';
       case ActiveRentalStatus.endedByTenant: return 'Ended';
       case ActiveRentalStatus.endedByLandlord: return 'Ended';
+      case ActiveRentalStatus.pendingPayment: return 'Awaiting Rent Payment';
     }
   }
   
@@ -225,6 +236,8 @@ class ActiveRental {
           ? (data['pendingRentEffectiveDate'] as Timestamp).toDate() : null,
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       totalPaid: (data['totalPaid'] ?? 0).toDouble(),
+      // Legacy rentals (pre pay-after-accept) have no field → treat as paid.
+      rentPaymentStatus: data['rentPaymentStatus'] ?? 'paid',
       inspectionFeeCredit: (data['inspectionFeeCredit'] ?? 5000).toDouble(),
       rentFrequency: data['rentFrequency'] ?? 'yearly',
       landlordPayout: (data['landlordPayout'] ?? 0).toDouble(),
@@ -283,6 +296,7 @@ class ActiveRental {
         'pendingRentEffectiveDate': Timestamp.fromDate(pendingRentEffectiveDate!),
       'agentFee': agentFee,
       'totalPaid': totalPaid,
+      'rentPaymentStatus': rentPaymentStatus,
       'inspectionFeeCredit': inspectionFeeCredit,
       'rentFrequency': rentFrequency,
       'landlordPayout': landlordPayout,
@@ -321,6 +335,7 @@ class ActiveRental {
     String? propertyTitle, String? propertyImage, String? propertyAddress,
     String? tenantName, String? landlordName, String? landlordPhone,
     double? rentAmount, double? agentFee, double? totalPaid,
+    String? rentPaymentStatus,
     double? inspectionFeeCredit, String? rentFrequency,
     double? landlordPayout, double? agentPayout, double? clearrentEarnings,
     String? landlordPayoutStatus, String? agentPayoutStatus,
@@ -351,6 +366,7 @@ class ActiveRental {
       rentAmount: rentAmount ?? this.rentAmount,
       agentFee: agentFee ?? this.agentFee,
       totalPaid: totalPaid ?? this.totalPaid,
+      rentPaymentStatus: rentPaymentStatus ?? this.rentPaymentStatus,
       inspectionFeeCredit: inspectionFeeCredit ?? this.inspectionFeeCredit,
       rentFrequency: rentFrequency ?? this.rentFrequency,
       landlordPayout: landlordPayout ?? this.landlordPayout,
@@ -392,6 +408,7 @@ class ActiveRental {
       case 'terminated': return ActiveRentalStatus.terminated;
       case 'ended_by_tenant': return ActiveRentalStatus.endedByTenant;
       case 'ended_by_landlord': return ActiveRentalStatus.endedByLandlord;
+      case 'pending_payment': return ActiveRentalStatus.pendingPayment;
       default: return ActiveRentalStatus.active;
     }
   }
@@ -405,6 +422,7 @@ class ActiveRental {
       case ActiveRentalStatus.terminated: return 'terminated';
       case ActiveRentalStatus.endedByTenant: return 'ended_by_tenant';
       case ActiveRentalStatus.endedByLandlord: return 'ended_by_landlord';
+      case ActiveRentalStatus.pendingPayment: return 'pending_payment';
     }
   }
   
@@ -429,7 +447,21 @@ class ActiveRental {
   }
 }
 
-enum ActiveRentalStatus { active, expiringSoon, graceLocked, expired, terminated, endedByTenant, endedByLandlord}
+enum ActiveRentalStatus {
+  active,
+  expiringSoon,
+  graceLocked,
+  expired,
+  terminated,
+  endedByTenant,
+  endedByLandlord,
+  /// Pay-after-accept: the landlord accepted and the agreement is being agreed,
+  /// but the tenant hasn't paid rent yet. Deliberately NOT in the server's
+  /// OCCUPYING_RENTAL_STATUSES, so the unit stays on the market and the tenant
+  /// isn't counted as occupying until the money actually lands. recordRentPayment
+  /// flips it to `active`.
+  pendingPayment,
+}
 
 enum AgreementStatus {
   none,            // No agreement uploaded yet

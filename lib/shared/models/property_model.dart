@@ -67,11 +67,19 @@ class PropertyModel {
   // gated `private/location` subdoc and isn't available for cluster resolution.
   final String? inspectionPropertyCluster;
 
-  // Ownership verification document
-  final String? ownershipDocUrl;    // Cloudinary URL of uploaded C of O / deed
+  // Ownership verification document.
+  // Null on a grouped unit (buildingId != null): the BUILDING holds the single
+  // document an admin reviews, and the unit inherits that verdict.
+  final String? ownershipDocUrl;    // private Storage PATH of the C of O / deed
   final String? ownershipDocType;   // 'c_of_o' | 'deed' | 'other'
-  final String ownershipDocStatus;  // 'none' | 'pending' | 'verified' | 'rejected'
-  final String? ownershipDocRejectionReason;
+  // Owner-settable: 'none' | 'not_uploaded' | 'pending' | 'inherited'.
+  // Admin-only verdict: 'verified' | 'rejected'.
+  // 'inherited' marks a grouped unit — resolve the real status from its building
+  // (see effectiveDocStatus), never treat the marker itself as an approval.
+  // Guards keyed on the literal 'verified' silently passed 'inherited' and
+  // 'not_uploaded' straight through, so any new check must be an ALLOWLIST.
+  final String ownershipDocStatus;
+  final String? ownershipDocRejectionReason;  // admin's words; owner cannot write
 
   // Building group — non-null when this property is a unit in a multi-unit
   // building/compound. Units inherit the building's ownership-doc verification

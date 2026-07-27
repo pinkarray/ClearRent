@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -31,6 +32,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
   // linked tenants see their tenancy here too, not an empty "browse" state.
   TenancyLinkModel? _link;
   bool _isLoading = true;
+  StreamSubscription<List<ActiveRental>>? _rentalsSub;
 
   @override
   void initState() {
@@ -38,23 +40,36 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
     _loadRentals();
   }
 
+  @override
+  void dispose() {
+    _rentalsSub?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadRentals() async {
-    try {
-      final rentals = await _rentalService.getTenantRentals();
-      final link = await _linkService.getTenantActiveLink();
-      if (mounted) {
-        setState(() {
-          _activeRentals =
-              rentals.where((r) => r.isActive || r.isExpiringSoon).toList();
-          _pastRentals =
-              rentals.where((r) => !r.isActive && !r.isExpiringSoon).toList();
-          _link = link;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Error loading rentals: $e');
+    // Live-subscribe so the screen can't go stale — e.g. after paying rent, the
+    // rental flips pending_payment → active server-side and the card updates on
+    // its own instead of still showing "Review Agreement & Pay Rent".
+    _rentalsSub ??= _rentalService.streamAllTenantRentals().listen((rentals) {
+      if (!mounted) return;
+      setState(() {
+        // A pending_payment rental (accepted, awaiting rent) is a CURRENT
+        // rental — it must show in the current section with a working Lease
+        // Details button so the tenant can accept + pay. It was falling into
+        // "past", which labelled it "Ended" and hid the Lease Details button.
+        _activeRentals = rentals.where((r) => r.isCurrent).toList();
+        _pastRentals = rentals.where((r) => !r.isCurrent).toList();
+        _isLoading = false;
+      });
+    }, onError: (e) {
+      debugPrint('❌ Error streaming rentals: $e');
       if (mounted) setState(() => _isLoading = false);
+    });
+    try {
+      final link = await _linkService.getTenantActiveLink();
+      if (mounted) setState(() => _link = link);
+    } catch (e) {
+      debugPrint('❌ Error loading tenancy link: $e');
     }
   }
 
@@ -68,7 +83,12 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasActiveRental = _activeRentals.isNotEmpty;
+    final hasCurrent = _activeRentals.isNotEmpty;
+    // The lease-summary banner + "days left" reminder only make sense for a
+    // genuinely active (paid) lease — not a pending_payment one that's still in
+    // the agreement/pay stage.
+    final activeLeases = _activeRentals.where((r) => r.isActive).toList();
+    final hasActiveLease = activeLeases.isNotEmpty;
     final hasLink = _link != null;
 
     return Scaffold(
@@ -84,7 +104,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
       body: _isLoading
           ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
-          : !hasActiveRental && _pastRentals.isEmpty && !hasLink
+          : !hasCurrent && _pastRentals.isEmpty && !hasLink
               ? _buildEmptyState()
               : RefreshIndicator(
                   onRefresh: _loadRentals,
@@ -94,11 +114,11 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Quick Stats
-                        if (hasActiveRental) ...[
-                          _buildQuickStats(_activeRentals.first),
+                        // Quick Stats — only for a genuinely active (paid) lease
+                        if (hasActiveLease) ...[
+                          _buildQuickStats(activeLeases.first),
                           const SizedBox(height: 8),
-                          _buildPaymentAlert(_activeRentals.first),
+                          _buildPaymentAlert(activeLeases.first),
                         ],
 
                         // Current Rentals
@@ -334,11 +354,17 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               decoration: BoxDecoration(
                 color: rental.isActive
                     ? AppColors.success
-                    : AppColors.textHint,
+                    : rental.isPendingPayment
+                        ? AppColors.warning
+                        : AppColors.textHint,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                rental.isActive ? 'Active' : 'Ended',
+                rental.isActive
+                    ? 'Active'
+                    : rental.isPendingPayment
+                        ? 'Awaiting Payment'
+                        : 'Ended',
                 style: AppTextStyles.caption.copyWith(
                     color: Colors.white, fontWeight: FontWeight.w600),
               ),
@@ -461,6 +487,30 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                           ),
                         ),
                     ],
+                  ),
+                ),
+              ],
+
+              // Pay-after-accept: a pending_payment rental needs an OBVIOUS
+              // path to review the agreement + pay — the outlined "Lease
+              // Details" button below wasn't reading as "this is how you pay".
+              if (rental.isPendingPayment) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () =>
+                        context.push('/tenant/lease-details', extra: rental),
+                    icon: const Icon(Icons.assignment_turned_in_outlined,
+                        size: 18, color: Colors.white),
+                    label: const Text('Review Agreement & Pay Rent'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
                   ),
                 ),
               ],

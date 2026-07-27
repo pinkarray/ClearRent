@@ -48,6 +48,7 @@ import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
+import {writeNotificationOnce} from "./notification_helpers";
 
 // Same Secret Manager entry as index.ts; defining the same name here is
 // fine — both resolve to the one PAYSTACK_SECRET_KEY secret.
@@ -210,6 +211,34 @@ async function writeRenewalSideEffects(
       rentalId: input.rentalId,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  // Promotion only: push-notify the landlord that a linked (off-platform)
+  // tenant just paid rent through ClearRent and is now an active tenant. The
+  // feed activity above is passive; this is the active heads-up. Renewals of
+  // already-active rentals don't need it (the landlord already knows them as
+  // an on-platform tenant). Deterministic id keeps it idempotent on re-fire.
+  if (input.kind === "promotion") {
+    try {
+      await writeNotificationOnce(`PROMOTION_NOTIF_${input.rentalId}`, {
+        userId: input.landlordId,
+        type: "promotion",
+        title: "Tenant now active on ClearRent",
+        body:
+          `${input.tenantName} paid their rent through ClearRent and is now ` +
+          `an active tenant at ${input.propertyTitle}.`,
+        payload: {
+          route: "/landlord/rentals",
+          rentalId: input.rentalId,
+          propertyId: input.propertyId,
+        },
+      });
+    } catch (err) {
+      logger.error("promotion landlord notification failed", {
+        rentalId: input.rentalId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   // Payment receipt (deterministic id, idempotent create).

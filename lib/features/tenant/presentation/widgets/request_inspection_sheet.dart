@@ -46,7 +46,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
   bool _isLoadingDates = true;
   bool _isLoadingSlots = false;
-  final bool _isSubmitting = false;
+  bool _isSubmitting = false;
   bool _hasExistingRequest = false;
 
   InspectionFeeBreakdown? _feeBreakdown;
@@ -188,22 +188,48 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
         ? null
         : _notesController.text.trim();
 
-    // Save router before async gap
-    final router = GoRouter.of(context);
+    // Pay-after-approve: create the request UNPAID now. The tenant pays only
+    // after the handler approves (no navigation to a payment screen here).
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSubmitting = true);
 
-    // Close this sheet first
-    Navigator.pop(context);
+    final result = await _inspectionService.createInspectionRequest(
+      property: widget.property,
+      requestedDate: _selectedDate!,
+      requestedTimeSlot: _selectedTimeSlot!,
+      notes: notes,
+      feeBreakdown: feeBreakdown,
+    );
 
-    // Navigate to Paystack-powered inspection payment screen
-    router.push('/tenant/inspection-payment', extra: {
-      'property': widget.property,
-      'selectedDate': _selectedDate!,
-      'selectedTimeSlot': _selectedTimeSlot!,
-      'notes': notes,
-      'feeBreakdown': feeBreakdown,
-    });
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+    Navigator.pop(context); // close the sheet
 
-    // Callback will be triggered when user returns from payment screen
+    // Success returns the new request id; everything else is an error code.
+    const errorMessages = {
+      'not_verified': 'Your account isn\'t verified yet.',
+      'landlord_not_verified': 'This property\'s owner isn\'t verified yet.',
+      'agent_not_verified': 'The assigned agent isn\'t verified yet.',
+      'property_not_ready': 'This property isn\'t ready for inspections yet.',
+      'already_pending':
+          'You already have a pending request for this property.',
+    };
+    if (result == null || errorMessages.containsKey(result)) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(errorMessages[result] ??
+            'Something went wrong. Please try again.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
+    messenger.showSnackBar(const SnackBar(
+      content: Text(
+        'Inspection request sent! You\'ll be asked to pay once the handler '
+        'approves — no charge until then.',
+      ),
+      behavior: SnackBarBehavior.floating,
+    ));
     widget.onRequestSent?.call();
   }
 

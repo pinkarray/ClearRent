@@ -4,26 +4,25 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
-import '../../../../shared/models/property_model.dart';
+import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../services/inspection_service.dart';
-import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../services/paystack_service.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../services/conversation_service.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
+
+/// Pay-after-approve: this screen pays for an inspection request the handler has
+/// ALREADY approved. It no longer creates the request (the request is created
+/// unpaid from the request sheet). On a successful charge it calls the
+/// confirmInspectionPayment callable, which flips the request to paid and
+/// reveals the exact address server-side.
 class InspectionPaymentScreen extends StatefulWidget {
-  final PropertyModel property;
-  final DateTime selectedDate;
-  final String selectedTimeSlot;
-  final String? notes;
-  final InspectionFeeBreakdown? feeBreakdown;
+  final InspectionRequest request;
 
   const InspectionPaymentScreen({
     super.key,
-    required this.property,
-    required this.selectedDate,
-    required this.selectedTimeSlot,
-    this.notes,
-    this.feeBreakdown,
+    required this.request,
   });
 
   @override
@@ -33,81 +32,61 @@ class InspectionPaymentScreen extends StatefulWidget {
 
 class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   final InspectionService _inspectionService = InspectionService();
+  final ConversationService _conversationService = ConversationService();
+  final AuthService _authService = AuthService();
+
+  /// Openers offered to the tenant in the chat once payment is in. The fee buys
+  /// the connection — transport is settled directly with the handler, so that's
+  /// the question most tenants actually need to ask first.
+  static const List<String> _handlerSuggestions = [
+    'How much would transport to the property cost?',
+    'How do I get to the property?',
+    'Hi — I\'ve just paid for the inspection. Anything I should know before I come?',
+  ];
 
   bool _isProcessing = false;
-  bool _paymentSuccessful = false;
   String? _paymentReference;
 
-  InspectionFeeBreakdown get _fee =>
-      widget.feeBreakdown ??
-      InspectionFeeBreakdown(
-        agentCluster: 'maryland_ikeja',
-        propertyCluster: 'maryland_ikeja',
-        oneWayFare: 0,
-        transportFee: 0,
-        agentServiceFee: 7000,
-        tenantServiceCharge: 3000,
-        totalFee: 10000,
-        agentEarnings: 7000,
-        clearrentEarnings: 3000,
-      );
+  double get _totalFee => widget.request.totalFee;
 
   String get _formattedDate {
     final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     final weekdays = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+      'Friday', 'Saturday', 'Sunday',
     ];
-
-    return '${weekdays[widget.selectedDate.weekday - 1]}, ${months[widget.selectedDate.month - 1]} ${widget.selectedDate.day}';
+    final d = widget.request.requestedDate;
+    return '${weekdays[d.weekday - 1]}, ${months[d.month - 1]} ${d.day}';
   }
 
   String get _formattedTime {
-    return InspectionService.timeSlotDisplay[widget.selectedTimeSlot] ??
-        widget.selectedTimeSlot;
+    return InspectionService.timeSlotDisplay[widget.request.requestedTimeSlot] ??
+        widget.request.requestedTimeDisplay;
   }
 
   Future<void> _initiatePayment() async {
     setState(() => _isProcessing = true);
 
     try {
-      // Launch Paystack checkout
       final paymentResult = await PaystackCheckoutScreen.launch(
         context: context,
-        amount: _fee.totalFee,
+        amount: _totalFee,
         type: PaystackService.typeInspection,
         metadata: {
-          'propertyId': widget.property.id,
-          'propertyTitle': widget.property.title,
-          'inspectionDate': widget.selectedDate.toIso8601String(),
-          'timeSlot': widget.selectedTimeSlot,
-          'description': 'Inspection fee for ${widget.property.title}',
+          'propertyId': widget.request.propertyId,
+          'propertyTitle': widget.request.propertyTitle,
+          'requestId': widget.request.id,
+          'description': 'Inspection fee for ${widget.request.propertyTitle}',
         },
       );
 
       if (!mounted) return;
 
       if (paymentResult == null) {
-        // User cancelled
-        setState(() => _isProcessing = false);
+        setState(() => _isProcessing = false); // cancelled
         return;
       }
 
@@ -117,184 +96,186 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         return;
       }
 
-      // Payment successful
       _paymentReference = paymentResult.reference;
-      setState(() => _paymentSuccessful = true);
 
-      // Record payment
+      // Record the payment (display receipt); the webhook reconciles it.
       await PaystackService().recordPayment(
         reference: paymentResult.reference,
         type: PaystackService.typeInspection,
-        amount: paymentResult.amountPaid ?? _fee.totalFee,
+        amount: paymentResult.amountPaid ?? _totalFee,
         status: 'completed',
-        extra: {'propertyId': widget.property.id},
+        extra: {
+          'propertyId': widget.request.propertyId,
+          'requestId': widget.request.id,
+        },
       );
 
-      // Create inspection request after successful payment
-      await _createInspectionRequest();
+      // Confirm server-side: flips the request to paid and reveals the exact
+      // address (both must happen server-side — the reveal is handler-only by
+      // rule). This is what "unlocks" the inspection.
+      await _confirmPayment();
     } catch (e) {
       debugPrint('❌ Payment error: $e');
       _showError('Payment failed. Please try again.');
-      setState(() {
-        _isProcessing = false;
-        _paymentSuccessful = false;
-      });
+      setState(() => _isProcessing = false);
     }
   }
 
-  Future<void> _createInspectionRequest() async {
+  Future<void> _confirmPayment() async {
     try {
-      final result = await _inspectionService.createInspectionRequest(
-        property: widget.property,
-        requestedDate: widget.selectedDate,
-        requestedTimeSlot: widget.selectedTimeSlot,
-        notes: widget.notes,
-        feeBreakdown: _fee,
+      final ok = await _inspectionService.confirmInspectionPayment(
+        widget.request.id,
         paymentReference: _paymentReference,
-        paymentStatus: 'paid',
       );
 
       if (!mounted) return;
 
-      if (result == 'already_pending') {
-        _showError('You already have a pending request for this property');
-        setState(() => _isProcessing = false);
-        context.pop();
-        return;
-      }
-
-      if (result != null) {
-        // Show success and navigate
+      if (ok) {
         _showSuccessDialog();
       } else {
-        // Payment succeeded but request failed - show error with retry option
-        _showRequestFailureDialog();
+        // Payment succeeded but the server couldn't confirm — offer retry.
+        _showConfirmFailureDialog();
       }
     } catch (e) {
-      debugPrint('❌ Error creating request: $e');
-      if (_paymentSuccessful) {
-        // Payment was successful, but request creation failed
-        _showRequestFailureDialog(error: e.toString());
-      } else {
-        _showError('Something went wrong. Please contact support.');
-        setState(() => _isProcessing = false);
-      }
+      debugPrint('❌ Error confirming payment: $e');
+      if (mounted) _showConfirmFailureDialog(error: e.toString());
     }
   }
 
-  Future<void> _retryCreateRequest() async {
-    // Retry without re-charging (payment already successful)
+  Future<void> _retryConfirm() async {
     setState(() => _isProcessing = true);
-    Navigator.pop(context); // Close the failure dialog
-    await _createInspectionRequest();
+    Navigator.pop(context); // close the failure dialog
+    await _confirmPayment();
   }
 
-  void _showRequestFailureDialog({String? error}) {
+  /// Open (or reuse) the tenant↔handler thread and drop the tenant into it with
+  /// openers to tap. Called from the success dialog (already popped by now).
+  Future<void> _messageHandler() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    final profile = await _authService.getUserProfile();
+    if (!mounted) return;
+
+    final conversation = await _conversationService.getOrCreateConversation(
+      propertyId: widget.request.propertyId,
+      propertyTitle: widget.request.propertyTitle,
+      propertyImage: widget.request.propertyImage,
+      landlordId: widget.request.landlordId,
+      landlordName: widget.request.landlordName,
+      tenantId: _authService.currentUser?.uid ?? '',
+      tenantName: profile?['fullName'] ?? 'Tenant',
+      agentId: widget.request.agentId,
+      agentName: widget.request.agentName,
+    );
+
+    if (!mounted) return;
+
+    if (conversation == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Could not open the chat. You can message them from Inspections.',
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      router.go('/tenant/inspections');
+      return;
+    }
+
+    router.pushReplacement('/chat', extra: {
+      'conversationId': conversation.id,
+      'propertyTitle': widget.request.propertyTitle,
+      'propertyImage': widget.request.propertyImage,
+      'suggestions': _handlerSuggestions,
+    });
+  }
+
+  void _showConfirmFailureDialog({String? error}) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.info_outline, color: AppColors.warning, size: 48),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withAlpha(26),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.info_outline,
-                    color: AppColors.warning,
-                    size: 48,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Request Failed',
-                  style: AppTextStyles.h3,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withAlpha(13),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.success.withAlpha(51)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        color: AppColors.success,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Payment (₦${NumberFormat('#,###').format(_fee.totalFee)}) was successful',
-                          style: AppTextStyles.naira(AppTextStyles.caption).copyWith(
-                            color: AppColors.success,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Failed to submit your inspection request, but your payment has been secured.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isProcessing ? null : _retryCreateRequest,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+            const SizedBox(height: 24),
+            Text('Confirmation Failed',
+                style: AppTextStyles.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.success.withAlpha(13),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.success.withAlpha(51)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: AppColors.success, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
                     child: Text(
-                      _isProcessing ? 'Retrying...' : 'Retry Request',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: Colors.white,
-                      ),
+                      'Payment (₦${NumberFormat('#,###').format(_totalFee)}) was successful',
+                      style: AppTextStyles.naira(AppTextStyles.caption)
+                          .copyWith(color: AppColors.success),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed:
-                      _isProcessing
-                          ? null
-                          : () {
-                            Navigator.pop(context);
-                            _showContactSupportOption();
-                          },
-                  child: Text(
-                    'Contact Support',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.error,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: 16),
+            Text(
+              'Your payment went through, but we couldn\'t confirm your '
+              'inspection automatically. Tap retry.',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isProcessing ? null : _retryConfirm,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(_isProcessing ? 'Retrying...' : 'Retry',
+                    style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _isProcessing
+                  ? null
+                  : () {
+                      Navigator.pop(context);
+                      _showContactSupportOption();
+                    },
+              child: Text('Contact Support',
+                  style: AppTextStyles.labelMedium
+                      .copyWith(color: AppColors.error)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -310,16 +291,11 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Payment Reference (Share with support)',
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    _paymentReference ?? 'N/A',
-                    style: AppTextStyles.caption.copyWith(color: Colors.white),
-                  ),
+                  Text('Payment Reference (Share with support)',
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: Colors.white)),
+                  Text(_paymentReference ?? 'N/A',
+                      style: AppTextStyles.caption.copyWith(color: Colors.white)),
                 ],
               ),
             ),
@@ -337,122 +313,104 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.success.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.check_circle, color: AppColors.success, size: 48),
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withAlpha(26),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.check_circle,
-                    color: AppColors.success,
-                    size: 48,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Request Sent!',
-                  style: AppTextStyles.h3,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Your inspection request has been sent to the agent. You\'ll be notified once they respond.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
+            const SizedBox(height: 24),
+            Text('Inspection Confirmed!',
+                style: AppTextStyles.h3, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'Your payment is confirmed and the exact address is now unlocked. '
+              'Message the handler to agree on directions and transport before '
+              'your visit.',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.calendar_today,
-                            size: 16,
-                            color: AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _formattedDate,
-                            style: AppTextStyles.labelMedium,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 16,
-                            color: AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _formattedTime,
-                            style: AppTextStyles.labelMedium,
-                          ),
-                        ],
-                      ),
+                      Icon(Icons.calendar_today,
+                          size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      Text(_formattedDate, style: AppTextStyles.labelMedium),
                     ],
                   ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context); // Close dialog
-                      context.go('/tenant/inspections'); // Go to inspections
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      'View My Inspections',
-                      style: AppTextStyles.labelLarge.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time,
+                          size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      Text(_formattedTime, style: AppTextStyles.labelMedium),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Close dialog
-                    context.pop(); // Go back to property
-                  },
-                  child: Text(
-                    'Back to Property',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _messageHandler();
+                },
+                icon: const Icon(Icons.chat_bubble_outline,
+                    size: 18, color: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                label: Text('Message the handler',
+                    style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  context.go('/tenant/inspections');
+                },
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(color: AppColors.primary.withAlpha(77)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text('View My Inspections',
+                    style: AppTextStyles.labelLarge
+                        .copyWith(color: AppColors.primary)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -492,53 +450,72 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Property summary
+            _buildApprovedBanner(),
+            const SizedBox(height: 24),
             _buildPropertySummary(),
             const SizedBox(height: 24),
-
-            // Schedule summary
             _buildScheduleSummary(),
             const SizedBox(height: 24),
-
-            // Handler info (agent or landlord)
             _buildHandlerInfo(),
             const SizedBox(height: 24),
-
-            // Payment breakdown
             _buildPaymentBreakdown(),
-            const SizedBox(height: 24),
-
-            // Refund policy
-            _buildRefundPolicy(),
             const SizedBox(height: 32),
-
-            // Pay button
             AppButton(
-              text: 'Pay ₦${NumberFormat('#,###').format(_fee.totalFee)}',
+              text: 'Pay ₦${NumberFormat('#,###').format(_totalFee)}',
               onPressed: _isProcessing ? null : _initiatePayment,
               isLoading: _isProcessing,
             ),
-
             const SizedBox(height: 16),
-
-            // Security note
             Center(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.lock, size: 14, color: AppColors.textHint),
                   const SizedBox(width: 6),
-                  Text(
-                    'Secured by Paystack',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textHint,
-                    ),
-                  ),
+                  Text('Secured by Paystack',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textHint)),
                 ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildApprovedBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.success.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.success.withAlpha(64)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.verified, size: 20, color: AppColors.success),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Approved by the handler',
+                    style: AppTextStyles.labelMedium
+                        .copyWith(color: AppColors.success)),
+                const SizedBox(height: 2),
+                Text(
+                  'Pay now to confirm your inspection and unlock the exact '
+                  'address.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -555,69 +532,51 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child:
-                widget.property.images.isNotEmpty
-                    ? CachedNetworkImage(
-                      imageUrl: widget.property.images.first,
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      errorWidget:
-                          (_, __, ___) => Container(
-                            width: 80,
-                            height: 80,
-                            color: AppColors.background,
-                            child: Icon(
-                              Icons.home,
-                              color: AppColors.textHint,
-                            ),
-                          ),
-                    )
-                    : Container(
+            child: widget.request.propertyImage.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: widget.request.propertyImage,
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(
                       width: 80,
                       height: 80,
                       color: AppColors.background,
                       child: Icon(Icons.home, color: AppColors.textHint),
                     ),
+                  )
+                : Container(
+                    width: 80,
+                    height: 80,
+                    color: AppColors.background,
+                    child: Icon(Icons.home, color: AppColors.textHint),
+                  ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.property.title,
-                  style: AppTextStyles.labelLarge,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(widget.request.propertyTitle,
+                    style: AppTextStyles.labelLarge,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 14,
-                      color: AppColors.textSecondary,
-                    ),
+                    Icon(Icons.location_on,
+                        size: 14, color: AppColors.textSecondary),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        '${widget.property.city}, ${widget.property.state}',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
+                        widget.request.propertyAddress,
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.property.formattedRent,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.primary,
-                  ),
                 ),
               ],
             ),
@@ -649,22 +608,16 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                   color: AppColors.primary.withAlpha(26),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  Icons.calendar_today,
-                  color: AppColors.primary,
-                ),
+                child: Icon(Icons.calendar_today, color: AppColors.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Date',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
+                    Text('Date',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary)),
                     Text(_formattedDate, style: AppTextStyles.labelMedium),
                   ],
                 ),
@@ -688,19 +641,17 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Time',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
+                    Text('Time',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary)),
                     Text(_formattedTime, style: AppTextStyles.labelMedium),
                   ],
                 ),
               ),
             ],
           ),
-          if (widget.notes != null && widget.notes!.isNotEmpty) ...[
+          if (widget.request.notes != null &&
+              widget.request.notes!.isNotEmpty) ...[
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,13 +670,11 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Notes',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      Text(widget.notes!, style: AppTextStyles.bodySmall),
+                      Text('Notes',
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.textSecondary)),
+                      Text(widget.request.notes!,
+                          style: AppTextStyles.bodySmall),
                     ],
                   ),
                 ),
@@ -738,11 +687,10 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   }
 
   Widget _buildHandlerInfo() {
-    final isAgent = widget.property.inspectionHandler == 'agent' &&
-        widget.property.assignedAgentId != null;
+    final isAgent = widget.request.isAgentHandled;
     final handlerName = isAgent
-        ? (widget.property.assignedAgentName ?? 'Agent')
-        : (widget.property.landlordName ?? 'Landlord');
+        ? (widget.request.agentName ?? 'Agent')
+        : widget.request.landlordName;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -773,19 +721,16 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  handlerName,
-                  style: AppTextStyles.labelLarge,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(handlerName,
+                    style: AppTextStyles.labelLarge,
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Text(
                   isAgent
                       ? 'Agent will conduct your inspection'
                       : 'Landlord will handle your inspection',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -808,28 +753,23 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
         children: [
           Text('Payment Breakdown', style: AppTextStyles.labelLarge),
           const SizedBox(height: 16),
-
-          _buildPaymentRow('Inspection fee', _fee.totalFee),
-
+          _buildPaymentRow('Inspection fee', _totalFee),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(),
           ),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total', style: AppTextStyles.naira(AppTextStyles.h4)),
               Text(
-                '₦${NumberFormat('#,###').format(_fee.totalFee)}',
-                style: AppTextStyles.naira(AppTextStyles.h3).copyWith(color: AppColors.primary),
+                '₦${NumberFormat('#,###').format(_totalFee)}',
+                style: AppTextStyles.naira(AppTextStyles.h3)
+                    .copyWith(color: AppColors.primary),
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // Transport advisory
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -840,17 +780,14 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.directions_car_outlined,
-                  size: 16,
-                  color: AppColors.warning,
-                ),
+                Icon(Icons.directions_car_outlined,
+                    size: 16, color: AppColors.warning),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Transport to and from the property is arranged '
-                    'directly with the agent or landlord. ClearRent does '
-                    'not collect transport money.',
+                    'Transport to and from the property is arranged directly '
+                    'with the agent or landlord. ClearRent does not collect '
+                    'transport money.',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.textSecondary,
                       height: 1.4,
@@ -865,66 +802,16 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
     );
   }
 
-  Widget _buildPaymentRow(String label, double amount, {String? subtitle}) {
+  Widget _buildPaymentRow(String label, double amount) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: AppTextStyles.bodyMedium),
-            if (subtitle != null)
-              Text(
-                subtitle,
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textHint,
-                ),
-              ),
-          ],
-        ),
+        Text(label, style: AppTextStyles.bodyMedium),
         Text(
           '₦${NumberFormat('#,###').format(amount)}',
           style: AppTextStyles.naira(AppTextStyles.labelMedium),
         ),
       ],
-    );
-  }
-
-  Widget _buildRefundPolicy() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.success.withAlpha(13),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.success.withAlpha(51)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.shield_outlined, color: AppColors.success, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Full Refund Guarantee',
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.success,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'If your inspection request is declined, you\'ll receive a full refund within 24 hours.',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

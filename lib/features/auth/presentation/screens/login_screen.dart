@@ -1001,7 +1001,7 @@ class _LoginScreenState extends State<LoginScreen>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'We\'ll send a one-time verification code to confirm your number. You\'ll set up your email and password next.',
+                    'We\'ll send a verification code to confirm your number. You\'ll set up your email and password next.',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.info,
                     ),

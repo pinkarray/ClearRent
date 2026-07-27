@@ -41,12 +41,14 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
       final rentals = await _rentalService.getLandlordRentals();
       if (mounted) {
         setState(() {
-          // Show active/expiring rentals first, then others
+          // Order by what needs the LANDLORD's attention, not by lease
+          // lifecycle — otherwise a rental where the tenant raised a concern
+          // (a pending_payment rental) sank to the bottom of the list, so the
+          // concern was buried below every active agreement.
           _rentals = rentals..sort((a, b) {
-            final order = {'active': 0, 'expiring_soon': 1, 'expired': 2, 'terminated': 3};
-            final aOrder = order[a.status.name] ?? 4;
-            final bOrder = order[b.status.name] ?? 4;
-            if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+            final ap = _attentionRank(a);
+            final bp = _attentionRank(b);
+            if (ap != bp) return ap.compareTo(bp);
             return b.createdAt.compareTo(a.createdAt);
           });
           _isLoading = false;
@@ -55,6 +57,24 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
     } catch (e) {
       developer.log('❌ Error loading rentals: $e', name: 'LandlordAgreements');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Lower rank = higher up the list. Surfaces agreements needing the landlord's
+  /// action first: a raised concern (disputed) is most urgent, then one with no
+  /// agreement uploaded yet; anything waiting on the tenant or already done sinks.
+  int _attentionRank(ActiveRental r) {
+    switch (r.agreementStatus) {
+      case AgreementStatus.disputed:
+        return 0; // tenant raised a concern — respond now
+      case AgreementStatus.none:
+        return 1; // no agreement uploaded yet
+      case AgreementStatus.pendingReview:
+        return 2; // sent, waiting on the tenant
+      case AgreementStatus.accepted:
+        return 3;
+      case AgreementStatus.finalized:
+        return 4;
     }
   }
 

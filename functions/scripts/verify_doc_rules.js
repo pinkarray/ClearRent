@@ -18,7 +18,7 @@ const {
   assertFails,
   assertSucceeds,
 } = require("@firebase/rules-unit-testing");
-const {doc, setDoc, updateDoc} = require("firebase/firestore");
+const {doc, setDoc, updateDoc, addDoc, collection} = require("firebase/firestore");
 
 let failures = 0;
 function check(name, cond) {
@@ -157,6 +157,104 @@ async function main() {
   check("property: CAN relabel freely BEFORE review (status pending)",
     await passes(updateDoc(doc(db, "properties", "p2"),
       {ownershipDocType: "deed"})));
+
+  // ── The create path ───────────────────────────────────────────────────
+  // Every guard above is downstream of a review. If a listing can be BORN
+  // approved, none of them matter — this is the hole that made the rest moot.
+  const newProp = {
+    landlordId: L1, title: "x", currentTenantsCount: 0,
+    rent: 1000000, agentFee: 0, cautionDeposit: 0,
+  };
+
+  check("create: CANNOT be born ownershipDocStatus 'verified'",
+    await denies(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocUrl: "never_reviewed.pdf",
+        ownershipDocType: "c_of_o", ownershipDocStatus: "verified"})));
+
+  check("create: CANNOT be born isVerified true",
+    await denies(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "pending", isVerified: true})));
+
+  check("create: CANNOT seed an admin rejection reason",
+    await denies(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "pending",
+        ownershipDocRejectionReason: "looks fine to me"})));
+
+  // The real add-property payloads. Tightening `create` is only safe if the
+  // shapes PropertyService actually sends still get through — a rule that
+  // blocks listing creation is worse than the hole it closes.
+  check("create: CAN publish a normal standalone listing for review",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocUrl: "mine.pdf", ownershipDocType: "c_of_o",
+        ownershipDocStatus: "pending", isVerified: false})));
+
+  check("create: CAN publish a standalone listing with NO doc yet",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "none", isVerified: false})));
+
+  check("create: CAN publish a clean grouped unit (inherited, no doc fields)",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, buildingId: "b1", ownershipDocStatus: "inherited",
+        isVerified: false})));
+
+  // add_property_screen's post-create review step.
+  const docless = await addDoc(collection(db, "properties"),
+    {...newProp, ownershipDocStatus: "none", isVerified: false});
+  check("add-property: CAN mark a doc-less listing 'not_uploaded' + hidden",
+    await passes(updateDoc(docless,
+      {ownershipDocStatus: "not_uploaded", isAvailable: false})));
+
+  // ── Grouped units: the building's doc is the only reviewed artifact ────
+  // These carry ownershipDocStatus 'inherited', which is never the literal
+  // 'verified' — so every status-keyed guard used to pass trivially.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties", "unit1"), {
+      landlordId: L1, buildingId: "b1",
+      ownershipDocStatus: "inherited", isVerified: true,
+      currentTenantsCount: 0, rent: 1000000, agentFee: 0, cautionDeposit: 0,
+    });
+  });
+
+  check("grouped unit: CANNOT relabel its own doc type ('inherited' bypass)",
+    await denies(updateDoc(doc(db, "properties", "unit1"),
+      {ownershipDocType: "other"})));
+
+  check("grouped unit: CANNOT attach its own doc file",
+    await denies(updateDoc(doc(db, "properties", "unit1"),
+      {ownershipDocUrl: "unit_cofo.pdf"})));
+
+  check("grouped unit: CANNOT be created carrying its own doc",
+    await denies(addDoc(collection(db, "properties"),
+      {...newProp, buildingId: "b1", ownershipDocStatus: "inherited",
+        ownershipDocUrl: "mine.pdf", ownershipDocType: "c_of_o"})));
+
+  check("grouped unit: CAN still edit normal listing fields",
+    await passes(updateDoc(doc(db, "properties", "unit1"), {rent: 1500000})));
+
+  // ── buildingId is not a skeleton key ──────────────────────────────────
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties", "rejected1"), {
+      landlordId: L1,
+      ownershipDocUrl: "bad.pdf", ownershipDocType: "c_of_o",
+      ownershipDocStatus: "rejected",
+      ownershipDocRejectionReason: "Not a real C of O",
+      isVerified: false,
+      currentTenantsCount: 0, rent: 1000000, agentFee: 0, cautionDeposit: 0,
+    });
+  });
+
+  check("property: CANNOT attach a rejected listing to an owned verified " +
+    "building (would inherit 'verified')",
+  await denies(updateDoc(doc(db, "properties", "rejected1"),
+    {buildingId: "b1"})));
+
+  check("property: CANNOT clear its own admin rejection reason",
+    await denies(updateDoc(doc(db, "properties", "rejected1"),
+      {ownershipDocRejectionReason: ""})));
+
+  check("property: CANNOT detach from a building either",
+    await denies(updateDoc(doc(db, "properties", "unit1"),
+      {buildingId: null})));
 
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);

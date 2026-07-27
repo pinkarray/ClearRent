@@ -261,7 +261,6 @@ class PropertyService {
       final userData = userDoc.data();
       final landlordName = userData?['fullName'] ?? 'Landlord';
       final landlordPhone = userData?['phone'] ?? '';
-      final isVerified = userData?['verificationStatus'] == 'verified';
 
       // Update landlord's baseLatitude/baseLongitude if they don't live in property and coordinates are provided
       if (!landlordLivesInProperty &&
@@ -317,7 +316,12 @@ class PropertyService {
         'agentFee': agentFee,
         'cautionDeposit': cautionDeposit,
         'isAvailable': true,
-        'isVerified': isVerified, // Based on landlord verification status
+        // A listing is born unreviewed. This is the ADMIN's badge for THIS
+        // listing's ownership document (adminReviewPropertyDoc writes it) — not
+        // a mirror of the landlord's own verification, which is what it used to
+        // copy. Seeding it true let every listing skip the review the rules
+        // exist to enforce; firestore.rules now pins it false at create.
+        'isVerified': false,
         'amenities': amenities,
         'rules': rules,
         'landlordName': landlordName,

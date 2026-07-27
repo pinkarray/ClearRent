@@ -9,6 +9,8 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
+import '../../../../shared/models/property_model.dart';
+import 'package:intl/intl.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
@@ -455,12 +457,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withAlpha(13),
-              blurRadius: 10,
-              offset: const Offset(0, 2)),
-        ],
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -960,6 +957,47 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         ]),
         const SizedBox(height: 12),
 
+        // Pay-after-approve: approved but not yet paid. Prompt the tenant to pay
+        // to confirm the visit and unlock the exact address. Arrival/completion
+        // actions stay locked (they gate on isConfirmed) until this is done.
+        if (r.awaitingPayment) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.success.withAlpha(20),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.success.withAlpha(64)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Pay to confirm your inspection',
+                    style: AppTextStyles.labelMedium
+                        .copyWith(color: AppColors.success)),
+                const SizedBox(height: 4),
+                Text(
+                  'Your request was approved. Pay the inspection fee to confirm '
+                  'your visit and unlock the exact address.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppButton(
+                    text:
+                        'Pay ₦${NumberFormat('#,###').format(r.totalFee)} to Confirm',
+                    onPressed: () => context.push(
+                        '/tenant/inspection-payment', extra: {'request': r}),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
         // Reschedule proposal panel (only when a proposal is active)
         if (r.hasPendingReschedule)
           RescheduleProposalPanel(
@@ -1120,6 +1158,15 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 ? 'I\'ve met the agent'
                 : 'I\'ve met the landlord',
             onPressed: _markMet,
+          ),
+        ] else if (r.tenantAwaitingHandlerMet) ...[
+          const SizedBox(height: 12),
+          _partyStatusStrip(
+            icon: Icons.hourglass_top,
+            color: AppColors.info,
+            text:
+                'Waiting for the ${r.isAgentHandled ? 'agent' : 'landlord'} to '
+                'confirm you met',
           ),
         ] else if (r.met) ...[
           const SizedBox(height: 12),
@@ -1332,9 +1379,13 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
   bool _isLoadingInterest = false;
   bool _hasCheckedInterest = false;
   bool _hasPassed = false; // true after tenant taps "I'll Keep Looking"
+  // Loaded only when a decision is still open — the decision box must know
+  // whether the property is still on the market (see build()).
+  PropertyModel? _property;
 
   final RefundService _refundService = RefundService();
   StreamSubscription<Refund?>? _refundSub;
+  StreamSubscription<RentalInterest?>? _interestSub;
   Refund? _refund;
 
   @override
@@ -1342,7 +1393,11 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
     super.initState();
     // Restore the persisted decline so the decision box stays gone across restarts.
     _hasPassed = widget.request.tenantPassed;
-    if (widget.request.isCompleted && widget.request.tenantRated) {
+    // Only completion gates this. Rating is optional (see the decision section
+    // below), but requiring it here meant _hasCheckedInterest was never set for
+    // an unrated inspection — so the decision box silently never rendered and
+    // the tenant had no way to say they wanted the property.
+    if (widget.request.isCompleted) {
       _loadRentalInterest();
     }
     if (widget.request.isRefunded) {
@@ -1357,6 +1412,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
   @override
   void dispose() {
     _refundSub?.cancel();
+    _interestSub?.cancel();
     super.dispose();
   }
 
@@ -1368,36 +1424,48 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 
-  Future<void> _loadRentalInterest() async {
+  /// Live-subscribe to this inspection's rental interest so the card reacts to
+  /// state changes on its own — the landlord accepting flips the interest to
+  /// `accepted`, and the card shows "Review Agreement" without the tenant
+  /// having to leave and return. Idempotent: called from initState and after
+  /// expressing interest, but only ever sets up one subscription.
+  void _loadRentalInterest() {
+    if (_interestSub != null) return;
     setState(() => _isLoadingInterest = true);
-    try {
-      final interest = await _rentalInterestService
-          .getInterestForInspection(widget.request.id);
+    _interestSub = _rentalInterestService
+        .streamInterestForInspection(widget.request.id)
+        .listen((interest) async {
+      // Only a still-open decision needs the property; load it once when there's
+      // no interest yet, otherwise the card shows the interest's status.
+      if (interest == null && _property == null) {
+        final property =
+            await PropertyService().getProperty(widget.request.propertyId);
+        if (mounted) setState(() => _property = property);
+      }
+      if (!mounted) return;
+      setState(() {
+        _rentalInterest = interest;
+        _isLoadingInterest = false;
+        _hasCheckedInterest = true;
+      });
+      // A loser (lost_to_other) is owed a refund tracked at
+      // refunds/{interestId} — stream it so the card shows Processing → Paid.
+      if (interest != null && interest.isLostToOther && _refundSub == null) {
+        _refundSub =
+            _refundService.streamForRental(interest.id).listen((refund) {
+          if (mounted) setState(() => _refund = refund);
+        });
+      }
+    }, onError: (e) {
+      developer.log('❌ Error streaming rental interest: $e',
+          name: 'TenantHistory');
       if (mounted) {
         setState(() {
-          _rentalInterest = interest;
           _isLoadingInterest = false;
           _hasCheckedInterest = true;
         });
-        // A loser (lost_to_other) is owed a refund tracked at
-        // refunds/{interestId} — stream it so the card shows Processing → Paid,
-        // matching the inspection-refund card.
-        if (interest != null && interest.isLostToOther) {
-          _refundSub = _refundService
-              .streamForRental(interest.id)
-              .listen((refund) {
-            if (mounted) setState(() => _refund = refund);
-          });
-        }
       }
-    } catch (e) {
-      developer.log('❌ Error loading rental interest: $e',
-          name: 'TenantHistory');
-      if (mounted) {
-        setState(
-            () { _isLoadingInterest = false; _hasCheckedInterest = true; });
-      }
-    }
+    });
   }
 
   @override
@@ -1430,13 +1498,26 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
       statusText = r.statusDisplay;
     }
 
-    // Rating is optional and no longer gates the decision — a tenant who
-    // inspected can choose to rent / keep looking regardless of whether they
-    // rated the handler's conduct.
-    final needsDecision = r.isCompleted &&
+    // Rating comes FIRST and gates the decision: the tenant rates the completed
+    // inspection before they can express interest (or pass). The rating is the
+    // tenant's confirmation that the visit genuinely happened, and it's what
+    // backs the handler's inspection payment — so it's required either way, not
+    // only when the tenant goes on to rent. createRentalInterest enforces the
+    // same gate server-side.
+    final decisionOpen = r.isCompleted &&
+        r.tenantRated &&
         _hasCheckedInterest &&
         _rentalInterest == null &&
         !_hasPassed;
+    // ...but only offer the property if it's still on the market. Occupancy is
+    // server-authoritative (occupancy-sync CFs own isAvailable /
+    // currentTenantsCount), and createRentalInterest rejects a non-listable
+    // property too — this keeps the tenant from being offered something that's
+    // already taken. Fails closed: if the property couldn't be loaded we say
+    // unavailable rather than send them into a call the server will reject.
+    final stillAvailable = _property?.isListable ?? false;
+    final needsDecision = decisionOpen && stillAvailable;
+    final noLongerAvailable = decisionOpen && !stillAvailable;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1636,12 +1717,14 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                       color: AppColors.warning)),
             ])
           else ...[
-            Text('How was your agent? (optional)',
+            Text('Rate your inspection to continue',
                 style: AppTextStyles.labelMedium),
             const SizedBox(height: 2),
             Text(
                 'On time, knew the property, professional? This isn\'t about '
-                'whether you liked the place.',
+                'whether you liked the place. Rating confirms the visit '
+                'happened — it secures your handler\'s payment and unlocks '
+                'your decision on this property.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary)),
             const SizedBox(height: 10),
@@ -1685,10 +1768,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         ],
 
         // ============ DECISION SECTION ============
-        if (r.isCompleted &&
-            _hasCheckedInterest &&
-            _rentalInterest == null &&
-            !_hasPassed) ...[
+        if (needsDecision) ...[
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
@@ -1733,6 +1813,33 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textHint, fontSize: 11),
                   textAlign: TextAlign.center),
+            ]),
+          ),
+        ],
+
+        // ============ NO LONGER AVAILABLE ============
+        // Decision was still open, but the property has been taken (or the
+        // landlord pulled it) since the inspection.
+        if (noLongerAvailable) ...[
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(children: [
+              Icon(Icons.do_not_disturb_on_outlined,
+                  color: AppColors.textSecondary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(
+                'No longer available. This property has been taken since your '
+                'inspection. Keep browsing to find your perfect home!',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
+              )),
             ]),
           ),
         ],
@@ -1789,7 +1896,17 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
     Widget? action;
 
     switch (interest.status) {
+      case RentalInterestStatus.pendingAcceptance:
+        statusColor = AppColors.info;
+        statusIcon = Icons.hourglass_top;
+        title = 'Interest Sent';
+        subtitle =
+            'The landlord is reviewing applicants. You\'ll be notified if '
+            'you\'re accepted. You are not charged unless you\'re accepted.';
+        action = null;
+        break;
       case RentalInterestStatus.pendingPayment:
+        // LEGACY (old pay-before-accept flow). New interests never enter here.
         statusColor = AppColors.warning;
         statusIcon = Icons.payment;
         title = 'Payment Pending';
@@ -1838,8 +1955,24 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         break;
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
+        statusIcon = Icons.how_to_reg;
+        title = 'You\'re Accepted!';
+        subtitle =
+            'Review and finalize your tenancy agreement, then pay to secure '
+            'your new home.';
+        action = SizedBox(
+            width: double.infinity,
+            child: AppButton(
+                text: 'Review Agreement',
+                // push, not go: `go` replaces the whole stack, which left the
+                // tenant on My Rentals with a dead back button (they had to
+                // detour through Browse Properties to get back to inspections).
+                onPressed: () => context.push('/tenant/my-rentals')));
+        break;
+      case RentalInterestStatus.rentPaid:
+        statusColor = AppColors.success;
         statusIcon = Icons.celebration;
-        title = ' Rental Confirmed!';
+        title = 'Rental Confirmed!';
         subtitle =
             'Welcome to your new home! Your dashboard has been updated.';
         action = SizedBox(
@@ -1847,6 +1980,24 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
             child: AppButton(
                 text: 'Go to My Home',
                 onPressed: () => context.go('/tenant/home')));
+        break;
+      case RentalInterestStatus.notSelected:
+        statusColor = AppColors.info;
+        statusIcon = Icons.info_outline;
+        title = 'Another Applicant Was Chosen';
+        subtitle =
+            'The landlord chose another applicant for this property. You were '
+            'not charged.';
+        action = null;
+        break;
+      case RentalInterestStatus.expired:
+        statusColor = AppColors.textSecondary;
+        statusIcon = Icons.timer_off_outlined;
+        title = 'Reservation Expired';
+        subtitle =
+            'Rent wasn\'t paid in time, so this reservation was released and '
+            'the property is available again. You were not charged.';
+        action = null;
         break;
       case RentalInterestStatus.lostToOther:
         statusColor = AppColors.info;
@@ -2155,7 +2306,9 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
 
   // ---- Express interest ----
   Future<void> _expressInterest() async {
-    // Fetch actual property rent before creating interest
+    // Re-read availability at tap time: the card may have been on screen a
+    // while, and the property can be taken between render and tap. The CF
+    // rejects a non-listable property too — this just gives a clear message.
     final property = await PropertyService().getProperty(
       widget.request.propertyId,
     );
@@ -2165,6 +2318,20 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Could not load property details. Please try again.'),
           backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+      return;
+    }
+
+    if (!property.isListable) {
+      if (mounted) {
+        // Flips the card to the "no longer available" state.
+        setState(() => _property = property);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('This property is no longer available.'),
+          backgroundColor: AppColors.warning,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));

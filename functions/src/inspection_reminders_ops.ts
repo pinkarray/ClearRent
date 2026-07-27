@@ -109,6 +109,10 @@ export const inspectionMorningReminders = onSchedule(
       const reqTs = data.requestedDate as Timestamp | undefined;
       if (!reqTs) continue;
       if (watDayKey(reqTs.toMillis()) !== todayKey) continue; // not today
+      // Pay-after-approve: only remind for CONFIRMED inspections — the tenant
+      // must have paid (or the inspection is free) before we nag either party.
+      const ps = data.paymentStatus;
+      if (ps !== "paid" && ps !== "not_required") continue;
 
       const title = (data.propertyTitle as string | undefined) ?? "a property";
       const slot = (data.requestedTimeDisplay as string | undefined) ?? "today";
@@ -180,6 +184,9 @@ export const inspectionSoonReminders = onSchedule(
       if (!reqTs) continue;
       const msUntil = reqTs.toMillis() - now;
       if (msUntil <= WINDOW_MIN || msUntil > WINDOW_MAX) continue;
+      // Pay-after-approve: only remind for CONFIRMED inspections (fee settled).
+      const ps = data.paymentStatus;
+      if (ps !== "paid" && ps !== "not_required") continue;
 
       const title = (data.propertyTitle as string | undefined) ?? "a property";
       const slot = (data.requestedTimeDisplay as string | undefined) ?? "soon";

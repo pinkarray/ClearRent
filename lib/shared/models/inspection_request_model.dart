@@ -188,10 +188,13 @@ class InspectionRequest {
   final bool handlerOnWay;
   final DateTime? handlerOnWayAt;
 
-  // Met confirmation — gates the Mark as Completed button
-  final bool met;
-  final DateTime? metAt;
-  final String? metBy; // 'tenant' | 'handler'
+  // Met confirmation — a meeting is a two-person fact, so each party records
+  // only their OWN half. `met` (which gates completion) is derived: true only
+  // when both have confirmed. Neither side can assert the meeting alone.
+  final bool tenantConfirmedMet;
+  final DateTime? tenantConfirmedMetAt;
+  final bool handlerConfirmedMet;
+  final DateTime? handlerConfirmedMetAt;
 
   // Reschedule
   final RescheduleProposal? rescheduleProposal;
@@ -275,9 +278,10 @@ class InspectionRequest {
     this.tenantOnWayAt,
     this.handlerOnWay = false,
     this.handlerOnWayAt,
-    this.met = false,
-    this.metAt,
-    this.metBy,
+    this.tenantConfirmedMet = false,
+    this.tenantConfirmedMetAt,
+    this.handlerConfirmedMet = false,
+    this.handlerConfirmedMetAt,
     this.rescheduleProposal,
     this.rescheduleCount = 0,
     required this.createdAt,
@@ -302,6 +306,15 @@ class InspectionRequest {
 
   bool get isPaid => paymentStatus == 'paid';
   bool get isPaymentPendingVerification => paymentStatus == 'pending_verification';
+
+  // Pay-after-approve: an inspection is only "confirmed" once the handler has
+  // approved AND the fee is settled (paid, or 'not_required' for a free
+  // inspection). An approved-but-unpaid request shows a Pay button and cannot
+  // proceed to arrival/completion until paid.
+  bool get feeSettled =>
+      paymentStatus == 'paid' || paymentStatus == 'not_required';
+  bool get isConfirmed => isApproved && feeSettled;
+  bool get awaitingPayment => isApproved && !feeSettled && totalFee > 0;
   bool get canBeOverridden => isDeclinedByAgent && 
       landlordOverrideDeadline != null && 
       DateTime.now().isBefore(landlordOverrideDeadline!);
@@ -323,24 +336,38 @@ class InspectionRequest {
   }
 
   bool get canTenantMarkOnWay =>
-      isApproved && !tenantOnWay && isWithinOnWayWindow;
+      isConfirmed && !tenantOnWay && isWithinOnWayWindow;
 
   bool get canHandlerMarkOnWay =>
-      isApproved && !handlerOnWay && isWithinOnWayWindow;
+      isConfirmed && !handlerOnWay && isWithinOnWayWindow;
 
   // Met confirmation helpers
+  /// A meeting happened only when BOTH parties have confirmed it. Derived, so
+  /// no single party's flag can assert it — the anti-fake-meet guard now cuts
+  /// both ways (handler can't fake a no-show tenant; tenant can't unlock the
+  /// handler's payout alone).
+  bool get met => tenantConfirmedMet && handlerConfirmedMet;
+
+  /// The tenant has recorded their half but is waiting on the handler.
+  bool get tenantAwaitingHandlerMet => tenantConfirmedMet && !handlerConfirmedMet;
+
+  /// The handler has recorded their half but is waiting on the tenant.
+  bool get handlerAwaitingTenantMet => handlerConfirmedMet && !tenantConfirmedMet;
+
   /// True when the tenant can tap "I've met the agent/landlord".
+  /// Requires both physically arrived — you can't have met someone who
+  /// isn't there — and that the tenant hasn't already confirmed.
   bool get canTenantMarkMet =>
-      tenantArrived && !met && isApproved;
+      bothArrived && !tenantConfirmedMet && isConfirmed;
 
-  /// True when the handler can tap "I've met the tenant".
-  /// Handler is a fallback path — they need tenant arrived (so
-  /// they can't fake a meet on a tenant who never showed).
+  /// True when the handler can tap "I've met the tenant". Same both-arrived
+  /// gate; records only the handler's half.
   bool get canHandlerMarkMet =>
-      handlerArrived && tenantArrived && !met && isApproved;
+      bothArrived && !handlerConfirmedMet && isConfirmed;
 
-  /// True when the handler may now tap Mark as Completed.
-  bool get canMarkComplete => met && isApproved;
+  /// True when the handler may now tap Mark as Completed — only once both
+  /// halves of the meeting are confirmed.
+  bool get canMarkComplete => met && isConfirmed;
 
   // Reschedule helpers
   bool get hasPendingReschedule => rescheduleProposal != null;
@@ -355,7 +382,7 @@ class InspectionRequest {
 
   /// True if a fresh reschedule can be initiated right now.
   bool get canInitiateReschedule =>
-      isApproved &&
+      isConfirmed &&
       !hasPendingReschedule &&
       !hasReachedRescheduleCap &&
       isWithinRescheduleWindow;
@@ -492,9 +519,10 @@ class InspectionRequest {
     DateTime? tenantOnWayAt,
     bool? handlerOnWay,
     DateTime? handlerOnWayAt,
-    bool? met,
-    DateTime? metAt,
-    String? metBy,
+    bool? tenantConfirmedMet,
+    DateTime? tenantConfirmedMetAt,
+    bool? handlerConfirmedMet,
+    DateTime? handlerConfirmedMetAt,
     RescheduleProposal? rescheduleProposal,
     bool clearRescheduleProposal = false,
     int? rescheduleCount,
@@ -575,9 +603,11 @@ class InspectionRequest {
       tenantOnWayAt: tenantOnWayAt ?? this.tenantOnWayAt,
       handlerOnWay: handlerOnWay ?? this.handlerOnWay,
       handlerOnWayAt: handlerOnWayAt ?? this.handlerOnWayAt,
-      met: met ?? this.met,
-      metAt: metAt ?? this.metAt,
-      metBy: metBy ?? this.metBy,
+      tenantConfirmedMet: tenantConfirmedMet ?? this.tenantConfirmedMet,
+      tenantConfirmedMetAt: tenantConfirmedMetAt ?? this.tenantConfirmedMetAt,
+      handlerConfirmedMet: handlerConfirmedMet ?? this.handlerConfirmedMet,
+      handlerConfirmedMetAt:
+          handlerConfirmedMetAt ?? this.handlerConfirmedMetAt,
       rescheduleProposal: clearRescheduleProposal
           ? null
           : (rescheduleProposal ?? this.rescheduleProposal),
@@ -668,9 +698,12 @@ class InspectionRequest {
       tenantOnWayAt: (data['tenantOnWayAt'] as Timestamp?)?.toDate(),
       handlerOnWay: data['handlerOnWay'] ?? false,
       handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
-      met: data['met'] ?? false,
-      metAt: (data['metAt'] as Timestamp?)?.toDate(),
-      metBy: data['metBy'] as String?,
+      tenantConfirmedMet: data['tenantConfirmedMet'] ?? false,
+      tenantConfirmedMetAt:
+          (data['tenantConfirmedMetAt'] as Timestamp?)?.toDate(),
+      handlerConfirmedMet: data['handlerConfirmedMet'] ?? false,
+      handlerConfirmedMetAt:
+          (data['handlerConfirmedMetAt'] as Timestamp?)?.toDate(),
       rescheduleProposal: data['rescheduleProposal'] == null
           ? null
           : RescheduleProposal.fromMap(
@@ -757,9 +790,14 @@ class InspectionRequest {
       'tenantOnWayAt': tenantOnWayAt != null ? Timestamp.fromDate(tenantOnWayAt!) : null,
       'handlerOnWay': handlerOnWay,
       'handlerOnWayAt': handlerOnWayAt != null ? Timestamp.fromDate(handlerOnWayAt!) : null,
-      'met': met,
-      'metAt': metAt != null ? Timestamp.fromDate(metAt!) : null,
-      'metBy': metBy,
+      'tenantConfirmedMet': tenantConfirmedMet,
+      'tenantConfirmedMetAt': tenantConfirmedMetAt != null
+          ? Timestamp.fromDate(tenantConfirmedMetAt!)
+          : null,
+      'handlerConfirmedMet': handlerConfirmedMet,
+      'handlerConfirmedMetAt': handlerConfirmedMetAt != null
+          ? Timestamp.fromDate(handlerConfirmedMetAt!)
+          : null,
       'rescheduleProposal': rescheduleProposal?.toMap(),
       'rescheduleCount': rescheduleCount,
       'createdAt': Timestamp.fromDate(createdAt),

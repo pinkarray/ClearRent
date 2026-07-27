@@ -121,8 +121,11 @@ class _BadgeConfig {
 class VerificationBadgeLarge extends StatelessWidget {
   final VerificationStatus status;
   final VoidCallback? onTap;
+  // Role shown in the verified label, e.g. "Verified Tenant". Defaults to
+  // Landlord (the badge's original consumer) so existing call sites are unchanged.
+  final String role;
 
-  const VerificationBadgeLarge({super.key, required this.status, this.onTap});
+  const VerificationBadgeLarge({super.key, required this.status, this.onTap, this.role = 'Landlord'});
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +167,7 @@ class VerificationBadgeLarge extends StatelessWidget {
       case VerificationStatus.verified:
         return _BadgeConfigLarge(
           icon: Icons.verified,
-          label: 'Verified Landlord',
+          label: 'Verified $role',
           color: Colors.white,
           backgroundColor: Colors.white.withAlpha(51),
           borderColor: Colors.white.withAlpha(77),

@@ -8,18 +8,52 @@ service firebase.storage {
         || (request.auth.token.superAdmin == true);
     }
 
+    // Verification documents (NIN slip, proof of income/address, utility bill,
+    // guarantor ID). WRITE-ONCE for the same reason as ownership docs below —
+    // an approved document is evidence and must be immutable. Previously the
+    // path was fixed per docType, so `allow write` (which covers overwrite) let
+    // a user swap the bytes of an already-approved document, and annual
+    // re-verification destroyed the prior year's file. Each submission now
+    // lands on its own timestamped path, so history is retained for admin
+    // comparison and nothing approved can be replaced.
+    match /verification/{uid}/{docType}/{version} {
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null;
+      allow update, delete: if false;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Legacy un-versioned verification paths, written by builds before the
+    // timestamped scheme. Still readable so existing records resolve, but
+    // immutable so an already-approved document can't be swapped out.
     match /verification/{uid}/{docType} {
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null;
+      allow update, delete: if false;
       allow read: if request.auth != null
         && (request.auth.uid == uid || isAdmin());
     }
 
     // Ownership documents (C of O / deed) for standalone listings and buildings.
-    // Title-level PII — same access model as verification: owner writes, owner
-    // and admin read. Bytes are streamed to admins via an authenticated route,
-    // never a public/signed URL.
+    // Title-level PII — owner and admin read. Bytes are streamed to admins via
+    // an authenticated route, never a public/signed URL.
+    //
+    // WRITE-ONCE. `allow write` also covers overwrite and delete, which defeated
+    // the whole ownership-doc integrity rule from outside Firestore: an admin
+    // approves the C of O, then the owner PUTs different bytes to the same path.
+    // ownershipDocUrl never changes, so no firestore rule fires, and the listing
+    // stays 'verified' over a file nobody reviewed. An approved document is
+    // evidence — it must be immutable. A new document means a new path (the
+    // client already timestamps each upload), which flips the Firestore status
+    // back to 'pending' and sends it for review.
     match /ownership/{uid}/{docId} {
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null;
+      allow update, delete: if false;
       allow read: if request.auth != null
         && (request.auth.uid == uid || isAdmin());
     }

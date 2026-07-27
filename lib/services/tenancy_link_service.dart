@@ -193,6 +193,21 @@ class TenancyLinkService {
       final linkDoc = await _links.doc(linkId).get();
       if (!linkDoc.exists) return false;
 
+      // Only pending/confirmed links are removable. Once a linked tenant pays
+      // rent through the platform the link is 'promoted' into an active_rental
+      // (see completeLinkedPromotion) — that tenant is now a real on-platform
+      // tenancy and must be ended via the rental flow, not removed like a link.
+      // The landlord UI already filters promoted links out of the removable
+      // list; this is the backstop against removing one by any other path.
+      final status = (linkDoc.data() as Map<String, dynamic>)['status'];
+      if (status != 'pending' && status != 'confirmed') {
+        developer.log(
+          '⛔ removeTenant blocked — link $linkId has status "$status" (not removable)',
+          name: 'TenancyLinkService',
+        );
+        return false;
+      }
+
       await _links.doc(linkId).update({
         'status': 'removed',
         'removedAt': FieldValue.serverTimestamp(),

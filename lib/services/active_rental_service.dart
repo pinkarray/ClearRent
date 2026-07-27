@@ -56,15 +56,86 @@ class ActiveRentalService {
   /// This is the method the landlord inspections screen calls:
   ///   _activeRentalService.createActiveRental(
   ///       rentalInterest: interest, inspectionRequest: widget.request);
+  /// True if an active_rental already exists for this rental interest.
+  ///
+  /// Used to detect — and recover from — a PARTIAL accept: the interest was
+  /// flipped to `accepted` but createActiveRental then failed, leaving the
+  /// tenant with an accepted application and no rental record (no agreement,
+  /// no dashboard). The landlord screen offers a "finish setup" action when
+  /// this returns false for an accepted interest.
+  Future<bool> hasRentalForInterest(String rentalInterestId) async {
+    try {
+      final snap = await _firestore
+          .collection('active_rentals')
+          .where('rentalInterestId', isEqualTo: rentalInterestId)
+          .limit(1)
+          .get();
+      return snap.docs.isNotEmpty;
+    } catch (e) {
+      developer.log('❌ hasRentalForInterest failed: $e',
+          name: 'ActiveRentalService');
+      // Fail "it exists" — on a transient read error we'd rather hide the
+      // recovery action than risk creating a duplicate rental.
+      return true;
+    }
+  }
+
+  /// Whether [propertyId] still has an open tenancy slot for [tenantId].
+  ///
+  /// One slot = one tenant: a property slot is held from the moment a tenant is
+  /// accepted (rental created as pending_payment) through payment and tenancy.
+  /// This lets the accept flow refuse a SECOND applicant on a full property,
+  /// which otherwise produced two rentals for one slot. The tenant's own
+  /// existing rental doesn't count against them (multi-slot re-entry).
+  ///
+  /// Best-effort client guard (rules can't cross-query the collection); the
+  /// occupancy CFs remain the source of truth for currentTenantsCount.
+  Future<bool> propertyHasOpenSlot(String propertyId, String tenantId) async {
+    try {
+      final propSnap =
+          await _firestore.collection('properties').doc(propertyId).get();
+      final maxTenants = (propSnap.data()?['maxTenants'] as num?)?.toInt() ?? 1;
+
+      // Statuses that hold a slot — mirror the server's OCCUPYING set, plus
+      // pending_payment (accepted, awaiting rent).
+      const holding = [
+        'active',
+        'expiring_soon',
+        'grace_locked',
+        'pending_payment',
+      ];
+      final snap = await _firestore
+          .collection('active_rentals')
+          .where('propertyId', isEqualTo: propertyId)
+          .get();
+      final takenByOthers = snap.docs.where((d) {
+        final data = d.data();
+        return data['tenantId'] != tenantId &&
+            holding.contains(data['status']);
+      }).length;
+
+      return takenByOthers < maxTenants;
+    } catch (e) {
+      developer.log('❌ propertyHasOpenSlot failed: $e',
+          name: 'ActiveRentalService');
+      // Fail "no open slot" — don't risk double-accepting on a read error.
+      return false;
+    }
+  }
+
   Future<ActiveRental?> createActiveRental({
     required RentalInterest rentalInterest,
     required InspectionRequest inspectionRequest,
   }) async {
     try {
-      // Verify payment is verified or accepted
+      // Pay-after-accept: the rental record is created when the landlord
+      // ACCEPTS (still unpaid) — the tenant pays only after the agreement is
+      // finalized. Legacy pay-first interests (payment_verified) still qualify.
       if (!rentalInterest.isPaymentVerified &&
           rentalInterest.status != RentalInterestStatus.accepted) {
-        throw Exception('Payment must be verified before creating rental');
+        throw Exception(
+          'Rental interest must be accepted before creating the rental',
+        );
       }
 
       // Calculate dates
@@ -91,7 +162,12 @@ class ActiveRentalService {
                 ? rentalInterest.rentAmount
                 : rentalInterest.paymentAmount,
         'agentFee': rentalInterest.agentFee,
-        'totalPaid': rentalInterest.paymentAmount,
+        // Pay-after-accept: the rental is created UNPAID at acceptance. The
+        // accepted tenant pays only after the agreement is finalized, and the
+        // recordRentPayment callable then stamps rentPaymentStatus/totalPaid/
+        // rentPaidAt server-side. Until then totalPaid is 0.
+        'totalPaid': 0,
+        'rentPaymentStatus': 'pending',
         'landlordPayout': rentalInterest.landlordPayout,
         'agentPayout': rentalInterest.agentPayout,
         'clearrentEarnings': rentalInterest.clearrentEarnings,
@@ -103,7 +179,13 @@ class ActiveRentalService {
         'leaseStartDate': Timestamp.fromDate(leaseStart),
         'leaseEndDate': Timestamp.fromDate(leaseEnd),
         'nextPaymentDue': Timestamp.fromDate(nextPayment),
-        'status': 'active',
+        // Pay-after-accept: the tenancy isn't real until the rent is paid, so
+        // the rental starts as pending_payment. That status is NOT in the
+        // server's OCCUPYING_RENTAL_STATUSES, so the unit stays on the market
+        // and the tenant isn't counted as occupying it during the agreement
+        // window. recordRentPayment flips this to 'active' when the money lands,
+        // which fires the occupancy recompute.
+        'status': 'pending_payment',
         'hasPaymentReminder': false,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -113,20 +195,12 @@ class ActiveRentalService {
           .collection('active_rentals')
           .add(rentalData);
 
-      // Update property status — mark as rented
-      await _updatePropertyStatus(
-        rentalInterest.propertyId,
-        rentalInterest.tenantId,
-        true,
-      );
-
-      // Update tenant status — mark as having active rental
-      await _updateTenantStatus(
-        rentalInterest.tenantId,
-        rentalInterest.propertyId,
-        docRef.id,
-        true,
-      );
+      // Property occupancy is server-owned (occupancy-sync CFs) and keys off the
+      // rental status, so nothing to do here while it's pending_payment.
+      // The tenant is NOT marked as having an active rental yet either — that
+      // now happens server-side in recordRentPayment, once they've actually
+      // paid. Marking them active here would show an unpaid tenant as a real
+      // tenant on their dashboard.
 
       // Fetch created document
       final doc = await docRef.get();
@@ -293,6 +367,23 @@ class ActiveRentalService {
       );
       return null;
     }
+  }
+
+  /// Live stream of ALL rentals for the current tenant (every status, no
+  /// filter). Lets My Rentals stay current on its own — e.g. when a payment
+  /// flips a rental from pending_payment to active, the card updates itself
+  /// instead of showing the stale "Review & Pay" state until a manual reload.
+  Stream<List<ActiveRental>> streamAllTenantRentals() {
+    final currentUserId = _authService.currentUserId;
+    if (currentUserId == null) return Stream.value(const []);
+    return _firestore
+        .collection('active_rentals')
+        .where('tenantId', isEqualTo: currentUserId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
+            .toList());
   }
 
   /// Get ALL rentals for the current tenant (active + past)
@@ -486,10 +577,18 @@ class ActiveRentalService {
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'agreementUrl': agreementUrl,
         'agreementUploadedAt': FieldValue.serverTimestamp(),
+        // Set the review status so the tenant is actually PROMPTED to review +
+        // accept (the onActiveRentalUpdated CF fires on agreementStatus →
+        // pending_review). Was left unset here, so an agreement uploaded at
+        // accept-time sat with a URL but no status — no prompt, and the flow
+        // looked dead. Matches sendAgreementToTenant.
+        'agreementStatus': 'pending_review',
+        'tenantDisputeReason': null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notification handled by the onActiveRentalUpdated Cloud Function.
+      // Notification handled by the onActiveRentalUpdated Cloud Function
+      // (agreementStatus → pending_review).
 
       developer.log(
         '✅ Agreement uploaded for rental: $rentalId',
@@ -535,18 +634,33 @@ class ActiveRentalService {
     }
   }
 
-  /// Tenant accepts the agreement
+  /// Tenant accepts the agreement — which FINALIZES it.
+  ///
+  /// The landlord authored and sent the agreement (their side of it) and the
+  /// tenant accepting completes it, so the deal is "finalized between the
+  /// parties" at this point — there's no separate landlord finalize tap. That
+  /// matters twice over: it's what unlocks the tenant's rent payment (rent is
+  /// only ever collected on a finalized agreement), and it removes the step
+  /// where a quiet landlord could strand an accepted tenant indefinitely.
+  /// Legacy rentals sitting at 'accepted' can still be finalized by the
+  /// landlord via finalizeAgreement.
   Future<bool> tenantAcceptAgreement(String rentalId) async {
     try {
       await _firestore.collection('active_rentals').doc(rentalId).update({
-        'agreementStatus': 'accepted',
+        // NOTE: only fields in the active_rentals update allowlist
+        // (firestore.rules) may be written here — an extra field would get the
+        // whole write rejected. landlordFinalizedAt doubles as the finalize
+        // stamp since tenant acceptance is what finalizes.
+        'agreementStatus': 'finalized',
         'tenantAcceptedAt': FieldValue.serverTimestamp(),
+        'landlordFinalizedAt': FieldValue.serverTimestamp(),
         'tenantDisputeReason': null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       // Notification handled by the onActiveRentalUpdated Cloud Function
-      // (agreementStatus → accepted).
+      // (agreementStatus → finalized: tenant is prompted to pay, landlord is
+      // told it's done).
 
       developer.log(
         '✅ Tenant accepted agreement: $rentalId',

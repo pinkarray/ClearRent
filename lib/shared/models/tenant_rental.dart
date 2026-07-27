@@ -71,6 +71,10 @@ class TenantRental {
         case ActiveRentalStatus.terminated:
         case ActiveRentalStatus.endedByTenant:
         case ActiveRentalStatus.endedByLandlord:
+        // pendingPayment (accepted, rent not yet paid) never reaches this
+        // stream — streamTenantRentals only pulls occupying statuses — but the
+        // switch must stay exhaustive.
+        case ActiveRentalStatus.pendingPayment:
           return RentalLifecycle.active;
       }
     }
