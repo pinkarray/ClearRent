@@ -186,7 +186,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     final rentals = await _activeRentalService.getTenantRentals();
     if (!mounted) return;
     final count = rentals
-        .where((r) => r.isActive || r.isExpiringSoon || r.isGraceLocked)
+        .where((r) =>
+            r.isActive ||
+            r.isExpiringSoon ||
+            r.isGraceLocked ||
+            r.isMoveoutPending)
         .length;
     setState(() => _activeRentalCount = count);
   }

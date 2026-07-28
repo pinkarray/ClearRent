@@ -352,7 +352,7 @@ class ActiveRentalService {
           await _firestore
               .collection('active_rentals')
               .where('tenantId', isEqualTo: currentUserId)
-              .where('status', isEqualTo: 'active')
+              .where('status', whereIn: ['active', 'moveout_pending'])
               .limit(1)
               .get();
 
@@ -440,7 +440,7 @@ class ActiveRentalService {
     return _firestore
         .collection('active_rentals')
         .where('tenantId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: 'active')
+        .where('status', whereIn: ['active', 'moveout_pending'])
         .limit(1)
         .snapshots()
         .map((snapshot) {
@@ -466,7 +466,14 @@ class ActiveRentalService {
     final activeStream = _firestore
         .collection('active_rentals')
         .where('tenantId', isEqualTo: currentUserId)
-        .where('status', whereIn: ['active', 'expiring_soon', 'grace_locked'])
+        .where('status', whereIn: [
+          'active',
+          'expiring_soon',
+          'grace_locked',
+          // Still occupying — keep it on the dashboard with the pending banner
+          // until the landlord confirms handover.
+          'moveout_pending',
+        ])
         .snapshots();
 
     final linkStream = _firestore
