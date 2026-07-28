@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../../../core/constants/colors.dart';
-import '../../../../../../core/constants/text_styles.dart';
-import '../../../../../../shared/models/tenancy_link_model.dart';
+import '../../../../core/constants/colors.dart';
+import '../../../../core/constants/text_styles.dart';
+import '../../../../shared/models/tenancy_link_model.dart';
 
 /// Rent-due card for a linked tenancy.
 ///

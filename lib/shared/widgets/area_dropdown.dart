@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../../core/constants/colors.dart';
-import '../../../../core/constants/text_styles.dart';
-import '../../../../core/utils/inspection_pricing.dart';
+import '../../core/constants/colors.dart';
+import '../../core/constants/text_styles.dart';
+import '../../core/utils/inspection_pricing.dart';
 
 /// A searchable dropdown that lists all Lagos areas from InspectionPricing,
 /// grouped by transport cluster. Used across all roles:

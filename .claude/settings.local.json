@@ -185,7 +185,12 @@
       "Bash(awk '{print $6, $7}')",
       "Bash(node scripts/diag_tenant.js syd@gmail.com)",
       "Bash(node scripts/cleanup_tenant_rentals.js syd@gmail.com)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git fetch *)",
+      "Bash(git push *)",
+      "Bash(tee /tmp/flutter_run2.log)",
+      "Bash(git check-ignore *)",
+      "Bash(tee /tmp/flutter_run3.log)"
     ],
     "additionalDirectories": [
       "c:\\Users\\MIDE\\clearrent_admin\\src\\app\\api\\verification-image",
