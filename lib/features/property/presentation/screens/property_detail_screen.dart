@@ -731,6 +731,24 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Future<void> _toggleAvailability() async {
     final newStatus = !widget.property.isAvailable;
 
+    // Can't put an occupied unit back on the market — a sitting or linked
+    // tenant means the unit is taken. Only guards the → available direction;
+    // marking occupied is always allowed. Mirrors the delete guard below.
+    if (newStatus &&
+        await _propertyService.propertyHasSittingTenant(widget.property.id)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'This property has a sitting or linked tenant and can\'t be marked available. End the tenancy first.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
     try {
       await _propertyService.updateAvailability(widget.property.id, newStatus);
 
@@ -1543,7 +1561,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white,
+          // Theme-adaptive to match the back button — a hardcoded white
+          // container made the white dark-mode icon invisible.
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(color: Colors.black.withAlpha(26), blurRadius: 8),

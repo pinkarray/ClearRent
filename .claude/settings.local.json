@@ -190,7 +190,11 @@
       "Bash(git push *)",
       "Bash(tee /tmp/flutter_run2.log)",
       "Bash(git check-ignore *)",
-      "Bash(tee /tmp/flutter_run3.log)"
+      "Bash(tee /tmp/flutter_run3.log)",
+      "Bash(tee /tmp/flutter_test.log)",
+      "Bash(tee /tmp/flutter_test2.log)",
+      "Bash(tee /tmp/flutter_reorder.log)",
+      "Bash(node \"C:\\\\Users\\\\MIDE\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-MIDE-clearrent\\\\dfd87012-47ff-48be-a8b4-43e605dcc945\\\\scratchpad\\\\diag_deleted_user.js\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\MIDE\\clearrent_admin\\src\\app\\api\\verification-image",

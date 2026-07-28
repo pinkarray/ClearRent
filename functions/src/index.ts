@@ -39,6 +39,8 @@ interface NotificationDoc {
 export {nudgeInspectionParty, messageInspectionParties}
   from "./inspection_admin_ops";
 export {reportInspectionIssue} from "./inspection_dispute_ops";
+export {nudgeIssueParty} from "./issue_admin_ops";
+export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onRentReviewRequested, onUserProfileUpdated}
   from "./admin_alert_triggers";

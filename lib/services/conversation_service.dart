@@ -994,7 +994,11 @@ class ConversationService {
         'type': 'verification_reminder',
         'title': 'Complete Your Verification',
         'body': 'Your ClearRent account is not yet verified. Complete verification to unlock messaging, inspections, and listings.',
-        'isRead': false,
+        // Canonical unread field is `read` (matches writeNotificationOnce, the
+        // notification bell's `read == false` query, and the inbox reader).
+        // Writing `isRead` here left this notif out of the unread badge count.
+        'read': false,
+        'readAt': null,
         'sentBy': adminId,
         'createdAt': FieldValue.serverTimestamp(),
       });

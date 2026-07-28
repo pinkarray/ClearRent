@@ -592,6 +592,18 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
             const SizedBox(height: 32),
 
+            // Recent Activity — surfaced first so the landlord sees what just
+            // happened before scrolling their rentals and linked tenants.
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Recent Activity', style: AppTextStyles.h4),
+              TextButton(
+                onPressed: () => context.push('/landlord/activities'),
+                child: Text('See all', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            _buildActivitiesSection(),
+
             if (!_isLoadingRentals && _activeRentals.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
@@ -648,19 +660,6 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     child: _buildLinkedTenantCard(link),
                   )),
             ],
-
-            // Recent Activity section
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Recent Activity', style: AppTextStyles.h4),
-              TextButton(
-                onPressed: () => context.push('/landlord/activities'),
-                child: Text('See all', style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
-              ),
-            ]),
-            const SizedBox(height: 12),
-
-            // Activities - Real data
-            _buildActivitiesSection(),
 
             const SizedBox(height: 32),
 

@@ -242,7 +242,9 @@ class _EarningsScreenState extends State<EarningsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        // Theme-adaptive card surface — a hardcoded white made the
+        // textPrimary amount invisible (white-on-white) in dark mode.
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(

@@ -26,7 +26,7 @@ import '../features/landlord/presentation/screens/edit_property_loader_screen.da
 import '../shared/screens/settings_screen.dart';
 import '../features/landlord/presentation/screens/bank_details_screen.dart';
 import '../features/landlord/presentation/screens/earnings_screen.dart';
-import '../../features/landlord/presentation/screens/landlord_rentals_screen.dart';
+import '../features/landlord/presentation/screens/landlord_rentals_screen.dart';
 import '../shared/screens/help_support_screen.dart';
 import '../shared/screens/about_screen.dart';
 import '../features/tenant/presentation/screens/rental_payment_screen.dart';
