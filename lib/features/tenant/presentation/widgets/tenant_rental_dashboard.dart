@@ -273,6 +273,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
       'Other',
     ];
     String? selectedReason;
+    DateTime selectedDate = DateTime.now();
     final otherController = TextEditingController();
 
     final confirmed = await showModalBottomSheet<bool>(
@@ -304,11 +305,12 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('Move Out', style: AppTextStyles.h4),
+                Text('Request Move-Out', style: AppTextStyles.h4),
                 const SizedBox(height: 6),
                 Text(
-                  'Let your landlord know you\'re ending this tenancy. This '
-                  'updates your record on ClearRent — it isn\'t a legal notice.',
+                  'Tell your landlord you\'re moving out. They confirm the '
+                  'handover to end the tenancy. If they don\'t respond within '
+                  '7 days, it\'s confirmed automatically.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textSecondary, height: 1.4),
                 ),
@@ -369,6 +371,52 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 16),
+                // Intended move-out date
+                GestureDetector(
+                  onTap: () async {
+                    final now = DateTime.now();
+                    final picked = await showDatePicker(
+                      context: sheetCtx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(now.year, now.month, now.day),
+                      lastDate: now.add(const Duration(days: 90)),
+                    );
+                    if (picked != null) setSheet(() => selectedDate = picked);
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.event_outlined,
+                          size: 18, color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      Text('Intended date',
+                          style: AppTextStyles.bodyMedium
+                              .copyWith(color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        '${selectedDate.day} '
+                        '${const [
+                          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                        ][selectedDate.month - 1]} '
+                        '${selectedDate.year}',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.textPrimary),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right,
+                          size: 18, color: AppColors.textHint),
+                    ]),
+                  ),
+                ),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
@@ -377,14 +425,14 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                         ? null
                         : () => Navigator.pop(sheetCtx, true),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
+                      backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: AppColors.border,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text('Confirm Move Out',
+                    child: Text('Request Move-Out',
                         style: AppTextStyles.labelLarge
                             .copyWith(color: Colors.white)),
                   ),
@@ -403,17 +451,72 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         ? otherController.text.trim()
         : selectedReason!;
 
-    final ok = await _activeRentalService.tenantMoveOut(rental.id, reason);
+    final ok = await _activeRentalService.tenantRequestMoveOut(
+      rental.id,
+      reason,
+      selectedDate,
+    );
     if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Could not complete move-out. Please try again.'),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
-    }
-    // On success, the switcher stream drops this rental automatically.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(ok
+          ? 'Move-out requested — your landlord will confirm the handover.'
+          : 'Could not request move-out. Please try again.'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+    // On success the rental becomes moveout_pending — still shown as current,
+    // now with the pending banner until the landlord confirms.
+  }
+
+  Widget _buildMoveOutPendingBanner() {
+    final intended = rental.moveOutIntendedDate;
+    final dateStr = intended == null
+        ? null
+        : '${intended.day} '
+            '${const [
+              'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+            ][intended.month - 1]} '
+            '${intended.year}';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(20),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withAlpha(77)),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withAlpha(26),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.logout, size: 18, color: AppColors.warning),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Move-out requested', style: AppTextStyles.labelMedium),
+              const SizedBox(height: 2),
+              Text(
+                dateStr != null
+                    ? 'Intended $dateStr. Awaiting your landlord\'s handover '
+                        'confirmation — auto-confirms after 7 days.'
+                    : 'Awaiting your landlord\'s handover confirmation — '
+                        'auto-confirms after 7 days.',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    );
   }
 
   @override
@@ -432,6 +535,12 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             // Header
             _buildHeader(),
             const SizedBox(height: 20),
+
+            // Move-out requested — awaiting landlord confirmation
+            if (rental.isMoveoutPending) ...[
+              _buildMoveOutPendingBanner(),
+              const SizedBox(height: 16),
+            ],
 
             // Expiry warning
             if (rental.daysUntilLeaseEnd <= 30 &&
@@ -465,17 +574,19 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             _buildBrowseMore(),
             const SizedBox(height: 8),
 
-            // Move out — quiet, low-frequency action
-            Center(
-              child: TextButton(
-                onPressed: _showMoveOutSheet,
-                child: Text(
-                  'Move out of this rental',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textHint),
+            // Move out — quiet, low-frequency action. Hidden once a request is
+            // already pending (the banner above covers that state).
+            if (!rental.isMoveoutPending)
+              Center(
+                child: TextButton(
+                  onPressed: _showMoveOutSheet,
+                  child: Text(
+                    'Request move-out',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textHint),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

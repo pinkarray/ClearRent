@@ -71,6 +71,9 @@ class TenantRental {
         case ActiveRentalStatus.terminated:
         case ActiveRentalStatus.endedByTenant:
         case ActiveRentalStatus.endedByLandlord:
+        // moveoutPending is still a live tenancy (occupying until handover
+        // confirmed) — treated as active in the lifecycle.
+        case ActiveRentalStatus.moveoutPending:
         // pendingPayment (accepted, rent not yet paid) never reaches this
         // stream — streamTenantRentals only pulls occupying statuses — but the
         // switch must stay exhaustive.

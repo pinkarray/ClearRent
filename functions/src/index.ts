@@ -39,8 +39,9 @@ interface NotificationDoc {
 export {nudgeInspectionParty, messageInspectionParties}
   from "./inspection_admin_ops";
 export {reportInspectionIssue} from "./inspection_dispute_ops";
-export {nudgeIssueParty} from "./issue_admin_ops";
+export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
+export {moveoutAutoConfirmSweep} from "./moveout_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onRentReviewRequested, onUserProfileUpdated}
   from "./admin_alert_triggers";
@@ -814,17 +815,43 @@ export const onActiveRentalUpdated = onDocumentUpdated(
     const stAfter = after.status as string | undefined;
     if (stAfter && stAfter !== stBefore) {
       const endReason = (after.endReason as string | undefined) ?? "";
-      if (stAfter === "ended_by_tenant" && landlordId) {
+      // Move-out requested → ask the landlord to confirm handover. The unit
+      // stays occupied (moveout_pending) until they confirm or the sweep does.
+      if (stAfter === "moveout_pending" && landlordId) {
+        const intended = after.moveOutIntendedDate as Timestamp | undefined;
+        const d = intended?.toDate();
+        const whenStr = d ?
+          ` (intended ${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()})` :
+          "";
         await writeNotificationOnce(
-          `rental_${rentalId}_ended_tenant_${rev}`,
+          `rental_${rentalId}_moveout_req_${rev}`,
           {
             userId: landlordId,
-            type: "rental_ended",
-            title: "Tenant moved out",
+            type: "moveout_requested",
+            title: "Move-out requested",
             body:
-              `${tenantName} ended their tenancy for ${propertyTitle}` +
-              `${endReason ? `: "${endReason}"` : "."}`,
+              `${tenantName} requested to move out of ${propertyTitle}` +
+              `${whenStr}${endReason ? `: "${endReason}"` : "."} ` +
+              "Confirm handover to end the tenancy.",
             payload: landlordRentalsRoute,
+          },
+        );
+      } else if (
+        stAfter === "ended_by_tenant" &&
+        stBefore === "moveout_pending" &&
+        tenantId
+      ) {
+        // Move-out confirmed — by the landlord or the auto-confirm sweep.
+        await writeNotificationOnce(
+          `rental_${rentalId}_moveout_confirmed_${rev}`,
+          {
+            userId: tenantId,
+            type: "rental_ended",
+            title: "Move-out confirmed",
+            body:
+              `Your move-out from ${propertyTitle} has been confirmed. ` +
+              "Your tenancy is now ended.",
+            payload: tenantRentalsRoute,
           },
         );
       } else if (stAfter === "ended_by_landlord" && tenantId) {
@@ -3451,6 +3478,9 @@ const OCCUPYING_RENTAL_STATUSES = [
   "expiring_soon",
   "grace_locked",
   "pending_payment",
+  // The tenant still occupies while a move-out request awaits the landlord's
+  // handover confirmation — the unit must not re-list until it's confirmed.
+  "moveout_pending",
 ];
 
 /**
@@ -3560,6 +3590,44 @@ export const onActiveRentalCreatedOccupancy = onDocumentCreated(
   },
 );
 
+/**
+ * Clear a tenant's denormalized active-rental flag once they have no remaining
+ * occupying rental. Multi-rental-safe: a tenant may hold several at once, so we
+ * only clear when none of their OTHER rentals are still occupying. This is the
+ * only reliable place to clear it for landlord-confirmed / auto-confirmed ends,
+ * because the acting party can't write the tenant's own user doc (rules).
+ *
+ * @param {string} tenantId The tenant whose flag to re-evaluate.
+ * @param {string} endedRentalId The rental that just left occupancy (excluded).
+ * @return {Promise<void>}
+ */
+async function clearTenantActiveRentalFlag(
+  tenantId: string,
+  endedRentalId: string,
+): Promise<void> {
+  const db = getFirestore();
+  const snap = await db
+    .collection("active_rentals")
+    .where("tenantId", "==", tenantId)
+    .get();
+  const stillOccupying = snap.docs.some(
+    (d) =>
+      d.id !== endedRentalId &&
+      OCCUPYING_RENTAL_STATUSES.includes(d.get("status") as string),
+  );
+  if (stillOccupying) return;
+  await db.collection("users").doc(tenantId).set(
+    {
+      hasActiveRental: false,
+      currentPropertyId: null,
+      currentRentalId: null,
+      rentEndDate: null,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    {merge: true},
+  );
+}
+
 export const onActiveRentalStatusOccupancy = onDocumentUpdated(
   "active_rentals/{rentalId}",
   async (event) => {
@@ -3576,14 +3644,31 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
     if (wasOccupying === isOccupying) return;
 
     const propertyId = after.propertyId as string | undefined;
-    if (!propertyId) return;
-    try {
-      await recomputePropertyOccupancy(propertyId);
-    } catch (err) {
-      logger.error("Occupancy recompute failed (rental status change)", {
-        propertyId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (propertyId) {
+      try {
+        await recomputePropertyOccupancy(propertyId);
+      } catch (err) {
+        logger.error("Occupancy recompute failed (rental status change)", {
+          propertyId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Rental left the occupying statuses (ended / terminated) — clear the
+    // tenant's denormalized active-rental flag if they have no other occupancy.
+    if (!isOccupying) {
+      const tenantId = after.tenantId as string | undefined;
+      if (tenantId) {
+        try {
+          await clearTenantActiveRentalFlag(tenantId, event.params.rentalId);
+        } catch (err) {
+          logger.error("Tenant active-rental flag clear failed", {
+            tenantId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     }
   },
 )

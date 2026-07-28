@@ -64,6 +64,12 @@ class ActiveRental {
   final String? tenantContestStatement;
   final DateTime? contestedAt;
 
+  // Move-out request (request + acknowledge flow). Set when the tenant asks to
+  // move out; cleared into endedAt/endedBy when the landlord confirms handover
+  // (or the auto-confirm sweep does). `endReason` carries the move-out reason.
+  final DateTime? moveOutRequestedAt;
+  final DateTime? moveOutIntendedDate;
+
   // Provenance (set on promoted rentals, null otherwise)
   final String? sourceLinkId;
   
@@ -118,6 +124,8 @@ class ActiveRental {
     this.tenantContested = false,
     this.tenantContestStatement,
     this.contestedAt,
+    this.moveOutRequestedAt,
+    this.moveOutIntendedDate,
     this.sourceLinkId,
     this.status = ActiveRentalStatus.active,
     this.hasPaymentReminder = false,
@@ -129,6 +137,7 @@ class ActiveRental {
   bool get isActive => status == ActiveRentalStatus.active;
   bool get isExpiringSoon => status == ActiveRentalStatus.expiringSoon;
   bool get isGraceLocked => status == ActiveRentalStatus.graceLocked;
+  bool get isMoveoutPending => status == ActiveRentalStatus.moveoutPending;
   bool get isExpired => status == ActiveRentalStatus.expired;
   bool get isTerminated => status == ActiveRentalStatus.terminated;
   bool get isEndedByTenant => status == ActiveRentalStatus.endedByTenant;
@@ -138,7 +147,8 @@ class ActiveRental {
   /// — must be shown as such, never bucketed with past/ended rentals.
   bool get isPendingPayment => status == ActiveRentalStatus.pendingPayment;
   /// A rental that belongs in the "current" section (in-progress or occupying).
-  bool get isCurrent => isActive || isExpiringSoon || isPendingPayment;
+  /// Move-out-pending is still current — the tenant occupies until handover.
+  bool get isCurrent => isActive || isExpiringSoon || isPendingPayment || isMoveoutPending;
 
   // Agreement helpers
   bool get hasAgreement => agreementUrl != null && agreementUrl!.isNotEmpty;
@@ -168,6 +178,7 @@ class ActiveRental {
       case ActiveRentalStatus.active: return 'Active';
       case ActiveRentalStatus.expiringSoon: return 'Expiring Soon';
       case ActiveRentalStatus.graceLocked: return 'Renewal Due';
+      case ActiveRentalStatus.moveoutPending: return 'Move-out Pending';
       case ActiveRentalStatus.expired: return 'Expired';
       case ActiveRentalStatus.terminated: return 'Terminated';
       case ActiveRentalStatus.endedByTenant: return 'Ended';
@@ -269,6 +280,10 @@ class ActiveRental {
       tenantContestStatement: data['tenantContestStatement'] as String?,
       contestedAt: data['contestedAt'] != null
           ? (data['contestedAt'] as Timestamp).toDate() : null,
+      moveOutRequestedAt: data['moveOutRequestedAt'] != null
+          ? (data['moveOutRequestedAt'] as Timestamp).toDate() : null,
+      moveOutIntendedDate: data['moveOutIntendedDate'] != null
+          ? (data['moveOutIntendedDate'] as Timestamp).toDate() : null,
       sourceLinkId: data['sourceLinkId'] as String?,
       status: _statusFromString(data['status'] ?? 'active'),
       hasPaymentReminder: data['hasPaymentReminder'] ?? false,
@@ -346,6 +361,7 @@ class ActiveRental {
     String? tenantDisputeReason, DateTime? landlordFinalizedAt,
     String? endReason, String? endedBy, DateTime? endedAt,
     bool? tenantContested, String? tenantContestStatement, DateTime? contestedAt,
+    DateTime? moveOutRequestedAt, DateTime? moveOutIntendedDate,
     String? sourceLinkId,
     ActiveRentalStatus? status, bool? hasPaymentReminder,
     DateTime? createdAt, DateTime? updatedAt,
@@ -388,6 +404,8 @@ class ActiveRental {
       endReason: endReason ?? this.endReason,
       endedBy: endedBy ?? this.endedBy,
       endedAt: endedAt ?? this.endedAt,
+      moveOutRequestedAt: moveOutRequestedAt ?? this.moveOutRequestedAt,
+      moveOutIntendedDate: moveOutIntendedDate ?? this.moveOutIntendedDate,
       tenantContested: tenantContested ?? this.tenantContested,
       tenantContestStatement: tenantContestStatement ?? this.tenantContestStatement,
       contestedAt: contestedAt ?? this.contestedAt,
@@ -404,6 +422,7 @@ class ActiveRental {
       case 'active': return ActiveRentalStatus.active;
       case 'expiring_soon': return ActiveRentalStatus.expiringSoon;
       case 'grace_locked': return ActiveRentalStatus.graceLocked;
+      case 'moveout_pending': return ActiveRentalStatus.moveoutPending;
       case 'expired': return ActiveRentalStatus.expired;
       case 'terminated': return ActiveRentalStatus.terminated;
       case 'ended_by_tenant': return ActiveRentalStatus.endedByTenant;
@@ -418,6 +437,7 @@ class ActiveRental {
       case ActiveRentalStatus.active: return 'active';
       case ActiveRentalStatus.expiringSoon: return 'expiring_soon';
       case ActiveRentalStatus.graceLocked: return 'grace_locked';
+      case ActiveRentalStatus.moveoutPending: return 'moveout_pending';
       case ActiveRentalStatus.expired: return 'expired';
       case ActiveRentalStatus.terminated: return 'terminated';
       case ActiveRentalStatus.endedByTenant: return 'ended_by_tenant';
@@ -451,6 +471,11 @@ enum ActiveRentalStatus {
   active,
   expiringSoon,
   graceLocked,
+  /// The tenant has requested to move out and is awaiting the landlord's
+  /// handover confirmation (or the auto-confirm sweep). The tenant is still
+  /// occupying — kept in the server's OCCUPYING_RENTAL_STATUSES so the unit
+  /// doesn't re-list until the move-out is confirmed.
+  moveoutPending,
   expired,
   terminated,
   endedByTenant,

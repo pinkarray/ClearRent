@@ -57,7 +57,11 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   }
 
   List<ActiveRental> get _activeRentals => _allRentals
-      .where((r) => r.isActive || r.isExpiringSoon || r.isGraceLocked)
+      .where((r) =>
+          r.isActive ||
+          r.isExpiringSoon ||
+          r.isGraceLocked ||
+          r.isMoveoutPending)
       .toList()
     ..sort((a, b) => a.leaseEndDate.compareTo(b.leaseEndDate));
 
@@ -364,6 +368,111 @@ class _RentalCardState extends State<_RentalCard> {
     }
   }
 
+  Widget _buildMoveOutConfirm() {
+    final intended = rental.moveOutIntendedDate;
+    final dateStr = intended == null
+        ? null
+        : '${intended.day} '
+            '${const [
+              'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+            ][intended.month - 1]} '
+            '${intended.year}';
+    final reason = rental.endReason;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withAlpha(77)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.logout, size: 16, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${rental.tenantName} requested to move out'
+              '${dateStr != null ? ' • $dateStr' : ''}',
+              style: AppTextStyles.labelMedium,
+            ),
+          ),
+        ]),
+        if (reason != null && reason.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Reason: $reason',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textSecondary)),
+        ],
+        const SizedBox(height: 4),
+        Text(
+          'Confirm the handover to end the tenancy. If you don\'t, it '
+          'auto-confirms after 7 days.',
+          style:
+              AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _confirmMoveOut,
+            icon: const Icon(Icons.check_circle_outline, size: 18),
+            label: const Text('Confirm Handover'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _confirmMoveOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Confirm Handover'),
+        content: Text(
+          'End ${rental.tenantName}\'s tenancy for ${rental.propertyTitle}? '
+          'This frees the unit and can\'t be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await widget.rentalService.landlordConfirmMoveOut(rental.id);
+    if (!mounted) return;
+    if (ok) {
+      widget.onChanged();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:
+            const Text('Could not confirm the move-out. Please try again.'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final daysLeft = rental.daysUntilLeaseEnd;
@@ -390,6 +499,10 @@ class _RentalCardState extends State<_RentalCard> {
       statusColor = AppColors.textSecondary;
       statusText = 'Ended';
       statusIcon = Icons.cancel_outlined;
+    } else if (rental.isMoveoutPending) {
+      statusColor = AppColors.warning;
+      statusText = 'Move-out Requested';
+      statusIcon = Icons.logout;
     } else if (rental.isGraceLocked) {
       statusColor = AppColors.warning;
       statusText = 'Renewal Due';
@@ -643,6 +756,13 @@ class _RentalCardState extends State<_RentalCard> {
                 if (widget.isActive) ...[
                   const SizedBox(height: 12),
                   _buildPaymentInfo(),
+                ],
+
+                // Move-out request — the tenant asked to move out. Confirm the
+                // handover to end the tenancy (auto-confirms after 7 days).
+                if (rental.isMoveoutPending) ...[
+                  const SizedBox(height: 12),
+                  _buildMoveOutConfirm(),
                 ],
 
                 // End-tenancy — only when the lease has lapsed (grace_locked).

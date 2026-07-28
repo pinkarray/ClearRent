@@ -818,38 +818,82 @@ class ActiveRentalService {
     }
   }
 
-  Future<bool> tenantMoveOut(String rentalId, String reason) async {
+  /// Tenant requests to move out (request + acknowledge flow). Sets the rental
+  /// to `moveout_pending` — the tenant still occupies until the landlord
+  /// confirms handover (or the auto-confirm sweep does after the grace window),
+  /// so the property is NOT freed here. onActiveRentalUpdated notifies the
+  /// landlord of the request.
+  Future<bool> tenantRequestMoveOut(
+    String rentalId,
+    String reason,
+    DateTime intendedDate,
+  ) async {
     try {
       final rental = await getRentalById(rentalId);
       if (rental == null) return false;
 
       await _firestore.collection('active_rentals').doc(rentalId).update({
-        'status': 'ended_by_tenant',
+        'status': 'moveout_pending',
         'endReason': reason,
         'endedBy': 'tenant',
-        'endedAt': FieldValue.serverTimestamp(),
+        'moveOutRequestedAt': FieldValue.serverTimestamp(),
+        'moveOutIntendedDate': Timestamp.fromDate(intendedDate),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      await _updatePropertyStatus(rental.propertyId, rental.tenantId, false);
-      await _updateTenantStatus(
-        rental.tenantId,
-        rental.propertyId,
-        rentalId,
-        false,
-      );
-
-      // Landlord notification handled by the onActiveRentalUpdated Cloud
-      // Function (status → ended_by_tenant).
-
       developer.log(
-        '✅ Tenant moved out: $rentalId',
+        '✅ Move-out requested: $rentalId',
         name: 'ActiveRentalService',
       );
       return true;
     } catch (e) {
       developer.log(
-        '❌ Error in tenant move-out: $e',
+        '❌ Error requesting move-out: $e',
+        name: 'ActiveRentalService',
+      );
+      return false;
+    }
+  }
+
+  /// Landlord confirms handover on a pending move-out → the tenancy ends and
+  /// the unit is freed. Server-truth gate: only valid while `moveout_pending`.
+  /// The auto-confirm sweep performs the same terminal transition server-side
+  /// when the landlord doesn't act within the grace window. onActiveRentalUpdated
+  /// notifies the tenant that it's confirmed.
+  Future<bool> landlordConfirmMoveOut(String rentalId) async {
+    try {
+      final rental = await getRentalById(rentalId);
+      if (rental == null) return false;
+      if (rental.status != ActiveRentalStatus.moveoutPending) {
+        developer.log(
+          '⚠️ confirmMoveOut blocked — status is ${rental.statusDisplay}, '
+          'not moveout_pending: $rentalId',
+          name: 'ActiveRentalService',
+        );
+        return false;
+      }
+
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'status': 'ended_by_tenant',
+        'endedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Free the property (landlord owns it, so this write is allowed). The
+      // tenant's own `hasActiveRental` flag can't be cleared here — Firestore
+      // rules only let a user write their OWN doc — so the server occupancy
+      // trigger (onActiveRentalStatusOccupancy) clears it when the rental
+      // leaves the occupying statuses.
+      await _updatePropertyStatus(rental.propertyId, rental.tenantId, false);
+
+      developer.log(
+        '✅ Move-out confirmed by landlord: $rentalId',
+        name: 'ActiveRentalService',
+      );
+      return true;
+    } catch (e) {
+      developer.log(
+        '❌ Error confirming move-out: $e',
         name: 'ActiveRentalService',
       );
       return false;
