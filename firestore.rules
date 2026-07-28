@@ -1052,6 +1052,7 @@ service cloud.firestore {
               'hasPaymentReminder',
               'status', 'endReason', 'endedBy', 'endedAt',
               'tenantContested', 'tenantContestStatement', 'contestedAt',
+              'moveOutRequestedAt', 'moveOutIntendedDate',
               'updatedAt',
             ]);
 
