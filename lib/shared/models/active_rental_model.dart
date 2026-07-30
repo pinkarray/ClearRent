@@ -70,6 +70,17 @@ class ActiveRental {
   final DateTime? moveOutRequestedAt;
   final DateTime? moveOutIntendedDate;
 
+  // Caution deposit, snapshotted from the property at rental creation so it
+  // reflects what THIS tenant was promised, not the current listing. The
+  // deduction fields are the landlord's declaration at handover: 0 (or
+  // absent) means returned in full. ClearRent never holds this money — these
+  // are a record, not a transfer.
+  final double cautionDeposit;
+  final bool cautionDepositRefundable;
+  final double? cautionDeductionAmount;
+  final String? cautionDeductionReason;
+  final DateTime? cautionDeclaredAt;
+
   // Provenance (set on promoted rentals, null otherwise)
   final String? sourceLinkId;
   
@@ -126,6 +137,11 @@ class ActiveRental {
     this.contestedAt,
     this.moveOutRequestedAt,
     this.moveOutIntendedDate,
+    this.cautionDeposit = 0,
+    this.cautionDepositRefundable = true,
+    this.cautionDeductionAmount,
+    this.cautionDeductionReason,
+    this.cautionDeclaredAt,
     this.sourceLinkId,
     this.status = ActiveRentalStatus.active,
     this.hasPaymentReminder = false,
@@ -284,6 +300,13 @@ class ActiveRental {
           ? (data['moveOutRequestedAt'] as Timestamp).toDate() : null,
       moveOutIntendedDate: data['moveOutIntendedDate'] != null
           ? (data['moveOutIntendedDate'] as Timestamp).toDate() : null,
+      cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
+      cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
+      cautionDeductionAmount:
+          (data['cautionDeductionAmount'] as num?)?.toDouble(),
+      cautionDeductionReason: data['cautionDeductionReason'] as String?,
+      cautionDeclaredAt: data['cautionDeclaredAt'] != null
+          ? (data['cautionDeclaredAt'] as Timestamp).toDate() : null,
       sourceLinkId: data['sourceLinkId'] as String?,
       status: _statusFromString(data['status'] ?? 'active'),
       hasPaymentReminder: data['hasPaymentReminder'] ?? false,
@@ -362,6 +385,9 @@ class ActiveRental {
     String? endReason, String? endedBy, DateTime? endedAt,
     bool? tenantContested, String? tenantContestStatement, DateTime? contestedAt,
     DateTime? moveOutRequestedAt, DateTime? moveOutIntendedDate,
+    double? cautionDeposit, bool? cautionDepositRefundable,
+    double? cautionDeductionAmount, String? cautionDeductionReason,
+    DateTime? cautionDeclaredAt,
     String? sourceLinkId,
     ActiveRentalStatus? status, bool? hasPaymentReminder,
     DateTime? createdAt, DateTime? updatedAt,
@@ -406,6 +432,14 @@ class ActiveRental {
       endedAt: endedAt ?? this.endedAt,
       moveOutRequestedAt: moveOutRequestedAt ?? this.moveOutRequestedAt,
       moveOutIntendedDate: moveOutIntendedDate ?? this.moveOutIntendedDate,
+      cautionDeposit: cautionDeposit ?? this.cautionDeposit,
+      cautionDepositRefundable:
+          cautionDepositRefundable ?? this.cautionDepositRefundable,
+      cautionDeductionAmount:
+          cautionDeductionAmount ?? this.cautionDeductionAmount,
+      cautionDeductionReason:
+          cautionDeductionReason ?? this.cautionDeductionReason,
+      cautionDeclaredAt: cautionDeclaredAt ?? this.cautionDeclaredAt,
       tenantContested: tenantContested ?? this.tenantContested,
       tenantContestStatement: tenantContestStatement ?? this.tenantContestStatement,
       contestedAt: contestedAt ?? this.contestedAt,

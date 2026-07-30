@@ -145,6 +145,28 @@ class ActiveRentalService {
       final leaseEnd = DateTime(now.year + 1, now.month, now.day);
       final nextPayment = leaseEnd;
 
+      // Snapshot the caution deposit onto the rental. The amount lives on the
+      // property, which the landlord can edit once the unit is vacant again, so
+      // reading it at move-out would report whatever the listing says then —
+      // not what this tenant was promised. Captured here it is fixed for the
+      // life of the tenancy.
+      double cautionDeposit = 0;
+      bool cautionRefundable = true;
+      try {
+        final propSnap = await _firestore
+            .collection('properties')
+            .doc(rentalInterest.propertyId)
+            .get();
+        final p = propSnap.data();
+        if (p != null) {
+          cautionDeposit = (p['cautionDeposit'] ?? 0).toDouble();
+          cautionRefundable = p['cautionDepositRefundable'] ?? true;
+        }
+      } catch (e) {
+        developer.log('⚠️ Could not snapshot caution deposit: $e',
+            name: 'ActiveRentalService');
+      }
+
       final rentalData = {
         'propertyId': rentalInterest.propertyId,
         'tenantId': rentalInterest.tenantId,
@@ -175,6 +197,8 @@ class ActiveRentalService {
         'agentPayoutStatus':
             rentalInterest.agentId != null ? 'pending' : 'not_applicable',
         'inspectionFeeCredit': 5000,
+        'cautionDeposit': cautionDeposit,
+        'cautionDepositRefundable': cautionRefundable,
         'rentFrequency': 'yearly',
         'leaseStartDate': Timestamp.fromDate(leaseStart),
         'leaseEndDate': Timestamp.fromDate(leaseEnd),
@@ -242,6 +266,28 @@ class ActiveRentalService {
               : DateTime(now.year, now.month + 1, now.day);
       final nextPayment = leaseEnd;
 
+      // Snapshot the caution deposit onto the rental. The amount lives on the
+      // property, which the landlord can edit once the unit is vacant again, so
+      // reading it at move-out would report whatever the listing says then —
+      // not what this tenant was promised. Captured here it is fixed for the
+      // life of the tenancy.
+      double cautionDeposit = 0;
+      bool cautionRefundable = true;
+      try {
+        final propSnap = await _firestore
+            .collection('properties')
+            .doc(interest.propertyId)
+            .get();
+        final p = propSnap.data();
+        if (p != null) {
+          cautionDeposit = (p['cautionDeposit'] ?? 0).toDouble();
+          cautionRefundable = p['cautionDepositRefundable'] ?? true;
+        }
+      } catch (e) {
+        developer.log('⚠️ Could not snapshot caution deposit: $e',
+            name: 'ActiveRentalService');
+      }
+
       final rentalData = {
         'propertyId': interest.propertyId,
         'tenantId': interest.tenantId,
@@ -258,6 +304,8 @@ class ActiveRentalService {
         'agentFee': agentFee,
         'totalPaid': interest.paymentAmount,
         'inspectionFeeCredit': 5000,
+        'cautionDeposit': cautionDeposit,
+        'cautionDepositRefundable': cautionRefundable,
         'rentFrequency': rentFrequency,
         'leaseStartDate': Timestamp.fromDate(leaseStart),
         'leaseEndDate': Timestamp.fromDate(leaseEnd),
@@ -825,6 +873,41 @@ class ActiveRentalService {
     }
   }
 
+  /// Statuses that mean a maintenance issue is still live. `resolved` is the
+  /// only terminal state.
+  static const openIssueStatuses = [
+    'open',
+    'in_progress',
+    'pending_confirmation',
+  ];
+
+  /// True when this tenant still has an unresolved maintenance issue on this
+  /// property. Blocks move-out: ending the tenancy would leave the fault with
+  /// no owner.
+  ///
+  /// Matched on tenantId + propertyId, NOT rentalId: issue docs carry a
+  /// `rentalId` field but it is written as an empty string, so keying on it
+  /// silently matches nothing.
+  Future<bool> hasOpenIssueForRental(
+      {required String tenantId, required String propertyId}) async {
+    try {
+      final snap = await _firestore
+          .collection('issues')
+          .where('tenantId', isEqualTo: tenantId)
+          .get();
+      return snap.docs.any((d) {
+        final m = d.data();
+        return m['propertyId'] == propertyId &&
+            openIssueStatuses.contains(m['status'] as String?);
+      });
+    } catch (e) {
+      developer.log('❌ Error checking open issues: $e',
+          name: 'ActiveRentalService');
+      // Fail open: a lookup failure shouldn't trap a tenant in a tenancy.
+      return false;
+    }
+  }
+
   /// Tenant requests to move out (request + acknowledge flow). Sets the rental
   /// to `moveout_pending` — the tenant still occupies until the landlord
   /// confirms handover (or the auto-confirm sweep does after the grace window),
@@ -838,6 +921,19 @@ class ActiveRentalService {
     try {
       final rental = await getRentalById(rentalId);
       if (rental == null) return false;
+
+      // An unresolved fault can't be walked away from: once the tenancy ends
+      // the issue has no owner and the landlord loses the counterparty. The UI
+      // checks this first (hasOpenIssueForRental) so it can explain why; this
+      // is the backstop.
+      if (await hasOpenIssueForRental(
+          tenantId: rental.tenantId, propertyId: rental.propertyId)) {
+        developer.log(
+          '⚠️ Move-out blocked — unresolved issue on rental $rentalId',
+          name: 'ActiveRentalService',
+        );
+        return false;
+      }
 
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'status': 'moveout_pending',
@@ -867,7 +963,16 @@ class ActiveRentalService {
   /// The auto-confirm sweep performs the same terminal transition server-side
   /// when the landlord doesn't act within the grace window. onActiveRentalUpdated
   /// notifies the tenant that it's confirmed.
-  Future<bool> landlordConfirmMoveOut(String rentalId) async {
+  /// [cautionDeductionAmount] of 0 means the deposit is returned in full —
+  /// the default. Anything withheld must carry a [cautionDeductionReason]:
+  /// the tenant gets their money back unless the landlord says otherwise, on
+  /// the record. ClearRent never holds this money, so these fields are a
+  /// declaration and an audit trail, not a transfer.
+  Future<bool> landlordConfirmMoveOut(
+    String rentalId, {
+    double cautionDeductionAmount = 0,
+    String? cautionDeductionReason,
+  }) async {
     try {
       final rental = await getRentalById(rentalId);
       if (rental == null) return false;
@@ -880,9 +985,16 @@ class ActiveRentalService {
         return false;
       }
 
+      // Clamp: never let a declared deduction exceed the deposit on record.
+      final deposit = rental.cautionDeposit;
+      final deducted = cautionDeductionAmount.clamp(0, deposit).toDouble();
+
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'status': 'ended_by_tenant',
         'endedAt': FieldValue.serverTimestamp(),
+        'cautionDeductionAmount': deducted,
+        'cautionDeductionReason': deducted > 0 ? cautionDeductionReason : null,
+        'cautionDeclaredAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

@@ -21,7 +21,6 @@ import '../../../../services/active_rental_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/inspection_request_model.dart';
-import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/option_picker_sheet.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/widgets/verification_badge.dart';
@@ -750,27 +749,25 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         final shouldPop = await _onWillPop();
         if (shouldPop && context.mounted) SystemNavigator.pop();
       },
-      child: ConnectivityWrapper(
-        child: StreamBuilder<TenancyLinkModel?>(
-          stream: _activeLinkStream,
-          builder: (context, activeLinkSnap) {
-            final activeLink = activeLinkSnap.data;
-            return StreamBuilder<List<TenancyLinkModel>>(
-              stream: _pendingLinksStream,
-              builder: (context, pendingSnap) {
-                final pendingLinks = pendingSnap.data ?? [];
-                final isVerified = _verificationStatus == VerificationStatus.verified;
-                final isLinkedUnverified = activeLink != null && !isVerified;
-                final isLinkedVerified = activeLink != null && isVerified;
-                return Scaffold(
-                  backgroundColor: AppColors.background,
-                  body: _buildCurrentTab(activeLink, pendingLinks, isLinkedUnverified, isLinkedVerified),
-                  bottomNavigationBar: _buildBottomNav(isLinkedUnverified, isLinkedVerified),
-                );
-              },
-            );
-          },
-        ),
+      child: StreamBuilder<TenancyLinkModel?>(
+        stream: _activeLinkStream,
+        builder: (context, activeLinkSnap) {
+          final activeLink = activeLinkSnap.data;
+          return StreamBuilder<List<TenancyLinkModel>>(
+            stream: _pendingLinksStream,
+            builder: (context, pendingSnap) {
+              final pendingLinks = pendingSnap.data ?? [];
+              final isVerified = _verificationStatus == VerificationStatus.verified;
+              final isLinkedUnverified = activeLink != null && !isVerified;
+              final isLinkedVerified = activeLink != null && isVerified;
+              return Scaffold(
+                backgroundColor: AppColors.background,
+                body: _buildCurrentTab(activeLink, pendingLinks, isLinkedUnverified, isLinkedVerified),
+                bottomNavigationBar: _buildBottomNav(isLinkedUnverified, isLinkedVerified),
+              );
+            },
+          );
+        },
       ),
     );
   }

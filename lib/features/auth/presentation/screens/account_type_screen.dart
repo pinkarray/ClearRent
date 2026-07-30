@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -104,6 +105,31 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
                   AppButton(
                     text: AppStrings.continueText,
                     onPressed: _selectedType != null ? _continue : null,
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Escape hatch. The splash routes here whenever the profile
+                  // read comes back empty — which also happens to a real,
+                  // signed-in user when the network is down. Without this they
+                  // are stuck on a role picker with no way back, and picking a
+                  // role would rewrite the account they already have. Sign out
+                  // first so login starts clean.
+                  Center(
+                    child: TextButton(
+                      onPressed: () async {
+                        final router = GoRouter.of(context);
+                        await FirebaseAuth.instance.signOut();
+                        router.go('/login');
+                      },
+                      child: Text(
+                        'Already have an account? Sign in',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 16),

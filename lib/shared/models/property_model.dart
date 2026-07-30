@@ -22,6 +22,10 @@ class PropertyModel {
   final String rentFrequency;
   final double agentFee; // Now flat Naira amount (e.g. 200000), NOT percentage
   final double cautionDeposit; // Caution / damages deposit in Naira
+  // Whether the deposit is returned at move-out when the tenant leaves the
+  // unit in good condition. Defaults true: every listing before this field
+  // existed was advertised as refundable in the add-property copy.
+  final bool cautionDepositRefundable;
   final bool isAvailable;
   final bool isVerified;
   final List<String> amenities;
@@ -126,6 +130,7 @@ class PropertyModel {
     required this.rentFrequency,
     this.agentFee = 0,
     this.cautionDeposit = 0,
+    this.cautionDepositRefundable = true,
     this.isAvailable = true,
     this.isVerified = false,
     this.amenities = const [],
@@ -326,6 +331,7 @@ class PropertyModel {
     String? rentFrequency,
     double? agentFee,
     double? cautionDeposit,
+    bool? cautionDepositRefundable,
     bool? isAvailable,
     bool? isVerified,
     List<String>? amenities,
@@ -388,6 +394,8 @@ class PropertyModel {
       rentFrequency: rentFrequency ?? this.rentFrequency,
       agentFee: agentFee ?? this.agentFee,
       cautionDeposit: cautionDeposit ?? this.cautionDeposit,
+      cautionDepositRefundable:
+          cautionDepositRefundable ?? this.cautionDepositRefundable,
       isAvailable: isAvailable ?? this.isAvailable,
       isVerified: isVerified ?? this.isVerified,
       amenities: amenities ?? this.amenities,
@@ -465,6 +473,7 @@ class PropertyModel {
       rentFrequency: json['rentFrequency'] ?? 'yearly',
       agentFee: (json['agentFee'] ?? 0).toDouble(),
       cautionDeposit: (json['cautionDeposit'] ?? 0).toDouble(),
+      cautionDepositRefundable: json['cautionDepositRefundable'] ?? true,
       isAvailable: json['isAvailable'] ?? true,
       isVerified: json['isVerified'] ?? false,
       amenities: List<String>.from(json['amenities'] ?? []),
@@ -560,6 +569,7 @@ class PropertyModel {
       rentFrequency: data['rentFrequency'] ?? 'yearly',
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
+      cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
       isAvailable: data['isAvailable'] ?? true,
       isVerified: data['isVerified'] ?? false,
       amenities: List<String>.from(data['amenities'] ?? []),
@@ -643,6 +653,7 @@ class PropertyModel {
       'rentFrequency': rentFrequency,
       'agentFee': agentFee,
       'cautionDeposit': cautionDeposit,
+      'cautionDepositRefundable': cautionDepositRefundable,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,
@@ -707,6 +718,7 @@ class PropertyModel {
       'rentFrequency': rentFrequency,
       'agentFee': agentFee,
       'cautionDeposit': cautionDeposit,
+      'cautionDepositRefundable': cautionDepositRefundable,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,

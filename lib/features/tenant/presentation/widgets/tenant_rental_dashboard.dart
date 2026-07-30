@@ -11,6 +11,10 @@ import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 
+/// Minimum notice, in days, between a move-out request and the intended
+/// move-out date — the window the handover check has to be booked in.
+const int kMoveOutNoticeDays = 3;
+
 
 class TenantRentalDashboard extends StatefulWidget {
   final ActiveRental rental;
@@ -266,6 +270,37 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
   /// and the rental is marked ended_by_tenant server-side; the switcher stream
   /// then drops it from the list so no manual navigation is needed.
   Future<void> _showMoveOutSheet() async {
+    // Check before opening the sheet, not after the tenant has filled it in —
+    // an unresolved fault has to be closed first, and they deserve to know why
+    // up front rather than hitting a generic failure at submit.
+    final blocked = await _activeRentalService.hasOpenIssueForRental(
+      tenantId: rental.tenantId,
+      propertyId: rental.propertyId,
+    );
+    if (!mounted) return;
+    if (blocked) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Unresolved issue'),
+          content: const Text(
+            'You have a maintenance issue on this property that hasn\'t been '
+            'resolved yet. Close it out with your landlord before requesting '
+            'to move out.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     const reasons = [
       'Moving to a new area',
       'Found a better place',
@@ -273,7 +308,11 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
       'Other',
     ];
     String? selectedReason;
-    DateTime selectedDate = DateTime.now();
+    // Minimum notice: the handover has to be schedulable, so the earliest
+    // intended move-out is 3 days out. Must stay in step with the picker's
+    // firstDate below — an initialDate before firstDate asserts.
+    DateTime selectedDate =
+        DateTime.now().add(const Duration(days: kMoveOutNoticeDays));
     final otherController = TextEditingController();
 
     final confirmed = await showModalBottomSheet<bool>(
@@ -379,7 +418,8 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                     final picked = await showDatePicker(
                       context: sheetCtx,
                       initialDate: selectedDate,
-                      firstDate: DateTime(now.year, now.month, now.day),
+                      firstDate: DateTime(now.year, now.month, now.day)
+                          .add(const Duration(days: kMoveOutNoticeDays)),
                       lastDate: now.add(const Duration(days: 90)),
                     );
                     if (picked != null) setSheet(() => selectedDate = picked);
@@ -456,6 +496,35 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
       reason,
       selectedDate,
     );
+
+    // Landlord recent-activity entry (the push itself comes from the
+    // onActiveRentalUpdated Cloud Function). Field must be `landlordId` — the
+    // activity feed only queries that field — matching the issue writes below.
+    if (ok) {
+      try {
+        await FirebaseFirestore.instance.collection('activities').add({
+          'landlordId': rental.landlordId,
+          'type': 'moveout_requested',
+          'title': 'Move-out Requested',
+          'message':
+              '${rental.tenantName} requested to move out of '
+              '${rental.propertyTitle}: "$reason". Confirm handover to end '
+              'the tenancy.',
+          'propertyId': rental.propertyId,
+          'rentalId': rental.id,
+          'actorId': rental.tenantId,
+          'actorName': rental.tenantName,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // Non-fatal: the request itself already succeeded and the landlord is
+        // notified via the bell regardless.
+        developer.log('Move-out activity write failed: $e',
+            name: 'TenantRentalDashboard');
+      }
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(ok
@@ -977,6 +1046,12 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             ...docs.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
               return _PendingConfirmationCard(
+                // Keyed by issue id: these cards hold per-card in-flight state
+                // (_isActing) that is intentionally left set on success. Without
+                // a key, removing a confirmed issue shifts the next one into
+                // that slot, where it inherits the finished card's State and
+                // renders a stuck spinner with no confirm button.
+                key: ValueKey(doc.id),
                 issueId: doc.id,
                 data: data,
               );
@@ -1289,6 +1364,7 @@ class _PendingConfirmationCard extends StatefulWidget {
   final Map<String, dynamic> data;
 
   const _PendingConfirmationCard({
+    super.key,
     required this.issueId,
     required this.data,
   });

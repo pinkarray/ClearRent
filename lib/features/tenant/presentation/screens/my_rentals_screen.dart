@@ -459,6 +459,61 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                               .copyWith(color: AppColors.textSecondary),
                         ),
                       ],
+                      // Caution-deposit outcome, once the landlord has declared
+                      // it at handover. ClearRent doesn't move this money — this
+                      // is the record of what was agreed.
+                      if (rental.cautionDeclaredAt != null &&
+                          rental.cautionDeposit > 0) ...[
+                        const SizedBox(height: 8),
+                        Builder(builder: (_) {
+                          final withheld = rental.cautionDeductionAmount ?? 0;
+                          final returned = rental.cautionDeposit - withheld;
+                          final clean = withheld <= 0;
+                          return Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: (clean
+                                      ? AppColors.success
+                                      : AppColors.warning)
+                                  .withAlpha(20),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: (clean
+                                          ? AppColors.success
+                                          : AppColors.warning)
+                                      .withAlpha(77)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  clean
+                                      ? 'Caution deposit returned in full: '
+                                          '₦${returned.toStringAsFixed(0)}'
+                                      : '₦${withheld.toStringAsFixed(0)} '
+                                          'withheld · ₦'
+                                          '${returned.toStringAsFixed(0)} '
+                                          'returned',
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                      color: clean
+                                          ? AppColors.success
+                                          : AppColors.warning),
+                                ),
+                                if (!clean &&
+                                    (rental.cautionDeductionReason ?? '')
+                                        .isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    rental.cautionDeductionReason!,
+                                    style: AppTextStyles.caption.copyWith(
+                                        color: AppColors.textSecondary),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
                       const SizedBox(height: 12),
                       if (rental.tenantContested) ...[
                         Text('Your account',
@@ -734,7 +789,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(Icons.home_outlined, size: 40, color: AppColors.textHint),
         const SizedBox(height: 12),
         Text('No active rental',
@@ -743,14 +798,16 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
         const SizedBox(height: 4),
         Text('Browse properties and find your next home!',
             style: AppTextStyles.caption
-                .copyWith(color: AppColors.textHint),
-            textAlign: TextAlign.center),
+                .copyWith(color: AppColors.textHint)),
         const SizedBox(height: 16),
         TextButton.icon(
           onPressed: () => context.go('/tenant/home'),
           icon: const Icon(Icons.search, size: 16),
           label: const Text('Find Properties'),
-          style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            padding: EdgeInsets.zero,
+          ),
         ),
       ]),
     );

@@ -207,6 +207,9 @@ class PropertyService {
     required String rentFrequency,
     double agentFee = 0, // Flat Naira amount (e.g. 200000)
     double cautionDeposit = 0, // Caution / damages deposit in Naira
+    // Stated up front so the tenant knows before paying whether this
+    // money comes back; the move-out handover is measured against it.
+    bool cautionDepositRefundable = true,
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
@@ -315,6 +318,7 @@ class PropertyService {
         'rentFrequency': rentFrequency,
         'agentFee': agentFee,
         'cautionDeposit': cautionDeposit,
+        'cautionDepositRefundable': cautionDepositRefundable,
         'isAvailable': true,
         // A listing is born unreviewed. This is the ADMIN's badge for THIS
         // listing's ownership document (adminReviewPropertyDoc writes it) — not

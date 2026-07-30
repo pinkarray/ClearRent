@@ -2767,6 +2767,34 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           if (cautionDeposit > 0) ...[
             const SizedBox(height: 8),
             _FeeRow(label: 'Caution Deposit', amount: cautionDeposit),
+            // State refundability before the tenant pays, not at move-out.
+            const SizedBox(height: 4),
+            Row(children: [
+              Icon(
+                property.cautionDepositRefundable
+                    ? Icons.assignment_return_outlined
+                    : Icons.do_not_disturb_on_outlined,
+                size: 13,
+                color: property.cautionDepositRefundable
+                    ? AppColors.success
+                    : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  property.cautionDepositRefundable
+                      ? 'Refunded when you move out, if the property is left '
+                          'in good condition.'
+                      : 'Non-refundable — this deposit is not returned when '
+                          'you move out.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: property.cautionDepositRefundable
+                        ? AppColors.success
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ]),
           ],
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),

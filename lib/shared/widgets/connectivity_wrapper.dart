@@ -4,10 +4,12 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/connectivity_service.dart';
 
-/// Wraps any screen and shows a floating banner when offline.
+/// Wraps the app (installed once in `MaterialApp.builder`) and shows a
+/// floating banner when offline, on top of whatever route is showing.
 ///
-/// Uses a Stack overlay so the banner slides in OVER the content —
-/// it never pushes or displaces anything below it.
+/// The banner insets the page rather than covering it: it sits above the
+/// router, so covering would hide app bars and back buttons on pushed routes
+/// for as long as the connection is down.
 ///
 /// Retry actually works: it re-checks the connection and updates
 /// the UI directly regardless of whether the status changed.
@@ -25,7 +27,8 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
   final ConnectivityService _connectivity = ConnectivityService();
   late StreamSubscription<bool> _subscription;
   late AnimationController _animController;
-  late Animation<Offset> _slideAnimation;
+  late Animation<double> _sizeAnimation;
+  late AppLifecycleListener _lifecycleListener;
 
   bool _isOnline = true;
   bool _showBanner = false;
@@ -42,14 +45,11 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
       duration: const Duration(milliseconds: 320),
     );
 
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
+    _sizeAnimation = CurvedAnimation(
       parent: _animController,
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
-    ));
+    );
 
     _isOnline = _connectivity.isOnline;
     if (!_isOnline) {
@@ -59,6 +59,13 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
     }
 
     _subscription = _connectivity.onConnectivityChanged.listen(_onStatusChanged);
+
+    // connectivity_plus only fires when an interface changes. If the Wi-Fi
+    // stays associated but the internet dies (data cap, captive portal), no
+    // event arrives — so re-check whenever the user comes back to the app.
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () => unawaited(_connectivity.checkConnection()),
+    );
   }
 
   void _onStatusChanged(bool online) {
@@ -117,25 +124,26 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
   void dispose() {
     _subscription.cancel();
     _hideBannerTimer?.cancel();
+    _lifecycleListener.dispose();
     _animController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // ── Main content — never moves ──
-        widget.child,
+    final media = MediaQuery.of(context);
 
-        // ── Overlay banner — slides over content from top ──
+    return Column(
+      children: [
+        // ── Banner — grows from the top edge, pushing the page down ──
         if (_showBanner)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SlideTransition(
-              position: _slideAnimation,
+          SizeTransition(
+            sizeFactor: _sizeAnimation,
+            axisAlignment: -1,
+            // Sitting above the Navigator there is no Material ancestor, so
+            // Text would fall back to MaterialApp's debug error style.
+            child: Material(
+              type: MaterialType.transparency,
               child: _NetworkBanner(
                 isOnline: _isOnline,
                 isRetrying: _isRetrying,
@@ -143,6 +151,19 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
               ),
             ),
           ),
+
+        // ── Main content — Expanded gives the navigator a tight height ──
+        Expanded(
+          child: MediaQuery(
+            // The banner has already absorbed the status-bar inset in its own
+            // padding. Leaving it here too would make every SafeArea below
+            // reserve a second status bar's worth of empty space.
+            data: _showBanner
+                ? media.copyWith(padding: media.padding.copyWith(top: 0))
+                : media,
+            child: widget.child,
+          ),
+        ),
       ],
     );
   }
@@ -225,60 +246,6 @@ class _NetworkBanner extends StatelessWidget {
                       ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// OfflineBanner — simpler standalone widget for use inside a Column or Stack
-// ─────────────────────────────────────────────────────────────────────────────
-
-class OfflineBanner extends StatefulWidget {
-  const OfflineBanner({super.key});
-
-  @override
-  State<OfflineBanner> createState() => _OfflineBannerState();
-}
-
-class _OfflineBannerState extends State<OfflineBanner> {
-  final ConnectivityService _connectivity = ConnectivityService();
-  late StreamSubscription<bool> _subscription;
-  bool _isOnline = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _isOnline = _connectivity.isOnline;
-    _subscription = _connectivity.onConnectivityChanged.listen((online) {
-      if (mounted) setState(() => _isOnline = online);
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isOnline) return const SizedBox.shrink();
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: const Color(0xFF323232),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            'No internet connection',
-            style: AppTextStyles.labelSmall.copyWith(color: Colors.white),
-          ),
         ],
       ),
     );

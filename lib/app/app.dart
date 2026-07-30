@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/theme_provider.dart';
+import '../shared/widgets/connectivity_wrapper.dart';
 import 'routes.dart';
 
 class ClearRentApp extends ConsumerWidget {
@@ -38,9 +39,14 @@ class ClearRentApp extends ConsumerWidget {
               isDark ? Brightness.light : Brightness.dark,
         ));
 
-        return KeyedSubtree(
-          key: ValueKey(isDark),
-          child: child!,
+        // The offline banner lives here — above the router, so it covers every
+        // route with a single subscription. It sits OUTSIDE the KeyedSubtree so
+        // a theme switch doesn't rebuild it and lose its state mid-animation.
+        return ConnectivityWrapper(
+          child: KeyedSubtree(
+            key: ValueKey(isDark),
+            child: child!,
+          ),
         );
       },
     );

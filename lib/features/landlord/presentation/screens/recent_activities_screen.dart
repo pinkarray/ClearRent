@@ -104,6 +104,13 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
+    // Move-out — the Confirm Handover action lives on the rental card.
+    if (activity.type == ActivityType.moveoutRequested ||
+        activity.type == ActivityType.moveoutCompleted) {
+      context.push('/landlord/rentals');
+      return;
+    }
+
     // Inspection activities — go to inspections screen
     if (activity.type == ActivityType.inspectionRequest ||
         activity.type == ActivityType.inspectionApproved ||
@@ -623,6 +630,8 @@ class _ActivityCard extends StatelessWidget {
       case ActivityType.inspectionCompleted: return Icons.done_all_outlined;
       case ActivityType.inspectionRated:     return Icons.star_outline;
       case ActivityType.payoutReceived:      return Icons.account_balance_wallet_outlined;
+      case ActivityType.moveoutRequested:    return Icons.logout;
+      case ActivityType.moveoutCompleted:    return Icons.logout;
     }
   }
 
@@ -641,6 +650,8 @@ class _ActivityCard extends StatelessWidget {
       case ActivityType.inspectionCompleted: return AppColors.success;
       case ActivityType.inspectionRated:     return AppColors.primary;
       case ActivityType.payoutReceived:      return AppColors.success;
+      case ActivityType.moveoutRequested:    return AppColors.warning;
+      case ActivityType.moveoutCompleted:    return AppColors.info;
     }
   }
 }

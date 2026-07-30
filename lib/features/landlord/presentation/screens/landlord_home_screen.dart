@@ -20,7 +20,6 @@ import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
-import '../../../../shared/widgets/connectivity_wrapper.dart';
 import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -461,26 +460,24 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         final shouldPop = await _onWillPop();
         if (shouldPop && context.mounted) SystemNavigator.pop();
       },
-      child: ConnectivityWrapper(
-        child: Scaffold(
-          backgroundColor: AppColors.background,
-          body: _currentNavIndex == 0
-              ? SafeArea(child: _buildHomeTab())
-              : _currentNavIndex == 1
-                  ? SafeArea(child: _buildPropertiesTab())
-                  : _currentNavIndex == 2
-                      ? SafeArea(child: _buildMessagesTab())
-                      : _buildProfileTab(),
-          floatingActionButton: _currentNavIndex <= 1
-              ? FloatingActionButton.extended(
-                  onPressed: () => context.push('/landlord/add-property').then((_) => _refreshData()),
-                  backgroundColor: AppColors.primary,
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: Text('Add Property', style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
-                )
-              : null,
-          bottomNavigationBar: _buildBottomNav(),
-        ),
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: _currentNavIndex == 0
+            ? SafeArea(child: _buildHomeTab())
+            : _currentNavIndex == 1
+                ? SafeArea(child: _buildPropertiesTab())
+                : _currentNavIndex == 2
+                    ? SafeArea(child: _buildMessagesTab())
+                    : _buildProfileTab(),
+        floatingActionButton: _currentNavIndex <= 1
+            ? FloatingActionButton.extended(
+                onPressed: () => context.push('/landlord/add-property').then((_) => _refreshData()),
+                backgroundColor: AppColors.primary,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text('Add Property', style: AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+              )
+            : null,
+        bottomNavigationBar: _buildBottomNav(),
       ),
     );
   }
@@ -727,31 +724,31 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       );
     }
 
-    // Show activities in a scrollable container on dashboard
-    final displayActivities = _recentActivities.take(10).toList();
+    // Laid out inline, not in its own scroll box: a nested scrollable doesn't
+    // hand the drag back to the page when it hits its end, so the dashboard
+    // froze under the user's finger. "See all" covers the rest.
+    final displayActivities = _recentActivities.take(4).toList();
 
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 280),
-      child: ListView.separated(
-        shrinkWrap: true,
-        padding: EdgeInsets.zero,
-        itemCount: displayActivities.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          final activity = displayActivities[index];
-          return GestureDetector(
-            onTap: () => _onActivityTap(activity),
-            child: _ActivityItem(
-              icon: _getActivityIcon(activity.type),
-              title: activity.title,
-              subtitle: activity.subtitle,
-              time: activity.timeAgo,
-              color: _getActivityColor(activity.type),
-              isUnread: !activity.isRead,
-            ),
-          );
-        },
-      ),
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: displayActivities.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final activity = displayActivities[index];
+        return GestureDetector(
+          onTap: () => _onActivityTap(activity),
+          child: _ActivityItem(
+            icon: _getActivityIcon(activity.type),
+            title: activity.title,
+            subtitle: activity.subtitle,
+            time: activity.timeAgo,
+            color: _getActivityColor(activity.type),
+            isUnread: !activity.isRead,
+          ),
+        );
+      },
     );
   }
 
@@ -854,6 +851,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       case ActivityType.inspectionCompleted: return Icons.done_all_outlined;
       case ActivityType.inspectionRated:     return Icons.star_outline;
       case ActivityType.payoutReceived:      return Icons.account_balance_wallet_outlined;
+      case ActivityType.moveoutRequested:    return Icons.logout;
+      case ActivityType.moveoutCompleted:    return Icons.logout;
     }
   }
 
@@ -872,6 +871,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       case ActivityType.inspectionCompleted: return AppColors.success;
       case ActivityType.inspectionRated:     return AppColors.primary;
       case ActivityType.payoutReceived:      return AppColors.success;
+      case ActivityType.moveoutRequested:    return AppColors.warning;
+      case ActivityType.moveoutCompleted:    return AppColors.info;
     }
   }
 

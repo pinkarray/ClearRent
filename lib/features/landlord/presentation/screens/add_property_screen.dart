@@ -161,6 +161,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   String _inspectionHandler = 'self'; // 'self' or 'agent'
   bool _landlordLivesInProperty = false;
   bool _includeAgentFee = false; // Agent fee is optional
+  // Whether the caution deposit comes back to the tenant at move-out. Defaults
+  // true because that is what the listing copy has always promised.
+  bool _cautionDepositRefundable = true;
 
   // Selected agent (required when _inspectionHandler == 'agent')
   String? _selectedAgentId;
@@ -382,6 +385,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'rent': _rentController.text,
       'agentFee': _agentFeeController.text,
       'cautionDeposit': _cautionDepositController.text,
+      'cautionDepositRefundable': _cautionDepositRefundable,
       'includeAgentFee': _includeAgentFee,
       'address': _addressController.text,
       'city': _cityController.text,
@@ -426,6 +430,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _rentController.text = draft['rent'] ?? '';
       _agentFeeController.text = draft['agentFee'] ?? '';
       _cautionDepositController.text = draft['cautionDeposit'] ?? '';
+      _cautionDepositRefundable = draft['cautionDepositRefundable'] ?? true;
       _addressController.text = draft['address'] ?? '';
       _cityController.text = draft['city'] ?? '';
       _stateController.text = draft['state'] ?? '';
@@ -1317,6 +1322,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 ? _parseAmountFromController(_agentFeeController)
                 : 0,
         cautionDeposit: _parseAmountFromController(_cautionDepositController),
+        cautionDepositRefundable: _cautionDepositRefundable,
         amenities: _selectedAmenities,
         rules: _selectedRules,
         inspectionHandler: _inspectionHandler,
@@ -3016,7 +3022,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             Text('Caution Deposit (₦)', style: AppTextStyles.labelMedium),
             const SizedBox(height: 4),
             Text(
-              'Refundable deposit for damages. Returned when the tenant moves out (If without damages). )',
+              'Deposit held against damage to the property.',
               style: AppTextStyles.caption.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -3025,6 +3031,40 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             _buildNairaInput(
               controller: _cautionDepositController,
               hintText: 'e.g. 150,000',
+            ),
+            const SizedBox(height: 12),
+            // Refundability is stated up front so the tenant knows before they
+            // pay whether this money comes back, and the move-out handover is
+            // measured against this promise.
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Refundable at move-out',
+                          style: AppTextStyles.labelMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        _cautionDepositRefundable
+                            ? 'Returned in full if the tenant leaves the '
+                                'property in good condition.'
+                            : 'Tenants will be told this deposit is NOT '
+                                'refundable.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _cautionDepositRefundable,
+                  onChanged: (v) =>
+                      setState(() => _cautionDepositRefundable = v),
+                  activeColor: AppColors.primary,
+                ),
+              ],
             ),
             const SizedBox(height: 32),
 

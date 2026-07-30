@@ -14,6 +14,8 @@ enum ActivityType {
   inspectionCompleted,
   inspectionRated,
   payoutReceived,
+  moveoutRequested,
+  moveoutCompleted,
 }
 
 class ActivityModel {
@@ -61,6 +63,8 @@ class ActivityModel {
       case ActivityType.inspectionCompleted: return 'done_all';
       case ActivityType.inspectionRated:     return 'star';
       case ActivityType.payoutReceived:      return 'account_balance_wallet';
+      case ActivityType.moveoutRequested:    return 'logout';
+      case ActivityType.moveoutCompleted:    return 'logout';
     }
   }
 
@@ -79,6 +83,8 @@ class ActivityModel {
       case ActivityType.inspectionCompleted: return 'success';
       case ActivityType.inspectionRated:     return 'primary';
       case ActivityType.payoutReceived:      return 'success';
+      case ActivityType.moveoutRequested:    return 'warning';
+      case ActivityType.moveoutCompleted:    return 'info';
     }
   }
 
@@ -162,6 +168,8 @@ class ActivityModel {
       case 'inspection_completed':   return ActivityType.inspectionCompleted;
       case 'inspection_rated':       return ActivityType.inspectionRated;
       case 'payout_received':        return ActivityType.payoutReceived;
+      case 'moveout_requested':      return ActivityType.moveoutRequested;
+      case 'moveout_completed':      return ActivityType.moveoutCompleted;
       default:                       return ActivityType.propertyViewed;
     }
   }

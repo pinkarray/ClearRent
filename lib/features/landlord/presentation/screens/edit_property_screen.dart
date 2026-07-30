@@ -106,6 +106,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late bool _isAvailable;
   late String _inspectionHandler;
   late bool _includeAgentFee; // Agent fee is optional
+  // Whether the deposit comes back at move-out. Locked while a tenant is
+  // sitting, same as the amount — the promise can't change mid-tenancy.
+  late bool _cautionDepositRefundable;
   String? _ceilingType;
 
   // Agent assignment
@@ -195,6 +198,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _isAvailable = p.isAvailable;
     _inspectionHandler = p.inspectionHandler;
     _includeAgentFee = p.agentFee > 0; // Derive from existing data
+    _cautionDepositRefundable = p.cautionDepositRefundable;
     
     // Initialize inspection availability
     _availableDays = List.from(p.inspectionDays);
@@ -620,6 +624,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'rentFrequency': _rentPeriod,
           'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
           'cautionDeposit': _parseAmountFromController(_cautionDepositController),
+          'cautionDepositRefundable': _cautionDepositRefundable,
         },
         'amenities': _selectedAmenities,
         if (_ceilingType != null) 'ceilingType': _ceilingType,
@@ -1472,7 +1477,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         Text('Caution Deposit (₦)', style: AppTextStyles.labelMedium),
         const SizedBox(height: 4),
         Text(
-          'Refundable deposit for damages.',
+          'Deposit held against damage to the property.',
           style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 8),
@@ -1480,6 +1485,36 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           _buildLockedAmountDisplay('₦${_cautionDepositController.text}', 'Caution Deposit')
         else
           _buildNairaInput(controller: _cautionDepositController),
+        const SizedBox(height: 12),
+        // Refundability is part of the deal the tenant accepted, so it is
+        // frozen while the unit is occupied, exactly like the amount.
+        Row(children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Refundable at move-out',
+                    style: AppTextStyles.labelMedium),
+                const SizedBox(height: 2),
+                Text(
+                  _cautionDepositRefundable
+                      ? 'Returned in full if the tenant leaves the property '
+                          'in good condition.'
+                      : 'Tenants are told this deposit is NOT refundable.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _cautionDepositRefundable,
+            onChanged: hasActiveTenants
+                ? null
+                : (v) => setState(() => _cautionDepositRefundable = v),
+            activeColor: AppColors.primary,
+          ),
+        ]),
 
         // Total Package preview
         if (!hasActiveTenants) ...[

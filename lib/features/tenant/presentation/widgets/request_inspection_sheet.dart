@@ -148,6 +148,11 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
   Future<void> _submitRequest() async {
     if (!_canSubmit) return;
+    // Latch before the first await below. Setting this only at the write call
+    // left a round-trip-wide window in which a second tap still passed
+    // _canSubmit, so both taps reached createInspectionRequest and both read
+    // the already_pending check before either had written.
+    setState(() => _isSubmitting = true);
 
     // Gate: the tenant must have a payout account on file before requesting.
     // If an inspection falls through in dispute (e.g. handler no-show), the
@@ -157,6 +162,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
     final hasBank = await _authService.hasBankDetails();
     if (!mounted) return;
     if (!hasBank) {
+      setState(() => _isSubmitting = false);
       final router = GoRouter.of(context);
       final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context); // close the sheet
@@ -191,7 +197,6 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
     // Pay-after-approve: create the request UNPAID now. The tenant pays only
     // after the handler approves (no navigation to a payment screen here).
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _isSubmitting = true);
 
     final result = await _inspectionService.createInspectionRequest(
       property: widget.property,
@@ -430,9 +435,10 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
                   // Submit button
                   AppButton(
-                    text: _feeBreakdown != null
-                        ? 'Pay ₦${NumberFormat('#,###').format(_feeBreakdown!.totalFee)} & Request'
-                        : 'Continue to Payment',
+                    // Pay-after-approve: no charge happens at this tap, so the
+                    // label must not promise one. The fee is shown in the
+                    // breakdown above.
+                    text: 'Request Inspection',
                     onPressed: _canSubmit ? _submitRequest : null,
                     isLoading: _isSubmitting,
                   ),
