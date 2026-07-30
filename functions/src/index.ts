@@ -854,6 +854,30 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             payload: tenantRentalsRoute,
           },
         );
+        // Landlord recent-activity entry closing the loop: the tenant is out
+        // and the unit is back on the market. Written here rather than client
+        // side so the auto-confirm sweep produces it too. Deterministic id +
+        // set() keeps a trigger re-fire idempotent. `landlordId` is the only
+        // field the feed queries.
+        if (landlordId) {
+          await getFirestore()
+            .collection("activities")
+            .doc(`rental_${rentalId}_moveout_done_${rev}`)
+            .set({
+              landlordId,
+              type: "moveout_completed",
+              title: "Tenant Moved Out",
+              message:
+                `${tenantName} has moved out of ${propertyTitle}. ` +
+                "The unit is freed up and back on the market.",
+              propertyId,
+              rentalId,
+              actorId: tenantId,
+              actorName: tenantName,
+              isRead: false,
+              createdAt: FieldValue.serverTimestamp(),
+            });
+        }
       } else if (stAfter === "ended_by_landlord" && tenantId) {
         await writeNotificationOnce(
           `rental_${rentalId}_ended_landlord_${rev}`,

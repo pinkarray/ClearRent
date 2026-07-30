@@ -307,6 +307,11 @@ service cloud.firestore {
             request.resource.data.rent == resource.data.rent
             && request.resource.data.agentFee == resource.data.agentFee
             && request.resource.data.cautionDeposit == resource.data.cautionDeposit
+            // Refundability is part of the deal the sitting tenant accepted, so
+            // it is frozen alongside the amount. get() with a default because
+            // listings created before this field exists don't carry it.
+            && request.resource.data.get('cautionDepositRefundable', true)
+               == resource.data.get('cautionDepositRefundable', true)
           )
         );
 
@@ -1053,6 +1058,12 @@ service cloud.firestore {
               'status', 'endReason', 'endedBy', 'endedAt',
               'tenantContested', 'tenantContestStatement', 'contestedAt',
               'moveOutRequestedAt', 'moveOutIntendedDate',
+              // Caution-deposit declaration made by the landlord at handover.
+              // A record only — ClearRent never custodies this money — but it
+              // is what a dispute is judged on, so it is client-writable here
+              // and read by the tenant.
+              'cautionDeductionAmount', 'cautionDeductionReason',
+              'cautionDeclaredAt',
               'updatedAt',
             ]);
 

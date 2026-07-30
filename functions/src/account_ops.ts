@@ -79,7 +79,18 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   // in-flight inspection, must resolve it first (otherwise the counterparty is
   // stranded). All guards fetch by a single equality field (auto-indexed) and
   // filter status in code, so no composite index is required. ──
-  const OCCUPYING = ["active", "expiring_soon", "grace_locked"];
+  // `pending_payment` counts: the rent transaction is still in flight, so
+  // deleting now would strand the counterparty and the payment reconciliation.
+  // `moveout_pending` counts too: the tenant still occupies until the landlord
+  // confirms handover, and deleting would leave that confirmation pointing at a
+  // removed user. Keep in sync with OCCUPYING_RENTAL_STATUSES in index.ts.
+  const OCCUPYING = [
+    "active",
+    "expiring_soon",
+    "grace_locked",
+    "pending_payment",
+    "moveout_pending",
+  ];
   const occupies = (s: FirebaseFirestore.QuerySnapshot) =>
     s.docs.some((d) => OCCUPYING.includes(d.get("status")));
   // A confirmed tenancy OR a still-open invitation (pending) both count — the
@@ -124,6 +135,24 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
       "failed-precondition",
       "You have a pending or scheduled inspection. Resolve it before " +
         "deleting your account.",
+    );
+  }
+
+  // Unresolved-issue guard. An open maintenance issue is an obligation between
+  // the two parties: deleting either account strands the other with a fault
+  // nobody can now act on. `resolved` is the only terminal state.
+  const OPEN_ISSUE_STATUSES = ["open", "in_progress", "pending_confirmation"];
+  const hasOpenIssue = (s: FirebaseFirestore.QuerySnapshot) =>
+    s.docs.some((d) => OPEN_ISSUE_STATUSES.includes(d.get("status")));
+  const [issuesTenant, issuesLandlord] = await Promise.all([
+    db.collection("issues").where("tenantId", "==", uid).get(),
+    db.collection("issues").where("landlordId", "==", uid).get(),
+  ]);
+  if (hasOpenIssue(issuesTenant) || hasOpenIssue(issuesLandlord)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "You have an unresolved maintenance issue. Close it before deleting " +
+        "your account.",
     );
   }
 
