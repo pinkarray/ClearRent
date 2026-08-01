@@ -9,6 +9,7 @@ import '../../../../core/utils/app_logger.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/property_location_map.dart';
 import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
@@ -89,6 +90,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   // subdoc only when the viewer is entitled (owner, or a tenant whose
   // inspection was approved). Null until loaded / when not entitled.
   String? _exactAddress;
+  // Exact pin from the same gated subdoc, shown as a map to entitled viewers.
+  double? _exactLatitude;
+  double? _exactLongitude;
 
   // Verification status
   bool _isCurrentUserVerified = false;
@@ -348,8 +352,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Future<void> _loadExactAddressIfEntitled() async {
     if (!_isOwner && !_addressUnlocked) return;
     final loc = await _propertyService.getExactLocation(widget.property.id);
-    if (mounted && loc != null && loc.address.isNotEmpty) {
-      setState(() => _exactAddress = loc.address);
+    if (mounted && loc != null) {
+      setState(() {
+        if (loc.address.isNotEmpty) _exactAddress = loc.address;
+        _exactLatitude = loc.latitude;
+        _exactLongitude = loc.longitude;
+      });
     }
   }
 
@@ -941,6 +949,25 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                             ],
                           ),
 
+                          // Exact pin. The real gate is server-side: the
+                          // coordinates live in a subdoc only the owner, the
+                          // assigned agent, an admin, or a tenant with a reveal
+                          // grant can read — and that grant is written when the
+                          // inspection is PAID, not when it is approved. So an
+                          // approved-but-unpaid tenant gets null coordinates
+                          // here and must be told why, rather than being told
+                          // the landlord never dropped a pin.
+                          if (_isOwner || _addressUnlocked) ...[
+                            const SizedBox(height: 12),
+                            PropertyLocationMap(
+                              latitude: _exactLatitude,
+                              longitude: _exactLongitude,
+                              emptyMessage: _isOwner
+                                  ? 'You have not dropped a map pin for this property. Tenants and agents will have to find it from the address alone.'
+                                  : 'The exact pin unlocks once your inspection payment is confirmed.',
+                            ),
+                          ],
+
                           const SizedBox(height: 20),
 
                           _buildFeaturesRow(property),
@@ -1404,7 +1431,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      property.isAvailable ? 'Available' : 'Occupied',
+                      property.statusLabel,
                       style: AppTextStyles.labelMedium.copyWith(
                         color: Colors.white,
                       ),
@@ -3192,17 +3219,20 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ],
             ),
           ],
-          // Ceiling type row
-          if (property.ceilingType != null && property.ceilingType!.isNotEmpty && property.ceilingType != 'none') ...[
+          // Ceiling row — a property can mix ceiling types, so list them all.
+          if (_visibleCeilingTypes(property).isNotEmpty) ...[
             const SizedBox(height: 16),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(Icons.roofing_outlined, size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
-                Text(
-                  'Ceiling: ${_ceilingTypeLabel(property.ceilingType!)}',
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.textSecondary,
+                Expanded(
+                  child: Text(
+                    'Ceiling: ${_visibleCeilingTypes(property).map(_ceilingTypeLabel).join(', ')}',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -3213,16 +3243,24 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
+  /// Ceiling types worth showing a tenant — "none" is the absence of a ceiling,
+  /// so it isn't a feature to advertise.
+  List<String> _visibleCeilingTypes(PropertyModel property) =>
+      property.ceilingTypes.where((t) => t.isNotEmpty && t != 'none').toList();
+
   String _ceilingTypeLabel(String type) {
     switch (type) {
-      case 'false_ceiling':
-        return 'False Ceiling (POP)';
+      case 'pop':
+      case 'false_ceiling': // pre-rename value
+        return 'POP';
       case 'pvc':
         return 'PVC';
       case 'concrete':
         return 'Concrete';
       case 'asbestos':
         return 'Asbestos';
+      case 'slate':
+        return 'Slate';
       case 'none':
         return 'None';
       default:

@@ -40,10 +40,14 @@ dependencies:
   cloudinary_public: ^0.23.1
   firebase_storage: ^12.3.0
   image_picker: ^1.1.2
+  # Phones record property tours at ~9 Mbps, so a 90s clip lands near 100MB —
+  # over Cloudinary's cap and painful on Nigerian mobile data. Transcode first.
+  video_compress: ^3.1.2
 
   # Local Storage
   local_auth: ^2.1.8
   shared_preferences: ^2.3.5
+  path_provider: ^2.1.4
   share_plus: ^7.2.1
   flutter_secure_storage: ^9.0.0
   

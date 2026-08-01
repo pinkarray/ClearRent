@@ -14,13 +14,21 @@ import '../../../../shared/widgets/area_dropdown.dart';
 // ============================================================
 // Field order: Street Address → Area/City → State → Pin Location
 //
-// Smart area matching:
-// - When a pin is placed or address autocompleted, the geocoded
-//   city is fuzzy-matched against the known area dropdown list,
-//   handling diacritics (Ìkòròdú → Ikorodu) and LGA suffixes.
-// - If matched: dropdown auto-updates, "Matched from pin" badge shown.
-// - If unrecognised: orange hint shown, onUnknownAreaDetected fires
-//   so the parent can log it to admin for future inclusion.
+// Three separate concerns — they never overwrite each other:
+// - Area (city/state): authoritative once picked from the dropdown.
+//   Drives the inspection fee cluster, so a map tap must never
+//   change it. Selecting an area recenters the map on that area,
+//   which is the only anchor available when OSM doesn't know the
+//   street (the normal case in Nigeria).
+// - Street address: free text the landlord owns. OSM may suggest,
+//   never assign over text that is already there.
+// - Pin: coordinates only.
+//
+// Smart area matching still applies *until* an area is picked
+// explicitly: the geocoded city is fuzzy-matched against the known
+// area list (diacritics Ìkòròdú → Ikorodu, LGA suffixes). Matched →
+// dropdown auto-fills with a "matched from pin" badge. Unmatched →
+// orange hint plus onUnknownAreaDetected so admin can add the area.
 // ============================================================
 
 class LocationPickerWidget extends StatefulWidget {
@@ -32,7 +40,8 @@ class LocationPickerWidget extends StatefulWidget {
   /// Fired when the pin/autocomplete returns a city not in the known areas list.
   /// Use this to log to Firestore (e.g. 'admin_requests' collection) so the
   /// admin can review and add the area to the dropdown.
-  final Function(String rawAreaName, double lat, double lng)? onUnknownAreaDetected;
+  final Function(String rawAreaName, double lat, double lng)?
+  onUnknownAreaDetected;
 
   const LocationPickerWidget({
     super.key,
@@ -64,13 +73,39 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// True when the area dropdown was auto-filled from pin/autocomplete.
   bool _areaMatchedFromPin = false;
 
+  /// True once the landlord picks an area from the dropdown. From then on the
+  /// area is authoritative: no geocode result may rewrite city or state.
+  bool _areaExplicitlySet = false;
+
+  /// Centre of the selected area — the map anchor, and what the pin distance
+  /// is measured against. Null when the area geocode found nothing.
+  LatLng? _areaAnchor;
+  bool _isLocatingArea = false;
+
+  /// Street address the last reverse-geocode proposed, awaiting accept/dismiss.
+  /// Only set when the address field already has text.
+  String? _addressSuggestion;
+
   static const LatLng _defaultLocation = LatLng(6.5244, 3.3792);
   static const double _defaultZoom = 15.0;
+  static const double _areaZoom = 13.0;
+
+  /// Beyond this the pin is almost certainly not in the selected area.
+  static const double _farFromAreaKm = 10.0;
 
   @override
   void initState() {
     super.initState();
     widget.addressController.addListener(_onAddressChanged);
+    // Resuming a draft: the area was already chosen, so treat it as
+    // authoritative and re-anchor the map on it.
+    final restoredArea = widget.cityController.text.trim();
+    if (restoredArea.isNotEmpty) {
+      _areaExplicitlySet = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _geocodeArea(restoredArea);
+      });
+    }
     _addressFocusNode.addListener(() {
       if (!_addressFocusNode.hasFocus) {
         Future.delayed(const Duration(milliseconds: 200), () {
@@ -94,10 +129,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     if (_suppressSearch) return;
 
     final query = widget.addressController.text.trim();
-    
+
     // Cancel previous timer
     _debounceTimer?.cancel();
-    
+
     if (query.length < 3) {
       setState(() {
         _suggestions = [];
@@ -126,9 +161,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         '&countrycodes=ng',
       );
 
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)',
-      });
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)'},
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
@@ -151,23 +187,33 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
 
   void _selectPlace(NominatimPlace place) {
     final location = LatLng(place.lat, place.lng);
-    final matched = InspectionPricing.findMatchingArea(place.city);
+    // The area, once chosen explicitly, outranks anything OSM returns.
+    final matched =
+        _areaExplicitlySet
+            ? null
+            : InspectionPricing.findMatchingArea(place.city);
 
     setState(() {
       _selectedLocation = location;
       _showSuggestions = false;
       _suggestions = [];
-      _geocodedRawCity = place.city;
-      _areaMatchedFromPin = matched != null;
-      if (matched != null) widget.cityController.text = matched;
+      _addressSuggestion = null;
+      if (!_areaExplicitlySet) {
+        _geocodedRawCity = place.city;
+        _areaMatchedFromPin = matched != null;
+        if (matched != null) widget.cityController.text = matched;
+      }
     });
 
     _suppressSearch = true;
     widget.addressController.text = place.streetAddress;
-    widget.stateController.text = place.state.isNotEmpty ? place.state : 'Lagos';
+    if (!_areaExplicitlySet) {
+      widget.stateController.text =
+          place.state.isNotEmpty ? place.state : 'Lagos';
+    }
     _suppressSearch = false;
 
-    if (matched == null && place.city.isNotEmpty) {
+    if (!_areaExplicitlySet && matched == null && place.city.isNotEmpty) {
       widget.onUnknownAreaDetected?.call(place.city, place.lat, place.lng);
     }
 
@@ -176,12 +222,77 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     _addressFocusNode.unfocus();
   }
 
+  void _onAreaSelected(String area) {
+    setState(() {
+      widget.cityController.text = area;
+      _areaExplicitlySet = true;
+      // Manually selected — clear auto-match state
+      _areaMatchedFromPin = false;
+      _geocodedRawCity = null;
+      if (widget.stateController.text.isEmpty) {
+        widget.stateController.text = 'Lagos';
+      }
+    });
+    _geocodeArea(area);
+  }
+
+  /// Centres the map on the selected area so there is an anchor even when OSM
+  /// has never heard of the street. On a miss the map is left where it is —
+  /// never snapped back to the Lagos default.
+  Future<void> _geocodeArea(String area) async {
+    setState(() => _isLocatingArea = true);
+
+    final state =
+        widget.stateController.text.trim().isNotEmpty
+            ? widget.stateController.text.trim()
+            : 'Lagos';
+
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?q=${Uri.encodeComponent('$area, $state, Nigeria')}'
+        '&format=json'
+        '&limit=1'
+        '&countrycodes=ng',
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)'},
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        if (data.isNotEmpty) {
+          final place = NominatimPlace.fromJson(data.first);
+          final anchor = LatLng(place.lat, place.lng);
+          setState(() => _areaAnchor = anchor);
+          // Keep the landlord's own pin; only move the camera.
+          _mapController.move(
+            anchor,
+            _selectedLocation == null ? _areaZoom : _defaultZoom,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Area geocode error: $e');
+    } finally {
+      if (mounted) setState(() => _isLocatingArea = false);
+    }
+  }
+
   void _onMapTap(TapPosition tapPosition, LatLng location) {
     setState(() => _selectedLocation = location);
     widget.onLocationSelected?.call(location.latitude, location.longitude);
     _reverseGeocode(location);
   }
 
+  /// A tap moves the pin. What OSM thinks is *there* is only ever a suggestion:
+  /// it fills the address when the field is empty, otherwise it is offered for
+  /// the landlord to accept. City and state are never rewritten once the area
+  /// has been picked explicitly — that field decides the inspection fee.
   Future<void> _reverseGeocode(LatLng location) async {
     try {
       final uri = Uri.parse(
@@ -192,39 +303,80 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         '&addressdetails=1',
       );
 
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)',
-      });
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)'},
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final place = NominatimPlace.fromJson(data);
         if (!mounted) return;
 
-        final matched = InspectionPricing.findMatchingArea(place.city);
+        final matched =
+            _areaExplicitlySet
+                ? null
+                : InspectionPricing.findMatchingArea(place.city);
+
+        final currentAddress = widget.addressController.text.trim();
+        final proposed = place.streetAddress.trim();
 
         setState(() {
-          _geocodedRawCity = place.city;
-          _areaMatchedFromPin = matched != null;
-          if (matched != null) widget.cityController.text = matched;
+          if (!_areaExplicitlySet) {
+            _geocodedRawCity = place.city;
+            _areaMatchedFromPin = matched != null;
+            if (matched != null) widget.cityController.text = matched;
+          }
+          _addressSuggestion =
+              (currentAddress.isEmpty ||
+                      proposed.isEmpty ||
+                      proposed == currentAddress)
+                  ? null
+                  : proposed;
         });
 
-        _suppressSearch = true;
-        widget.addressController.text = place.streetAddress;
-        if (place.state.isNotEmpty) widget.stateController.text = place.state;
-        _suppressSearch = false;
+        if (currentAddress.isEmpty && proposed.isNotEmpty) {
+          _suppressSearch = true;
+          widget.addressController.text = proposed;
+          _suppressSearch = false;
+        }
 
-        if (matched == null && place.city.isNotEmpty) {
-          widget.onUnknownAreaDetected?.call(
-            place.city,
-            location.latitude,
-            location.longitude,
-          );
+        if (!_areaExplicitlySet) {
+          if (place.state.isNotEmpty) {
+            _suppressSearch = true;
+            widget.stateController.text = place.state;
+            _suppressSearch = false;
+          }
+          if (matched == null && place.city.isNotEmpty) {
+            widget.onUnknownAreaDetected?.call(
+              place.city,
+              location.latitude,
+              location.longitude,
+            );
+          }
         }
       }
     } catch (e) {
       debugPrint('❌ Reverse geocode error: $e');
     }
+  }
+
+  void _acceptAddressSuggestion() {
+    final suggestion = _addressSuggestion;
+    if (suggestion == null) return;
+    _suppressSearch = true;
+    widget.addressController.text = suggestion;
+    _suppressSearch = false;
+    setState(() => _addressSuggestion = null);
+  }
+
+  /// Straight-line km between the selected area and the pin, or null when
+  /// either is missing.
+  double? get _pinDistanceFromArea {
+    final anchor = _areaAnchor;
+    final pin = _selectedLocation;
+    if (anchor == null || pin == null) return null;
+    return const Distance().as(LengthUnit.Kilometer, anchor, pin);
   }
 
   @override
@@ -266,21 +418,33 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           label: 'Area / City',
           hint: 'Select area',
           helperText: 'Choose the area where this property is located',
-          selectedArea: widget.cityController.text.isNotEmpty
-              ? widget.cityController.text
-              : null,
-          onSelected: (area) {
-            setState(() {
-              widget.cityController.text = area;
-              // User manually selected — clear auto-match state
-              _areaMatchedFromPin = false;
-              _geocodedRawCity = null;
-              if (widget.stateController.text.isEmpty) {
-                widget.stateController.text = 'Lagos';
-              }
-            });
-          },
+          selectedArea:
+              widget.cityController.text.isNotEmpty
+                  ? widget.cityController.text
+                  : null,
+          onSelected: _onAreaSelected,
         ),
+        if (_isLocatingArea)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 11,
+                  height: 11,
+                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Centring the map on this area...',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
         _buildAreaMatchIndicator(),
       ],
     );
@@ -316,7 +480,11 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Icon(Icons.info_outline, size: 13, color: Colors.orange.shade700),
+            child: Icon(
+              Icons.info_outline,
+              size: 13,
+              color: Colors.orange.shade700,
+            ),
           ),
           const SizedBox(width: 4),
           Expanded(
@@ -360,20 +528,91 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: AppColors.primary, width: 1.5),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            suffixIcon: _isSearching
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : const Icon(Icons.search, color: Colors.grey),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            suffixIcon:
+                _isSearching
+                    ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                    : const Icon(Icons.search, color: Colors.grey),
           ),
         ),
+        if (_addressSuggestion != null) _buildAddressSuggestion(),
       ],
+    );
+  }
+
+  /// Offered, never applied: the landlord's typed address stands until they
+  /// accept this.
+  Widget _buildAddressSuggestion() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withAlpha(15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primary.withAlpha(60)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              Icons.place_outlined,
+              size: 15,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'The map says this pin is at "$_addressSuggestion"',
+                  style: AppTextStyles.caption.copyWith(fontSize: 11),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _acceptAddressSuggestion,
+                      child: Text(
+                        'Use it',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: () => setState(() => _addressSuggestion = null),
+                      child: Text(
+                        'Keep mine',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -391,31 +630,78 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           ),
         ],
       ),
-      constraints: const BoxConstraints(maxHeight: 200),
-      child: ListView.separated(
-        shrinkWrap: true,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _suggestions.length,
-        separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
-        itemBuilder: (context, index) {
-          final place = _suggestions[index];
-          return ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.location_on_outlined,
-              color: AppColors.textSecondary,
-              size: 20,
+      constraints: const BoxConstraints(maxHeight: 240),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Explicit way out. Tapping blank space elsewhere also dismisses the
+          // panel, but only because the parent unfocuses the field — on its own
+          // a tap on non-focusable space leaves a TextField focused.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+            child: Row(
+              children: [
+                Text(
+                  'Suggestions from the map',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textHint,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                InkWell(
+                  onTap: _dismissSuggestions,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.close,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            title: Text(
-              place.displayName,
-              style: const TextStyle(fontSize: 14),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => _selectPlace(place),
-          );
-        },
+          ),
+          Flexible(child: _buildSuggestionList()),
+        ],
       ),
+    );
+  }
+
+  void _dismissSuggestions() {
+    setState(() {
+      _showSuggestions = false;
+      _suggestions = [];
+    });
+    _addressFocusNode.unfocus();
+  }
+
+  Widget _buildSuggestionList() {
+    return ListView.separated(
+      shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: _suggestions.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
+      itemBuilder: (context, index) {
+        final place = _suggestions[index];
+        return ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.location_on_outlined,
+            color: AppColors.textSecondary,
+            size: 20,
+          ),
+          title: Text(
+            place.displayName,
+            style: const TextStyle(fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () => _selectPlace(place),
+        );
+      },
     );
   }
 
@@ -449,7 +735,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: AppColors.primary, width: 1.5),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
           ),
         ),
       ],
@@ -517,7 +806,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
               if (_selectedLocation == null)
                 Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surface.withAlpha(230),
                       borderRadius: BorderRadius.circular(8),
@@ -534,7 +826,44 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
             ],
           ),
         ),
+        _buildPinDistanceWarning(),
       ],
+    );
+  }
+
+  Widget _buildPinDistanceWarning() {
+    final distance = _pinDistanceFromArea;
+    if (distance == null || distance <= _farFromAreaKm) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              size: 14,
+              color: Colors.orange.shade700,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              'Your pin is about ${distance.round()}km from '
+              '${widget.cityController.text}. Move the pin or change the area — '
+              'the area you pick sets the inspection fee.',
+              style: AppTextStyles.caption.copyWith(
+                color: Colors.orange.shade700,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -568,7 +897,8 @@ class NominatimPlace {
     final streetAddress = '$houseNumber $road'.trim();
 
     // Nominatim uses various fields for the city/area name
-    final city = address['city'] ??
+    final city =
+        address['city'] ??
         address['town'] ??
         address['suburb'] ??
         address['neighbourhood'] ??
@@ -582,9 +912,10 @@ class NominatimPlace {
       lat: double.tryParse(json['lat'].toString()) ?? 0.0,
       lng: double.tryParse(json['lon'].toString()) ?? 0.0,
       displayName: json['display_name'] ?? '',
-      streetAddress: streetAddress.isNotEmpty
-          ? streetAddress
-          : json['display_name']?.split(',').first ?? '',
+      streetAddress:
+          streetAddress.isNotEmpty
+              ? streetAddress
+              : json['display_name']?.split(',').first ?? '',
       city: city,
       state: state,
     );

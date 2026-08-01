@@ -26,14 +26,19 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
-  const LandlordHomeScreen({super.key});
+  /// Bottom-nav tab to open on. 0 Dashboard · 1 Properties · 2 Messages ·
+  /// 3 Profile. Lets callers land somewhere specific — publishing a listing
+  /// should arrive at Properties, not the dashboard.
+  final int initialNavIndex;
+
+  const LandlordHomeScreen({super.key, this.initialNavIndex = 0});
 
   @override
   State<LandlordHomeScreen> createState() => _LandlordHomeScreenState();
 }
 
 class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
-  int _currentNavIndex = 0;
+  late int _currentNavIndex = widget.initialNavIndex;
   DateTime? _lastBackPressed;
   
   // Services
@@ -1975,7 +1980,7 @@ class _LandlordPropertyCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(color: property.isAvailable ? AppColors.successLight : AppColors.warningLight, borderRadius: BorderRadius.circular(4)),
-                child: Text(property.isAvailable ? 'Available' : 'Occupied', style: AppTextStyles.labelSmall.copyWith(color: property.isAvailable ? AppColors.success : AppColors.warning, fontSize: 10)),
+                child: Text(property.statusLabel, style: AppTextStyles.labelSmall.copyWith(color: property.isAvailable ? AppColors.success : AppColors.warning, fontSize: 10)),
               ),
             ]),
           ])),

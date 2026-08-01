@@ -96,9 +96,13 @@ class InspectionPricing {
   //  AREA → LGA MAPPING
   // ══════════════════════════════════════════════
 
-  /// Maps a Lagos area name (lowercase) to its LGA.
-  /// To add a new area: just add the mapping here.
-  static const Map<String, String> _areaToLGA = {
+  /// Compiled-in area → LGA map (lowercase keys). The offline baseline.
+  ///
+  /// Adding an area here needs an app release, which is far too slow when a
+  /// landlord is standing in an unmapped part of Lagos right now. Areas can
+  /// therefore also be added at runtime from `config/areas` — see
+  /// [applyRemoteAreas] — exactly as `config/pricing` overrides the fees.
+  static const Map<String, String> _defaultAreaToLGA = {
     // ── Ikorodu LGA ──
     'ikorodu': 'ikorodu',
     'ikorodu town': 'ikorodu',
@@ -304,9 +308,31 @@ class InspectionPricing {
     'ibeju lekki': 'outer',
   };
 
-  // ══════════════════════════════════════════════
-  //  LGA LABELS (for display)
-  // ══════════════════════════════════════════════
+  /// The live map: compiled defaults plus anything added remotely.
+  static Map<String, String> _areaToLGA =
+      Map<String, String>.from(_defaultAreaToLGA);
+
+  /// Merge areas published by an admin (Firestore `config/areas`) over the
+  /// compiled defaults, so a missing Lagos area becomes selectable without a
+  /// Play Store release.
+  ///
+  /// Entries are ignored unless the LGA is one we actually price — a typo must
+  /// not silently create an unpriceable area, because `city` feeds
+  /// [findMatchingArea] and therefore the inspection fee.
+  static void applyRemoteAreas(Map<String, dynamic>? raw) {
+    final merged = Map<String, String>.from(_defaultAreaToLGA);
+    if (raw != null) {
+      final valid = {...lgas, outerLGA};
+      raw.forEach((area, lga) {
+        if (lga is! String) return;
+        final key = area.trim().toLowerCase();
+        final value = lga.trim().toLowerCase();
+        if (key.isEmpty || !valid.contains(value)) return;
+        merged[key] = value;
+      });
+    }
+    _areaToLGA = merged;
+  }
 
   static const Map<String, String> _lgaLabels = {
     'ikorodu': 'Ikorodu LGA',

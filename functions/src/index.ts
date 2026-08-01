@@ -43,8 +43,17 @@ export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep} from "./moveout_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
-export {onRentReviewRequested, onUserProfileUpdated}
-  from "./admin_alert_triggers";
+export {onAdminAlertCreated} from "./admin_push_ops";
+export {adminDailyDigestEmail} from "./admin_digest_email";
+export {
+  onRentReviewRequested,
+  onUserProfileUpdated,
+  onUserSignedUp,
+  onVerificationSubmitted,
+  onInspectionCompleted,
+  onRentalInterestCreated,
+  onAgreementReady,
+} from "./admin_alert_triggers";
 
 export const onNotificationCreated = onDocumentCreated(
   "notifications/{notificationId}",

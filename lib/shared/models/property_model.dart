@@ -96,8 +96,12 @@ class PropertyModel {
   // Video tour
   final String? videoUrl; // Cloudinary video URL
 
-  // Ceiling type
-  final String? ceilingType; // 'false_ceiling' | 'pvc' | 'concrete' | 'asbestos' | 'none'
+  // Ceiling types — a flat can mix them (POP in the living room, slate in the
+  // bedroom), so this is a list.
+  // 'pop' | 'pvc' | 'concrete' | 'asbestos' | 'slate' | 'none'
+  // Legacy docs carry a single `ceilingType` string ('false_ceiling' meaning
+  // 'pop'); both are folded into this list on read.
+  final List<String> ceilingTypes;
   
   // Recurring dues (security, PSB, waste, etc.)
   final List<Map<String, dynamic>> recurringDues;
@@ -166,7 +170,7 @@ class PropertyModel {
     this.inspectionPropertyCluster,
     this.landlordLivesInProperty = false,
     this.videoUrl,
-    this.ceilingType,
+    this.ceilingTypes = const [],
     this.recurringDues = const [],
     this.landlordLivesOnPremises,
     this.currentTenantsCount,
@@ -369,7 +373,7 @@ class PropertyModel {
     String? ownershipDocRejectionReason,
     String? buildingId,
     String? videoUrl,
-    String? ceilingType,
+    List<String>? ceilingTypes,
     List<Map<String, dynamic>>? recurringDues,
   }) {
     return PropertyModel(
@@ -426,7 +430,7 @@ class PropertyModel {
           inspectionPropertyCluster ?? this.inspectionPropertyCluster,
       landlordLivesInProperty: landlordLivesInProperty ?? this.landlordLivesInProperty,
       videoUrl: videoUrl ?? this.videoUrl,
-      ceilingType: ceilingType ?? this.ceilingType,
+      ceilingTypes: ceilingTypes ?? this.ceilingTypes,
       recurringDues: recurringDues ?? this.recurringDues,
       landlordLivesOnPremises: landlordLivesOnPremises ?? this.landlordLivesOnPremises,
       currentTenantsCount: currentTenantsCount ?? this.currentTenantsCount,
@@ -449,6 +453,37 @@ class PropertyModel {
 
   /// True when property should appear in browse results
   bool get isListable => isAvailable && hasAvailableSpots;
+
+  /// True between publishing and the admin's verdict. Every new listing is
+  /// written `isAvailable: false` so it can't be browsed before review, and
+  /// `isVerified` flips to true only when an admin approves it.
+  bool get isPendingReview =>
+      !isVerified && ownershipDocStatus != 'rejected';
+
+  /// One label for the state a landlord actually cares about. Availability
+  /// alone can't express this: a listing awaiting review and a listing with a
+  /// sitting tenant are both `isAvailable == false`, and calling the first one
+  /// "Occupied" is simply wrong.
+  String get statusLabel {
+    if (ownershipDocStatus == 'rejected') return 'Rejected';
+    if (isPendingReview) return 'Pending review';
+    if ((currentTenantsCount ?? 0) > 0) return 'Occupied';
+    if (!isAvailable) return 'Occupied'; // landlord's own "Mark Occupied"
+    // Approved and vacant, but the handler hasn't vetted it — tenants are
+    // blocked from booking an inspection, so "Available" would be a lie.
+    if (!readyForInspections) return 'Not bookable';
+    return 'Available';
+  }
+
+  /// Ceiling types, folding in the legacy single-value `ceilingType` field so
+  /// documents written before the multi-select still read correctly.
+  static List<String> _parseCeilingTypes(Map<String, dynamic> data) {
+    final list = data['ceilingTypes'] as List<dynamic>?;
+    if (list != null) return list.map((e) => e.toString()).toList();
+    final legacy = data['ceilingType'] as String?;
+    if (legacy == null || legacy.isEmpty) return const [];
+    return [legacy == 'false_ceiling' ? 'pop' : legacy];
+  }
 
   factory PropertyModel.fromJson(Map<String, dynamic> json) {
     return PropertyModel(
@@ -515,7 +550,7 @@ class PropertyModel {
       ),
       landlordLivesInProperty: json['landlordLivesInProperty'] ?? false,
       videoUrl: json['videoUrl'] as String?,
-      ceilingType: json['ceilingType'] as String?,
+      ceilingTypes: _parseCeilingTypes(json),
       recurringDues: (json['recurringDues'] as List<dynamic>?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
@@ -612,7 +647,7 @@ class PropertyModel {
       inspectionPropertyCluster: data['inspectionPropertyCluster'] as String?,
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
       videoUrl: data['videoUrl'] as String?,
-      ceilingType: data['ceilingType'] as String?,
+      ceilingTypes: _parseCeilingTypes(data),
       recurringDues: (data['recurringDues'] as List<dynamic>?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
@@ -681,7 +716,7 @@ class PropertyModel {
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,
       if (videoUrl != null) 'videoUrl': videoUrl,
-      if (ceilingType != null) 'ceilingType': ceilingType,
+      if (ceilingTypes.isNotEmpty) 'ceilingTypes': ceilingTypes,
       if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
       'landlordLivesOnPremises': landlordLivesOnPremises,
       'currentTenantsCount': currentTenantsCount,
@@ -753,7 +788,7 @@ class PropertyModel {
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,
       if (videoUrl != null) 'videoUrl': videoUrl,
-      if (ceilingType != null) 'ceilingType': ceilingType,
+      if (ceilingTypes.isNotEmpty) 'ceilingTypes': ceilingTypes,
       if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
       'landlordLivesOnPremises': landlordLivesOnPremises,
       'currentTenantsCount': currentTenantsCount,

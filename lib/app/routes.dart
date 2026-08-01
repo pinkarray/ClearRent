@@ -247,7 +247,11 @@ final appRouter = GoRouter(
     // ============ LANDLORD ROUTES ============
     GoRoute(
       path: '/landlord/home',
-      builder: (context, state) => const LandlordHomeScreen(),
+      // ?tab=1 opens Properties directly (see LandlordHomeScreen.initialNavIndex).
+      builder: (context, state) => LandlordHomeScreen(
+        initialNavIndex:
+            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      ),
     ),
     GoRoute(
       path: '/landlord/add-property',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../services/agent_service.dart';
@@ -232,10 +233,10 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         widget.propertyCity!.isNotEmpty &&
         !coversArea;
 
-    final estimatedFee = _agentService.calculateInspectionFee(
-      agentBaseLocation: agent.baseLocation,
-      propertyCity: widget.propertyCity ?? '',
-    );
+    // Flat fee — it does not vary by agent or by distance. This used to call a
+    // legacy distance-based estimator that returned ₦3,000/₦5,000 while tenants
+    // were actually charged the flat booking fee.
+    final inspectionFee = InspectionPricing.inspectionBookingFee;
 
     return GestureDetector(
       onTap: () => _selectAgent(agent),
@@ -388,11 +389,11 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Estimated inspection fee',
+                    'Inspection fee (same for every agent)',
                     style: AppTextStyles.naira(AppTextStyles.caption.copyWith(color: AppColors.info)),
                   ),
                   Text(
-                    '₦${_formatAmount(estimatedFee)}',
+                    '₦${_formatAmount(inspectionFee)}',
                     style: AppTextStyles.naira(AppTextStyles.labelMedium).copyWith(
                       color: AppColors.info,
                       fontWeight: FontWeight.w600,

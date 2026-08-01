@@ -10,6 +10,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
+import '../../../../shared/widgets/description_prompts.dart';
 import '../../../../services/property_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
@@ -85,6 +86,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // Form controllers
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
+  final FocusNode _descriptionFocusNode = FocusNode();
   late final TextEditingController _rentController;
   late final TextEditingController _agentFeeController;
   late final TextEditingController _cautionDepositController;
@@ -109,7 +111,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // Whether the deposit comes back at move-out. Locked while a tenant is
   // sitting, same as the amount — the promise can't change mid-tenancy.
   late bool _cautionDepositRefundable;
-  String? _ceilingType;
+  final List<String> _ceilingTypes = [];
 
   // Agent assignment
   String? _assignedAgentId;
@@ -207,7 +209,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     // Initialize ownership document
     _ownershipDocUrl = p.ownershipDocUrl;
     _ownershipDocType = p.ownershipDocType;
-    _ceilingType = p.ceilingType;
+    _ceilingTypes
+      ..clear()
+      ..addAll(p.ceilingTypes);
 
     // Listen for changes
     _titleController.addListener(_onFieldChanged);
@@ -319,6 +323,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _descriptionFocusNode.dispose();
     _rentController.dispose();
     _agentFeeController.dispose();
     _cautionDepositController.dispose();
@@ -627,7 +632,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'cautionDepositRefundable': _cautionDepositRefundable,
         },
         'amenities': _selectedAmenities,
-        if (_ceilingType != null) 'ceilingType': _ceilingType,
+        'ceilingTypes': _ceilingTypes,
         'rules': _selectedRules,
         'isAvailable': _isAvailable,
         'inspectionHandler': _inspectionHandler,
@@ -888,10 +893,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _buildCeilingChip('False Ceiling (POP)', 'false_ceiling'),
+                  _buildCeilingChip('POP', 'pop'),
                   _buildCeilingChip('PVC', 'pvc'),
                   _buildCeilingChip('Concrete', 'concrete'),
                   _buildCeilingChip('Asbestos', 'asbestos'),
+                  _buildCeilingChip('Slate', 'slate'),
                   _buildCeilingChip('None', 'none'),
                 ],
               ),
@@ -1152,8 +1158,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             _buildTypeChip('Self Contain', 'selfContain'),
             _buildTypeChip('Bungalow', 'bungalow'),
             _buildTypeChip('Room', 'room'),
-            _buildTypeChip('Shop', 'shop'),
-            _buildTypeChip('Office', 'office'),
+            // Hidden alongside add-property until the commercial branch exists.
           ],
         ),
         const SizedBox(height: 16),
@@ -1198,8 +1203,14 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           label: 'Description',
           hint: 'Describe your property...',
           controller: _descriptionController,
+          focusNode: _descriptionFocusNode,
           maxLines: 4,
           textCapitalization: TextCapitalization.sentences,
+        ),
+        DescriptionPrompts(
+          controller: _descriptionController,
+          focusNode: _descriptionFocusNode,
+          onInserted: () => setState(() => _hasChanges = true),
         ),
       ],
     );
@@ -2189,11 +2200,26 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling —
+  /// picking one clears the other.
+  void _toggleCeilingType(String value) {
+    if (_ceilingTypes.contains(value)) {
+      _ceilingTypes.remove(value);
+      return;
+    }
+    if (value == 'none') {
+      _ceilingTypes.clear();
+    } else {
+      _ceilingTypes.remove('none');
+    }
+    _ceilingTypes.add(value);
+  }
+
   Widget _buildCeilingChip(String label, String value) {
-    final isSelected = _ceilingType == value;
+    final isSelected = _ceilingTypes.contains(value);
     return GestureDetector(
       onTap: () => setState(() {
-        _ceilingType = isSelected ? null : value;
+        _toggleCeilingType(value);
         _hasChanges = true;
       }),
       child: Container(

@@ -249,7 +249,7 @@ class PropertyService {
     String? inspectionAgentCluster,
     String? inspectionPropertyCluster,
     String? videoUrl,
-    String? ceilingType,
+    List<String> ceilingTypes = const [],
     List<Map<String, dynamic>> recurringDues = const [],
   }) async {
     try {
@@ -342,7 +342,7 @@ class PropertyService {
         'savedCount': 0,
         'landlordLivesInProperty': landlordLivesInProperty,
         if (videoUrl != null) 'videoUrl': videoUrl,
-        if (ceilingType != null) 'ceilingType': ceilingType,
+        if (ceilingTypes.isNotEmpty) 'ceilingTypes': ceilingTypes,
         if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,
         'landlordLivesOnPremises': landlordLivesOnPremises,
         'currentTenantsCount': currentTenantsCount,

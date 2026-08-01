@@ -7,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/property_location_map.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/inspection_readiness_dialog.dart';
 import '../../../../shared/widgets/highlight_wrap.dart';
@@ -507,6 +508,12 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textHint,
                           ),
+                        ),
+                        const SizedBox(width: 10),
+                        // The handler has to physically get to the property.
+                        DirectionsLink(
+                          latitude: request.propertyLatitude,
+                          longitude: request.propertyLongitude,
                         ),
                       ],
                     ),

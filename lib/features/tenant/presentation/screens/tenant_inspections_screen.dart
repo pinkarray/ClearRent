@@ -12,6 +12,7 @@ import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/models/property_model.dart';
 import 'package:intl/intl.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/property_location_map.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/what_happens_now_hint.dart';
@@ -512,6 +513,12 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis)),
                     ]),
+                    // Coordinates land on the request when the tenant pays, so
+                    // this appears exactly when they're cleared to travel.
+                    DirectionsLink(
+                      latitude: r.propertyLatitude,
+                      longitude: r.propertyLongitude,
+                    ),
                   ]),
             ),
           ]),

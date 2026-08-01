@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -107,6 +108,11 @@ class PricingService {
 
   PlatformPricing _cached = PlatformPricing.fallback;
 
+  /// Live `config/areas` subscription. Singleton service, so one listener for
+  /// the life of the app — never cancelled, because the area list has to stay
+  /// current wherever the landlord is in the flow.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _areasSub;
+
   /// Last loaded schedule; the fallback until [load] completes.
   PlatformPricing get current => _cached;
 
@@ -129,6 +135,52 @@ class PricingService {
       handler: _cached.inspectionHandler,
       platform: _cached.inspectionPlatform,
     );
+    await _loadAreas();
     return _cached;
+  }
+
+  /// Areas an admin has added since the last release (`config/areas`). Merged
+  /// over the compiled list, so an unmapped Lagos area becomes selectable
+  /// without shipping a build. Failure is silent — the compiled list stands.
+  ///
+  /// Awaited once so the first paint has them, then [_watchAreas] keeps them
+  /// current for the rest of the session.
+  Future<void> _loadAreas() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('areas')
+          .get();
+      _apply(doc.data());
+    } catch (e) {
+      developer.log('Remote areas unreadable — using compiled list: $e',
+          name: 'PricingService');
+    }
+    _watchAreas();
+  }
+
+  /// Live subscription, so an area published while a landlord is part-way
+  /// through listing reaches them without restarting the app. They see it the
+  /// next time the area picker is opened — the sheet reads the list on open.
+  void _watchAreas() {
+    _areasSub ??= FirebaseFirestore.instance
+        .collection('config')
+        .doc('areas')
+        .snapshots()
+        .listen(
+      (doc) => _apply(doc.data()),
+      onError: (Object e) => developer.log(
+        'Remote areas stream failed — keeping last known list: $e',
+        name: 'PricingService',
+      ),
+    );
+  }
+
+  void _apply(Map<String, dynamic>? data) {
+    final areas = data?['areas'];
+    if (areas is! Map) return;
+    InspectionPricing.applyRemoteAreas(Map<String, dynamic>.from(areas));
+    developer.log('Remote areas applied: ${areas.length} published',
+        name: 'PricingService');
   }
 }

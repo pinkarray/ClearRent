@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
+import '../../../../shared/widgets/property_location_map.dart';
 import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -20,10 +21,12 @@ import '../../../../services/conversation_service.dart';
 class _CachedDetail {
   final PropertyModel property;
   final String? exactAddress;
+  final double? latitude;
+  final double? longitude;
   final int pending;
   final int completed;
-  const _CachedDetail(
-      this.property, this.exactAddress, this.pending, this.completed);
+  const _CachedDetail(this.property, this.exactAddress, this.latitude,
+      this.longitude, this.pending, this.completed);
 }
 
 final Map<String, _CachedDetail> _detailCache = {};
@@ -48,6 +51,8 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
 
   PropertyModel? _property;
   String? _exactAddress; // exact street address from the gated subdoc
+  double? _exactLatitude; // exact pin, same subdoc — the agent has to get there
+  double? _exactLongitude;
   bool _isLoading = true;
   String? _error;
   int _currentImageIndex = 0;
@@ -66,6 +71,8 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
     if (cached != null) {
       _property = cached.property;
       _exactAddress = cached.exactAddress;
+      _exactLatitude = cached.latitude;
+      _exactLongitude = cached.longitude;
       _pendingInspections = cached.pending;
       _completedInspections = cached.completed;
       _isLoading = false;
@@ -120,6 +127,8 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
         _exactAddress = (loc != null && loc.address.isNotEmpty)
             ? loc.address
             : null;
+        _exactLatitude = loc?.latitude;
+        _exactLongitude = loc?.longitude;
         _isLoading = false;
       });
       _cacheCurrent();
@@ -141,6 +150,8 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
       _detailCache[widget.propertyId] = _CachedDetail(
         p,
         _exactAddress,
+        _exactLatitude,
+        _exactLongitude,
         _pendingInspections,
         _completedInspections,
       );
@@ -498,7 +509,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              property.isAvailable ? 'Available' : 'Occupied',
+                              property.statusLabel,
                               style: AppTextStyles.labelSmall.copyWith(
                                 color: property.isAvailable ? AppColors.success : AppColors.textHint,
                               ),
@@ -520,6 +531,15 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      // The assigned agent has to physically get here.
+                      PropertyLocationMap(
+                        latitude: _exactLatitude,
+                        longitude: _exactLongitude,
+                        emptyMessage:
+                            'The landlord did not drop a map pin for this property. '
+                            'Use the address, or message them for directions.',
                       ),
                       const SizedBox(height: 16),
                       Text(

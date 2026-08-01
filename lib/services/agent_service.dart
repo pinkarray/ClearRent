@@ -254,24 +254,11 @@ class AgentService {
     }
   }
 
-  /// Calculate estimated inspection fee based on distance
-  /// For now, this is a simple calculation. Can be enhanced with actual distance API
-  double calculateInspectionFee({
-    required String agentBaseLocation,
-    required String propertyCity,
-  }) {
-    // Base fee
-    const baseFee = 2000.0; // ₦2,000 minimum (ClearRent cut)
-    
-    // Simple distance-based calculation
-    // Same area = base fee only
-    // Different area = base + distance fee
-    if (agentBaseLocation.toLowerCase() == propertyCity.toLowerCase()) {
-      return baseFee + 1000; // ₦3,000 total for same area
-    } else {
-      return baseFee + 3000; // ₦5,000 total for different area
-    }
-  }
+  // Removed: calculateInspectionFee(). It returned ₦3,000/₦5,000 from a
+  // distance model the platform no longer uses — InspectionPricing is a flat
+  // fee, and its calculateFee() records the cluster "for context, not used in
+  // math". Its only caller displayed those numbers to landlords as the
+  // inspection fee. Read the fee from InspectionPricing instead.
 
   /// Get all agents (for admin)
   Future<List<AgentModel>> getAllAgents() async {

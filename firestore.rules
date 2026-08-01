@@ -1348,6 +1348,33 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Admin push devices — the FCM tokens the dashboard registers so an
+    // actionable alert can reach an admin who does NOT have the dashboard open.
+    //
+    // A registry exists because admin identity is a custom claim, which
+    // Firestore cannot query: there is no "select all admins". The alternative
+    // was paginating listUsers() on every alert. See admin_push_ops.ts.
+    //
+    // Doc id IS the admin's uid, and an admin may only touch their own — so a
+    // compromised admin session cannot silence a colleague by clearing their
+    // tokens, nor point another admin's push at itself. Only the fan-out
+    // function (admin SDK) reads across the collection.
+    match /admin_devices/{uid} {
+      allow read: if isAdmin() && request.auth.uid == uid;
+      allow list: if false;               // Admin SDK only; no enumeration
+
+      // Create and update are separate clauses because `resource` is null on
+      // create — calling diff() against it there would error, not just deny.
+      allow create: if isAdmin() && request.auth.uid == uid
+        && request.resource.data.keys()
+             .hasOnly(['tokens', 'updatedAt', 'userAgent']);
+      allow update: if isAdmin() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['tokens', 'updatedAt', 'userAgent']);
+
+      allow delete: if isAdmin() && request.auth.uid == uid;
+    }
+
     // Deleted-account tombstones — written by deleteMyAccount (admin SDK) as
     // the account goes. Financial records outlive the account for audit and
     // still reference its uid; this is how the dashboard tells "deleted

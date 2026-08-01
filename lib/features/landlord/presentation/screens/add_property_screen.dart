@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../widgets/clearrent_location_picker.dart';
 import '../../../../shared/widgets/area_dropdown.dart';
+import '../../../../shared/widgets/description_prompts.dart';
+import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -101,8 +103,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   VideoPlayerController? _videoPreviewController;
   bool _isValidatingVideo = false;
 
-  // Ceiling type
-  String? _ceilingType;
+  /// Cloudinary caps a video at 100MB; this leaves headroom for the upload.
+  static const double _maxVideoMb = 50;
+
+  /// 0–1 while transcoding, null otherwise. Compressing a 90s clip takes tens
+  /// of seconds, which is far too long to show an unexplained spinner.
+  double? _compressionProgress;
+
+  /// In-flight background compression. Publish awaits it — that's the one point
+  /// where the smaller file genuinely has to exist.
+  Future<void>? _videoWork;
+
+  // Ceiling types — a flat can mix them (POP in the living room, slate in the
+  // bedroom), so more than one may be selected.
+  final List<String> _ceilingTypes = [];
+
+  /// Unmapped area names already reported to admin during this session, so a
+  /// landlord tapping repeatedly over the same spot files one row, not ten.
+  final Set<String> _reportedUnknownAreas = {};
 
   // Recurring dues
   final Map<String, TextEditingController> _duesControllers = {};
@@ -130,6 +148,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   final _stateController = TextEditingController();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _descriptionFocusNode = FocusNode();
   final _rentController = TextEditingController();
   final _agentFeeController = TextEditingController();
   final _cautionDepositController = TextEditingController();
@@ -287,12 +306,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _saveDraftDebounced();
   }
 
-  /// Check if a draft exists and offer to restore it
+  /// Check if a draft exists and offer to restore it.
+  ///
+  /// An empty draft is silently thrown away rather than offered — being asked
+  /// to resume a listing that holds nothing, then landing on step 1 regardless,
+  /// is worse than not being asked.
   Future<void> _checkForDraft() async {
     final draft = await PropertyDraftService.loadDraft();
-    if (draft != null && mounted) {
-      _showDraftFoundDialog(draft);
+    if (draft == null || !mounted) return;
+    if (!PropertyDraftService.isResumable(draft)) {
+      await PropertyDraftService.clearDraft();
+      return;
     }
+    if (mounted) _showDraftFoundDialog(draft);
   }
 
   void _showDraftFoundDialog(Map<String, dynamic> draft) {
@@ -350,7 +376,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 TextButton(
                   onPressed: () async {
                     Navigator.pop(context);
-                    await PropertyDraftService.clearDraft();
+                    await _discardDraft();
+                    // Starting fresh means this session may save again.
+                    _draftDiscarded = false;
                   },
                   child: Text(
                     'Start Fresh',
@@ -405,15 +433,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'hasCaretaker': _hasCaretaker,
       'caretakerLivesOnPremises': _caretakerLivesOnPremises,
       'ownershipDocType': _ownershipDocType,
-      'ceilingType': _ceilingType,
+      'ceilingTypes': _ceilingTypes,
       // Building / compound grouping
       'isInBuilding': _isInBuilding,
       'creatingNewBuilding': _creatingNewBuilding,
       'selectedBuildingId': _selectedBuildingId,
       'buildingName': _buildingNameController.text,
       'buildingAddress': _buildingAddressController.text,
-      // Image paths (not the File objects)
+      // Media paths (not the File objects) — see PropertyDraftService.persistMedia
       'imagePaths': _selectedImageFiles.map((f) => f.path).toList(),
+      'videoPath': _selectedVideoFile?.path,
       // Save timestamp so we can show "Draft from X minutes ago"
       'savedAt': DateTime.now().toIso8601String(),
     };
@@ -458,7 +487,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _hasCaretaker = draft['hasCaretaker'] ?? false;
       _caretakerLivesOnPremises = draft['caretakerLivesOnPremises'] ?? false;
       _ownershipDocType = draft['ownershipDocType'];
-      _ceilingType = draft['ceilingType'] as String?;
+      _ceilingTypes
+        ..clear()
+        ..addAll(List<String>.from(draft['ceilingTypes'] ?? []));
       _latitude = draft['latitude'] as double?;
       _longitude = draft['longitude'] as double?;
 
@@ -504,10 +535,36 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _selectedImageFiles.add(file);
         }
       }
+      final missingImages = imagePaths.length - _selectedImageFiles.length;
 
-      // Jump to the saved step
-      final savedStep = draft['step'] ?? 0;
+      // Video — reinstating it needs an initialized controller, so it happens
+      // asynchronously once this frame is done.
+      final videoPath = draft['videoPath'] as String?;
+      var missingVideo = false;
+      if (videoPath != null && videoPath.isNotEmpty) {
+        final videoFile = File(videoPath);
+        if (videoFile.existsSync()) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _restoreDraftVideo(videoFile);
+          });
+        } else {
+          missingVideo = true;
+        }
+      }
+
+      // Jump to the saved step — unless media went missing, in which case send
+      // them back to the media step rather than letting them find out at
+      // preview. Photos are required to publish anyway.
+      var savedStep = draft['step'] ?? 0;
+      if ((missingImages > 0 || missingVideo) && savedStep > 0) savedStep = 0;
       _currentStep = savedStep;
+      if (missingImages > 0 || missingVideo) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showMissingDraftMediaNotice(missingImages, missingVideo);
+          }
+        });
+      }
       // Use jumpToPage (not animateToPage) since we're in initState flow
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -521,20 +578,80 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     setState(() => _isRestoringDraft = false);
   }
 
+  /// Rebuilds the video preview for a resumed draft. The file survives, but the
+  /// controller doesn't — it has to be re-initialized before the preview will
+  /// render.
+  Future<void> _restoreDraftVideo(File file) async {
+    try {
+      _videoPreviewController?.dispose();
+      final controller = VideoPlayerController.file(file);
+      await controller.initialize();
+      controller.setLooping(false);
+      controller.setVolume(0);
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _videoPreviewController = controller;
+        _selectedVideoFile = file;
+      });
+    } catch (e) {
+      debugPrint('❌ Could not restore draft video: $e');
+    }
+  }
+
+  /// Media saved with a draft can still disappear — the landlord may have
+  /// deleted it, or Android may have reclaimed the storage. Say so plainly
+  /// instead of resuming with a silently shorter gallery.
+  void _showMissingDraftMediaNotice(int photos, bool video) {
+    final parts = <String>[];
+    if (photos > 0) parts.add(photos == 1 ? '1 photo' : '$photos photos');
+    if (video) parts.add('the video');
+    final joined = parts.join(' and ');
+    final subject = joined[0].toUpperCase() + joined.substring(1);
+    final isPlural = photos > 1 || (photos > 0 && video);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$subject ${isPlural ? 'are' : 'is'} no longer on this phone, so we '
+          'could not restore ${isPlural ? 'them' : 'it'}. Please add '
+          '${isPlural ? 'them' : 'it'} again.',
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+      ),
+    );
+  }
+
+  /// Set once the draft is deliberately gone (discarded or published). Any
+  /// later save is refused, so a pending debounce or a stray field change can't
+  /// resurrect a draft the landlord already dismissed.
+  bool _draftDiscarded = false;
+
   /// Save draft with debounce (called on field changes)
   void _saveDraftDebounced() {
-    if (_isRestoringDraft) return;
+    if (_isRestoringDraft || _draftDiscarded) return;
     _draftSaveTimer?.cancel();
     _draftSaveTimer = Timer(const Duration(seconds: 2), () {
+      if (_draftDiscarded) return;
       PropertyDraftService.saveDraft(_collectFormState());
     });
   }
 
   /// Save draft immediately (called on step changes)
   void _saveDraftNow() {
-    if (_isRestoringDraft) return;
+    if (_isRestoringDraft || _draftDiscarded) return;
     _draftSaveTimer?.cancel();
     PropertyDraftService.saveDraft(_collectFormState());
+  }
+
+  /// Throw the draft away for good — storage, photos, and any queued save.
+  Future<void> _discardDraft() async {
+    _draftDiscarded = true;
+    _draftSaveTimer?.cancel();
+    await PropertyDraftService.clearDraft();
   }
 
   /// Check if landlord is verified before allowing property listing,
@@ -834,13 +951,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _stateController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
+    _descriptionFocusNode.dispose();
     _rentController.dispose();
     _agentFeeController.dispose();
     _cautionDepositController.dispose();
     _landlordAddressController.dispose();
     _landlordCityController.dispose();
     _landlordStateController.dispose();
-    _descriptionController.dispose();
     _videoPreviewController?.dispose();
     for (final controller in _duesControllers.values) {
       controller.dispose();
@@ -976,6 +1093,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please enter the state');
           return false;
         }
+        // The pin is what the agent and the paid tenant navigate to — a listing
+        // without one leaves them with the address alone.
+        if (_latitude == null || _longitude == null) {
+          _showError('Tap the map to drop a pin on the property');
+          return false;
+        }
         return true;
       case 2: // Details
         if (_titleController.text.isEmpty) {
@@ -1078,7 +1201,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: const Text('Discard listing?'),
             content: const Text(
               'You\'ll lose all the information you\'ve entered.',
@@ -1088,16 +1211,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(dialogContext),
                 child: Text(
                   'Keep editing',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
               TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.pop();
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  // The dialog promises the information is lost — so actually
+                  // lose it. Without this the draft survived and the next visit
+                  // offered to resume the listing they just discarded.
+                  await _discardDraft();
+                  if (mounted) context.pop();
                 },
                 child: Text(
                   'Discard',
@@ -1113,6 +1240,30 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     setState(() => _isPublishing = true);
 
     try {
+      // The one point where the shrunk file must actually exist. Usually
+      // finished long ago — the landlord spent the intervening minutes on
+      // location, details and pricing.
+      if (_videoWork != null) {
+        _showUploadProgress('Finishing video...');
+        await _videoWork;
+        if (!mounted) return;
+        Navigator.pop(context);
+      }
+
+      final video = _selectedVideoFile;
+      if (video != null) {
+        final videoMb = await video.length() / (1024 * 1024);
+        if (videoMb > _maxVideoMb) {
+          _showError(
+            'Even after shrinking, the video is ${videoMb.toStringAsFixed(0)}MB '
+            '(limit ${_maxVideoMb.toStringAsFixed(0)}MB). Please remove it or '
+            'record a shorter tour.',
+          );
+          setState(() => _isPublishing = false);
+          return;
+        }
+      }
+
       // Step 1: Upload images to Cloudinary
       debugPrint('📸 Starting image upload...');
       debugPrint('📸 Number of images: ${_selectedImageFiles.length}');
@@ -1352,7 +1503,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         inspectionAgentCluster: preCalcFee?.agentCluster,
         inspectionPropertyCluster: preCalcFee?.propertyCluster,
         videoUrl: videoUrl,
-        ceilingType: _ceilingType,
+        ceilingTypes: _ceilingTypes,
         recurringDues: _collectRecurringDues(),
       );
 
@@ -1396,8 +1547,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
       // Track activity — already handled inside PropertyService.createProperty()
 
-      // Clear the draft since we published successfully
-      await PropertyDraftService.clearDraft();
+      // Clear the draft since we published successfully. Blocks later saves
+      // too — otherwise a queued debounce could re-create the draft for a
+      // listing that is already live.
+      await _discardDraft();
 
       // Always show the pending review dialog. A grouped unit counts as having
       // a doc (it inherits the building's), so the dialog won't nag to upload.
@@ -1467,6 +1620,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           'Our team will review your ownership document to verify it matches your identity. '
           'This usually takes less than 24 hours.';
     }
+
+    // Approval alone doesn't make a listing bookable — the handler still has to
+    // confirm it's ready for inspections, and tenants are blocked from booking
+    // until they do. Nothing told landlords this, so listings sat approved and
+    // unbookable with no explanation.
+    message +=
+        '\n\nOnce approved, open the listing and mark it ready for inspections '
+        '— tenants can\'t book a viewing until you do.';
 
     showDialog(
       context: context,
@@ -1542,7 +1703,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     text: 'View My Properties',
                     onPressed: () {
                       Navigator.pop(context);
-                      context.go('/landlord/home');
+                      // Land on the Properties tab — the button says "my
+                      // properties", and the listing they just published is
+                      // what they want to see, not the dashboard.
+                      context.go('/landlord/home?tab=1');
                     },
                   ),
                 ),
@@ -1573,16 +1737,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         if (isVideo) {
           await _handleVideoSelected(File(media.path));
         } else {
-          // Image — temp-file workaround for Samsung/cloud-backed images
+          // Image — copied out for Samsung/cloud-backed images, and so a draft
+          // can still find it later.
           final bytes = await media.readAsBytes();
-          final tempDir = Directory.systemTemp;
-          final tempFile = File(
-            '${tempDir.path}/clearrent_${DateTime.now().millisecondsSinceEpoch}_${_selectedImageFiles.length}.jpg',
-          );
-          await tempFile.writeAsBytes(bytes);
+          final saved = await PropertyDraftService.persistMedia(bytes);
 
           setState(() {
-            _selectedImageFiles.add(tempFile);
+            _selectedImageFiles.add(saved);
           });
           _saveDraftDebounced();
         }
@@ -1678,14 +1839,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           source: ImageSource.camera,
         );
         if (image != null) {
+          // A camera capture exists nowhere else — if this copy is lost, the
+          // photo is gone for good, so it must not live in the cache dir.
           final bytes = await image.readAsBytes();
-          final tempDir = Directory.systemTemp;
-          final tempFile = File(
-            '${tempDir.path}/clearrent_${DateTime.now().millisecondsSinceEpoch}.jpg',
-          );
-          await tempFile.writeAsBytes(bytes);
+          final saved = await PropertyDraftService.persistMedia(bytes);
           setState(() {
-            _selectedImageFiles.add(tempFile);
+            _selectedImageFiles.add(saved);
           });
           _saveDraftDebounced();
         }
@@ -1717,21 +1876,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _saveDraftDebounced();
 
     try {
-      // Check file size first (50MB max)
-      final fileSizeBytes = await videoFile.length();
-      final fileSizeMB = fileSizeBytes / (1024 * 1024);
-
-      if (fileSizeMB > 50) {
-        _showError(
-          'Video is too large (${fileSizeMB.toStringAsFixed(1)}MB). '
-          'Maximum is 50MB. Try recording at a lower quality or trimming the video.',
-        );
-        setState(() => _isValidatingVideo = false);
-        _saveDraftDebounced();
-        return;
-      }
-
-      // Check duration
+      // Duration first — it's the cheap check, and there's no point spending a
+      // minute transcoding a clip that's the wrong length anyway.
       final controller = VideoPlayerController.file(videoFile);
       await controller.initialize();
       final duration = controller.value.duration;
@@ -1753,21 +1899,116 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         return;
       }
 
+      // Copy somewhere durable now that it has passed validation — the picker
+      // hands back a cache path, which won't survive for a resumed draft.
+      final durable = await PropertyDraftService.persistMediaFile(videoFile);
+
       // Initialize preview controller
       _videoPreviewController?.dispose();
-      _videoPreviewController = VideoPlayerController.file(videoFile);
+      _videoPreviewController = VideoPlayerController.file(durable);
       await _videoPreviewController!.initialize();
       _videoPreviewController!.setLooping(false);
       _videoPreviewController!.setVolume(0);
 
       setState(() {
-        _selectedVideoFile = videoFile;
+        _selectedVideoFile = durable;
         _isValidatingVideo = false;
+        _compressionProgress = null;
       });
+      _saveDraftNow();
+
+      // Shrink in the background. The landlord carries on to location, details
+      // and pricing while this runs; by the time they reach Publish it has
+      // almost always finished. The encode takes just as long — they simply
+      // aren't sat watching it.
+      _videoWork = _compressInBackground(durable);
     } catch (e) {
       debugPrint('❌ Video validation error: $e');
       _showError('Could not process this video. Please try another one.');
-      setState(() => _isValidatingVideo = false);
+      setState(() {
+        _isValidatingVideo = false;
+        _compressionProgress = null;
+      });
+    }
+  }
+
+  /// Compresses the selected video without blocking the form, then swaps the
+  /// smaller file in behind the scenes.
+  ///
+  /// Bails out at every step if the landlord removed the video or left the
+  /// screen meanwhile — finishing a transcode for a video nobody wants would
+  /// otherwise resurrect it.
+  Future<void> _compressInBackground(File original) async {
+    try {
+      final compressed = await _compressVideo(original);
+      if (!mounted || _selectedVideoFile?.path != original.path) return;
+      if (compressed.path == original.path) return; // skipped or failed
+
+      final durable = await PropertyDraftService.persistMediaFile(compressed);
+      if (!mounted || _selectedVideoFile?.path != original.path) return;
+
+      final controller = VideoPlayerController.file(durable);
+      await controller.initialize();
+      controller.setLooping(false);
+      controller.setVolume(0);
+      if (!mounted || _selectedVideoFile?.path != original.path) {
+        controller.dispose();
+        return;
+      }
+
+      _videoPreviewController?.dispose();
+      setState(() {
+        _videoPreviewController = controller;
+        _selectedVideoFile = durable;
+      });
+      _saveDraftNow();
+
+      // The full-size copy is no longer referenced by anything.
+      try {
+        await original.delete();
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('❌ Background video compression failed: $e');
+    } finally {
+      if (mounted) setState(() => _compressionProgress = null);
+    }
+  }
+
+  /// Transcodes to 720p so a normal phone recording fits the upload limit.
+  ///
+  /// Returns the original untouched when it's already small enough — no point
+  /// making the landlord wait to re-encode a file that would have uploaded
+  /// fine. If compression fails or somehow produces a bigger file, the original
+  /// is used and the size check below decides its fate; a failed optimisation
+  /// must not block a valid video.
+  Future<File> _compressVideo(File source) async {
+    final originalMb = await source.length() / (1024 * 1024);
+    if (originalMb <= _maxVideoMb) return source;
+
+    final sub = VideoCompress.compressProgress$.subscribe((progress) {
+      if (mounted) setState(() => _compressionProgress = progress / 100);
+    });
+
+    try {
+      final info = await VideoCompress.compressVideo(
+        source.path,
+        quality: VideoQuality.MediumQuality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+      final out = info?.file;
+      if (out == null) return source;
+      final outMb = await out.length() / (1024 * 1024);
+      debugPrint(
+        '🎬 Video compressed: ${originalMb.toStringAsFixed(0)}MB → ${outMb.toStringAsFixed(0)}MB',
+      );
+      return outMb < originalMb ? out : source;
+    } catch (e) {
+      debugPrint('❌ Video compression failed, using original: $e');
+      return source;
+    } finally {
+      sub.unsubscribe();
+      if (mounted) setState(() => _compressionProgress = null);
     }
   }
 
@@ -1988,6 +2229,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   final item = _selectedImageFiles.removeAt(oldIndex);
                   _selectedImageFiles.insert(newIndex, item);
                 });
+                // Order picks the cover photo, so it has to reach the draft.
+                _saveDraftNow();
               },
               itemBuilder: (context, index) {
                 return Container(
@@ -2034,6 +2277,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                             setState(() {
                               _selectedImageFiles.removeAt(index);
                             });
+                            // Otherwise a resumed draft would bring it back.
+                            _saveDraftNow();
                           },
                           child: Container(
                             width: 32,
@@ -2288,6 +2533,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       _videoPreviewController?.dispose();
                       _videoPreviewController = null;
                       setState(() => _selectedVideoFile = null);
+                      // Otherwise a resumed draft would bring it back.
+                      _saveDraftNow();
                     },
                     child: Container(
                       width: 32,
@@ -2307,13 +2554,41 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              'Video added! Tenants will see a muted preview when they view your listing.',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.success,
-                fontStyle: FontStyle.italic,
+            if (_compressionProgress != null)
+              // Informational only — the landlord can keep filling the form
+              // while this runs. Publish is the only step that waits.
+              Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: _compressionProgress,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Shrinking video for a faster upload — '
+                      '${(_compressionProgress! * 100).clamp(0, 100).toStringAsFixed(0)}%. '
+                      'Carry on, you don\'t need to wait.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                'Video added! Tenants will see a muted preview when they view your listing.',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.success,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-            ),
           ] else
             // No video yet — show hint
             Container(
@@ -2347,7 +2622,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   Widget _buildLocationStep() {
-    return SingleChildScrollView(
+    // Tapping blank space leaves a TextField focused in Flutter, so the address
+    // suggestion panel had no way to close except picking one. Unfocusing on an
+    // outside tap or a scroll gives it the dismissal people expect.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: NotificationListener<ScrollStartNotification>(
+        onNotification: (_) {
+          FocusScope.of(context).unfocus();
+          return false;
+        },
+        child: SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2374,6 +2660,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               });
             },
             onUnknownAreaDetected: (rawName, lat, lng) async {
+              // One report per area per session. admin_requests is admin-read
+              // only, so the client can't check for an existing row — without
+              // this, tapping around an unmapped area files a duplicate every
+              // time.
+              final key = rawName.trim().toLowerCase();
+              if (key.isEmpty || !_reportedUnknownAreas.add(key)) return;
               // Log to admin so the area can be added to the dropdown in future
               try {
                 await FirebaseFirestore.instance
@@ -2393,6 +2685,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             },
           ),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -2429,8 +2723,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               _buildTypeChip('Self Contain', 'selfContain'),
               _buildTypeChip('Bungalow', 'bungalow'),
               _buildTypeChip('Room', 'room'),
-              _buildTypeChip('Shop', 'shop'),
-              _buildTypeChip('Office', 'office'),
+              // Shop/Office are hidden until the commercial branch exists — the
+              // rest of this step (bedrooms, kitchen, residential amenities)
+              // still assumes a home, so a commercial listing comes out wrong.
+              // The type values are still handled everywhere; restoring these
+              // two chips is all it takes to bring them back.
             ],
           ),
           const SizedBox(height: 24),
@@ -2522,10 +2819,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             spacing: 8,
             runSpacing: 8,
             children: [
-              _buildCeilingChip('False Ceiling (POP)', 'false_ceiling'),
+              _buildCeilingChip('POP', 'pop'),
               _buildCeilingChip('PVC', 'pvc'),
               _buildCeilingChip('Concrete', 'concrete'),
               _buildCeilingChip('Asbestos', 'asbestos'),
+              _buildCeilingChip('Slate', 'slate'),
               _buildCeilingChip('None', 'none'),
             ],
           ),
@@ -2615,9 +2913,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             hint:
                 'Describe your property, its features, and what makes it special...',
             controller: _descriptionController,
+            focusNode: _descriptionFocusNode,
             maxLines: 4,
             textCapitalization: TextCapitalization.sentences,
             onChanged: (_) => _descriptionManuallyEdited = true,
+          ),
+          DescriptionPrompts(
+            controller: _descriptionController,
+            focusNode: _descriptionFocusNode,
+            onInserted: () {
+              // Inserting counts as writing it themselves — the auto-generated
+              // text must stop overwriting from here on.
+              _descriptionManuallyEdited = true;
+              _saveDraftDebounced();
+            },
           ),
           const SizedBox(height: 24),
 
@@ -2800,14 +3109,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
+  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling —
+  /// picking one clears the other.
+  void _toggleCeilingType(String value) {
+    if (_ceilingTypes.contains(value)) {
+      _ceilingTypes.remove(value);
+      return;
+    }
+    if (value == 'none') {
+      _ceilingTypes.clear();
+    } else {
+      _ceilingTypes.remove('none');
+    }
+    _ceilingTypes.add(value);
+  }
+
   Widget _buildCeilingChip(String label, String value) {
-    final isSelected = _ceilingType == value;
+    final isSelected = _ceilingTypes.contains(value);
     return GestureDetector(
-      onTap:
-          () => setState(() {
-            _ceilingType =
-                isSelected ? null : value; // Toggle off if already selected
-          }),
+      onTap: () {
+        setState(() => _toggleCeilingType(value));
+        _saveDraftDebounced();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
@@ -4340,8 +4663,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             const SizedBox(height: 16),
             AreaDropdown(
               label: 'Where do you live?',
+              // The inspection fee is flat — InspectionPricing.calculateFee
+              // records the cluster "for context, not used in math". Saying it
+              // drives the fee was simply untrue.
               helperText:
-                  'We\'ll use this to calculate inspection fees based on travel distance.',
+                  'Used to match you with inspections near you. The inspection '
+                  'fee is the same everywhere.',
               hint: 'Select your area',
               selectedArea: _landlordBaseArea,
               onSelected: (area) {
@@ -4370,7 +4697,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Inspection fees will be calculated based on distance from $_landlordBaseArea to your property.',
+                        'Saved as $_landlordBaseArea. Inspections are a flat '
+                        '${InspectionPricing.formatNaira(InspectionPricing.inspectionBookingFee)} '
+                        'anywhere in Lagos — you earn '
+                        '${InspectionPricing.formatNaira(InspectionPricing.handlerEarnings)} '
+                        'for each one you handle yourself.',
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.success,
                         ),

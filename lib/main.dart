@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'services/connectivity_service.dart';
 import 'services/notification_service.dart';
+import 'services/presence_service.dart';
 
 import 'app/app.dart';
 
@@ -40,6 +41,9 @@ void main() async {
     );
     firebaseInitialized = true;
     await NotificationService.instance.init();
+    // Heartbeat for the admin dashboard's "active now" view. Follows auth
+    // state, so it needs no hook in any individual sign-in path.
+    PresenceService.instance.start();
     debugPrint('✅ Firebase initialized successfully');
   } catch (e) {
     firebaseInitialized = false;

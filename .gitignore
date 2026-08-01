@@ -56,3 +56,14 @@ serviceAccountKey*.json
 *.keystore
 key.properties
 **/key.properties
+
+# Environment files — recipients, endpoints, keys. Firebase Functions reads
+# .env.<project>; none of it belongs in the repo. Real secrets live in
+# Secret Manager (defineSecret), not here.
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings — machine-specific permission grants.
+# The shared .claude/settings.json stays tracked.
+.claude/settings.local.json
