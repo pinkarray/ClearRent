@@ -47,26 +47,36 @@ class CapsuleNav extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: AppColors.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadowMedium,
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+          // Row, NOT Center. Scaffold gives bottomNavigationBar loose
+          // constraints whose maxHeight is the whole screen, and Center expands
+          // to fill bounded constraints — so it swallowed the screen and
+          // squeezed the body to zero height. A Row takes its height from its
+          // child while still centring it horizontally.
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(32),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.shadowMedium,
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final item in items) _CapsuleItem(item: item),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [for (final item in items) _CapsuleItem(item: item)],
-              ),
-            ),
+            ],
           ),
         ),
       ),
