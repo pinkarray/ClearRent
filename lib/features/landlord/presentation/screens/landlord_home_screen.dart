@@ -594,7 +594,10 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       color: AppColors.primary,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
+        // Bottom clears the floating "Add Property" button, which otherwise
+        // sits on top of the last activity card. Same 72 the Properties tab
+        // was already tuned to.
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 72),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1872,8 +1875,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     return CapsuleNav(
       items: [
         CapsuleNavItem(
-          icon: Icons.dashboard_outlined,
-          activeIcon: Icons.dashboard,
+          // Not the 4-square grid: it is the most generic icon in the set and
+          // reads as "menu" more than "overview". A chart matches what this
+          // tab actually shows — properties, views, inquiries, rentals.
+          icon: Icons.insights_outlined,
+          activeIcon: Icons.insights,
           label: 'Dashboard',
           isActive: _currentNavIndex == 0,
           onTap: () => setState(() => _currentNavIndex = 0),
