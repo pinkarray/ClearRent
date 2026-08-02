@@ -34,6 +34,8 @@ interface NotificationDoc {
   title?: string;
   body?: string;
   payload?: Record<string, string>;
+  /** Event kind, e.g. "chat_message". Copied into the FCM data below. */
+  type?: string;
 }
 
 export {nudgeInspectionParty, messageInspectionParties}
@@ -96,6 +98,20 @@ export const onNotificationCreated = onDocumentCreated(
       for (const [k, v] of Object.entries(payload)) {
         data[k] = typeof v === "string" ? v : JSON.stringify(v);
       }
+    }
+
+    // The doc's own `type` travels with the push.
+    //
+    // Without this, `data.type` was only ever set when a caller happened to
+    // repeat the type inside `payload` — and none do. The per-type collapse
+    // logic below therefore never matched, so twenty messages from one
+    // conversation arrived as twenty stacked banners instead of one that
+    // replaces itself. The web service worker groups on the same field.
+    //
+    // Payload wins if it already set `type`, so no existing caller changes
+    // behaviour.
+    if (notif.type && !data.type) {
+      data.type = notif.type;
     }
 
     // Include the notification doc ID so the client can mark it read
