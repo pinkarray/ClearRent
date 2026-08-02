@@ -10,6 +10,7 @@ import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../shared/models/inspection_request_model.dart';
+import '../../../../shared/widgets/capsule_nav.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../widgets/agent_assigned_properties_tab.dart';
@@ -69,11 +70,12 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   void initState() {
     super.initState();
     final uid = _auth.currentUser?.uid;
-    _assignedPropertiesStream = _firestore
-        .collection('properties')
-        .where('assignedAgentId', isEqualTo: uid)
-        .limit(3)
-        .snapshots();
+    _assignedPropertiesStream =
+        _firestore
+            .collection('properties')
+            .where('assignedAgentId', isEqualTo: uid)
+            .limit(3)
+            .snapshots();
     _agentRequestsStream = _inspectionService.getAgentRequests();
     _agentPendingRequestsStream = _inspectionService.getAgentPendingRequests();
     _agentPendingConfirmationsStream =
@@ -94,18 +96,21 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         .collection('users')
         .doc(uid)
         .snapshots()
-        .listen((doc) {
-      if (!mounted || !doc.exists) return;
-      final data = doc.data()!;
-      setState(() {
-        _userProfile = data;
-        _profileImageUrl = data['profileImageUrl'];
-        _isLoading = false;
-      });
-    }, onError: (e) {
-      debugPrint('❌ Profile stream error: $e');
-      if (mounted) setState(() => _isLoading = false);
-    });
+        .listen(
+          (doc) {
+            if (!mounted || !doc.exists) return;
+            final data = doc.data()!;
+            setState(() {
+              _userProfile = data;
+              _profileImageUrl = data['profileImageUrl'];
+              _isLoading = false;
+            });
+          },
+          onError: (e) {
+            debugPrint('❌ Profile stream error: $e');
+            if (mounted) setState(() => _isLoading = false);
+          },
+        );
   }
 
   void _startUnreadCountStream() {
@@ -115,17 +120,21 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         .collection('conversations')
         .where('participants', arrayContains: uid)
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      int total = 0;
-      for (final doc in snapshot.docs) {
-        final counts = doc.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
-        total += (counts[uid] as num? ?? 0).toInt();
-      }
-      setState(() => _unreadCount = total);
-    }, onError: (e) {
-      debugPrint('❌ Unread count stream error: $e');
-    });
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+            int total = 0;
+            for (final doc in snapshot.docs) {
+              final counts =
+                  doc.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
+              total += (counts[uid] as num? ?? 0).toInt();
+            }
+            setState(() => _unreadCount = total);
+          },
+          onError: (e) {
+            debugPrint('❌ Unread count stream error: $e');
+          },
+        );
   }
 
   @override
@@ -145,7 +154,6 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
       });
     }
   }
-
 
   Future<void> _pickProfileImage() async {
     final picker = ImagePicker();
@@ -372,18 +380,19 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         // returning from a pushed detail screen) preserves each tab's state and
         // live streams — no re-subscribe, no reload spinner on the Discover /
         // Properties tabs.
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : IndexedStack(
-                index: _currentNavIndex,
-                children: [
-                  SafeArea(child: _buildHomeTab()),
-                  const SafeArea(child: AgentDiscoverPropertiesScreen()),
-                  SafeArea(child: _buildPropertiesTab()),
-                  SafeArea(child: _buildMessagesTab()),
-                  _buildProfileTab(),
-                ],
-              ),
+        body:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : IndexedStack(
+                  index: _currentNavIndex,
+                  children: [
+                    SafeArea(child: _buildHomeTab()),
+                    const SafeArea(child: AgentDiscoverPropertiesScreen()),
+                    SafeArea(child: _buildPropertiesTab()),
+                    SafeArea(child: _buildMessagesTab()),
+                    _buildProfileTab(),
+                  ],
+                ),
         bottomNavigationBar: _buildBottomNav(),
       ),
     );
@@ -466,18 +475,16 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     ),
                     if (_isVerified) ...[
                       const SizedBox(width: 6),
-                      Icon(
-                        Icons.verified,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
+                      Icon(Icons.verified, color: AppColors.primary, size: 20),
                     ],
                   ],
                 ),
               ],
             ),
           ),
-          NotificationBell(userId: FirebaseAuth.instance.currentUser?.uid ?? ''),
+          NotificationBell(
+            userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+          ),
           const SizedBox(width: 4),
           IconButton(
             onPressed: () => setState(() => _currentNavIndex = 4),
@@ -645,24 +652,45 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.warning.withAlpha(77)),
         ),
-        child: Row(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.warning.withAlpha(26),
-              borderRadius: BorderRadius.circular(10),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.account_balance_wallet_outlined,
+                color: AppColors.warning,
+                size: 22,
+              ),
             ),
-            child: Icon(Icons.account_balance_wallet_outlined, color: AppColors.warning, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Add Bank Details', style: AppTextStyles.labelLarge.copyWith(color: AppColors.warning)),
-            const SizedBox(height: 2),
-            Text('Required to receive inspection payouts',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.warning.withAlpha(204))),
-          ])),
-          Icon(Icons.chevron_right, color: AppColors.warning),
-        ]),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add Bank Details',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Required to receive inspection payouts',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.warning.withAlpha(204),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.warning),
+          ],
+        ),
       ),
     );
   }
@@ -1004,10 +1032,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: Icon(
-                            Icons.home,
-                            color: AppColors.textHint,
-                          ),
+                          child: Icon(Icons.home, color: AppColors.textHint),
                         ),
               ),
               const SizedBox(width: 12),
@@ -1041,11 +1066,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.textHint,
-                size: 20,
-              ),
+              Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
             ],
           ),
         ),
@@ -1315,10 +1336,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                               ],
                             ),
                           ),
-                          Icon(
-                            Icons.chevron_right,
-                            color: AppColors.textHint,
-                          ),
+                          Icon(Icons.chevron_right, color: AppColors.textHint),
                         ],
                       ),
                     ],
@@ -1447,10 +1465,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           width: 60,
                           height: 60,
                           color: AppColors.background,
-                          child: Icon(
-                            Icons.home,
-                            color: AppColors.textHint,
-                          ),
+                          child: Icon(Icons.home, color: AppColors.textHint),
                         ),
               ),
               const SizedBox(width: 12),
@@ -1562,11 +1577,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.textHint,
-                size: 20,
-              ),
+              Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
             ],
           ),
         ),
@@ -1684,10 +1695,13 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -1960,146 +1974,56 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
 
   // ============ BOTTOM NAV ============
   Widget _buildBottomNav() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(13),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home,
-                label: 'Home',
-                isActive: _currentNavIndex == 0,
-                onTap: () => setState(() => _currentNavIndex = 0),
-              ),
-              _NavItem(
-                icon: Icons.explore_outlined,
-                activeIcon: Icons.explore,
-                label: 'Discover',
-                isActive: _currentNavIndex == 1,
-                onTap: () => setState(() => _currentNavIndex = 1),
-              ),
-              _NavItem(
-                icon: Icons.home_work_outlined,
-                activeIcon: Icons.home_work,
-                label: 'Properties',
-                isActive: _currentNavIndex == 2,
-                onTap: () => setState(() => _currentNavIndex = 2),
-                badge:
-                    _assignedPropertiesCount > 0
-                        ? '$_assignedPropertiesCount'
-                        : null,
-              ),
-              _NavItem(
-                icon: Icons.chat_outlined,
-                activeIcon: Icons.chat,
-                label: 'Messages',
-                isActive: _currentNavIndex == 3,
-                onTap: () {
-                  setState(() {
-                    _currentNavIndex = 3;
-                  });
-                },
-                badge: _unreadCount > 0 ? '$_unreadCount' : null,
-              ),
-              _NavItem(
-                icon: Icons.person_outline,
-                activeIcon: Icons.person,
-                label: 'Profile',
-                isActive: _currentNavIndex == 4,
-                onTap: () => setState(() => _currentNavIndex = 4),
-              ),
-            ],
-          ),
+    return CapsuleNav(
+      items: [
+        CapsuleNavItem(
+          icon: Icons.home_outlined,
+          activeIcon: Icons.home,
+          label: 'Home',
+          isActive: _currentNavIndex == 0,
+          onTap: () => setState(() => _currentNavIndex = 0),
         ),
-      ),
+        CapsuleNavItem(
+          icon: Icons.explore_outlined,
+          activeIcon: Icons.explore,
+          label: 'Discover',
+          isActive: _currentNavIndex == 1,
+          onTap: () => setState(() => _currentNavIndex = 1),
+        ),
+        CapsuleNavItem(
+          icon: Icons.home_work_outlined,
+          activeIcon: Icons.home_work,
+          label: 'Properties',
+          isActive: _currentNavIndex == 2,
+          onTap: () => setState(() => _currentNavIndex = 2),
+          badge:
+              _assignedPropertiesCount > 0 ? '$_assignedPropertiesCount' : null,
+        ),
+        CapsuleNavItem(
+          icon: Icons.chat_outlined,
+          activeIcon: Icons.chat,
+          label: 'Messages',
+          isActive: _currentNavIndex == 3,
+          onTap: () {
+            setState(() {
+              _currentNavIndex = 3;
+            });
+          },
+          badge: _unreadCount > 0 ? '$_unreadCount' : null,
+        ),
+        CapsuleNavItem(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'Profile',
+          isActive: _currentNavIndex == 4,
+          onTap: () => setState(() => _currentNavIndex = 4),
+        ),
+      ],
     );
   }
 }
 
 // ============ HELPER WIDGETS ============
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  final String? badge;
-
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-    this.badge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Icon(
-                isActive ? activeIcon : icon,
-                color: isActive ? AppColors.primary : AppColors.textSecondary,
-              ),
-              if (badge != null)
-                Positioned(
-                  right: -8,
-                  top: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.error,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      badge!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: AppTextStyles.caption.copyWith(
-              color: isActive ? AppColors.primary : AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _ProfileStat extends StatelessWidget {
   final IconData icon;
@@ -2224,11 +2148,7 @@ class _ProfileMenuItem extends StatelessWidget {
               ),
             ),
             trailing ??
-                Icon(
-                  Icons.chevron_right,
-                  color: AppColors.textHint,
-                  size: 20,
-                ),
+                Icon(Icons.chevron_right, color: AppColors.textHint, size: 20),
           ],
         ),
       ),
@@ -2337,11 +2257,7 @@ class _PaymentConfirmCardState extends State<_PaymentConfirmCard> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.payments,
-                      size: 12,
-                      color: AppColors.success,
-                    ),
+                    Icon(Icons.payments, size: 12, color: AppColors.success),
                     const SizedBox(width: 4),
                     Text(
                       'PAYMENT SENT',
