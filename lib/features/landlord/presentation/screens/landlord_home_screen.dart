@@ -158,11 +158,12 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           },
           onError: (e) {
             debugPrint('❌ Profile stream error: $e');
-            if (mounted)
+            if (mounted) {
               setState(() {
                 _userName = 'Landlord';
                 _isLoadingProfile = false;
               });
+            }
           },
         );
   }

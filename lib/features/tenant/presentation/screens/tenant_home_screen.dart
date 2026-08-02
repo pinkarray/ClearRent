@@ -265,30 +265,33 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           _hasBankDetails = profile['hasBankDetails'] == true;
         });
       } else {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _userName = 'Tenant';
             _isLoadingProfile = false;
           });
+        }
       }
     } catch (e) {
       debugPrint('❌ Error loading profile: $e');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _userName = 'Tenant';
           _isLoadingProfile = false;
         });
+      }
     }
   }
 
   Future<void> _loadSavedProperties() async {
     try {
       final savedIds = await _savedService.getSavedPropertyIds();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _savedProperties = savedIds;
           _isLoadingSaved = false;
         });
+      }
     } catch (e) {
       debugPrint('❌ Error loading saved: $e');
       if (mounted) setState(() => _isLoadingSaved = false);
@@ -521,17 +524,22 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       _filteredProperties =
           _allProperties.where((property) {
             if (_selectedType != 'all' &&
-                property.propertyType != _selectedType)
+                property.propertyType != _selectedType) {
               return false;
-            if (_selectedArea != 'All Areas' && property.city != _selectedArea)
+            }
+            if (_selectedArea != 'All Areas' &&
+                property.city != _selectedArea) {
               return false;
+            }
             // More-filters (price / bedrooms / bathrooms / amenities).
             if (_minRent > 0 && property.rent < _minRent) return false;
             if (_maxRent > 0 && property.rent > _maxRent) return false;
-            if (_minBedrooms > 0 && property.bedrooms < _minBedrooms)
+            if (_minBedrooms > 0 && property.bedrooms < _minBedrooms) {
               return false;
-            if (_minBathrooms > 0 && property.bathrooms < _minBathrooms)
+            }
+            if (_minBathrooms > 0 && property.bathrooms < _minBathrooms) {
               return false;
+            }
             if (_filterAmenities.isNotEmpty &&
                 !_filterAmenities.every(
                   (a) => property.amenities.contains(a),
@@ -854,10 +862,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     Set<String> amenities,
   ) {
     return _allProperties.where((property) {
-      if (_selectedType != 'all' && property.propertyType != _selectedType)
+      if (_selectedType != 'all' && property.propertyType != _selectedType) {
         return false;
-      if (_selectedArea != 'All Areas' && property.city != _selectedArea)
+      }
+      if (_selectedArea != 'All Areas' && property.city != _selectedArea) {
         return false;
+      }
       if (minRent > 0 && property.rent < minRent) return false;
       if (maxRent > 0 && property.rent > maxRent) return false;
       if (minBed > 0 && property.bedrooms < minBed) return false;
