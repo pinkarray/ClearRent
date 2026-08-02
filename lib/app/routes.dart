@@ -1,4 +1,6 @@
-import 'package:flutter/widgets.dart';
+// material rather than widgets: _MissingChatScreen's fallback UI needs
+// Scaffold/AppBar/Icons, and material re-exports everything widgets.dart had.
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../features/auth/presentation/screens/splash_screen.dart';
 import '../features/auth/presentation/screens/onboarding_screen.dart';
@@ -162,21 +164,24 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/lease-details',
       builder: (context, state) {
-        final rental = state.extra as ActiveRental;
+        final rental = state.extra as ActiveRental?;
+        if (rental == null) return const _MissingArgsScreen('lease');
         return LeaseDetailsScreen(rental: rental);
       },
     ),
     GoRoute(
       path: '/tenant/renew',
       builder: (context, state) {
-        final rental = state.extra as TenantRental;
+        final rental = state.extra as TenantRental?;
+        if (rental == null) return const _MissingArgsScreen('renewal');
         return RenewalPaymentScreen(rental: rental);
       },
     ),
     GoRoute(
       path: '/tenant/report-issue',
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
+        final extra = state.extra as Map<String, dynamic>?;
+        if (extra == null) return const _MissingArgsScreen('page');
         return ReportIssueScreen(
           propertyId: extra['propertyId'] as String,
           propertyTitle: extra['propertyTitle'] as String,
@@ -216,7 +221,8 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/inspection-payment',
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
+        final extra = state.extra as Map<String, dynamic>?;
+        if (extra == null) return const _MissingArgsScreen('payment');
         // Pay-after-approve: pays for an already-approved inspection request.
         return InspectionPaymentScreen(
           request: extra['request'] as InspectionRequest,
@@ -226,7 +232,8 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/rental-payment',
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
+        final extra = state.extra as Map<String, dynamic>?;
+        if (extra == null) return const _MissingArgsScreen('payment');
         return RentalPaymentScreen(
           rentalInterest: extra['rentalInterest'] as RentalInterest,
           inspectionRequest: extra['inspectionRequest'] as InspectionRequest?,
@@ -326,7 +333,8 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/landlord/property-health',
       builder: (context, state) {
-        final property = state.extra as PropertyModel;
+        final property = state.extra as PropertyModel?;
+        if (property == null) return const _MissingArgsScreen('property');
         return PropertyHealthScreen(property: property);
       },
     ),
@@ -337,7 +345,8 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/landlord/request-rent-change',
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
+        final extra = state.extra as Map<String, dynamic>?;
+        if (extra == null) return const _MissingArgsScreen('page');
         return RequestRentChangeScreen(
           propertyId: extra['propertyId'] as String,
           propertyTitle: extra['propertyTitle'] as String,
@@ -416,27 +425,98 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/property-detail',
       builder: (context, state) {
-        final property = state.extra as PropertyModel;
+        final property = state.extra as PropertyModel?;
+        // /property-detail-loader fetches by id when there is no object to pass.
+        if (property == null) return const _MissingArgsScreen('property');
         return PropertyDetailScreen(property: property);
       },
     ),
+    // Chat is reachable from a push notification, which means `extra` cannot be
+    // load-bearing here.
+    //
+    // go_router's `extra` is an in-memory object: it does NOT survive the OS
+    // restoring the app, a cold start, or a hot restart, because only the
+    // location string is persisted. The old `state.extra as Map<String,
+    // dynamic>` was an unconditional cast, so any of those rebuilt /chat with a
+    // null extra and crashed with "type 'Null' is not a subtype of type
+    // 'Map<String, dynamic>'".
+    //
+    // conversationId is therefore read from the query string first (it survives
+    // restoration) and falls back to extra. The remaining fields are cosmetic —
+    // ChatScreen loads the conversation by id anyway — so losing them degrades
+    // the header rather than the screen.
     GoRoute(
       path: '/chat',
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
-        final conversationId = extra['conversationId'] as String;
-        final propertyTitle = extra['propertyTitle'] as String?;
-        final propertyImage = extra['propertyImage'] as String?;
-        final initialDraft = extra['initialDraft'] as String?;
-        final suggestions = (extra['suggestions'] as List?)?.cast<String>();
+        final extra = state.extra as Map<String, dynamic>?;
+        final conversationId = state.uri.queryParameters['conversationId'] ??
+            extra?['conversationId'] as String?;
+
+        if (conversationId == null || conversationId.isEmpty) {
+          return const _MissingArgsScreen('conversation');
+        }
+
         return ChatScreen(
           conversationId: conversationId,
-          propertyTitle: propertyTitle,
-          propertyImage: propertyImage,
-          initialDraft: initialDraft,
-          suggestions: suggestions,
+          propertyTitle: extra?['propertyTitle'] as String?,
+          propertyImage: extra?['propertyImage'] as String?,
+          initialDraft: extra?['initialDraft'] as String?,
+          suggestions: (extra?['suggestions'] as List?)?.cast<String>(),
         );
       },
     ),
   ],
 );
+
+/// Shown when a route is rebuilt without the `extra` it needs.
+///
+/// go_router's `extra` is an in-memory object — only the location string is
+/// persisted — so the OS restoring the app, a cold start or a hot restart all
+/// rebuild a route with `extra == null`. Every screen below that took a model
+/// object out of `extra` used to cast it unconditionally, which turned that
+/// into "type 'Null' is not a subtype of..." on a red screen.
+///
+/// These objects cannot be rebuilt from a URL, so there is nothing to recover:
+/// the honest outcome is to say so and offer a way back, rather than crash.
+///
+/// Styled with Material defaults on purpose — pulling AppColors/AppTextStyles
+/// in for a screen that should never render is not worth the coupling.
+class _MissingArgsScreen extends StatelessWidget {
+  const _MissingArgsScreen(this.what);
+
+  /// The noun for the sentence, e.g. 'conversation' or 'payment'.
+  final String what;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('ClearRent')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 16),
+              Text(
+                "We couldn't open that $what",
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please open it again from the app.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => context.go('/'),
+                child: const Text('Go home'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

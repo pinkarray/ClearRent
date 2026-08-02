@@ -302,7 +302,16 @@ class NotificationService {
           extra.remove('initialTab');
         }
       }
-      appRouter.push(route, extra: extra);
+      // Identity travels in the LOCATION, not just in `extra`. go_router keeps
+      // only the location string when the OS restores the app, so a route that
+      // depends on `extra` alone rebuilds with null and crashes. Query params
+      // survive; extra is still passed for the cosmetic fields.
+      var target = route;
+      final conversationId = extra['conversationId'];
+      if (route == '/chat' && conversationId is String && conversationId.isNotEmpty) {
+        target = '/chat?conversationId=${Uri.encodeComponent(conversationId)}';
+      }
+      appRouter.push(target, extra: extra);
     } catch (e) {
       AppLogger.e('Failed to navigate to notification target',
           error: e, name: 'NotificationService');
