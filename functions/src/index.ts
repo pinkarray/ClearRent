@@ -342,6 +342,103 @@ async function rejectIfSlotConflict(
 }
 
 /**
+ * Server-side duplicate guard. The clients check "do I already have an
+ * open request on this property?" before writing (web: hasActiveRequest,
+ * app: InspectionService), but a read-then-write check is racy — two
+ * quick submits both pass the read and both commit. Rules cannot close
+ * this, because a rule cannot query the collection.
+ *
+ * Same tenant + same property + both still active ⇒ duplicate. Resolved
+ * in favour of the EARLIER createdAt, matching rejectIfSlotConflict.
+ *
+ * @param {string} requestId The newly-created request's doc id.
+ * @param {FirebaseFirestore.DocumentData} data The new request's data.
+ * @return {Promise<boolean>} True if the new doc was rejected (caller
+ *   should skip its own logic).
+ */
+async function rejectIfDuplicateRequest(
+  requestId: string,
+  data: FirebaseFirestore.DocumentData,
+): Promise<boolean> {
+  const db = getFirestore();
+  const tenantId = data.tenantId as string | undefined;
+  const propertyId = data.propertyId as string | undefined;
+  const createdAt = data.createdAt as Timestamp | undefined;
+  const propertyTitle =
+    (data.propertyTitle as string | undefined) ?? "the property";
+
+  if (!tenantId || !propertyId) return false;
+
+  // Equality-only filters, so no composite index is required. The status
+  // list is the same set the web calls ACTIVE_STATUSES.
+  const snap = await db
+    .collection("inspection_requests")
+    .where("tenantId", "==", tenantId)
+    .where("propertyId", "==", propertyId)
+    .where("status", "in", SLOT_HOLDING_STATUSES)
+    .get();
+
+  let duplicate: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  for (const doc of snap.docs) {
+    if (doc.id === requestId) continue;
+    const otherCreated = doc.data().createdAt as Timestamp | undefined;
+    const newerMillis = createdAt ? createdAt.toMillis() : 0;
+    const otherMillis = otherCreated ? otherCreated.toMillis() : 0;
+    if (otherMillis < newerMillis ||
+      (otherMillis === newerMillis && doc.id < requestId)) {
+      duplicate = doc;
+      break;
+    }
+  }
+
+  if (!duplicate) return false;
+
+  logger.info("Duplicate inspection request — declining new doc", {
+    requestId,
+    duplicateOf: duplicate.id,
+    tenantId,
+    propertyId,
+  });
+
+  // Pay-after-approve means a fresh duplicate is normally unpaid, but a
+  // paid one must still be made whole rather than silently closed.
+  const wasPaid = data.paymentStatus === "paid";
+  const update: Record<string, unknown> = {
+    status: "declined",
+    declineSource: "system_duplicate",
+    declineReason:
+      "You already have an open inspection request on this property.",
+    declinedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (wasPaid) {
+    update.paymentStatus = "refunded";
+    update.refundedAt = FieldValue.serverTimestamp();
+    update.refundReason = "Duplicate request — automatic refund";
+  }
+  await db.collection("inspection_requests").doc(requestId).update(update);
+
+  await writeNotificationOnce(
+    `req_${requestId}_duplicate_${tenantId}`,
+    {
+      userId: tenantId,
+      type: "inspection_declined",
+      title: "Duplicate Request",
+      body:
+        `You already have an open inspection request for ${propertyTitle}` +
+        (wasPaid ? " — refund processing." : "."),
+      payload: {
+        route: "/tenant/inspections",
+        initialTab: "2",
+        param_requestId: requestId,
+      },
+    },
+  );
+
+  return true;
+}
+
+/**
  * Notify the handler when a new inspection request is created.
  *
  * Skipped when status is "pendingPayment" — the tenant hasn't
@@ -350,9 +447,10 @@ async function rejectIfSlotConflict(
  * request-update trigger when status advances to "pending" or
  * "pendingVerification".
  *
- * Recipient: the agent (if agent-handled) or the landlord (if self-
- * handled). The non-handler party is intentionally not pushed — the
- * in-app activity feed surfaces it for them.
+ * Recipients: the handler — the agent (if agent-handled) or the
+ * landlord (if self-handled) — plus, when an agent handles it, the
+ * landlord as the property's owner. The tenant is not pushed; they
+ * just made the request.
  */
 export const onInspectionRequestCreated = onDocumentCreated(
   "inspection_requests/{requestId}",
@@ -366,6 +464,21 @@ export const onInspectionRequestCreated = onDocumentCreated(
     const requestId = event.params.requestId;
     const data = snap.data();
     const status = data.status as string | undefined;
+
+    // Duplicate check first: a second request on a property the tenant
+    // already has open is rejected before any slot reasoning. Wrapped
+    // like the slot check below, so a query failure degrades to "no
+    // duplicate protection" rather than killing the notification.
+    let duplicated = false;
+    try {
+      duplicated = await rejectIfDuplicateRequest(requestId, data);
+    } catch (err) {
+      logger.error("Duplicate check failed — proceeding", {
+        requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (duplicated) return;
 
     // Slot conflict check — if the new request collides with an
     // existing booking on the same handler/date/slot, decline it
@@ -465,10 +578,34 @@ export const onInspectionRequestCreated = onDocumentCreated(
       },
     );
 
+    // The owner is told too when an agent handles the property. Previously
+    // only the handler was notified, so a landlord could learn nothing about
+    // a stranger visiting their own house — and if that agent had no FCM
+    // token, the request reached nobody at all. Awareness only: the agent
+    // still owns the approve/decline.
+    if (agentId && landlordId && landlordId !== agentId) {
+      await writeNotificationOnce(
+        `req_${requestId}_created_${landlordId}`,
+        {
+          userId: landlordId,
+          type: "inspection_request",
+          title: "Inspection Requested On Your Property",
+          body: `${tenantName} wants to inspect ${propertyTitle}. ` +
+            "Your agent will respond.",
+          payload: {
+            route: "/landlord/inspections",
+            initialTab: "0",
+            param_requestId: requestId,
+          },
+        },
+      );
+    }
+
     logger.info("Inspection-request-created notification queued", {
       requestId,
       recipientId,
       isAgent: !!agentId,
+      landlordCopied: !!(agentId && landlordId && landlordId !== agentId),
     });
   },
 );
@@ -1562,15 +1699,16 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     }
 
     // ---- Status: pending → declined (landlord-handled decline) ----
-    // Tenant gets pushed. Skipped when the decline came from the
-    // server-side slot-conflict guard — that path emits its own
-    // tenant notification with accurate wording.
+    // Tenant gets pushed. Skipped when the decline came from a
+    // server-side guard — those paths emit their own tenant
+    // notification with accurate wording.
     if (
       statusChanged &&
       beforeStatus === "pending" &&
       afterStatus === "declined" &&
       tenantId &&
-      after.declineSource !== "system_slot_conflict"
+      after.declineSource !== "system_slot_conflict" &&
+      after.declineSource !== "system_duplicate"
     ) {
       await writeNotificationOnce(
         `req_${requestId}_declined_${tenantId}`,
