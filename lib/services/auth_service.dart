@@ -902,8 +902,14 @@ class AuthService {
       // rule on /users (security audit F1.1). The CF rate-limits per IP.
       final String email;
       try {
+        // Bounded so an unreachable backend fails loudly instead of spinning
+        // forever. A broken IPv6 route to Google leaves the TCP connect in
+        // SYN-SENT, and the default 70s felt like a permanent hang.
         final callable = FirebaseFunctions.instance.httpsCallable(
           'lookupEmailByPhone',
+          options: HttpsCallableOptions(
+            timeout: const Duration(seconds: 20),
+          ),
         );
         final result = await callable.call<Map<String, dynamic>>({
           'phone': phoneNumber,
@@ -938,6 +944,13 @@ class AuthService {
               success: false,
               error:
                   'Too many attempts. Please wait a few minutes and try again.',
+            );
+          case 'deadline-exceeded':
+          case 'unavailable':
+            return AuthResult(
+              success: false,
+              error: 'Could not reach ClearRent. Check your connection and '
+                  'try again.',
             );
           default:
             debugPrint(
