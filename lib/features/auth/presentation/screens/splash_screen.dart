@@ -167,11 +167,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
+                        // Kept deliberately light: black over the saturated
+                        // primary goes muddy rather than soft, so this is a
+                        // close, faint lift rather than a drop.
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withAlpha(51),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                            color: Colors.black.withAlpha(20),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
