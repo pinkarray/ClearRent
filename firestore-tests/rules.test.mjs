@@ -186,6 +186,24 @@ beforeEach(async () => {
       tenantId: TENANT, landlordId: LANDLORD, agentId: null,
       propertyId: "prop1", status: "completed",
     });
+    // withinInspectionWindow fixtures: approved inspections scheduled now,
+    // three days out, and one with no date at all.
+    await setDoc(doc(db, "inspection_requests/ir_now"), {
+      tenantId: TENANT, landlordId: LANDLORD, agentId: AGENT,
+      propertyId: "prop1", status: "approved",
+      requestedDate: Timestamp.fromDate(new Date()),
+    });
+    await setDoc(doc(db, "inspection_requests/ir_future"), {
+      tenantId: TENANT, landlordId: LANDLORD, agentId: AGENT,
+      propertyId: "prop1", status: "approved",
+      requestedDate: Timestamp.fromDate(
+        new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+      ),
+    });
+    await setDoc(doc(db, "inspection_requests/ir_nodate"), {
+      tenantId: TENANT, landlordId: LANDLORD, agentId: AGENT,
+      propertyId: "prop1", status: "approved",
+    });
     // C1 fixture: locked bank details in the private subcollection.
     await setDoc(doc(db, "users/" + LANDLORD + "/private/bank"), {
       bankName: "GTBank", bankCode: "058",
@@ -709,9 +727,14 @@ test("user lists active rentals by propertyId only — denied", async () => {
 // Clients must not be able to mint already-paid financial state. Positive =
 // the real client write still works; negative = the forgery is closed.
 
-// rental_interests create — tenant files own, must start 'pending_payment'.
-test("tenant creates own pending rental interest — allowed", async () => {
-  await assertSucceeds(
+// rental_interests create — SERVER-ONLY since H2 (`allow create: if false`).
+// The amounts on this document decide what the tenant is charged, so creation
+// runs through the createRentalInterest callable, which derives every figure
+// from the property and config/pricing. This case used to assert a tenant
+// could file their own; the rule was tightened and the test was not updated,
+// which is why it had been failing.
+test("tenant creates own rental interest directly — denied", async () => {
+  await assertFails(
     setDoc(doc(tenantDb(), "rental_interests/ri_new"), {
       tenantId: TENANT, landlordId: LANDLORD, inspectionRequestId: "insp1",
       propertyId: "prop1", status: "pending_payment",
@@ -1146,6 +1169,62 @@ test("non-assigned user updates inspection availability — denied", async () =>
   await assertFails(
     updateDoc(doc(otherDb(), "properties/p_sched_other"), {
       inspectionDays: ["Monday", "Tuesday"],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+// ─── withinInspectionWindow — arrival may not be recorded early ──────────────
+// A visit marked arrived/met/completed a day before it was scheduled put a
+// meeting that never happened on the record backing the handler's payout.
+// Gating arrival gates the chain: 'confirm met' needs both arrived, and
+// completion needs both confirmed.
+
+test("tenant marks arrived on the scheduled day — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "inspection_requests/ir_now"), {
+      tenantArrived: true,
+      tenantArrivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("handler marks arrived on the scheduled day — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(agentDb(), "inspection_requests/ir_now"), {
+      handlerArrived: true,
+      handlerArrivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant marks arrived three days early — denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "inspection_requests/ir_future"), {
+      tenantArrived: true,
+      tenantArrivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("handler marks arrived three days early — denied", async () => {
+  await assertFails(
+    updateDoc(doc(agentDb(), "inspection_requests/ir_future"), {
+      handlerArrived: true,
+      handlerArrivedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("arrival on an inspection with no scheduled date — denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "inspection_requests/ir_nodate"), {
+      tenantArrived: true,
+      tenantArrivedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
   );

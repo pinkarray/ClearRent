@@ -665,6 +665,21 @@ service cloud.firestore {
             .data.get('readyForInspections', false) == true;
       }
 
+      // Arrival may only be recorded around the scheduled slot — and since
+      // 'confirm met' requires both arrived, and completion requires both
+      // confirmed, gating arrival gates the whole chain. Compares absolute
+      // instants, so it is timezone-proof: 6h before the slot to 24h after.
+      // Without this a Sunday visitor could mark arrived, confirm met and
+      // complete a Monday inspection, putting a visit that never happened on
+      // the record that backs the handler's payout. Strict on a missing
+      // field: an inspection with no date cannot be proven to be happening.
+      function withinInspectionWindow() {
+        return 'requestedDate' in resource.data
+          && resource.data.requestedDate is timestamp
+          && request.time > resource.data.requestedDate - duration.value(6, 'h')
+          && request.time < resource.data.requestedDate + duration.value(24, 'h');
+      }
+
       // ─── Create / read / list / delete ───────────────────────
 
       allow create: if request.auth != null && actorHasBankDetails()
@@ -739,12 +754,14 @@ service cloud.firestore {
       // Site: inspection_service.dart:907
       allow update: if isTenant()
         && resource.data.status == 'approved'
+        && withinInspectionWindow()
         && inspFields(['tenantArrived', 'tenantArrivedAt', 'updatedAt']);
-      
+
       // [Row 5] Handler marks themselves arrived.
       // Site: inspection_service.dart:961
       allow update: if isHandler()
         && resource.data.status == 'approved'
+        && withinInspectionWindow()
         && inspFields(['handlerArrived', 'handlerArrivedAt', 'updatedAt']);
       
       // [Row 6] Handler marks inspection complete. Triggers W1
