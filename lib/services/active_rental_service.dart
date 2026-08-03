@@ -215,9 +215,20 @@ class ActiveRentalService {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      final docRef = await _firestore
-          .collection('active_rentals')
-          .add(rentalData);
+      // The rental id IS the interest id, and creation is a get-or-create in a
+      // transaction. The onRentalInterestAccepted Cloud Function now creates
+      // this same document the moment the interest flips to accepted, so both
+      // paths converge on one doc instead of minting a duplicate — and a late
+      // client write can never clobber an agreement the tenant has already
+      // accepted, because an existing doc is returned untouched.
+      final docRef =
+          _firestore.collection('active_rentals').doc(rentalInterest.id);
+
+      await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(docRef);
+        if (snap.exists) return;
+        tx.set(docRef, rentalData);
+      });
 
       // Property occupancy is server-owned (occupancy-sync CFs) and keys off the
       // rental status, so nothing to do here while it's pending_payment.
@@ -226,11 +237,10 @@ class ActiveRentalService {
       // paid. Marking them active here would show an unpaid tenant as a real
       // tenant on their dashboard.
 
-      // Fetch created document
       final doc = await docRef.get();
       if (doc.exists) {
         developer.log(
-          '✅ Active rental created: ${docRef.id}',
+          '✅ Active rental ready: ${docRef.id}',
           name: 'ActiveRentalService',
         );
         return ActiveRental.fromFirestore(doc.data()!, doc.id);

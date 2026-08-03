@@ -53,7 +53,12 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, FieldValue, Firestore} from "firebase-admin/firestore";
+import {
+  getFirestore,
+  FieldValue,
+  Firestore,
+  Timestamp,
+} from "firebase-admin/firestore";
 import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 import {getPricing} from "./pricing";
@@ -1094,6 +1099,110 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
 //    a no-op. Notifications use writeNotificationOnce with a
 //    deterministic key.
 // ============================================================
+/**
+ * Create the tenancy record the moment a landlord accepts.
+ *
+ * This used to be a client call made only by the Flutter landlord screen
+ * (active_rental_service.dart createActiveRental). Web never had it, so a
+ * landlord who accepted from the browser left the tenant with an accepted
+ * interest and NO rental — nothing to attach an agreement to, and therefore no
+ * way to pay rent. Doing it here makes it origin-agnostic and removes the
+ * app's accept-then-create race, where a failed second step stranded a tenant.
+ *
+ * The rental doc id IS the interest id, so a double fire (or a client racing
+ * this) converges on one document instead of minting duplicates. `create()`
+ * throws ALREADY_EXISTS, which is the idempotency guard.
+ *
+ * Born UNPAID (`pending_payment`): pay-after-accept means the tenancy is not
+ * real until rent lands, and that status is deliberately outside the server's
+ * OCCUPYING_RENTAL_STATUSES, so the unit stays on the market until it is.
+ *
+ * @param {Firestore} db Firestore instance.
+ * @param {string} interestId The accepted interest's id, reused as rental id.
+ * @param {FirebaseFirestore.DocumentData} interest The accepted interest.
+ * @return {Promise<void>}
+ */
+async function createRentalForAcceptedInterest(
+  db: Firestore,
+  interestId: string,
+  interest: FirebaseFirestore.DocumentData,
+): Promise<void> {
+  const propertyId = interest.propertyId as string;
+
+  // The caution deposit is snapshotted, not read at move-out: it lives on the
+  // property, which the landlord may edit once the unit is vacant, so reading
+  // it later would report whatever the listing says then rather than what this
+  // tenant was promised.
+  let cautionDeposit = 0;
+  let cautionDepositRefundable = true;
+  try {
+    const propSnap = await db.collection("properties").doc(propertyId).get();
+    const p = propSnap.data();
+    if (p) {
+      cautionDeposit = Number(p.cautionDeposit ?? 0);
+      cautionDepositRefundable = p.cautionDepositRefundable !== false;
+    }
+  } catch (err) {
+    logger.error("Caution-deposit snapshot failed — defaulting to 0", {
+      interestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const now = new Date();
+  const leaseEnd = new Date(now);
+  leaseEnd.setFullYear(leaseEnd.getFullYear() + 1);
+
+  const rentAmount = Number(interest.rentAmount ?? 0) > 0 ?
+    Number(interest.rentAmount) :
+    Number(interest.paymentAmount ?? 0);
+  const agentId = (interest.agentId as string | null) ?? null;
+
+  try {
+    await db.collection("active_rentals").doc(interestId).create({
+      propertyId,
+      tenantId: interest.tenantId,
+      landlordId: interest.landlordId,
+      agentId,
+      inspectionRequestId: interest.inspectionRequestId ?? null,
+      rentalInterestId: interestId,
+      propertyTitle: interest.propertyTitle ?? "",
+      propertyImage: interest.propertyImage ?? "",
+      propertyAddress: interest.propertyAddress ?? "",
+      tenantName: interest.tenantName ?? "",
+      landlordName: interest.landlordName ?? "",
+      rentAmount,
+      agentFee: Number(interest.agentFee ?? 0),
+      totalPaid: 0,
+      rentPaymentStatus: "pending",
+      landlordPayout: Number(interest.landlordPayout ?? 0),
+      agentPayout: Number(interest.agentPayout ?? 0),
+      clearrentEarnings: Number(interest.clearrentEarnings ?? 0),
+      landlordPayoutStatus: "pending",
+      agentPayoutStatus: agentId ? "pending" : "not_applicable",
+      inspectionFeeCredit: 5000,
+      cautionDeposit,
+      cautionDepositRefundable,
+      rentFrequency: "yearly",
+      leaseStartDate: Timestamp.fromDate(now),
+      leaseEndDate: Timestamp.fromDate(leaseEnd),
+      nextPaymentDue: Timestamp.fromDate(leaseEnd),
+      status: "pending_payment",
+      hasPaymentReminder: false,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    logger.info("Active rental created for accepted interest", {interestId});
+  } catch (err) {
+    const code = (err as {code?: number | string})?.code;
+    if (code === 6 || code === "already-exists") {
+      logger.info("Active rental already exists, skipping", {interestId});
+      return;
+    }
+    throw err;
+  }
+}
+
 export const onRentalInterestAccepted = onDocumentUpdated(
   "rental_interests/{interestId}",
   async (event) => {
@@ -1135,6 +1244,19 @@ export const onRentalInterestAccepted = onDocumentUpdated(
     }
 
     const db = getFirestore();
+
+    // The tenancy record itself. Wrapped so a failure here still leaves the
+    // losing applicants to be closed out below — and logged loudly, because
+    // without a rental the accepted tenant cannot be sent an agreement and
+    // cannot pay, which is exactly the dead end this trigger exists to end.
+    try {
+      await createRentalForAcceptedInterest(db, winnerId, after);
+    } catch (err) {
+      logger.error("Active rental creation FAILED for accepted interest", {
+        winnerId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // ── Pay-after-accept: close the UNPAID applicants ──
     // Under the current flow only the accepted tenant ever pays, so every other
