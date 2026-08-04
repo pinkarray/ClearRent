@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/utils/app_info.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/activity_model.dart';
@@ -1842,7 +1843,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                     _ProfileMenuItem(
                       icon: Icons.info_outline,
                       title: 'About ClearRent',
-                      subtitle: 'Version 1.0.0',
+                      subtitle: 'Version ${AppInfo.version}',
                       onTap: () => context.push('/about'),
                     ),
                   ],

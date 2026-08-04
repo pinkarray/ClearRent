@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/utils/app_info.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
@@ -1958,7 +1959,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     _ProfileMenuItem(
                       icon: Icons.info_outline,
                       title: 'About ClearRent',
-                      subtitle: 'Version 1.0.0',
+                      subtitle: 'Version ${AppInfo.version}',
                       onTap: () => context.push('/about'),
                     ),
                   ],

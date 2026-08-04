@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/utils/app_info.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/models/property_model.dart';
@@ -1969,7 +1970,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     _TenantProfileMenuItem(
                       icon: Icons.info_outline,
                       title: 'About ClearRent',
-                      subtitle: 'Version 1.0.0',
+                      subtitle: 'Version ${AppInfo.version}',
                       onTap: () => context.push('/about'),
                     ),
                   ],
@@ -3485,7 +3486,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     _TenantProfileMenuItem(
                       icon: Icons.info_outline,
                       title: 'About ClearRent',
-                      subtitle: 'Version 1.0.0',
+                      subtitle: 'Version ${AppInfo.version}',
                       onTap: () => context.push('/about'),
                     ),
                   ],

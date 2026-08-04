@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/colors.dart';
+import '../../core/utils/app_info.dart';
 import '../../core/constants/text_styles.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
-  static const String _appVersion = '1.0.0';
-  static const String _buildNumber = '1';
   static const String _websiteUrl = 'https://www.verealtytech.com';
   static const String _privacyUrl = 'https://www.verealtytech.com/privacy';
   static const String _termsUrl = 'https://www.verealtytech.com/terms';
@@ -361,7 +360,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            'Version $_appVersion ($_buildNumber)',
+            'Version ${AppInfo.version} (${AppInfo.buildNumber})',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
             ),
