@@ -694,7 +694,7 @@ class _IssueCardState extends State<_IssueCard> {
                       width: 70,
                       height: 70,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
+                      errorWidget: (_, _, _) => Container(
                         width: 70,
                         height: 70,
                         color: AppColors.border,

@@ -489,7 +489,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                       width: 70,
                       height: 70,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _propertyPlaceholder())
+                      errorWidget: (_, _, _) => _propertyPlaceholder())
                   : _propertyPlaceholder(),
             ),
             const SizedBox(width: 12),
@@ -1582,7 +1582,7 @@ class _TenantHistoryCardState extends State<_TenantHistoryCard> {
                     width: 50,
                     height: 50,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(
+                    errorWidget: (_, _, _) => Container(
                         width: 50,
                         height: 50,
                         color: AppColors.background,

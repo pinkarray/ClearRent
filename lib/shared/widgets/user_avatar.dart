@@ -152,8 +152,8 @@ class UserAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        placeholder: (_, __) => _buildInitials(),
-        errorWidget: (_, __, ___) => _buildInitials(),
+        placeholder: (_, _) => _buildInitials(),
+        errorWidget: (_, _, _) => _buildInitials(),
       );
     }
 
@@ -286,8 +286,8 @@ class UserAvatarProfile extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        placeholder: (_, __) => _buildInitials(),
-        errorWidget: (_, __, ___) => _buildInitials(),
+        placeholder: (_, _) => _buildInitials(),
+        errorWidget: (_, _, _) => _buildInitials(),
       );
     }
 

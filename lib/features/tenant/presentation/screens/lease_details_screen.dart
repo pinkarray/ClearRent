@@ -101,7 +101,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                   _rental.propertyImage.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: _rental.propertyImage, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Container(
+                          errorWidget: (_, _, _) => Container(
                             color: AppColors.primary,
                             child: const Icon(Icons.home, size: 60, color: Colors.white38),
                           ),

@@ -493,7 +493,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
                           width: 60,
                           height: 60,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _placeholderBox(60),
+                          errorWidget: (_, _, _) => _placeholderBox(60),
                         )
                         : _placeholderBox(60),
               ),
@@ -2212,7 +2212,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           width: 50,
                           height: 50,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _placeholderBox(50),
+                          errorWidget: (_, _, _) => _placeholderBox(50),
                         )
                         : _placeholderBox(50),
               ),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'core/utils/app_info.dart';
 import 'services/connectivity_service.dart';
 import 'services/notification_service.dart';
 import 'services/presence_service.dart';
@@ -25,6 +26,8 @@ void main() async {
   // our users are on.
   PaintingBinding.instance.imageCache.maximumSizeBytes = 64 << 20; // 64 MB
 
+  await AppInfo.load();
+
   // Initialize Firebase with error handling
   try {
     await Firebase.initializeApp();
@@ -36,8 +39,9 @@ void main() async {
     // Play Integrity and only attest on a Play-signed install.
     // (iOS App Check is a separate step for when iOS ships — not configured.)
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
+      providerAndroid: kReleaseMode
+          ? const AndroidPlayIntegrityProvider()
+          : const AndroidDebugProvider(),
     );
     firebaseInitialized = true;
     await NotificationService.instance.init();

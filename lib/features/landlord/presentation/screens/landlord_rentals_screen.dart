@@ -614,7 +614,7 @@ class _RentalCardState extends State<_RentalCard> {
                     Switch(
                       value: withholding,
                       onChanged: (v) => setDialog(() => withholding = v),
-                      activeColor: AppColors.warning,
+                      activeThumbColor: AppColors.warning,
                     ),
                   ]),
                   if (withholding) ...[
@@ -774,7 +774,7 @@ class _RentalCardState extends State<_RentalCard> {
                       ? CachedNetworkImage(
                           imageUrl: rental.propertyImage,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _imagePlaceholder(),
+                          errorWidget: (_, _, _) => _imagePlaceholder(),
                         )
                       : _imagePlaceholder(),
                 ),

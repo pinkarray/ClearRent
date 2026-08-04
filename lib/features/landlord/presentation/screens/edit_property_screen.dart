@@ -964,7 +964,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 _hasChanges = true;
               });
             },
-            activeColor: AppColors.success,
+            activeThumbColor: AppColors.success,
           ),
         ],
       ),
@@ -1447,7 +1447,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               ),
               Switch(
                 value: _includeAgentFee,
-                activeColor: AppColors.primary,
+                activeThumbColor: AppColors.primary,
                 onChanged: hasActiveTenants ? null : (v) {
                   setState(() {
                     _includeAgentFee = v;
@@ -1523,7 +1523,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             onChanged: hasActiveTenants
                 ? null
                 : (v) => setState(() => _cautionDepositRefundable = v),
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
           ),
         ]),
 

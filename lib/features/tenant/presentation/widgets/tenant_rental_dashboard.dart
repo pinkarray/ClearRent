@@ -790,7 +790,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                   ? CachedNetworkImage(
                       imageUrl: rental.propertyImage,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _imagePlaceholder(),
+                      errorWidget: (_, _, _) => _imagePlaceholder(),
                     )
                   : _imagePlaceholder(),
             ),

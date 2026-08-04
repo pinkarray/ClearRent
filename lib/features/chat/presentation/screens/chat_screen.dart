@@ -1377,7 +1377,7 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: _properties.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final p = _properties[index];
                   return GestureDetector(

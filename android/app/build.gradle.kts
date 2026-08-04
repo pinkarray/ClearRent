@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.verealtytech.clearrent"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -40,7 +40,7 @@ android {
         //      to android/app/src/main/kotlin/com/verealtytech/clearrent
         //   4. Update the package declaration in MainActivity.kt
         applicationId = "com.verealtytech.clearrent"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

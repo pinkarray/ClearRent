@@ -139,7 +139,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
         if (_showBanner)
           SizeTransition(
             sizeFactor: _sizeAnimation,
-            axisAlignment: -1,
+            alignment: Alignment.topLeft,
             // Sitting above the Navigator there is no Material ancestor, so
             // Text would fall back to MaterialApp's debug error style.
             child: Material(

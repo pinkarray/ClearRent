@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/colors.dart';
+import '../../core/utils/app_info.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
@@ -602,7 +603,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Switch(
                           value: _biometricEnabled,
                           onChanged: _toggleBiometric,
-                          activeColor: AppColors.primary,
+                          activeThumbColor: AppColors.primary,
                         ),
               ),
             ]),
@@ -637,7 +638,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Switch(
                           value: _allowsCalls,
                           onChanged: _toggleCallPermission,
-                          activeColor: AppColors.primary,
+                          activeThumbColor: AppColors.primary,
                         ),
                 ),
               ]),
@@ -682,7 +683,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsItem(
                 icon: Icons.info_outline,
                 title: 'App Version',
-                subtitle: '1.0.0',
+                subtitle: AppInfo.version,
                 onTap: null,
                 showChevron: false,
               ),

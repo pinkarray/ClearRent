@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../core/utils/app_info.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
@@ -1018,7 +1019,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           height: 60,
                           fit: BoxFit.cover,
                           errorBuilder:
-                              (_, __, ___) => Container(
+                              (_, _, _) => Container(
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,
@@ -1268,7 +1269,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                       height: 50,
                                       fit: BoxFit.cover,
                                       errorBuilder:
-                                          (_, __, ___) => Container(
+                                          (_, _, _) => Container(
                                             width: 50,
                                             height: 50,
                                             color: AppColors.background,
@@ -1451,7 +1452,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           height: 60,
                           fit: BoxFit.cover,
                           errorBuilder:
-                              (_, __, ___) => Container(
+                              (_, _, _) => Container(
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,
@@ -1958,7 +1959,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                     _ProfileMenuItem(
                       icon: Icons.info_outline,
                       title: 'About ClearRent',
-                      subtitle: 'Version 1.0.0',
+                      subtitle: 'Version ${AppInfo.version}',
                       onTap: () => context.push('/about'),
                     ),
                   ],

@@ -1780,14 +1780,14 @@ class _SharePropertySheet extends StatelessWidget {
       await launchUrl(url);
     } else {
       // WhatsApp not installed, use regular share
-      await Share.share(_shareText);
+      await SharePlus.instance.share(ShareParams(text: _shareText));
     }
     
     if (context.mounted) Navigator.pop(context);
   }
 
   Future<void> _shareGeneral(BuildContext context) async {
-    await Share.share(_shareText);
+    await SharePlus.instance.share(ShareParams(text: _shareText));
     if (context.mounted) Navigator.pop(context);
   }
 
