@@ -2223,9 +2223,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _selectedImageFiles.length,
-              onReorder: (oldIndex, newIndex) {
+              onReorderItem: (oldIndex, newIndex) {
                 setState(() {
-                  if (newIndex > oldIndex) newIndex--;
                   final item = _selectedImageFiles.removeAt(oldIndex);
                   _selectedImageFiles.insert(newIndex, item);
                 });
@@ -3385,7 +3384,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   value: _cautionDepositRefundable,
                   onChanged: (v) =>
                       setState(() => _cautionDepositRefundable = v),
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
                 ),
               ],
             ),
@@ -3667,7 +3666,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 Switch(
                   value: isEnabled,
                   onChanged: onToggle,
-                  activeColor: AppColors.primary,
+                  activeThumbColor: AppColors.primary,
                 ),
               ],
             ),
@@ -4864,7 +4863,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                 ),
                                 itemCount: agents.length,
                                 separatorBuilder:
-                                    (_, __) => const SizedBox(height: 10),
+                                    (_, _) => const SizedBox(height: 10),
                                 itemBuilder: (_, index) {
                                   final agent = agents[index];
                                   final isSelected =

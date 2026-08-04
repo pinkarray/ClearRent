@@ -883,8 +883,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                       'Reference: $reference\n'
                       '━━━━━━━━━━━━━━━━━━━━━━\n'
                       'Powered by ClearRent × Paystack';
-                  // ignore: deprecated_member_use
-                  Share.share(receiptText);
+                  SharePlus.instance.share(ShareParams(text: receiptText));
                 },
                 icon: Icon(Icons.share_outlined, size: 18),
                 label: const Text('Share Receipt'),
@@ -1078,8 +1077,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     required String title,
   }) async {
     try {
-      // ignore: deprecated_member_use
-      await Share.share('$title\n$url');
+      await SharePlus.instance.share(ShareParams(text: '$title\n$url'));
     } catch (e) {
       AppLogger.e('Error sharing document: $e', name: 'DocumentsScreen');
     }

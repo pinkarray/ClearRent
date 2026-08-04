@@ -474,7 +474,7 @@ class _IssueDetailScreen extends StatelessWidget {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
                   itemBuilder: (context, i) {
                     return GestureDetector(
                       onTap: () => _showFullImage(context, i),
@@ -485,7 +485,7 @@ class _IssueDetailScreen extends StatelessWidget {
                           width: 240,
                           height: 180,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
+                          placeholder: (_, _) => Container(
                             width: 240, height: 180,
                             color: AppColors.border,
                             child: Center(
@@ -494,7 +494,7 @@ class _IssueDetailScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          errorWidget: (_, __, ___) => Container(
+                          errorWidget: (_, _, _) => Container(
                             width: 240, height: 180,
                             color: AppColors.border,
                             child: Icon(Icons.broken_image, color: AppColors.textHint),
@@ -698,7 +698,7 @@ class _IssueDetailScreen extends StatelessWidget {
                 child: CachedNetworkImage(
                   imageUrl: _images[i],
                   fit: BoxFit.contain,
-                  placeholder: (_, __) => CircularProgressIndicator(
+                  placeholder: (_, _) => CircularProgressIndicator(
                     color: AppColors.primary,
                   ),
                 ),

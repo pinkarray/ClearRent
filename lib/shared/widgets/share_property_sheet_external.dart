@@ -37,7 +37,7 @@ class SharePropertySheet extends StatelessWidget {
   }
 
   Future<void> _shareGeneral(BuildContext context) async {
-    await Share.share(_shareText);
+    await SharePlus.instance.share(ShareParams(text: _shareText));
     if (context.mounted) Navigator.pop(context);
   }
 

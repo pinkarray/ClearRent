@@ -150,7 +150,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                                   shrinkWrap: true,
                                   physics: const NeverScrollableScrollPhysics(),
                                   itemCount: _transactions.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                  separatorBuilder: (_, _) => const SizedBox(height: 12),
                                   itemBuilder: (context, index) {
                                     return _buildTransactionItem(_transactions[index]);
                                   },

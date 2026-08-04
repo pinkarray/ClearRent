@@ -909,7 +909,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
       itemCount: displayActivities.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final activity = displayActivities[index];
         return GestureDetector(
@@ -1186,7 +1186,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                         fit: BoxFit.cover,
                         memCacheWidth: 200,
                         errorWidget:
-                            (_, __, ___) => Container(
+                            (_, _, _) => Container(
                               width: 56,
                               height: 56,
                               color: AppColors.background,

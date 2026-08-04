@@ -373,8 +373,8 @@ class _AgentDiscoverPropertiesScreenState
             borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
             child: p.images.isNotEmpty
                 ? CachedNetworkImage(imageUrl: p.images.first, height: 160, width: double.infinity, fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(height: 160, color: AppColors.background, child: Center(child: Icon(Icons.image, color: AppColors.textHint, size: 40))),
-                    errorWidget: (_, __, ___) => Container(height: 160, color: AppColors.background, child: Center(child: Icon(Icons.broken_image, color: AppColors.textHint, size: 40))))
+                    placeholder: (_, _) => Container(height: 160, color: AppColors.background, child: Center(child: Icon(Icons.image, color: AppColors.textHint, size: 40))),
+                    errorWidget: (_, _, _) => Container(height: 160, color: AppColors.background, child: Center(child: Icon(Icons.broken_image, color: AppColors.textHint, size: 40))))
                 : Container(height: 160, color: AppColors.background, child: Center(child: Icon(Icons.home_work_outlined, color: AppColors.textHint, size: 48))),
           ),
           Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -419,7 +419,7 @@ class _AgentDiscoverPropertiesScreenState
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
         child: Row(children: [
-          ClipRRect(borderRadius: BorderRadius.circular(8), child: p.images.isNotEmpty ? CachedNetworkImage(imageUrl: p.images.first, width: 60, height: 60, fit: BoxFit.cover, errorWidget: (_, __, ___) => _thumb()) : _thumb()),
+          ClipRRect(borderRadius: BorderRadius.circular(8), child: p.images.isNotEmpty ? CachedNetworkImage(imageUrl: p.images.first, width: 60, height: 60, fit: BoxFit.cover, errorWidget: (_, _, _) => _thumb()) : _thumb()),
           const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p.title, style: AppTextStyles.labelLarge, maxLines: 1, overflow: TextOverflow.ellipsis),

@@ -36,8 +36,9 @@ void main() async {
     // Play Integrity and only attest on a Play-signed install.
     // (iOS App Check is a separate step for when iOS ships — not configured.)
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
+      providerAndroid: kReleaseMode
+          ? const AndroidPlayIntegrityProvider()
+          : const AndroidDebugProvider(),
     );
     firebaseInitialized = true;
     await NotificationService.instance.init();

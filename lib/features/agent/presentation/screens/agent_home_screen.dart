@@ -1018,7 +1018,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           height: 60,
                           fit: BoxFit.cover,
                           errorBuilder:
-                              (_, __, ___) => Container(
+                              (_, _, _) => Container(
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,
@@ -1268,7 +1268,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                                       height: 50,
                                       fit: BoxFit.cover,
                                       errorBuilder:
-                                          (_, __, ___) => Container(
+                                          (_, _, _) => Container(
                                             width: 50,
                                             height: 50,
                                             color: AppColors.background,
@@ -1451,7 +1451,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
                           height: 60,
                           fit: BoxFit.cover,
                           errorBuilder:
-                              (_, __, ___) => Container(
+                              (_, _, _) => Container(
                                 width: 60,
                                 height: 60,
                                 color: AppColors.background,

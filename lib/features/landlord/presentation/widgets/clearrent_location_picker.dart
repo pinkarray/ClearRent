@@ -683,7 +683,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       shrinkWrap: true,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _suggestions.length,
-      separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.border),
+      separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.border),
       itemBuilder: (context, index) {
         final place = _suggestions[index];
         return ListTile(

@@ -328,7 +328,7 @@ class _AgreementCardState extends State<_AgreementCard> {
                   ? CachedNetworkImage(
                       imageUrl: r.propertyImage,
                       width: 50, height: 50, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _placeholder())
+                      errorWidget: (_, _, _) => _placeholder())
                   : _placeholder(),
             ),
             const SizedBox(width: 12),

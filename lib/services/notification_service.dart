@@ -56,7 +56,7 @@ class NotificationService {
     const androidInit = AndroidInitializationSettings('ic_notification');
     const initSettings = InitializationSettings(android: androidInit);
     await _localNotifs.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: _onLocalNotifTap,
     );
 
@@ -190,10 +190,10 @@ class NotificationService {
       }
 
       _localNotifs.show(
-        message.hashCode,
-        notif.title,
-        notif.body,
-        const NotificationDetails(
+        id: message.hashCode,
+        title: notif.title,
+        body: notif.body,
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,

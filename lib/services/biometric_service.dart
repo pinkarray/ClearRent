@@ -6,11 +6,10 @@ import 'dart:developer' as developer;
 
 class BiometricService {
   final LocalAuthentication _localAuth = LocalAuthentication();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
-  );
+  // No aOptions: flutter_secure_storage 10 dropped EncryptedSharedPreferences
+  // (Jetpack Security is deprecated) and migrates existing data to its own
+  // ciphers on first access.
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   
   static const String _biometricEnabledKey = 'biometric_enabled';
   static const String _lastUserEmailKey = 'last_user_email';
@@ -95,10 +94,8 @@ class BiometricService {
       
       final authenticated = await _localAuth.authenticate(
         localizedReason: reason ?? 'Use $biometricName to sign in to ClearRent',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
+        persistAcrossBackgrounding: true,
+        biometricOnly: true,
       );
 
       developer.log(

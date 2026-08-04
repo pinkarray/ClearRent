@@ -341,7 +341,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                     width: double.infinity,
                     fit: BoxFit.cover,
                     memCacheWidth: 800,
-                    errorWidget: (_, __, ___) => _imagePlaceholder(),
+                    errorWidget: (_, _, _) => _imagePlaceholder(),
                   )
                 : _imagePlaceholder(),
           ),

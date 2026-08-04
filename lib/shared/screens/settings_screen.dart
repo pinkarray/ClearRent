@@ -602,7 +602,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Switch(
                           value: _biometricEnabled,
                           onChanged: _toggleBiometric,
-                          activeColor: AppColors.primary,
+                          activeThumbColor: AppColors.primary,
                         ),
               ),
             ]),
@@ -637,7 +637,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : Switch(
                           value: _allowsCalls,
                           onChanged: _toggleCallPermission,
-                          activeColor: AppColors.primary,
+                          activeThumbColor: AppColors.primary,
                         ),
                 ),
               ]),
