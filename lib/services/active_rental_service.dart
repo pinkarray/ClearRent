@@ -488,7 +488,13 @@ class ActiveRentalService {
     }
   }
 
-  /// Stream active rental for tenant
+  /// Stream the tenant's current rental — the one with the latest lease start.
+  ///
+  /// A tenant can hold several at once, so this cannot take an arbitrary doc:
+  /// `.limit(1)` without an `orderBy` returns them in document-ID order, which
+  /// showed the previous apartment on the home screen after renting a new one.
+  /// Sorted client-side rather than with `orderBy` so no composite index is
+  /// needed; the list is only ever a handful of docs.
   Stream<ActiveRental?> streamTenantActiveRental() {
     final currentUserId = _authService.currentUserId;
     if (currentUserId == null) {
@@ -499,12 +505,17 @@ class ActiveRentalService {
         .collection('active_rentals')
         .where('tenantId', isEqualTo: currentUserId)
         .where('status', whereIn: ['active', 'moveout_pending'])
-        .limit(1)
         .snapshots()
         .map((snapshot) {
           if (snapshot.docs.isEmpty) return null;
-          final doc = snapshot.docs.first;
-          return ActiveRental.fromFirestore(doc.data(), doc.id);
+          final rentals =
+              snapshot.docs
+                  .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
+                  .toList()
+                ..sort(
+                  (a, b) => b.leaseStartDate.compareTo(a.leaseStartDate),
+                );
+          return rentals.first;
         });
   }
 
