@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,6 +23,8 @@ import '../../../../services/verification_service.dart';
 import '../../../../services/tenancy_link_service.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../tenant/presentation/widgets/request_inspection_sheet.dart';
+import '../../../tenant/presentation/screens/inspection_outcome_screen.dart';
+import '../../../../shared/models/inspection_request_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
@@ -82,8 +86,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   bool _markedReadyThisSession = false;
   bool _isLoading = true;
 
-  bool _hasExistingRequest = false;
   bool _isCheckingRequest = true;
+  /// This tenant's own inspection on THIS property, live. Null when they have
+  /// never inspected it, or when the only ones are cancelled/declined/refunded
+  /// — in which case requesting a fresh inspection is legitimate.
+  InspectionRequest? _myInspection;
+  StreamSubscription<List<InspectionRequest>>? _inspectionSub;
   // Address gate: false = approximate (LGA/city/state), true = exact street.
   bool _addressUnlocked = false;
   // Exact street address, loaded from the property's gated `private/location`
@@ -130,6 +138,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         _tenancyLinkService.propertyTenantsStream(widget.property.id);
     _determineUserContext();
     _checkExistingRequest();
+    _subscribeMyInspection();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
     _loadBuildingDocStatus();
@@ -162,6 +171,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   @override
   void dispose() {
     _imageController.dispose();
+    _inspectionSub?.cancel();
     _videoController?.removeListener(_onVideoProgress);
     _videoController?.dispose();
     super.dispose();
@@ -327,20 +337,78 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
   }
 
+  /// The visit has happened and there is something to report. `completed` was
+  /// missing from the old `hasPendingRequest` whitelist, which is exactly how
+  /// the double-charge path stayed open.
+  static const _outcomeStatuses = {InspectionStatus.completed};
+
+  /// Booked but not yet visited — no outcome to show, but equally not a reason
+  /// to book (and pay for) a second visit. `approved` lives here rather than
+  /// with the outcome statuses because it means "approved, scheduled": there is
+  /// nothing to report until the inspection actually happens.
+  static const _inFlightStatuses = {
+    InspectionStatus.approved,
+    InspectionStatus.pending,
+    InspectionStatus.pendingPayment,
+    InspectionStatus.pendingVerification,
+    InspectionStatus.declinedByAgent,
+    InspectionStatus.awaitingOutcome,
+    InspectionStatus.expiredUnapproved,
+  };
+
+  /// The tenant's own inspection on this property, live.
+  ///
+  /// [InspectionService.getTenantRequests] already streams every request this
+  /// tenant has made, so filtering it by propertyId needs no new query and no
+  /// new composite index. It is ordered createdAt-descending, so the first
+  /// match in each group is the newest.
+  ///
+  /// Anything cancelled / declined / refunded is deliberately ignored: those
+  /// are the cases where booking again is the right thing to do.
+  void _subscribeMyInspection() {
+    _inspectionSub =
+        InspectionService().getTenantRequests().listen((all) {
+      if (!mounted) return;
+      final mine =
+          all.where((r) => r.propertyId == widget.property.id).toList();
+      setState(() {
+        _myInspection =
+            mine.where((r) => _outcomeStatuses.contains(r.status)).firstOrNull ??
+                mine
+                    .where((r) => _inFlightStatuses.contains(r.status))
+                    .firstOrNull;
+        _isCheckingRequest = false;
+      });
+    });
+  }
+
+  /// Opens what the tenant already has, rather than selling them another one.
+  ///
+  /// A completed or approved inspection goes to the outcome screen, where the
+  /// rent decision lives — the point being that the tenant sees what the visit
+  /// found before committing any further money. Anything still in flight has no
+  /// outcome to show, so it goes to the inspections list.
+  void _openMyInspection(InspectionRequest request) {
+    if (_outcomeStatuses.contains(request.status)) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => InspectionOutcomeScreen(request: request),
+        ),
+      );
+      return;
+    }
+    context.push('/tenant/inspections');
+  }
+
   Future<void> _checkExistingRequest() async {
     final inspectionService = InspectionService();
-    final hasRequest = await inspectionService.hasPendingRequest(
-      widget.property.id,
-    );
     // Address gate: exact only when approved/completed AND not passed.
     final approved =
         await inspectionService.hasApprovedInspection(widget.property.id);
     final passed = await inspectionService.hasPassed(widget.property.id);
     if (mounted) {
       setState(() {
-        _hasExistingRequest = hasRequest;
         _addressUnlocked = approved && !passed;
-        _isCheckingRequest = false;
       });
       if (_addressUnlocked) _loadExactAddressIfEntitled();
     }
@@ -3015,34 +3083,61 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       } else {
                         docColor = AppColors.textSecondary;
                       }
+                      // An inspection the tenant already has on THIS property
+                      // takes over the button. Previously it stayed
+                      // "Request Inspection" once the visit was completed,
+                      // which invited a second — and separately charged —
+                      // inspection on a place they had already seen.
+                      final existing = _myInspection;
+                      final hasOutcome = existing != null &&
+                          _outcomeStatuses.contains(existing.status);
+
+                      if (existing != null) {
+                        return ElevatedButton.icon(
+                          onPressed: _isCheckingRequest
+                              ? null
+                              : () => _openMyInspection(existing),
+                          icon: Icon(hasOutcome
+                              ? Icons.fact_check_outlined
+                              : Icons.event_note_outlined),
+                          label: Text(
+                            hasOutcome
+                                ? 'View Inspection Outcome'
+                                : 'View Your Inspection',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: hasOutcome
+                                ? AppColors.success
+                                : AppColors.primary,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: AppColors.textHint,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        );
+                      }
+
                       return ElevatedButton.icon(
-                        onPressed: _isCheckingRequest || _hasExistingRequest
+                        onPressed: _isCheckingRequest
                             ? null
                             : () => _requestInspection(),
                         icon: Icon(
-                          _hasExistingRequest
-                              ? Icons.check_circle
-                              : docBlocked
-                                  ? Icons.lock_outline
-                                  : Icons.event_available,
+                          docBlocked
+                              ? Icons.lock_outline
+                              : Icons.event_available,
                         ),
                         label: Text(
-                          _hasExistingRequest
-                              ? 'Request Sent'
-                              : docBlocked
-                                  ? 'Inspection Unavailable'
-                                  : 'Request Inspection',
+                          docBlocked
+                              ? 'Inspection Unavailable'
+                              : 'Request Inspection',
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _hasExistingRequest
-                              ? AppColors.success
-                              : docBlocked
-                                  ? docColor
-                                  : AppColors.primary,
+                          backgroundColor:
+                              docBlocked ? docColor : AppColors.primary,
                           foregroundColor: Colors.white,
-                          disabledBackgroundColor: _hasExistingRequest
-                              ? AppColors.success.withAlpha(179)
-                              : AppColors.textHint,
+                          disabledBackgroundColor: AppColors.textHint,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),

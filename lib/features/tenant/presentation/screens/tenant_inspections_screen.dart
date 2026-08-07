@@ -799,7 +799,35 @@ class _TenantUpcomingCard extends StatefulWidget {
 class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   final ConversationService _conversationService = ConversationService();
   final InspectionService _inspectionService = InspectionService();
+  final PropertyService _propertyService = PropertyService();
   bool _isMessageLoading = false;
+
+  // Exact pin for the map shown on inspection day. Lives in the property's
+  // gated `private/location` subdoc, not on the request, so it needs its own
+  // read — which returns null unless this tenant is entitled (paid + approved).
+  double? _latitude;
+  double? _longitude;
+  String? _exactAddress;
+
+  @override
+  void initState() {
+    super.initState();
+    // Only worth a read on the day itself, and only once the fee is paid —
+    // that is what entitles the tenant to the pin in the first place.
+    if (widget.request.isPaid && _isToday(widget.request.requestedDate)) {
+      _loadPin();
+    }
+  }
+
+  Future<void> _loadPin() async {
+    final loc = await _propertyService.getExactLocation(widget.request.propertyId);
+    if (!mounted || loc == null) return;
+    setState(() {
+      _latitude = loc.latitude;
+      _longitude = loc.longitude;
+      if (loc.address.isNotEmpty) _exactAddress = loc.address;
+    });
+  }
 
   bool _isToday(DateTime d) {
     final n = DateTime.now();
@@ -1101,6 +1129,29 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               Icons.phone, AppColors.success, _callHandler, false),
         ]),
 
+        // Where to actually go, on the day itself.
+        //
+        // The same pin is already on the property detail screen after payment,
+        // but this card is where the arrival happens — "I'm on my way", then
+        // "I've Arrived", back-to-back with the handler doing the same. Making
+        // the tenant leave this card to find the map, then come back to press
+        // the button, is the one moment they cannot afford that detour.
+        //
+        // Only rendered once the pin actually resolved: an entitlement failure
+        // returns null, and an empty map box would be worse than none.
+        if (today && _latitude != null && _longitude != null) ...[
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: PropertyLocationMap(
+              latitude: _latitude,
+              longitude: _longitude,
+              addressLabel: _exactAddress ?? widget.request.propertyAddress,
+              height: 150,
+            ),
+          ),
+        ],
+
         // Tip for today
         if (today) ...[
           const SizedBox(height: 16),
@@ -1360,7 +1411,7 @@ class _TenantHistoryTabState extends State<_TenantHistoryTab> {
           itemCount: ordered.length,
           itemBuilder: (context, i) => HighlightWrap(
             active: ordered[i].id == highlightId,
-            child: _TenantHistoryCard(
+            child: TenantInspectionOutcomeCard(
                 request: ordered[i], inspectionService: inspectionService),
           ),
         );
@@ -1369,17 +1420,25 @@ class _TenantHistoryTabState extends State<_TenantHistoryTab> {
   }
 }
 
-class _TenantHistoryCard extends StatefulWidget {
+/// The outcome of one completed inspection: what was found, the handler
+/// rating, and the rent decision that follows from it.
+///
+/// Public because the property detail screen now opens it directly for a
+/// property the tenant has already inspected — previously the only way to
+/// reach this was the History tab, so the detail screen kept offering a fresh
+/// (paid) inspection instead.
+class TenantInspectionOutcomeCard extends StatefulWidget {
   final InspectionRequest request;
   final InspectionService inspectionService;
-  const _TenantHistoryCard(
-      {required this.request, required this.inspectionService});
+  const TenantInspectionOutcomeCard(
+      {super.key, required this.request, required this.inspectionService});
 
   @override
-  State<_TenantHistoryCard> createState() => _TenantHistoryCardState();
+  State<TenantInspectionOutcomeCard> createState() =>
+      TenantInspectionOutcomeCardState();
 }
 
-class _TenantHistoryCardState extends State<_TenantHistoryCard> {
+class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard> {
   final RentalInterestService _rentalInterestService =
       RentalInterestService();
   RentalInterest? _rentalInterest;
