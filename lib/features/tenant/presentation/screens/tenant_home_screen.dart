@@ -1052,6 +1052,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // never see that their verification lapsed. Surface it here too.
             if (_verificationStatus != VerificationStatus.verified)
               _buildVerificationPrompt(),
+            // Same trap, same fix: renting one place does not stop you looking
+            // for another, and the inspection-day reminder only lived on the
+            // browse home. A tenant with any occupied rental was the one person
+            // who could book an inspection and never be reminded of it.
+            _buildTodaysInspectionBanner(),
             Expanded(
               child: MultiRentalDashboard(
                 rentals: _tenantRentals,
