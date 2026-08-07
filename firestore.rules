@@ -59,6 +59,15 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
+
+    // The minimum-supported-build gate. Read publicly because it has to work
+    // on the sign-in screen too: a user stuck on a build we've retired is
+    // often the user who cannot get past login, and the generic config rule
+    // above requires auth. Holds a build number, a message and a store URL —
+    // nothing private. Writes stay admin-only via that same rule.
+    match /config/app_version {
+      allow read: if true;
+    }
     
     // Users collection
     match /users/{userId} {
@@ -542,12 +551,58 @@ service cloud.firestore {
             request.resource.data.senderId == 'system'
           );
         
-        // Update (mark as read): active participants and admin
-        allow update: if request.auth != null && (
-          isConversationParticipant() || canRead()
-        );
-        
-        // No delete
+        // Which fields this update actually touches.
+        function touched() {
+          return request.resource.data.diff(resource.data).affectedKeys();
+        }
+
+        // Caller wrote this message.
+        function isMessageAuthor() {
+          return resource.data.senderId == request.auth.uid;
+        }
+
+        // Read receipt: flips isRead and NOTHING else, only ever to true, and
+        // only on a message someone ELSE sent. You receipt what you read; a
+        // sender receipting their own message would be forging the second tick.
+        // Mirrors markConversationAsRead, which skips the caller's own docs.
+        function isReadReceipt() {
+          return touched().hasOnly(['isRead'])
+            && request.resource.data.isRead == true
+            && resource.data.senderId != request.auth.uid;
+        }
+
+        // Edit: the author rewrites their own text. A deleted message stays
+        // deleted, and the text must remain non-empty — an "edit" to '' would
+        // be a delete that skips the deleted flag.
+        function isAuthorEdit() {
+          return isMessageAuthor()
+            && resource.data.get('deleted', false) == false
+            && touched().hasOnly(['text', 'editedAt', 'mentions'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000;
+        }
+
+        // Delete: soft, author only, and it must blank the text. The bubble
+        // renders "message deleted" off the flag; leaving the text behind
+        // would make the delete cosmetic.
+        function isAuthorDelete() {
+          return isMessageAuthor()
+            && touched().hasOnly(['text', 'deleted', 'deletedAt', 'mentions'])
+            && request.resource.data.deleted == true
+            && request.resource.data.text == '';
+        }
+
+        // Update: a strict allowlist, not blanket participant write. Blanket
+        // update let ANY participant rewrite ANY message on the thread —
+        // including the other party's — so edit/delete had to close that at
+        // the same time it opened. senderId, senderName, timestamp and the
+        // property-share snapshot are unreachable from every branch.
+        allow update: if request.auth != null
+          && isConversationParticipant()
+          && (isReadReceipt() || isAuthorEdit() || isAuthorDelete());
+
+        // Deletes are soft (see isAuthorDelete) so the thread keeps its shape.
         allow delete: if false;
       }
     }
