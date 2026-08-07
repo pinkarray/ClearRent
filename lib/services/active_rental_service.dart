@@ -488,6 +488,25 @@ class ActiveRentalService {
     }
   }
 
+  /// Live view of ONE rental.
+  ///
+  /// Every state the lease screen shows is driven by the other party: the
+  /// landlord uploads the agreement, and — once the tenant accepts — the server
+  /// records the rent payment. A one-shot [getRentalById] in initState meant the
+  /// tenant sat on "your landlord hasn't uploaded the agreement yet" after it
+  /// had been uploaded from the web, and had to leave the screen and come back
+  /// before anything changed.
+  Stream<ActiveRental?> streamRentalById(String rentalId) {
+    return _firestore
+        .collection('active_rentals')
+        .doc(rentalId)
+        .snapshots()
+        .map((doc) {
+          if (!doc.exists) return null;
+          return ActiveRental.fromFirestore(doc.data()!, doc.id);
+        });
+  }
+
   /// Stream the tenant's current rental — the one with the latest lease start.
   ///
   /// A tenant can hold several at once, so this cannot take an arbitrary doc:

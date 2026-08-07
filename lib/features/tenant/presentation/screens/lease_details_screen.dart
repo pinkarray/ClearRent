@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -21,6 +23,7 @@ class LeaseDetailsScreen extends StatefulWidget {
 
 class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   late ActiveRental _rental;
+  StreamSubscription<ActiveRental?>? _rentalSub;
   final ActiveRentalService _rentalService = ActiveRentalService();
   final RentalInterestService _rentalInterestService = RentalInterestService();
   final AgreementAccessService _agreementAccess = AgreementAccessService();
@@ -32,20 +35,27 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   void initState() {
     super.initState();
     _rental = widget.rental;
-    _refreshRental(); // Get latest data
+    // LIVE, not a one-shot read. The landlord uploads the agreement from the
+    // app or the web while the tenant is sitting on this very screen, and the
+    // rent button unlocks off the back of it — with a getRentalById the tenant
+    // had to leave and come back before any of that appeared.
+    _rentalSub = _rentalService.streamRentalById(_rental.id).listen((updated) {
+      if (updated != null && mounted) {
+        setState(() => _rental = updated);
+      }
+    });
   }
 
-  Future<void> _refreshRental() async {
-    final updated = await _rentalService.getRentalById(_rental.id);
-    if (updated != null && mounted) {
-      setState(() => _rental = updated);
-    }
+  @override
+  void dispose() {
+    _rentalSub?.cancel();
+    super.dispose();
   }
 
   /// Pay-after-accept: the accepted tenant pays rent only once the agreement is
   /// finalized. Loads the frozen rental interest (the amount + breakdown) and
-  /// opens the payment screen; on return, refreshes so the button hides once
-  /// the server has recorded the payment (rentPaymentStatus → paid).
+  /// opens the payment screen. The button hides itself when the subscription
+  /// delivers the server's rentPaymentStatus → paid.
   Future<void> _payRent() async {
     setState(() => _isLoadingPayment = true);
     final interest =
@@ -63,7 +73,8 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     await context.push('/tenant/rental-payment', extra: {
       'rentalInterest': interest,
     });
-    if (mounted) await _refreshRental();
+    // No refresh on return: the subscription delivers the server's
+    // rentPaymentStatus flip on its own.
   }
 
   String _formatAmount(double amount) => NumberFormat('#,###').format(amount);
@@ -644,7 +655,6 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     if (mounted) {
       setState(() => _isAccepting = false);
       if (success) {
-        _refreshRental();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Agreement accepted! Your landlord has been notified.'),
           backgroundColor: AppColors.success,
@@ -711,7 +721,6 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     if (mounted) {
       setState(() => _isDisputing = false);
       if (success) {
-        _refreshRental();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Concern submitted. Your landlord has been notified.'),
           backgroundColor: AppColors.warning,
