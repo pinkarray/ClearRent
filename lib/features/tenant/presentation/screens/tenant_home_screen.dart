@@ -122,6 +122,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   StreamSubscription<List<TenantRental>>? _tenantRentalsSub;
   // Saved properties
   Set<String> _savedProperties = {};
+  /// Saved properties that browse does not carry — typically because they are
+  /// no longer available. Keyed by id; see [_resolveSavedProperties].
+  final Map<String, PropertyModel> _savedExtras = {};
   bool _isLoadingSaved = true;
 
   // Unread messages
@@ -293,10 +296,40 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           _isLoadingSaved = false;
         });
       }
+      await _resolveSavedProperties(savedIds);
     } catch (e) {
       debugPrint('❌ Error loading saved: $e');
       if (mounted) setState(() => _isLoadingSaved = false);
     }
+  }
+
+  /// Fetches the saved properties that browse does not carry.
+  ///
+  /// `_allProperties` holds AVAILABLE listings only, so intersecting the saved
+  /// IDs with it silently dropped anything now let, delisted or paused — the
+  /// tenant's own bookmark disappeared with no explanation, and the badge and
+  /// the list disagreed about how many there were. The saved doc still exists
+  /// in `users/{uid}/savedProperties`; only the rendering was lossy.
+  ///
+  /// A handful of point reads, and only for the ids browse is missing.
+  Future<void> _resolveSavedProperties(Set<String> savedIds) async {
+    final known = {for (final p in _allProperties) p.id};
+    final missing = savedIds.where((id) => !known.contains(id)).toList();
+    if (missing.isEmpty) {
+      if (mounted && _savedExtras.isNotEmpty) {
+        setState(() => _savedExtras.removeWhere((id, _) => !savedIds.contains(id)));
+      }
+      return;
+    }
+
+    final fetched = await Future.wait(missing.map(_propertyService.getProperty));
+    if (!mounted) return;
+    setState(() {
+      _savedExtras.removeWhere((id, _) => !savedIds.contains(id));
+      for (final p in fetched) {
+        if (p != null) _savedExtras[p.id] = p;
+      }
+    });
   }
 
   Future<void> _loadUnreadCount() async {
@@ -3139,13 +3172,22 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   // ── SAVED TAB ─────────────────────────────────────────────────────────────
 
+  /// Every saved property, whether or not browse still carries it.
+  ///
+  /// Resolved from `_allProperties` first and `_savedExtras` second, so a place
+  /// that has since been let or delisted still appears — it is the tenant's own
+  /// bookmark, and silently dropping it is what made the badge and the list
+  /// disagree ("1 saved" over an empty list, then 2 after one like).
+  List<PropertyModel> get _savedList {
+    final byId = {for (final p in _allProperties) p.id: p};
+    return _savedProperties
+        .map((id) => byId[id] ?? _savedExtras[id])
+        .whereType<PropertyModel>()
+        .toList();
+  }
+
   Widget _buildSavedTab() {
-    final allPropsMap = {for (var p in _allProperties) p.id: p};
-    final savedList =
-        _savedProperties
-            .where((id) => allPropsMap.containsKey(id))
-            .map((id) => allPropsMap[id]!)
-            .toList();
+    final savedList = _savedList;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3369,7 +3411,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                         value:
                             _isLoadingSaved
                                 ? '...'
-                                : '${_savedProperties.length}',
+                                : '${_savedList.length}',
                         label: 'Saved',
                         color: AppColors.error,
                       ),
@@ -3450,7 +3492,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     _TenantProfileMenuItem(
                       icon: Icons.favorite_outline,
                       title: 'Saved Properties',
-                      subtitle: '${_savedProperties.length} properties saved',
+                      subtitle: '${_savedList.length} properties saved',
                       onTap: () => setState(() => _currentNavIndex = 1),
                     ),
                     _TenantProfileMenuItem(
@@ -3560,9 +3602,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   isActive: _currentNavIndex == 1,
                   onTap: () => setState(() => _currentNavIndex = 1),
                   badge:
-                      _savedProperties.isNotEmpty
-                          ? '${_savedProperties.length}'
-                          : null,
+                      _savedList.isNotEmpty ? '${_savedList.length}' : null,
                 ),
                 CapsuleNavItem(
                   icon: Icons.chat_bubble_outline,

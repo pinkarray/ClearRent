@@ -70,6 +70,43 @@ class PropertyCard extends StatelessWidget {
                   ),
                 ),
 
+                // Taken by someone else, or delisted.
+                //
+                // Browse never renders these — it filters on the same
+                // `isListable` — but Saved does, because a bookmark the tenant
+                // made should not silently disappear when the unit goes. It
+                // must not still look bookable either, hence the scrim. Sits
+                // BELOW the save button in the stack so unsaving still works.
+                if (!property.isListable)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                      child: Container(
+                        color: Colors.black.withAlpha(115),
+                        alignment: Alignment.center,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.textSecondary,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'No longer available',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // Save button
                 Positioned(
                   top: 12,
