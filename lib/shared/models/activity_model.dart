@@ -164,6 +164,16 @@ class ActivityModel {
       case 'tenant_arrived':         return ActivityType.inspectionApproved;
       case 'handler_on_way':         return ActivityType.inspectionApproved;
       case 'handler_arrived':        return ActivityType.inspectionApproved;
+      // Reschedule updates, written by onInspectionRequestUpdated. Same
+      // treatment as the arrival updates above: they are changes to an
+      // existing inspection, so they reuse that enum value and the stored
+      // title/subtitle carry the specifics. Adding enum values instead would
+      // leave every build already in the wild rendering these as
+      // `propertyViewed` — the default below — with an eye icon.
+      case 'reschedule_proposed':    return ActivityType.inspectionApproved;
+      case 'reschedule_countered':   return ActivityType.inspectionApproved;
+      case 'reschedule_approved':    return ActivityType.inspectionApproved;
+      case 'reschedule_abandoned':   return ActivityType.inspectionApproved;
       case 'inspection_declined':    return ActivityType.inspectionDeclined;
       case 'inspection_completed':   return ActivityType.inspectionCompleted;
       case 'inspection_rated':       return ActivityType.inspectionRated;

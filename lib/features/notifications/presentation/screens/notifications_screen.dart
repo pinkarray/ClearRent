@@ -98,6 +98,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             read: (m['read'] as bool?) ?? false,
             route: (route != null && route.isNotEmpty) ? route : null,
             payload: payload,
+            unreadCount: (m['unreadCount'] as num?)?.toInt() ?? 0,
           );
         }).toList();
         _hasMoreNotifications = snap.docs.length >= _notifLimit;
@@ -164,6 +165,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .update({
         'read': true,
         'readAt': FieldValue.serverTimestamp(),
+        // Chat rows accumulate this until opened. Clearing it here is what
+        // makes the next message start counting from one again, rather than
+        // continuing from a number the user has already seen.
+        'unreadCount': 0,
       });
     } catch (e) {
       AppLogger.e('Failed to mark notification read', error: e,
@@ -378,6 +383,11 @@ class _InboxItem {
   // routes (e.g. /chat needs conversationId) get what they require.
   final Map<String, dynamic>? payload;
 
+  /// Messages stacked up behind this row. Chat notifications are one rolling
+  /// doc per conversation, so a burst arrives as a count rather than as one
+  /// row per message. 0 or 1 means there is nothing extra to say.
+  final int unreadCount;
+
   _InboxItem({
     required this.id,
     required this.kind,
@@ -388,6 +398,7 @@ class _InboxItem {
     this.announcementType,
     this.route,
     this.payload,
+    this.unreadCount = 0,
   });
 }
 
@@ -449,6 +460,30 @@ class _InboxRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // Chat rows stand for a whole conversation, so the
+                      // messages behind this one are shown as a count instead
+                      // of as their own rows.
+                      if (!item.read && item.unreadCount > 1) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            item.unreadCount > 99
+                                ? '99+'
+                                : '${item.unreadCount}',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
                       if (isAnnouncement) ...[
                         const SizedBox(width: 6),
                         Container(

@@ -7,7 +7,11 @@
  */
 
 import {setGlobalOptions} from "firebase-functions";
-import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import {
+  onDocumentCreated,
+  onDocumentUpdated,
+  onDocumentWritten,
+} from "firebase-functions/v2/firestore";
 import {onCall, onRequest, HttpsError} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {defineSecret} from "firebase-functions/params";
@@ -17,7 +21,10 @@ import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {getMessaging} from "firebase-admin/messaging";
 import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
-import {writeNotificationOnce} from "./notification_helpers";
+import {
+  writeActivityOnce,
+  writeNotificationOnce,
+} from "./notification_helpers";
 import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
 import {resolveServerAmount, getPricing} from "./pricing";
 
@@ -43,7 +50,7 @@ export {nudgeInspectionParty, messageInspectionParties}
 export {reportInspectionIssue} from "./inspection_dispute_ops";
 export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
-export {moveoutAutoConfirmSweep} from "./moveout_ops";
+export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
 export {adminDailyDigestEmail} from "./admin_digest_email";
@@ -57,13 +64,32 @@ export {
   onAgreementReady,
 } from "./admin_alert_triggers";
 
-export const onNotificationCreated = onDocumentCreated(
+/**
+ * Turns a notification doc into an FCM push.
+ *
+ * Listens on WRITE, not create. Chat notifications are now one rolling doc per
+ * conversation (see onChatMessageCreated), so the second and every later
+ * message is an UPDATE — on create-only those pushes would simply stop.
+ *
+ * The guard below is what makes that safe: a write is only pushed when the doc
+ * is new, or when `lastMessageId` actually moved. Without it, every
+ * mark-as-read would re-push the notification the user just opened.
+ */
+export const onNotificationCreated = onDocumentWritten(
   "notifications/{notificationId}",
   async (event) => {
-    const snap = event.data;
-    if (!snap) {
-      logger.warn("No snapshot on notification create event");
+    const before = event.data?.before;
+    const snap = event.data?.after;
+    if (!snap?.exists) {
+      // Deleted, or no payload. Nothing to push.
       return;
+    }
+
+    if (before?.exists) {
+      const movedOn =
+        before.get("lastMessageId") !== snap.get("lastMessageId") &&
+        snap.get("lastMessageId") !== undefined;
+      if (!movedOn) return; // read-marking and other edits: never re-push
     }
 
     const notif = snap.data() as NotificationDoc;
@@ -2052,6 +2078,23 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     };
 
     /**
+     * uid for a given role — the activity feed records who acted, not just
+     * their name, so the row is attributable and passes the actorId read rule.
+     *
+     * @param {string} role The role.
+     * @return {string} That party's uid, or "" when absent.
+     */
+    const idFor = (role: string): string => {
+      if (role === "tenant") return tenantId ?? "";
+      if (role === "agent") return agentId ?? "";
+      return landlordId ?? "";
+    };
+
+    // Declared here because the reschedule branches below all need it; the
+    // other `propertyId` in this function is scoped to a different block.
+    const reschedPropertyId = (after.propertyId as string | undefined) ?? "";
+
+    /**
      * IDs of the parties on the receiver side of a proposal made by
      * `proposerRole`. Tenant proposals go to the handler(s); handler
      * proposals go to the tenant.
@@ -2104,6 +2147,25 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
             },
           },
         );
+        // A reschedule never reached the activity feed — none of the five
+        // reschedule paths in inspection_service call _createActivity, so the
+        // landlord got a push and then found no record of it anywhere.
+        await writeActivityOnce(
+          `req_${requestId}_resched_proposed_${proposedAtMs}_${r.id}`,
+          {
+            landlordId: r.id,
+            type: "reschedule_proposed",
+            title: "Reschedule proposed",
+            subtitle:
+              `${proposerName} proposed ${fmtDate(proposedDate)} ` +
+              `${timeDisplay}`,
+            propertyId: reschedPropertyId,
+            propertyTitle,
+            actorId: idFor(proposerRole),
+            actorName: proposerName,
+            relatedId: requestId,
+          },
+        );
       }
     }
 
@@ -2140,6 +2202,22 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
               initialTab: "1",
               param_requestId: requestId,
             },
+          },
+        );
+        await writeActivityOnce(
+          `req_${requestId}_resched_countered_${proposedAtMs}_${r.id}`,
+          {
+            landlordId: r.id,
+            type: "reschedule_countered",
+            title: "Reschedule counter-proposed",
+            subtitle:
+              `${proposerName} proposed ${fmtDate(proposedDate)} ` +
+              `${timeDisplay} instead`,
+            propertyId: reschedPropertyId,
+            propertyTitle,
+            actorId: idFor(proposerRole),
+            actorName: proposerName,
+            relatedId: requestId,
           },
         );
       }
@@ -2180,6 +2258,35 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           },
         },
       );
+
+      // The approval is the outcome that matters, so it lands in BOTH feeds —
+      // the proposer already knows they asked, but the approving side needs
+      // the record too. Only the proposer gets the push (the approver just
+      // performed the action).
+      const proposerName = nameFor(proposerRole);
+      const feeds = [
+        proposerId,
+        ...receiversFor(proposerRole).map((r) => r.id),
+      ];
+      for (const feedId of feeds) {
+        if (!feedId) continue;
+        await writeActivityOnce(
+          `req_${requestId}_resched_approved_${proposedAtMs}_${feedId}`,
+          {
+            landlordId: feedId,
+            type: "reschedule_approved",
+            title: "Inspection rescheduled",
+            subtitle:
+              `Moved to ${fmtDate(proposedDate)} ${timeDisplay} ` +
+              `(proposed by ${proposerName})`,
+            propertyId: reschedPropertyId,
+            propertyTitle,
+            actorId: proposerId,
+            actorName: proposerName,
+            relatedId: requestId,
+          },
+        );
+      }
     }
 
     // ---- Reschedule: abandoned (object → null, count unchanged,
@@ -2212,6 +2319,22 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
               initialTab: "1",
               param_requestId: requestId,
             },
+          },
+        );
+        await writeActivityOnce(
+          `req_${requestId}_resched_abandoned_${proposedAtMs}_${r.id}`,
+          {
+            landlordId: r.id,
+            type: "reschedule_abandoned",
+            title: "Reschedule withdrawn",
+            subtitle:
+              `${proposerName} dropped their reschedule proposal — ` +
+              "the original date stands",
+            propertyId: reschedPropertyId,
+            propertyTitle,
+            actorId: idFor(proposerRole),
+            actorName: proposerName,
+            relatedId: requestId,
           },
         );
       }
@@ -2348,17 +2471,52 @@ export const onChatMessageCreated = onDocumentCreated(
     // Push every non-sender participant.
     const recipients = participants.filter((p) => p !== senderId);
 
+    // ONE rolling notification per conversation per recipient, not one per
+    // message. The old `msg_{messageId}_{rid}` id meant a hundred messages
+    // became a hundred inbox rows — and since the inbox reads the 50 newest
+    // docs, a chatty thread buried every inspection, payment and lease
+    // notification below two full pages of chat.
+    //
+    // The doc is upserted: newest message as the body, `unreadCount`
+    // accumulating until the recipient opens it. `lastMessageId` makes the
+    // increment idempotent, because Firestore triggers are at-least-once and a
+    // redelivery would otherwise inflate the count.
     for (const rid of recipients) {
-      await writeNotificationOnce(`msg_${messageId}_${rid}`, {
-        userId: rid,
-        type: "chat_message",
-        title: senderName,
-        body,
-        payload: {
-          route: "/chat",
+      const ref = db
+        .collection("notifications")
+        .doc(`chat_${conversationId}_${rid}`);
+      try {
+        await db.runTransaction(async (tx) => {
+          const cur = await tx.get(ref);
+          if (cur.exists && cur.get("lastMessageId") === messageId) return;
+
+          // Only count toward "unread" what the recipient has not yet seen;
+          // opening the thread resets both fields.
+          const prior = cur.exists && cur.get("read") === false ?
+            (cur.get("unreadCount") as number | undefined) ?? 1 :
+            0;
+
+          tx.set(ref, {
+            userId: rid,
+            type: "chat_message",
+            title: senderName,
+            body,
+            unreadCount: prior + 1,
+            lastMessageId: messageId,
+            read: false,
+            readAt: null,
+            createdAt: FieldValue.serverTimestamp(),
+            payload: {route: "/chat", conversationId},
+          }, {merge: true});
+        });
+      } catch (e) {
+        logger.error("Chat notification upsert failed", {
           conversationId,
-        },
-      });
+          messageId,
+          rid,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
 
     logger.info("Chat-message notification(s) queued", {

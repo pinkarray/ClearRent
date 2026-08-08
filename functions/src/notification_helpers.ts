@@ -48,3 +48,55 @@ export async function writeNotificationOnce(
     throw err;
   }
 }
+
+/**
+ * Write an activity-feed row with a deterministic ID.
+ *
+ * The feed is queried by `landlordId`, which is really "whose feed is this" —
+ * `inspection_service._createActivity` writes the recipient's uid there
+ * regardless of role, and the read rule accepts landlordId or actorId.
+ *
+ * Deterministic IDs because Firestore triggers are at-least-once and the Dart
+ * side's `.add()` would duplicate a row on redelivery. Mirrors
+ * `writeNotificationOnce`: false means a row was already there.
+ *
+ * @param {string} activityId Deterministic activity doc ID.
+ * @param {object} data Feed fields.
+ * @return {Promise<boolean>} True if written, false if it already existed.
+ */
+export async function writeActivityOnce(
+  activityId: string,
+  data: {
+    landlordId: string;
+    type: string;
+    title: string;
+    subtitle: string;
+    propertyId?: string;
+    propertyTitle?: string;
+    actorId?: string;
+    actorName?: string;
+    relatedId?: string;
+  },
+): Promise<boolean> {
+  const db = getFirestore();
+  const ref = db.collection("activities").doc(activityId);
+  try {
+    await ref.create({
+      ...data,
+      // The Dart writer sets both; ActivityModel reads `subtitle`, some
+      // older screens read `message`. Keep them in step.
+      message: data.subtitle,
+      userId: data.landlordId,
+      isRead: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    const code = (err as {code?: number | string})?.code;
+    if (code === 6 || code === "already-exists") {
+      logger.info("Activity already exists, skipping", {activityId});
+      return false;
+    }
+    throw err;
+  }
+}
