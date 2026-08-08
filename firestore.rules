@@ -1157,6 +1157,14 @@ service cloud.firestore {
               // becomes the agreement of record.
               'tenantSignedUrl', 'tenantSignedAt',
               'executedAgreementUrl', 'executedAt',
+              // Mid-tenancy revision, declared and then verified by the other
+              // party. The landlord states a revision changes terms only and
+              // not the rent; the tenant, who has to read the document to sign
+              // it, can contradict that. `tenantFlaggedRentChange` is what an
+              // onActiveRentalUpdated branch turns into an admin alert — a
+              // false declaration becomes evidence rather than an argument.
+              'agreementRevisedAt', 'agreementRevisionTermsOnly',
+              'agreementRevisionDeclaredRent', 'tenantFlaggedRentChange',
               'hasPaymentReminder',
               'status', 'endReason', 'endedBy', 'endedAt',
               'tenantContested', 'tenantContestStatement', 'contestedAt',

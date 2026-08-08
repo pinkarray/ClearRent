@@ -1,8 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../shared/utils/agreement_file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:developer' as developer;
@@ -275,20 +274,141 @@ class _AgreementCardState extends State<_AgreementCard> {
     }
   }
 
+  /// Revising the agreement on a LIVE tenancy is the one place a rent increase
+  /// could be slipped past a tenant — they are asked to sign a fresh document,
+  /// and signing binds them. So ask what is changing: rent goes to the
+  /// admin-approved rent-review flow, terms only carries a declaration the
+  /// tenant can check.
+  ///
+  /// Returns true when the caller should proceed with a terms-only upload.
+  String _formatAmount(double amount) => NumberFormat('#,###').format(amount);
+
+  Future<bool> _confirmTermsOnlyRevision() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('What are you changing?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${r.tenantName} will be asked to sign whatever you upload, so '
+              'we need to know what changed.',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.payments_outlined, color: AppColors.warning),
+              title: Text('The rent', style: AppTextStyles.labelMedium),
+              subtitle: Text(
+                'Goes through a rent review, which we check first',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+              onTap: () => Navigator.pop(ctx, 'rent'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.rule_outlined, color: AppColors.primary),
+              title:
+                  Text('Terms or rules only', style: AppTextStyles.labelMedium),
+              subtitle: Text(
+                'The rent stays at ₦${_formatAmount(r.rentAmount)}',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+              onTap: () => Navigator.pop(ctx, 'terms'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return false;
+
+    if (choice == 'rent') {
+      // Blocked here on purpose — the rent-review flow already demands a
+      // revised agreement AND an admin decision before anything reaches the
+      // tenant.
+      context.push('/landlord/request-rent-change', extra: {
+        'propertyId': r.propertyId,
+        'propertyTitle': r.propertyTitle,
+        'currentRent': r.rentAmount,
+      });
+      return false;
+    }
+    if (choice != 'terms') return false;
+
+    // The declaration is explicit, because it is what the tenant is shown and
+    // what an admin would hold a landlord to.
+    final declared = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Confirm the rent is unchanged'),
+        content: Text(
+          '${r.tenantName} will be told you have declared this revision does '
+          'not change their rent of ₦${_formatAmount(r.rentAmount)}. They can '
+          'flag it for review if the document says otherwise.',
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('I confirm'),
+          ),
+        ],
+      ),
+    );
+    return declared == true;
+  }
+
   Future<void> _uploadAgreement({bool isReupload = false}) async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (image == null) return;
+    // A re-upload lands on a tenancy that already exists, so it goes through
+    // the declaration gate. A first upload has no signed agreement to change.
+    if (isReupload && !await _confirmTermsOnlyRevision()) return;
+
+    if (!mounted) return;
+    final file = await AgreementFilePicker.pick(context);
+    if (file == null || !mounted) return;
 
     setState(() => _isUploading = true);
     try {
       // Private Storage (not Cloudinary) — agreements are sensitive PII.
-      final url = await _propertyService.uploadAgreementDoc(File(image.path));
+      final url = await _propertyService.uploadAgreementDoc(file);
       if (url == null || url.isEmpty) throw Exception('Upload failed');
 
       bool success;
       if (isReupload) {
-        success = await _rentalService.reuploadAgreement(r.id, url);
+        // Records the declaration alongside the document, so the tenant sees
+        // what was claimed and admin can hold the landlord to it.
+        success = await _rentalService.reviseAgreementTermsOnly(
+          rentalId: r.id,
+          agreementPath: url,
+          currentRent: r.rentAmount,
+        );
       } else {
         success = await _rentalService.sendAgreementToTenant(r.id, url);
       }
@@ -410,16 +530,13 @@ class _AgreementCardState extends State<_AgreementCard> {
       return;
     }
 
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-    );
-    if (image == null) return;
+    if (!mounted) return;
+    final file = await AgreementFilePicker.pick(context);
+    if (file == null || !mounted) return;
 
     setState(() => _isFinalizing = true);
 
-    final path = await _propertyService.uploadAgreementDoc(File(image.path));
+    final path = await _propertyService.uploadAgreementDoc(file);
     if (path == null || path.isEmpty) {
       if (mounted) {
         setState(() => _isFinalizing = false);

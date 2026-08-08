@@ -311,6 +311,50 @@ export const onAgreementReady = onDocumentUpdated(
     const after = event.data?.after.data();
     if (!before || !after) return;
 
+    const rentalIdForFlag = event.params.rentalId;
+
+    // ── The tenant contradicts the landlord's declaration ──────────────
+    // A landlord revising a live tenancy declares whether the rent changed.
+    // The tenant, who must read the document to sign it, can say otherwise.
+    // That contradiction is the whole point of the mechanism, so it is
+    // critical and carries BOTH sides — an admin should not have to go
+    // digging to put it to the landlord.
+    if (
+      before.tenantFlaggedRentChange !== true &&
+      after.tenantFlaggedRentChange === true
+    ) {
+      const declaredRent = Number(after.agreementRevisionDeclaredRent ?? 0);
+      const rentOnRecord = Number(after.rentAmount ?? 0);
+      await upsertAdminAlert(`rentflag_${rentalIdForFlag}`, {
+        type: "agreement_rent_mismatch",
+        severity: "critical",
+        title: "Tenant says a revision changes their rent",
+        body:
+          "The landlord declared a terms-only revision for " +
+          `${(after.propertyTitle as string | undefined) ?? "a property"}, ` +
+          `keeping rent at ₦${declaredRent || rentOnRecord}. ` +
+          `${(after.tenantName as string | undefined) ?? "The tenant"} says ` +
+          "the document changes it. Signing is blocked until this is " +
+          "settled. Tenant's account: " +
+          `"${(after.tenantDisputeReason as string | undefined) ?? ""}"`,
+        targetCollection: "active_rentals",
+        targetId: rentalIdForFlag,
+        actors: {
+          tenantId: (after.tenantId as string | undefined) ?? undefined,
+          landlordId: (after.landlordId as string | undefined) ?? undefined,
+        },
+        meta: {
+          declaredRent,
+          rentOnRecord,
+          state: "open",
+        },
+      });
+      logger.info("Rent-mismatch admin alert raised", {
+        rentalId: rentalIdForFlag,
+      });
+      return;
+    }
+
     const urlBefore = (before.agreementUrl as string | undefined) ?? "";
     const urlAfter = (after.agreementUrl as string | undefined) ?? "";
     // Only a genuinely new or replaced document.
