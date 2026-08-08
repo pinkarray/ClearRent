@@ -95,21 +95,23 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
         return;
       }
       final property = PropertyModel.fromFirestore(doc.data()!, doc.id);
-      final dates = await _inspectionService.getAvailableDates(property);
-      // Filter out dates whose slot start is within the 2h cutoff.
-      // For now, this means just dropping today if any slot is too
-      // close — slot-level filtering happens once a date is picked.
-      final filtered = dates.where((d) {
-        final cutoff = DateTime.now().add(const Duration(hours: 2));
-        // The earliest slot starts at 9 AM (per InspectionService.timeSlotDisplay).
-        final earliestSlotStart =
-            DateTime(d.year, d.month, d.day, 9, 0);
-        return earliestSlotStart.isAfter(cutoff);
-      }).toList();
+      // Same-day rescheduling is allowed: the inspection is already approved
+      // and paid, so moving a morning slot to that afternoon is a time change,
+      // not a new booking. getAvailableDates drops today once every slot is
+      // inside the lead time.
+      //
+      // The old local filter judged a whole DAY by its 9 AM slot, so any day
+      // was discarded the moment 9 AM was less than two hours away — which
+      // removed today from every reschedule after 7 AM even when the afternoon
+      // and evening were wide open. Per-slot filtering is in the service now.
+      final dates = await _inspectionService.getAvailableDates(
+        property,
+        allowToday: true,
+      );
       if (mounted) {
         setState(() {
           _property = property;
-          _availableDates = filtered;
+          _availableDates = dates;
           _isLoadingProperty = false;
         });
       }
@@ -126,28 +128,32 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
     });
 
     try {
+      // getAvailableTimeSlots applies the lead-time cutoff itself now, on both
+      // the callable's result and its fallback. The copy that used to live
+      // here had its own slot-hour table, which would drift from
+      // InspectionService.timeSlotStartHour the moment a slot was added.
       final slots = await _inspectionService.getAvailableTimeSlots(
         _property!,
         date,
       );
-      // Filter slots within the 2h cutoff window for the chosen date.
-      final cutoff = DateTime.now().add(const Duration(hours: 2));
-      final slotStartHour = {
-        'morning': 9,
-        'afternoon': 12,
-        'late_afternoon': 15,
-        'evening': 18,
-      };
-      final filtered = slots.where((slot) {
-        final hour = slotStartHour[slot] ?? 9;
-        final slotStart =
-            DateTime(date.year, date.month, date.day, hour, 0);
-        return slotStart.isAfter(cutoff);
-      }).toList();
+
+      // Never offer the slot this inspection ALREADY holds. Proposing a move
+      // to where you already are is a no-op the other party still has to
+      // approve. The availability callable excludes handler-held slots, but
+      // this must hold on its fallback path too — that one has no way to know
+      // what is taken, so without this the current slot reappears whenever the
+      // callable is unreachable.
+      final current = widget.request;
+      final isCurrentDay = current.requestedDate.year == date.year &&
+          current.requestedDate.month == date.month &&
+          current.requestedDate.day == date.day;
+      final offered = isCurrentDay
+          ? slots.where((s) => s != current.requestedTimeSlot).toList()
+          : slots;
 
       if (mounted) {
         setState(() {
-          _availableTimeSlots = filtered;
+          _availableTimeSlots = offered;
           _isLoadingSlots = false;
         });
       }

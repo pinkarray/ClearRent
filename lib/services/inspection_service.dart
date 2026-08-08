@@ -38,6 +38,26 @@ class InspectionService {
     'evening': 18,
   };
 
+  /// How far ahead a slot must start to still be bookable.
+  ///
+  /// Was duplicated inline in `reschedule_propose_sheet.dart`; it lives here
+  /// now because the request sheet, the reschedule sheet AND the
+  /// CF-unavailable fallback all have to apply the same rule. Anywhere that
+  /// misses it can offer a slot that has already begun.
+  static const Duration bookingLeadTime = Duration(hours: 2);
+
+  /// Whether [slot] on [date] is far enough ahead to be booked.
+  ///
+  /// Unknown slots are treated as bookable — an unrecognised slot name is a
+  /// data problem, and silently hiding it would look like the handler has no
+  /// availability at all.
+  static bool isSlotBookable(DateTime date, String slot) {
+    final hour = timeSlotStartHour[slot];
+    if (hour == null) return true;
+    final start = DateTime(date.year, date.month, date.day, hour);
+    return start.isAfter(DateTime.now().add(bookingLeadTime));
+  }
+
   /// Compose a scheduled DateTime by combining a calendar date with
   /// the slot's start hour. Returns midnight if the slot is unknown.
   static DateTime composeScheduledDateTime(DateTime date, String slot) {
@@ -2113,9 +2133,21 @@ class InspectionService {
 
   // ============ AVAILABILITY ============
 
+  /// Dates the handler offers, soonest first.
+  ///
+  /// [allowToday] opens up same-day booking. It is OFF by default because a
+  /// brand-new request still has to be approved by the handler and paid for
+  /// before the slot arrives — hours of notice makes that a wasted approval.
+  /// A reschedule is already approved and paid, so moving it a few hours is
+  /// just a time change, and that flow passes true.
+  ///
+  /// Today only survives if at least one of the property's slots is still
+  /// beyond [bookingLeadTime]; otherwise the strip would offer a day whose
+  /// every slot the picker then rejects.
   Future<List<DateTime>> getAvailableDates(
     PropertyModel property, {
     int daysAhead = 30,
+    bool allowToday = false,
   }) async {
     final landlordDays = property.inspectionDays;
     List<String> agentDays = [];
@@ -2147,11 +2179,9 @@ class InspectionService {
 
     final List<DateTime> dates = [];
     final now = DateTime.now();
-    final startDate = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).add(const Duration(days: 1));
+    final today = DateTime(now.year, now.month, now.day);
+    final startDate =
+        allowToday ? today : today.add(const Duration(days: 1));
 
     for (int i = 0; i < daysAhead; i++) {
       final date = startDate.add(Duration(days: i));
@@ -2159,6 +2189,12 @@ class InspectionService {
 
       if (!landlordDays.contains(weekdayName)) continue;
       if (agentDays.isNotEmpty && !agentDays.contains(weekdayName)) continue;
+
+      // Today is the only day whose slots can already have started.
+      if (date == today &&
+          !property.inspectionTimeSlots.any((s) => isSlotBookable(date, s))) {
+        continue;
+      }
 
       bool isBlocked = false;
       for (final blocked in agentBlockedDates) {
@@ -2198,7 +2234,12 @@ class InspectionService {
         'dateMillis': date.millisecondsSinceEpoch,
       });
       final slots = result.data['slots'];
-      if (slots is List) return slots.map((e) => e.toString()).toList();
+      if (slots is List) {
+        return slots
+            .map((e) => e.toString())
+            .where((s) => isSlotBookable(date, s))
+            .toList();
+      }
       return const [];
     } catch (e) {
       developer.log(
@@ -2207,7 +2248,13 @@ class InspectionService {
       );
       // Fallback: the landlord's offered slots without booked-exclusion. The
       // server-side rejectIfSlotConflict guard still backstops a double-book.
-      return List<String>.from(property.inspectionTimeSlots);
+      //
+      // The lead-time filter is applied here too. This path bypasses the
+      // callable entirely, so without it a failed call would re-offer slots
+      // that have already started.
+      return property.inspectionTimeSlots
+          .where((s) => isSlotBookable(date, s))
+          .toList();
     }
   }
 

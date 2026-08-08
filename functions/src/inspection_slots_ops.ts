@@ -30,6 +30,42 @@ function watDayKey(ms: number): string {
   return new Date(ms + WAT_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+// Start-of-window hour (WAT) per slot — mirrors
+// InspectionService.timeSlotStartHour on the Dart side.
+const SLOT_START_HOUR: Record<string, number> = {
+  morning: 9,
+  afternoon: 12,
+  late_afternoon: 15,
+  evening: 18,
+};
+
+// How far ahead a slot must start to still be bookable — mirrors
+// InspectionService.bookingLeadTime.
+const LEAD_TIME_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Whether a slot on a given WAT day is still far enough ahead to book.
+ *
+ * Only today can fail this, but it is enforced server-side because the client
+ * is not the authority: same-day rescheduling means "today" is now a value the
+ * picker legitimately sends, and nothing else here rejects a slot that has
+ * already begun.
+ *
+ * @param {string} dayKey Target WAT calendar day, YYYY-MM-DD.
+ * @param {string} slot Slot name.
+ * @return {boolean} True when the slot starts beyond the lead time.
+ */
+function isSlotStillBookable(dayKey: string, slot: string): boolean {
+  const hour = SLOT_START_HOUR[slot];
+  // Unknown slot: a data problem, not a timing one. Leave it to the caller.
+  if (hour === undefined) return true;
+  // dayKey is a WAT wall-clock day, so its UTC instant is the day minus the
+  // WAT offset; add the slot hour on top.
+  const startMs =
+    Date.parse(`${dayKey}T00:00:00Z`) - WAT_OFFSET_MS + hour * 60 * 60 * 1000;
+  return startMs > Date.now() + LEAD_TIME_MS;
+}
+
 // Statuses that "hold" a slot — mirror inspection_service._slotHoldingStatuses.
 // Cancelled/declined/refunded/completed/expired do NOT hold a slot.
 const SLOT_HOLDING_STATUSES = [
@@ -99,6 +135,10 @@ export const getAvailableInspectionSlots = onCall(
         eligible = landlordSlots.filter((s) => agentSlots.includes(s));
       }
     }
+
+    // Drop anything that has already started (or is about to). Applied before
+    // the taken-slot query so a fully-past day costs no extra read.
+    eligible = eligible.filter((s) => isSlotStillBookable(requestedDayKey, s));
 
     if (!handlerId) {
       // Malformed property — no handler. Return eligible unfiltered; the CF
