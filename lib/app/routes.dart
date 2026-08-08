@@ -153,9 +153,12 @@ final appRouter = GoRouter(
       path: '/tenant/my-rentals',
       builder: (context, state) => const MyRentalsScreen(),
     ),
+    // Payments and documents are one screen with two tabs. This used to
+    // redirect, which meant every "Payment History" entry point dropped the
+    // tenant on the Agreements tab; it now deep-links the tab it is named for.
     GoRoute(
       path: '/tenant/payment-history',
-      redirect: (context, state) => '/tenant/documents',
+      builder: (context, state) => const DocumentsScreen(initialTab: 1),
     ),
     GoRoute(
       path: '/tenant/documents',

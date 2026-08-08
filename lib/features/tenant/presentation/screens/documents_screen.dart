@@ -14,11 +14,20 @@ import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/tenancy_link_service.dart';
 import '../../../../services/agreement_access_service.dart';
+import '../../../../services/auth_service.dart';
 import '../../../../core/utils/app_logger.dart';
 
 /// Shows tenant's documents: tenancy agreements and payment history.
 class DocumentsScreen extends StatefulWidget {
-  const DocumentsScreen({super.key});
+  /// Which tab to open on — 0 Agreements, 1 Payments.
+  ///
+  /// This screen is the single destination behind BOTH the "Documents" and the
+  /// "Payment History" entry points, so the one that says payments has to land
+  /// on payments. Before this it always opened on Agreements and the tenant had
+  /// to find the tab themselves.
+  final int initialTab;
+
+  const DocumentsScreen({super.key, this.initialTab = 0});
 
   @override
   State<DocumentsScreen> createState() => _DocumentsScreenState();
@@ -30,6 +39,14 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   final ActiveRentalService _rentalService = ActiveRentalService();
   final TenancyLinkService _linkService = TenancyLinkService();
   final AgreementAccessService _agreementAccess = AgreementAccessService();
+
+  /// Landlords and agents reach this screen too (`/landlord/documents`), but
+  /// the Agreements tab is built from `getTenantRentals()` /
+  /// `getTenantActiveLink()` — tenant-scoped queries that return nothing for
+  /// them. They were shown a permanently empty "Agreements" tab beside a
+  /// populated "Payments" one, which reads as data missing rather than a tab
+  /// that was never theirs. Their agreements live on /landlord/agreements.
+  bool _isTenant = true;
 
   List<ActiveRental> _rentals = [];
   // A landlord-linked tenancy with an attached agreement, surfaced alongside
@@ -46,7 +63,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      // Clamped: an out-of-range initialIndex throws rather than falling back.
+      initialIndex: widget.initialTab.clamp(0, 1),
+    );
     _loadData();
   }
 
@@ -58,6 +80,10 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
   Future<void> _loadData() async {
     try {
+      final profile = await AuthService().getUserProfile();
+      final accountType = profile?['accountType'] as String? ?? 'tenant';
+      if (mounted) setState(() => _isTenant = accountType == 'tenant');
+
       final rentals = await _rentalService.getTenantRentals();
       final link = await _linkService.getTenantActiveLink();
       final payments = await _loadPaystackPayments();
@@ -131,9 +157,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
-        title: Text('Documents', style: AppTextStyles.h4),
+        title: Text(_isTenant ? 'Documents' : 'Payments & Receipts',
+            style: AppTextStyles.h4),
         centerTitle: true,
-        bottom: TabBar(
+        bottom: !_isTenant
+            ? null
+            : TabBar(
           controller: _tabController,
           labelColor: AppColors.primary,
           unselectedLabelColor: AppColors.textSecondary,
@@ -152,7 +181,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : TabBarView(
+          : !_isTenant
+              // Landlords/agents get the payments half only. The agreements
+              // half is tenant-scoped by construction, so showing them an
+              // empty tab implies missing data; theirs are a screen away.
+              ? _buildLandlordPayments()
+              : TabBarView(
               controller: _tabController,
               children: [
                 // ── Agreements Tab ──
@@ -204,6 +238,72 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   // ────────────────────────────────────────────────────────────────────
   // SHARED WIDGETS
   // ────────────────────────────────────────────────────────────────────
+
+  /// Payments only, plus a signpost to where a landlord's agreements actually
+  /// live — so the screen never implies their documents are missing.
+  Widget _buildLandlordPayments() {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: AppColors.primary,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          GestureDetector(
+            onTap: () => context.push('/landlord/agreements'),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(20),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withAlpha(60)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.description_outlined,
+                      size: 20, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Tenancy agreements',
+                            style: AppTextStyles.labelMedium
+                                .copyWith(color: AppColors.primary)),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Your property and tenancy agreements are managed here',
+                          style: AppTextStyles.caption
+                              .copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (_payments.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 40),
+              child: GuidanceEmptyState(
+                icon: Icons.payment_outlined,
+                title: 'No Payments Yet',
+                subtitle:
+                    'Payments you make on ClearRent — listing fees and the '
+                    'like — will show up here with their receipts.',
+              ),
+            )
+          else ...[
+            _buildPaymentsSummary(),
+            const SizedBox(height: 16),
+            ..._payments.map((p) => _buildPaymentCard(p)),
+          ],
+        ],
+      ),
+    );
+  }
 
   // ────────────────────────────────────────────────────────────────────
   // AGREEMENTS TAB
@@ -649,6 +749,9 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     final status = payment['status'] as String? ?? 'unknown';
     final reference = payment['reference'] as String? ?? '';
     final createdAt = (payment['createdAt'] as Timestamp?)?.toDate();
+    // Web's list has carried this since it shipped; without it a tenant with
+    // two rentals cannot tell which one a payment belongs to.
+    final propertyTitle = payment['propertyTitle'] as String? ?? '';
 
     final typeLabel = _paymentTypeLabel(type);
     final typeIcon = _paymentTypeIcon(type);
@@ -687,6 +790,16 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(typeLabel, style: AppTextStyles.labelMedium),
+                    if (propertyTitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        propertyTitle,
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       reference.length > 24
@@ -758,6 +871,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     final userEmail = payment['userEmail'] as String? ?? '';
     final createdAt = (payment['createdAt'] as Timestamp?)?.toDate();
     final propertyId = payment['propertyId'] as String?;
+    final propertyTitle = payment['propertyTitle'] as String? ?? '';
     final rentalInterestId = payment['rentalInterestId'] as String?;
 
     final typeLabel = _paymentTypeLabel(type);
@@ -849,6 +963,10 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 children: [
                   _receiptRow('Type', typeLabel),
                   const SizedBox(height: 12),
+                  if (propertyTitle.isNotEmpty) ...[
+                    _receiptRow('Property', propertyTitle),
+                    const SizedBox(height: 12),
+                  ],
                   if (createdAt != null) ...[
                     _receiptRow('Date', DateFormat('d MMM y, h:mm a').format(createdAt)),
                     const SizedBox(height: 12),
