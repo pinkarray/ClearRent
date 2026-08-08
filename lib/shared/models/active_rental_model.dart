@@ -55,6 +55,18 @@ class ActiveRental {
   final DateTime? tenantAcceptedAt;
   final String? tenantDisputeReason;
   final DateTime? landlordFinalizedAt;
+
+  /// The copy the TENANT signed and uploaded. Their acceptance is this
+  /// document, not a button press — a status and a timestamp in our own
+  /// database is something a tenant can simply deny having agreed to.
+  final String? tenantSignedUrl;
+  final DateTime? tenantSignedAt;
+
+  /// The counter-signed copy carrying BOTH signatures. Once present this is
+  /// the agreement of record; the original and the tenant-signed copy are the
+  /// trail behind it.
+  final String? executedAgreementUrl;
+  final DateTime? executedAt;
   
   // End / move-out / contest (System G)
   final String? endReason;
@@ -129,6 +141,10 @@ class ActiveRental {
     this.tenantAcceptedAt,
     this.tenantDisputeReason,
     this.landlordFinalizedAt,
+    this.tenantSignedUrl,
+    this.tenantSignedAt,
+    this.executedAgreementUrl,
+    this.executedAt,
     this.endReason,
     this.endedBy,
     this.endedAt,
@@ -168,6 +184,18 @@ class ActiveRental {
 
   // Agreement helpers
   bool get hasAgreement => agreementUrl != null && agreementUrl!.isNotEmpty;
+
+  bool get hasTenantSignature =>
+      tenantSignedUrl != null && tenantSignedUrl!.isNotEmpty;
+
+  bool get hasExecutedAgreement =>
+      executedAgreementUrl != null && executedAgreementUrl!.isNotEmpty;
+
+  /// A tenancy finalized WITHOUT a counter-signed document on file — every
+  /// rental that accepted by tap before signatures were required. Kept
+  /// distinguishable so the gap is visible rather than silently blessed.
+  bool get isFinalizedWithoutSignature =>
+      agreementStatus == AgreementStatus.finalized && !hasExecutedAgreement;
   bool get isAgreementPendingReview => agreementStatus == AgreementStatus.pendingReview;
   bool get isAgreementAccepted => agreementStatus == AgreementStatus.accepted;
   bool get isAgreementDisputed => agreementStatus == AgreementStatus.disputed;
@@ -176,10 +204,10 @@ class ActiveRental {
   String get agreementStatusDisplay {
     switch (agreementStatus) {
       case AgreementStatus.none: return 'No Agreement';
-      case AgreementStatus.pendingReview: return 'Pending Tenant Review';
-      case AgreementStatus.accepted: return 'Accepted by Tenant';
+      case AgreementStatus.pendingReview: return 'Awaiting Tenant Signature';
+      case AgreementStatus.accepted: return 'Signed by Tenant';
       case AgreementStatus.disputed: return 'Tenant Has Concerns';
-      case AgreementStatus.finalized: return 'Finalized';
+      case AgreementStatus.finalized: return 'Fully Executed';
     }
   }
   
@@ -288,6 +316,12 @@ class ActiveRental {
       tenantDisputeReason: data['tenantDisputeReason'] as String?,
       landlordFinalizedAt: data['landlordFinalizedAt'] != null
           ? (data['landlordFinalizedAt'] as Timestamp).toDate() : null,
+      tenantSignedUrl: data['tenantSignedUrl'] as String?,
+      tenantSignedAt: data['tenantSignedAt'] != null
+          ? (data['tenantSignedAt'] as Timestamp).toDate() : null,
+      executedAgreementUrl: data['executedAgreementUrl'] as String?,
+      executedAt: data['executedAt'] != null
+          ? (data['executedAt'] as Timestamp).toDate() : null,
       endReason: data['endReason'] as String?,
       endedBy: data['endedBy'] as String?,
       endedAt: data['endedAt'] != null
@@ -524,8 +558,11 @@ enum ActiveRentalStatus {
 
 enum AgreementStatus {
   none,            // No agreement uploaded yet
-  pendingReview,   // Landlord uploaded, waiting for tenant review
-  accepted,        // Tenant accepted
+  pendingReview,   // Landlord uploaded, waiting for tenant to sign
+  /// Tenant has uploaded a SIGNED copy. Waiting on the landlord to
+  /// counter-sign. Legacy rentals that accepted with a tap (before signatures
+  /// were required) also land here, so they can still be finalized.
+  accepted,
   disputed,        // Tenant raised concerns
-  finalized,       // Landlord confirmed — agreement is complete
+  finalized,       // Counter-signed — the executed agreement is on record
 }

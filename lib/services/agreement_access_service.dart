@@ -10,10 +10,17 @@ import 'package:cloud_functions/cloud_functions.dart';
 /// on failure (not a party, no agreement, or network error).
 class AgreementAccessService {
   /// [collection] is 'active_rentals' or 'tenancy_links'; [docId] is that
-  /// rental/link's id (the doc carrying the `agreementUrl`).
+  /// rental/link's id.
+  ///
+  /// [which] picks which copy: `original` (what the landlord sent),
+  /// `tenantSigned` (the tenant's signed upload) or `executed` (counter-signed,
+  /// the agreement of record). Each party uploads under their own uid, so
+  /// Storage denies the counterparty a direct read — this callable checks
+  /// membership server-side and signs, which storage rules cannot do.
   Future<String?> resolveUrl({
     required String collection,
     required String docId,
+    String which = 'original',
   }) async {
     try {
       final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
@@ -21,6 +28,7 @@ class AgreementAccessService {
       final res = await callable.call<Map<String, dynamic>>({
         'collection': collection,
         'docId': docId,
+        'which': which,
       });
       final url = res.data['url'] as String?;
       return (url != null && url.isNotEmpty) ? url : null;

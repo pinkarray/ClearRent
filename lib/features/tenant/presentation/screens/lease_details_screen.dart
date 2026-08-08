@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -10,7 +11,9 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/rental_interest_service.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../services/agreement_access_service.dart';
+import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
 
 class LeaseDetailsScreen extends StatefulWidget {
@@ -293,7 +296,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Review Required',
+                  Text('Signature Required',
                       style: AppTextStyles.labelMedium.copyWith(color: AppColors.info)),
                   if (_rental.agreementUploadedAt != null)
                     Text('Uploaded ${_formatDate(_rental.agreementUploadedAt!)}',
@@ -303,9 +306,15 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
           ]),
           const SizedBox(height: 16),
-          Text('Your landlord has sent the tenancy agreement. Review it '
-              'carefully — accepting finalizes it, and you\'ll then pay your '
-              'rent to complete the move-in.',
+          // Said "accepting finalizes it", which is no longer true: the
+          // landlord counter-signs afterwards. Also spells out the download →
+          // print → sign → upload loop, because a tenant has no way to guess
+          // that "Sign & Accept" wants a photo of a signed page.
+          Text('Your landlord has sent the tenancy agreement. Download it and '
+              'read it carefully, then print and sign it, photograph the '
+              'signed pages and upload them here — that upload is how you '
+              'accept. Your landlord counter-signs, and then you pay your rent '
+              'to complete the move-in.',
               style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 16),
 
@@ -315,7 +324,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             child: OutlinedButton.icon(
               onPressed: () => _viewAgreement(),
               icon: const Icon(Icons.visibility_outlined, size: 18),
-              label: const Text('View Agreement'),
+              label: const Text('Download Agreement'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 side: BorderSide(color: AppColors.primary),
@@ -368,7 +377,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 child: _isAccepting
                     ? const SizedBox(width: 18, height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('I Accept'),
+                    : const Text('Sign & Accept'),
               ),
             ),
           ]),
@@ -597,22 +606,32 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   }
 
   // ── Dialogs ──
+  /// Acceptance is a SIGNED DOCUMENT, not a button press.
+  ///
+  /// Tapping "I Accept" used to write a status and a timestamp and leave the
+  /// agreement itself untouched — so the only evidence a tenant agreed was a
+  /// row in ClearRent's own database, which a tenant could simply deny. The
+  /// tenant now downloads the agreement, signs it, and uploads the signed
+  /// copy; that upload IS the acceptance.
   Future<void> _showAcceptDialog() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Accept Agreement'),
+        title: const Text('Sign & Accept'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('By tapping "I Accept", you acknowledge that you have read and agree to the terms in this tenancy agreement.',
-                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+            Text(
+              'To accept, sign the agreement and upload the signed copy:',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textPrimary),
+            ),
             const SizedBox(height: 12),
-            Text('This finalizes the agreement. You\'ll then be asked to pay '
-                'your rent to complete the move-in.',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.textPrimary)),
+            _step(1, 'Download and read the agreement'),
+            _step(2, 'Print and sign it, or sign on your device'),
+            _step(3, 'Photograph or scan the signed pages'),
+            _step(4, 'Upload it here — that is your acceptance'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -625,8 +644,12 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 Icon(Icons.info_outline, size: 18, color: AppColors.warning),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('This creates a digital record of your acceptance. For court-admissible proof, get the agreement stamped at LIRS/SIRS.',
-                      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                  child: Text(
+                    'Your landlord then counter-signs. For court-admissible '
+                    'proof, get the agreement stamped at LIRS/SIRS.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
                 ),
               ]),
             ),
@@ -642,27 +665,80 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success, foregroundColor: Colors.white),
-            child: const Text('I Accept'),
+            child: const Text('Choose signed copy'),
           ),
         ],
       ),
     );
 
     if (confirmed != true) return;
+
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (image == null) return;
+
     setState(() => _isAccepting = true);
 
-    final success = await _rentalService.tenantAcceptAgreement(_rental.id);
+    // Uploads under the TENANT's own uid, which storage rules already permit.
+    // The landlord reads it back through getSignedAgreementUrl, which checks
+    // tenancy membership — a storage rule cannot.
+    final path = await PropertyService().uploadAgreementDoc(File(image.path));
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        setState(() => _isAccepting = false);
+        _toastError('Could not upload that file. Please try again.');
+      }
+      return;
+    }
+
+    final success = await _rentalService.tenantUploadSignedAgreement(
+      _rental.id,
+      path,
+    );
+
     if (mounted) {
       setState(() => _isAccepting = false);
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Agreement accepted! Your landlord has been notified.'),
+          content: const Text(
+              'Signed agreement sent. Your landlord will counter-sign it.'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
+      } else {
+        _toastError('Could not record your acceptance. Please try again.');
       }
     }
+  }
+
+  Widget _step(int n, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$n. ',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.primary)),
+            Expanded(
+              child: Text(text,
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+            ),
+          ],
+        ),
+      );
+
+  void _toastError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: AppColors.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   Future<void> _showDisputeDialog() async {
@@ -752,7 +828,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       child: OutlinedButton.icon(
         onPressed: () => _viewAgreement(),
         icon: const Icon(Icons.visibility_outlined, size: 18),
-        label: const Text('View Agreement'),
+        label: const Text('Download Agreement'),
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 12),
           side: BorderSide(color: AppColors.primary),

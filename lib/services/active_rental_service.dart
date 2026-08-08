@@ -737,6 +737,70 @@ class ActiveRentalService {
   /// matters twice over: it's what unlocks the tenant's rent payment (rent is
   /// only ever collected on a finalized agreement), and it removes the step
   /// where a quiet landlord could strand an accepted tenant indefinitely.
+  /// The tenant's acceptance: a copy they printed, signed and uploaded.
+  ///
+  /// This replaces tap-to-accept. Acceptance used to write only a status and a
+  /// timestamp, which meant the sole evidence a tenant agreed was a row in our
+  /// own database — nothing bearing their hand, and trivially deniable. The
+  /// signed document IS the acceptance now.
+  ///
+  /// Stops at `accepted`, NOT `finalized`: the landlord still counter-signs,
+  /// and [landlordUploadExecutedAgreement] is what completes it.
+  ///
+  /// [signedPath] is a private Storage path under the tenant's own uid.
+  Future<bool> tenantUploadSignedAgreement(
+    String rentalId,
+    String signedPath,
+  ) async {
+    if (rentalId.isEmpty || signedPath.isEmpty) return false;
+    try {
+      // Only fields in the active_rentals update allowlist (firestore.rules)
+      // may be written — an extra one rejects the whole write.
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'tenantSignedUrl': signedPath,
+        'tenantSignedAt': FieldValue.serverTimestamp(),
+        'agreementStatus': 'accepted',
+        'tenantAcceptedAt': FieldValue.serverTimestamp(),
+        'tenantDisputeReason': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Tenant signed agreement: $rentalId',
+          name: 'ActiveRentalService');
+      return true;
+    } catch (e) {
+      developer.log('❌ tenantUploadSignedAgreement failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// The landlord's counter-signature, which finalizes the tenancy.
+  ///
+  /// [executedPath] is the fully-executed copy — both signatures on one
+  /// document — and becomes the agreement of record.
+  Future<bool> landlordUploadExecutedAgreement(
+    String rentalId,
+    String executedPath,
+  ) async {
+    if (rentalId.isEmpty || executedPath.isEmpty) return false;
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'executedAgreementUrl': executedPath,
+        'executedAt': FieldValue.serverTimestamp(),
+        'agreementStatus': 'finalized',
+        'landlordFinalizedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      developer.log('✅ Agreement fully executed: $rentalId',
+          name: 'ActiveRentalService');
+      return true;
+    } catch (e) {
+      developer.log('❌ landlordUploadExecutedAgreement failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
   /// Legacy rentals sitting at 'accepted' can still be finalized by the
   /// landlord via finalizeAgreement.
   Future<bool> tenantAcceptAgreement(String rentalId) async {

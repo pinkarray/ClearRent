@@ -10,10 +10,12 @@ import '../../../../core/constants/colors.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
+import '../../../../shared/models/property_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../widgets/property_agreement_card.dart';
 
 /// Landlord screen to manage tenancy agreements for all active rentals.
 /// Upload agreements, track tenant responses, finalize or re-upload.
@@ -24,15 +26,68 @@ class LandlordAgreementsScreen extends StatefulWidget {
   State<LandlordAgreementsScreen> createState() => _LandlordAgreementsScreenState();
 }
 
-class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
+class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen>
+    with SingleTickerProviderStateMixin {
   final ActiveRentalService _rentalService = ActiveRentalService();
+  final PropertyService _propertyService = PropertyService();
+  late TabController _tabController;
+
   List<ActiveRental> _rentals = [];
   bool _isLoading = true;
+
+  /// Every property the landlord owns, paired with whatever agreement is on
+  /// file for it. This is the half that doesn't need a tenant to exist.
+  List<({PropertyModel property, PropertyAgreement? agreement})> _properties =
+      [];
+  bool _isLoadingProperties = true;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadRentals();
+    _loadProperties();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  /// Properties + their stored agreements.
+  ///
+  /// The agreement reads are per-property point reads rather than one query:
+  /// they live in a `private` subcollection, and a collection-group query over
+  /// those would be readable only with an index plus a rule change, for no
+  /// gain at a landlord's portfolio size.
+  /// [silent] refreshes in place, leaving the list on screen.
+  ///
+  /// Uploading calls this to pick up the new state, and without it the whole
+  /// tab dropped to a spinner and rebuilt — the card you just used vanished
+  /// and reappeared, which reads as the app losing your work.
+  Future<void> _loadProperties({bool silent = false}) async {
+    if (mounted && !silent) setState(() => _isLoadingProperties = true);
+    try {
+      final props = await _propertyService.getLandlordProperties();
+      final rows = <({PropertyModel property, PropertyAgreement? agreement})>[];
+      for (final p in props) {
+        rows.add((
+          property: p,
+          agreement: await _propertyService.getPropertyAgreement(p.id),
+        ));
+      }
+      if (mounted) {
+        setState(() {
+          _properties = rows;
+          _isLoadingProperties = false;
+        });
+      }
+    } catch (e) {
+      developer.log('❌ Error loading properties: $e',
+          name: 'LandlordAgreements');
+      if (mounted) setState(() => _isLoadingProperties = false);
+    }
   }
 
   Future<void> _loadRentals() async {
@@ -91,31 +146,84 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen> {
         ),
         title: Text('Tenancy Agreements', style: AppTextStyles.h4),
         centerTitle: true,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: AppColors.primary,
+          unselectedLabelColor: AppColors.textSecondary,
+          indicatorColor: AppColors.primary,
+          indicatorWeight: 3,
+          labelStyle: AppTextStyles.labelMedium,
+          tabs: [
+            // A landlord with one property was told "My properties".
+            Tab(text: _properties.length == 1 ? 'My property' : 'My properties'),
+            Tab(text: _rentals.length == 1 ? 'Tenancy' : 'Tenancies'),
+          ],
+        ),
       ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : _rentals.isEmpty
-              ? const GuidanceEmptyState(
-                  icon: Icons.description_outlined,
-                  title: 'No Active Rentals',
-                  subtitle:
-                      'Agreements will appear here once you have active tenants.',
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadRentals,
-                  color: AppColors.primary,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _rentals.length,
-                    itemBuilder: (context, i) => _AgreementCard(
-                      rental: _rentals[i],
-                      onUpdated: _loadRentals,
-                    ),
-                  ),
-                ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildPropertiesTab(),
+          _buildTenanciesTab(),
+        ],
+      ),
     );
   }
 
+  /// Every property, whether or not it has a tenant — so an agreement can be
+  /// put in place ahead of time instead of only once someone is accepted.
+  Widget _buildPropertiesTab() {
+    if (_isLoadingProperties) {
+      return Center(child: CircularProgressIndicator(color: AppColors.primary));
+    }
+    if (_properties.isEmpty) {
+      return const GuidanceEmptyState(
+        icon: Icons.home_work_outlined,
+        title: 'No Properties Yet',
+        subtitle:
+            'List a property and you can attach its tenancy agreement here, '
+            'ready for whoever you accept.',
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadProperties,
+      color: AppColors.primary,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _properties.length,
+        itemBuilder: (context, i) => PropertyAgreementCard(
+          property: _properties[i].property,
+          agreement: _properties[i].agreement,
+          onUpdated: () => _loadProperties(silent: true),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTenanciesTab() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator(color: AppColors.primary));
+    }
+    if (_rentals.isEmpty) {
+      return const GuidanceEmptyState(
+        icon: Icons.description_outlined,
+        title: 'No Active Rentals',
+        subtitle: 'Agreements will appear here once you have active tenants.',
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _loadRentals,
+      color: AppColors.primary,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _rentals.length,
+        itemBuilder: (context, i) => _AgreementCard(
+          rental: _rentals[i],
+          onUpdated: _loadRentals,
+        ),
+      ),
+    );
+  }
 }
 
 class _AgreementCard extends StatefulWidget {
@@ -213,17 +321,40 @@ class _AgreementCardState extends State<_AgreementCard> {
     }
   }
 
+  /// Counter-signing is what finalizes a tenancy.
+  ///
+  /// The tenant has uploaded a copy bearing their signature; the landlord
+  /// signs the same document and uploads the fully-executed version, which
+  /// becomes the agreement of record. Finalizing used to write a status alone,
+  /// leaving no document that carried either party's hand.
+  ///
+  /// Legacy rentals accepted by tap have no `tenantSignedUrl`. They can still
+  /// be finalized without an upload — refusing would strand tenancies that
+  /// predate signatures.
   Future<void> _finalizeAgreement() async {
+    final hasTenantSignature = r.hasTenantSignature;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Finalize Agreement'),
+        title: Text(hasTenantSignature
+            ? 'Counter-sign & finalize'
+            : 'Finalize Agreement'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${r.tenantName} has accepted the agreement. Do you want to finalize it?',
-                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+            Text(
+              hasTenantSignature
+                  ? '${r.tenantName} has signed and returned the agreement. '
+                      'Download it, add your signature, and upload the '
+                      'fully-signed copy — that becomes the agreement of '
+                      'record for both of you.'
+                  : '${r.tenantName} has accepted the agreement. Do you want '
+                      'to finalize it?',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -255,28 +386,90 @@ class _AgreementCardState extends State<_AgreementCard> {
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success, foregroundColor: Colors.white),
-            child: const Text('Finalize'),
+            child: Text(
+                hasTenantSignature ? 'Choose signed copy' : 'Finalize'),
           ),
         ],
       ),
     );
 
     if (confirmed != true) return;
+
+    // Legacy path: no tenant signature on file, so there is nothing to
+    // counter-sign. Finalize as before rather than stranding the tenancy.
+    if (!hasTenantSignature) {
+      setState(() => _isFinalizing = true);
+      final ok = await _rentalService.landlordFinalizeAgreement(r.id);
+      if (mounted) {
+        setState(() => _isFinalizing = false);
+        if (ok) {
+          widget.onUpdated();
+          _toast('Agreement finalized! Both parties have a copy.');
+        }
+      }
+      return;
+    }
+
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (image == null) return;
+
     setState(() => _isFinalizing = true);
 
-    final success = await _rentalService.landlordFinalizeAgreement(r.id);
+    final path = await _propertyService.uploadAgreementDoc(File(image.path));
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        setState(() => _isFinalizing = false);
+        _toast('Could not upload that file. Please try again.', isError: true);
+      }
+      return;
+    }
+
+    final success = await _rentalService.landlordUploadExecutedAgreement(
+      r.id,
+      path,
+    );
     if (mounted) {
       setState(() => _isFinalizing = false);
       if (success) {
         widget.onUpdated();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Agreement finalized! Both parties have a copy.'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
+        _toast('Signed by both parties. The executed agreement is on record.');
+      } else {
+        _toast('Could not finalize. Please try again.', isError: true);
       }
     }
+  }
+
+  /// Open the copy the tenant signed, so the landlord can print and
+  /// counter-sign it. Served through getSignedAgreementUrl because the tenant
+  /// uploaded it under THEIR uid — storage rules deny the landlord directly.
+  Future<void> _viewTenantSigned() async {
+    final url = await _agreementAccess.resolveUrl(
+      collection: 'active_rentals',
+      docId: r.id,
+      which: 'tenantSigned',
+    );
+    if (!mounted) return;
+    if (url == null) {
+      _toast('Could not open the signed copy.', isError: true);
+      return;
+    }
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+  }
+
+  void _toast(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: isError ? AppColors.error : AppColors.success,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   Future<void> _messageTenant() async {
@@ -450,9 +643,21 @@ class _AgreementCardState extends State<_AgreementCard> {
           ),
         ]);
 
-      // Tenant accepted → Finalize button
+      // Tenant signed → view their signed copy, then counter-sign
       case AgreementStatus.accepted:
         return Column(children: [
+          if (r.hasTenantSignature) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _viewTenantSigned(),
+                icon: const Icon(Icons.draw_outlined, size: 18),
+                label: const Text('View the copy your tenant signed'),
+                style: _outlineStyle(),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -461,7 +666,11 @@ class _AgreementCardState extends State<_AgreementCard> {
                   ? const SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.verified_outlined, size: 20),
-              label: Text(_isFinalizing ? 'Finalizing...' : 'Finalize Agreement'),
+              label: Text(_isFinalizing
+                  ? 'Finalizing...'
+                  : r.hasTenantSignature
+                      ? 'Counter-sign & finalize'
+                      : 'Finalize Agreement'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success,
                 foregroundColor: Colors.white,

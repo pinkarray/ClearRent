@@ -27,6 +27,22 @@ const callableOptions = {
 const ALLOWED_COLLECTIONS = ["active_rentals", "tenancy_links"];
 const SIGNED_URL_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+// The three documents a tenancy can carry, and the field each lives in.
+//
+//   original     — what the landlord sent, unsigned
+//   tenantSigned — the copy the tenant printed, signed and uploaded
+//   executed     — counter-signed by the landlord; the agreement of record
+//
+// Both signed copies are uploaded under their OWN uid's storage folder, so
+// Storage rules deny the counterparty a direct read. Serving them is exactly
+// what this callable exists for: it checks membership against the tenancy and
+// then signs, which storage rules cannot do.
+const AGREEMENT_FIELDS: Record<string, string> = {
+  original: "agreementUrl",
+  tenantSigned: "tenantSignedUrl",
+  executed: "executedAgreementUrl",
+};
+
 export const getSignedAgreementUrl = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "You must be signed in.");
@@ -39,13 +55,28 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     request.auth.token?.superAdmin === true ||
     request.auth.token?.viewer === true;
 
-  const data = (request.data ?? {}) as {collection?: string; docId?: string};
+  const data = (request.data ?? {}) as {
+    collection?: string;
+    docId?: string;
+    which?: string;
+  };
   const collection = data.collection ?? "";
   const docId = data.docId ?? "";
+  // Which document on the tenancy to serve. Defaults to the original so every
+  // existing caller keeps working unchanged.
+  const which = data.which ?? "original";
   if (!ALLOWED_COLLECTIONS.includes(collection) || !docId) {
     throw new HttpsError(
       "invalid-argument",
       "A valid collection ('active_rentals' | 'tenancy_links') and docId are required.",
+    );
+  }
+  // Plain lookup rather than Object.hasOwn — this codebase targets below
+  // ES2022, where hasOwn does not exist.
+  if (AGREEMENT_FIELDS[which] === undefined) {
+    throw new HttpsError(
+      "invalid-argument",
+      "which must be 'original', 'tenantSigned' or 'executed'.",
     );
   }
 
@@ -66,9 +97,15 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     );
   }
 
-  const agreementUrl = (doc.agreementUrl as string | undefined) ?? "";
+  const field = AGREEMENT_FIELDS[which];
+  const agreementUrl = (doc[field] as string | undefined) ?? "";
   if (!agreementUrl) {
-    throw new HttpsError("not-found", "No agreement is attached.");
+    throw new HttpsError(
+      "not-found",
+      which === "original" ?
+        "No agreement is attached." :
+        "That copy has not been uploaded yet.",
+    );
   }
 
   // Legacy Cloudinary docs are public http URLs — return as-is.
