@@ -69,6 +69,21 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _otherPartyAllowsCalls = false;
   String? _otherPartyPhone;
 
+  // Everyone on this thread except me, as @-mentionable handles. Built once
+  // when the conversation loads.
+  List<_MentionTarget> _mentionTargets = [];
+  // Candidates matching what's being typed after an '@'. Empty = no overlay.
+  List<_MentionTarget> _mentionMatches = [];
+
+  // Edit mode. Non-null means the composer is rewriting an existing message
+  // rather than composing a new one.
+  String? _editingMessageId;
+  bool _editingIsLastMessage = false;
+
+  // Guards the read-receipt write so a burst of stream frames doesn't fire
+  // one batch update each.
+  bool _markingRead = false;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) {
       setState(() {
         _conversation = conversation;
+        _mentionTargets = _buildMentionTargets(conversation);
         _isLoading = false;
       });
 
@@ -170,6 +186,109 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// The other people on this thread, as mention handles.
+  ///
+  /// A conversation carries at most a landlord, a tenant and an agent, so this
+  /// is two entries at the outside. The current user is excluded — you don't
+  /// mention yourself.
+  List<_MentionTarget> _buildMentionTargets(ConversationData? c) {
+    if (c == null) return [];
+
+    final raw = <({String uid, String name, String role})>[
+      (uid: c.landlordId, name: c.landlordName, role: 'Landlord'),
+      (uid: c.tenantId, name: c.tenantName, role: 'Tenant'),
+      (uid: c.agentId ?? '', name: c.agentName ?? '', role: 'Agent'),
+    ].where((e) => e.uid.isNotEmpty && e.uid != _currentUserId).toList();
+
+    // First name, stripped to word characters so punctuation in a stored name
+    // can't produce a handle the parser will never match.
+    String firstName(String name) =>
+        name.trim().split(RegExp(r'\s+')).first.replaceAll(RegExp(r'\W'), '');
+
+    final handles = raw.map((e) {
+      final f = firstName(e.name);
+      return f.isEmpty ? e.role : f;
+    }).toList();
+
+    return [
+      for (var i = 0; i < raw.length; i++)
+        _MentionTarget(
+          uid: raw[i].uid,
+          // Two people with the same first name would otherwise both answer to
+          // one handle, so collisions fall back to the whole name unspaced.
+          handle: handles.where((h) => h == handles[i]).length > 1
+              ? raw[i].name.replaceAll(RegExp(r'\W'), '')
+              : handles[i],
+          fullName: raw[i].name.isNotEmpty ? raw[i].name : raw[i].role,
+          role: raw[i].role,
+        ),
+    ];
+  }
+
+  /// Recompute the mention overlay from the caret position.
+  ///
+  /// Matches on the word being typed after an '@' that starts a word — so an
+  /// email address in the middle of a sentence doesn't open the picker.
+  void _updateMentionMatches() {
+    final selection = _messageController.selection;
+    final text = _messageController.text;
+    final caret = selection.baseOffset;
+
+    List<_MentionTarget> matches = [];
+    if (_mentionTargets.isNotEmpty && caret > 0 && caret <= text.length) {
+      final before = text.substring(0, caret);
+      final at = before.lastIndexOf('@');
+      final startsWord = at == 0 || (at > 0 && before[at - 1].trim().isEmpty);
+      if (at >= 0 && startsWord) {
+        final query = before.substring(at + 1);
+        if (!query.contains(RegExp(r'\s'))) {
+          matches = _mentionTargets
+              .where((t) =>
+                  t.handle.toLowerCase().startsWith(query.toLowerCase()))
+              .toList();
+          // An exact, complete handle needs no picker — the user is done.
+          if (matches.length == 1 &&
+              matches.first.handle.toLowerCase() == query.toLowerCase()) {
+            matches = [];
+          }
+        }
+      }
+    }
+
+    if (matches.length != _mentionMatches.length ||
+        !matches.every((m) => _mentionMatches.any((e) => e.uid == m.uid))) {
+      setState(() => _mentionMatches = matches);
+    }
+  }
+
+  /// Replace the partial "@que" at the caret with the chosen handle.
+  void _insertMention(_MentionTarget target) {
+    final text = _messageController.text;
+    final caret = _messageController.selection.baseOffset;
+    final at = text.substring(0, caret).lastIndexOf('@');
+    if (at < 0) return;
+
+    final replacement = '@${target.handle} ';
+    final updated = text.replaceRange(at, caret, replacement);
+    _messageController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: at + replacement.length),
+    );
+    setState(() => _mentionMatches = []);
+  }
+
+  /// Which mention handles actually survive in the text being sent. Resolved
+  /// from the final string rather than from what was tapped, so a mention the
+  /// user typed over or deleted doesn't ship a phantom uid.
+  List<String> _resolveMentions(String text) {
+    return _mentionTargets
+        .where((t) => RegExp('@${RegExp.escape(t.handle)}\\b',
+                caseSensitive: false)
+            .hasMatch(text))
+        .map((t) => t.uid)
+        .toList();
+  }
+
   bool get _canSendMessages => _isCurrentUserVerified && _isOtherPartyVerified;
   bool get _canMakeCall => _otherPartyAllowsCalls && _otherPartyPhone != null && _otherPartyPhone!.isNotEmpty;
 
@@ -187,6 +306,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// The composer's one action: saves the edit if one is in progress,
+  /// otherwise sends a new message.
+  Future<void> _submitComposer() {
+    return _editingMessageId != null ? _saveEdit() : _sendMessage();
+  }
+
   Future<void> _sendMessage() async {
     if (!_canSendMessages) {
       _showVerificationRequired();
@@ -196,13 +321,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
+    final mentions = _resolveMentions(text);
     _messageController.clear();
+    setState(() => _mentionMatches = []);
 
     final message = await _conversationService.sendMessage(
       conversationId: widget.conversationId,
       text: text,
       senderName: _currentUserName,
       senderRole: _currentUserRole,
+      mentions: mentions,
     );
 
     if (message != null) {
@@ -218,6 +346,189 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     }
+  }
+
+  /// Put a message the user sent back into the composer.
+  void _startEditing(MessageData message) {
+    setState(() {
+      _editingMessageId = message.id;
+      _editingIsLastMessage = _messages.isNotEmpty &&
+          _messages.last.id == message.id;
+      _mentionMatches = [];
+    });
+    _messageController.value = TextEditingValue(
+      text: message.text,
+      selection: TextSelection.collapsed(offset: message.text.length),
+    );
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _editingMessageId = null;
+      _editingIsLastMessage = false;
+      _mentionMatches = [];
+    });
+    _messageController.clear();
+  }
+
+  Future<void> _saveEdit() async {
+    final messageId = _editingMessageId;
+    if (messageId == null) return;
+
+    final text = _messageController.text.trim();
+    // An edit down to nothing is a delete — the rules reject empty text on the
+    // edit path, so offer the real action instead of failing the write.
+    if (text.isEmpty) {
+      _confirmDelete(messageId, _editingIsLastMessage);
+      return;
+    }
+
+    final isLast = _editingIsLastMessage;
+    final mentions = _resolveMentions(text);
+    _cancelEditing();
+
+    final ok = await _conversationService.editMessage(
+      conversationId: widget.conversationId,
+      messageId: messageId,
+      newText: text,
+      mentions: mentions,
+      isLastMessage: isLast,
+    );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not edit that message'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  /// Long-press sheet on a message the user sent. Property shares can be
+  /// deleted but not edited — there is no text on them to rewrite.
+  void _showMessageActions(MessageData message) {
+    final isLast = _messages.isNotEmpty && _messages.last.id == message.id;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (!message.isPropertyShare)
+              ListTile(
+                leading: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+                title: Text('Edit message', style: AppTextStyles.bodyMedium),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _startEditing(message);
+                },
+              ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: AppColors.error),
+              title: Text(
+                'Delete message',
+                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
+              ),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _confirmDelete(message.id, isLast);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(String messageId, bool isLast) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete message?'),
+        content: const Text(
+          'The message will be removed for everyone in this chat.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _deleteMessage(messageId, isLast);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteMessage(String messageId, bool isLast) async {
+    if (_editingMessageId == messageId) _cancelEditing();
+
+    final ok = await _conversationService.deleteMessage(
+      conversationId: widget.conversationId,
+      messageId: messageId,
+      isLastMessage: isLast,
+    );
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not delete that message'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  /// Mark whatever just arrived as read, so the sender's second tick lands
+  /// while both people are looking at the thread.
+  ///
+  /// Marking used to happen once, in [_loadData], which meant a message that
+  /// arrived while the screen was already open was never receipted — the
+  /// sender only saw it turn blue after the reader closed and reopened the
+  /// chat.
+  void _markIncomingRead() {
+    if (_markingRead || _currentUserId == null) return;
+    final hasUnread = _messages.any(
+      (m) => m.senderId != _currentUserId && !m.isRead,
+    );
+    if (!hasUnread) return;
+
+    _markingRead = true;
+    _conversationService
+        .markConversationAsRead(widget.conversationId)
+        .whenComplete(() => _markingRead = false);
   }
 
   Future<void> _makeCall() async {
@@ -514,7 +825,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
                 if (snapshot.hasData) {
                   _messages = snapshot.data!;
-                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom();
+                    _markIncomingRead();
+                  });
                 }
 
                 if (_messages.isEmpty) {
@@ -566,6 +880,14 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
           ),
+
+          // @-mention picker, above the composer so it doesn't cover the text
+          // being typed.
+          if (_mentionMatches.isNotEmpty) _buildMentionPicker(),
+
+          // "Editing message" strip, so it's obvious the send button will
+          // replace an existing message rather than add a new one.
+          if (_editingMessageId != null) _buildEditingBanner(),
 
           // Message input
           _buildMessageInput(),
@@ -818,66 +1140,150 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
 
-            // Message bubble
-            Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.7,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isMe ? AppColors.primary : AppColors.surface,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isMe ? 16 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 16),
+            // Message bubble. Long-press opens edit/delete, but only on your
+            // own messages and only while they still exist.
+            GestureDetector(
+              onLongPress: isMe && !message.deleted
+                  ? () => _showMessageActions(message)
+                  : null,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.7,
                 ),
-                border: isMe ? null : Border.all(color: AppColors.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(8),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: message.deleted
+                      ? AppColors.surface
+                      : (isMe ? AppColors.primary : AppColors.surface),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 16),
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    message.text,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: isMe ? Colors.white : AppColors.textPrimary,
+                  border: (isMe && !message.deleted)
+                      ? null
+                      : Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(8),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        message.formattedTime,
-                        style: AppTextStyles.caption.copyWith(
-                          color: isMe ? Colors.white.withAlpha(179) : AppColors.textHint,
-                          fontSize: 10,
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (message.deleted)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.block,
+                              size: 14, color: AppColors.textHint),
+                          const SizedBox(width: 6),
+                          Text(
+                            'This message was deleted',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textHint,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      _buildMessageText(message.text, isMe),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (message.isEdited && !message.deleted) ...[
+                          Text(
+                            'edited',
+                            style: AppTextStyles.caption.copyWith(
+                              color: isMe
+                                  ? Colors.white.withAlpha(179)
+                                  : AppColors.textHint,
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          message.formattedTime,
+                          style: AppTextStyles.caption.copyWith(
+                            color: (isMe && !message.deleted)
+                                ? Colors.white.withAlpha(179)
+                                : AppColors.textHint,
+                            fontSize: 10,
+                          ),
                         ),
-                      ),
-                      if (isMe) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          message.isRead ? Icons.done_all : Icons.done,
-                          size: 14,
-                          color: message.isRead ? Colors.white : Colors.white.withAlpha(179),
-                        ),
+                        if (isMe && !message.deleted) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            message.isRead ? Icons.done_all : Icons.done,
+                            size: 14,
+                            color: message.isRead ? Colors.white : Colors.white.withAlpha(179),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Message text with any `@handle` picked out.
+  ///
+  /// Highlighting is derived from the text against the thread's current
+  /// members rather than from the stored `mentions` ids, so a mention still
+  /// reads correctly on an old message and never highlights a stale span.
+  Widget _buildMessageText(String text, bool isMe) {
+    final base = AppTextStyles.bodyMedium.copyWith(
+      color: isMe ? Colors.white : AppColors.textPrimary,
+    );
+
+    if (_mentionTargets.isEmpty || !text.contains('@')) {
+      return Text(text, style: base);
+    }
+
+    final handles =
+        _mentionTargets.map((t) => RegExp.escape(t.handle)).join('|');
+    final pattern = RegExp('@($handles)\\b', caseSensitive: false);
+
+    final spans = <TextSpan>[];
+    var cursor = 0;
+    for (final match in pattern.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: base.copyWith(
+          fontWeight: FontWeight.w700,
+          // On my own (primary-filled) bubble white text is already the
+          // contrast; the mention leans on weight plus a subtle underline.
+          color: isMe ? Colors.white : AppColors.primary,
+          decoration: isMe ? TextDecoration.underline : TextDecoration.none,
+          decorationColor: Colors.white.withAlpha(140),
+        ),
+      ));
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+
+    return RichText(
+      text: TextSpan(style: base, children: spans),
     );
   }
 
@@ -916,6 +1322,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
             GestureDetector(
               onTap: () => _openSharedProperty(message.sharedPropertyId!),
+              onLongPress: isMe ? () => _showMessageActions(message) : null,
               child: Container(
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.7,
@@ -1148,6 +1555,97 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// The list of people offered while an '@' is being typed. At most two
+  /// entries on any thread, so it needs no scrolling.
+  Widget _buildMentionPicker() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _mentionMatches.map((target) {
+          return InkWell(
+            onTap: () => _insertMention(target),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withAlpha(26),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        target.initials,
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(target.fullName,
+                            style: AppTextStyles.labelMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        Text(
+                          '@${target.handle} · ${target.role}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildEditingBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primary.withAlpha(77)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.edit_outlined, size: 16, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Editing message',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary),
+            ),
+          ),
+          GestureDetector(
+            onTap: _cancelEditing,
+            child: Icon(Icons.close, size: 18, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageInput() {
     final bool inputEnabled = _canSendMessages;
     // While the verification check is still in flight we don't yet know the
@@ -1218,16 +1716,17 @@ class _ChatScreenState extends State<ChatScreen> {
                     vertical: 10,
                   ),
                 ),
-                onSubmitted: inputEnabled ? (_) => _sendMessage() : null,
+                onChanged: inputEnabled ? (_) => _updateMentionMatches() : null,
+                onSubmitted: inputEnabled ? (_) => _submitComposer() : null,
               ),
             ),
           ),
           const SizedBox(width: 12),
 
-          // Send button
+          // Send button — becomes "save" while an edit is in progress.
           GestureDetector(
             onTap: inputEnabled
-                ? _sendMessage
+                ? _submitComposer
                 : (showBlocked ? _showVerificationRequired : null),
             child: Container(
               width: 44,
@@ -1236,8 +1735,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: showBlocked ? AppColors.textHint : AppColors.primary,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.send,
+              child: Icon(
+                _editingMessageId != null ? Icons.check : Icons.send,
                 color: Colors.white,
                 size: 20,
               ),
@@ -1250,6 +1749,34 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+}
+
+/// Someone on this thread who can be @-mentioned.
+///
+/// [handle] is what gets typed and highlighted — a single token, because the
+/// parser reads the word after '@' and full names contain spaces. It's the
+/// person's first name, falling back to their role, and de-collided by
+/// [_buildMentionTargets] when two people share a first name.
+class _MentionTarget {
+  final String uid;
+  final String handle;
+  final String fullName;
+  final String role;
+
+  const _MentionTarget({
+    required this.uid,
+    required this.handle,
+    required this.fullName,
+    required this.role,
+  });
+
+  String get initials {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return fullName.isNotEmpty ? fullName[0].toUpperCase() : '?';
   }
 }
 

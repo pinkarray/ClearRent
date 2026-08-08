@@ -407,6 +407,7 @@ class ConversationService {
     required String senderName,
     String? senderRole,
     String? imageUrl,
+    List<String> mentions = const [],
   }) async {
     if (conversationId.isEmpty) {
       developer.log(
@@ -470,6 +471,7 @@ class ConversationService {
         'timestamp': Timestamp.fromDate(now),
         'isRead': false,
         if (imageUrl != null) 'imageUrl': imageUrl,
+        if (mentions.isNotEmpty) 'mentions': mentions,
       };
 
       await messageRef.set(messageData);
@@ -497,10 +499,108 @@ class ConversationService {
         timestamp: now,
         isRead: false,
         imageUrl: imageUrl,
+        mentions: mentions,
       );
     } catch (e) {
       developer.log('❌ Error sending message: $e', name: 'ConversationService');
       return null;
+    }
+  }
+
+  /// Rewrite the text of a message the caller sent.
+  ///
+  /// The rules (`firestore.rules`, messages `isAuthorEdit`) accept only
+  /// `text` / `editedAt` / `mentions` from the author, so this deliberately
+  /// writes nothing else — no `updatedAt`, no re-stamped `timestamp`. Adding a
+  /// field here without widening that allowlist fails the whole write.
+  ///
+  /// [isLastMessage] patches the conversation preview too. Without it the
+  /// inbox would keep showing the text the sender just replaced.
+  Future<bool> editMessage({
+    required String conversationId,
+    required String messageId,
+    required String newText,
+    List<String> mentions = const [],
+    bool isLastMessage = false,
+  }) async {
+    final trimmed = newText.trim();
+    if (conversationId.isEmpty || messageId.isEmpty || trimmed.isEmpty) {
+      return false;
+    }
+
+    try {
+      await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'text': trimmed,
+        'editedAt': Timestamp.now(),
+        'mentions': mentions,
+      });
+
+      if (isLastMessage) {
+        await _patchConversationPreview(conversationId, trimmed);
+      }
+      return true;
+    } catch (e) {
+      developer.log('❌ Error editing message: $e', name: 'ConversationService');
+      return false;
+    }
+  }
+
+  /// Soft-delete a message the caller sent: the doc stays (hard deletes are
+  /// refused by the rules) but its text is blanked and the bubble renders as
+  /// removed. Blanking matters — the rules require it, because a `deleted`
+  /// flag over intact text would leave the message readable to anyone reading
+  /// the document directly.
+  Future<bool> deleteMessage({
+    required String conversationId,
+    required String messageId,
+    bool isLastMessage = false,
+  }) async {
+    if (conversationId.isEmpty || messageId.isEmpty) return false;
+
+    try {
+      await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'text': '',
+        'deleted': true,
+        'deletedAt': Timestamp.now(),
+        'mentions': <String>[],
+      });
+
+      if (isLastMessage) {
+        await _patchConversationPreview(conversationId, 'Message deleted');
+      }
+      return true;
+    } catch (e) {
+      developer.log('❌ Error deleting message: $e',
+          name: 'ConversationService');
+      return false;
+    }
+  }
+
+  /// Update only the inbox preview text — no timestamp bump and no unread
+  /// increment, because editing or deleting is not a new message and must not
+  /// re-badge the thread for the other party.
+  Future<void> _patchConversationPreview(
+    String conversationId,
+    String preview,
+  ) async {
+    try {
+      await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .update({'lastMessage': preview});
+    } catch (e) {
+      developer.log('⚠️ Could not patch conversation preview: $e',
+          name: 'ConversationService');
     }
   }
 
@@ -1260,6 +1360,18 @@ class MessageData {
   final String? sharedPropertyImage;
   final String? sharedPropertyRent;
 
+  /// Set the first time the author rewrites the message; null means never
+  /// edited. Drives the "edited" marker next to the timestamp.
+  final DateTime? editedAt;
+
+  /// Soft delete. The document survives (the rules refuse hard deletes) with
+  /// its text blanked, and the bubble renders as removed.
+  final bool deleted;
+
+  /// User ids the author @-mentioned. Stored as ids, not names, so a display
+  /// name that later changes doesn't orphan the mention.
+  final List<String> mentions;
+
   MessageData({
     required this.id,
     required this.conversationId,
@@ -1275,6 +1387,9 @@ class MessageData {
     this.sharedPropertyTitle,
     this.sharedPropertyImage,
     this.sharedPropertyRent,
+    this.editedAt,
+    this.deleted = false,
+    this.mentions = const [],
   });
 
   factory MessageData.fromFirestore(DocumentSnapshot doc) {
@@ -1294,6 +1409,9 @@ class MessageData {
       sharedPropertyTitle: data['sharedPropertyTitle'],
       sharedPropertyImage: data['sharedPropertyImage'],
       sharedPropertyRent: data['sharedPropertyRent'],
+      editedAt: (data['editedAt'] as Timestamp?)?.toDate(),
+      deleted: data['deleted'] == true,
+      mentions: List<String>.from(data['mentions'] ?? const []),
     );
   }
 
@@ -1306,7 +1424,12 @@ class MessageData {
   }
 
   bool get isSystemMessage => senderId == 'system';
+  bool get isEdited => editedAt != null;
+
+  /// Deleted is checked first: a removed property share renders as a deleted
+  /// bubble, not as the card it used to be.
   bool get isPropertyShare =>
+      !deleted &&
       type == 'property_share' &&
       sharedPropertyId != null &&
       sharedPropertyId!.isNotEmpty;
