@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/theme_provider.dart';
 import '../shared/widgets/connectivity_wrapper.dart';
+import '../shared/widgets/upgrade_gate.dart';
 import 'routes.dart';
 
 class ClearRentApp extends ConsumerWidget {
@@ -42,10 +43,17 @@ class ClearRentApp extends ConsumerWidget {
         // The offline banner lives here — above the router, so it covers every
         // route with a single subscription. It sits OUTSIDE the KeyedSubtree so
         // a theme switch doesn't rebuild it and lose its state mid-animation.
+        //
+        // UpgradeGate sits inside it for the same reason and with the same
+        // constraint (no Navigator above the router), but below the banner:
+        // being told you're offline still matters on a blocked build, and it
+        // explains why the store button does nothing.
         return ConnectivityWrapper(
-          child: KeyedSubtree(
-            key: ValueKey(isDark),
-            child: child!,
+          child: UpgradeGate(
+            child: KeyedSubtree(
+              key: ValueKey(isDark),
+              child: child!,
+            ),
           ),
         );
       },
