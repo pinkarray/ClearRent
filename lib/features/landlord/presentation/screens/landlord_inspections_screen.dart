@@ -906,6 +906,32 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     }
   }
 
+  /// One tap for a landlord who lives in the property.
+  ///
+  /// Writes both flags: the tenant's screen and the completion gate are built
+  /// on handlerOnWay → handlerArrived, so skipping the first would strand the
+  /// state machine. It is the WORDING that was wrong for a resident, not the
+  /// underlying states.
+  Future<void> _markReadyAtHome() async {
+    setState(() => _isArrivalLoading = true);
+    final onWay = await widget.inspectionService.markHandlerOnWay(
+      widget.request.id,
+    );
+    final arrived = onWay &&
+        await widget.inspectionService.markHandlerArrived(widget.request.id);
+    if (!mounted) return;
+    setState(() => _isArrivalLoading = false);
+    if (!arrived) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Couldn\'t update status, try again'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _markOnWay() async {
     final ok = await widget.inspectionService.markHandlerOnWay(
       widget.request.id,
@@ -1265,7 +1291,39 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ),
                 ),
               ],
-              if (r.canHandlerMarkOnWay) ...[
+              // A landlord who lives in the unit is already there, so being
+              // asked to say "I'm on my way" and then "I've arrived" is
+              // nonsense. One confirmation covers both — the tenant still
+              // needs to know someone is ready to receive them.
+              if (r.handlerIsResident) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isArrivalLoading ? null : _markReadyAtHome,
+                    icon: _isArrivalLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.home_outlined, size: 18),
+                    label: Text(_isArrivalLoading
+                        ? 'Confirming...'
+                        : 'I\'m at home and ready'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ] else if (r.canHandlerMarkOnWay) ...[
                 AppButton(
                   text: 'I\'m on my way',
                   onPressed: _markOnWay,

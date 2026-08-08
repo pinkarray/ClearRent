@@ -1180,10 +1180,12 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         if (!r.met && r.handlerArrived) ...[
           const SizedBox(height: 12),
           _partyStatusStrip(
-            icon: Icons.where_to_vote,
+            icon: r.handlerIsResident ? Icons.home : Icons.where_to_vote,
             color: AppColors.success,
-            text:
-                '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} has arrived',
+            // "has arrived" reads oddly about someone who lives there.
+            text: r.handlerIsResident
+                ? '${r.landlordName} is at the property and ready'
+                : '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} has arrived',
           ),
         ] else if (!r.met && r.handlerOnWay) ...[
           const SizedBox(height: 12),

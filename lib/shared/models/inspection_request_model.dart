@@ -188,6 +188,12 @@ class InspectionRequest {
   final bool handlerOnWay;
   final DateTime? handlerOnWayAt;
 
+  /// Snapshotted from the property at request time
+  /// (`inspection_service.dart:377`). A landlord who lives in the unit is
+  /// already there on inspection day, so "I'm on my way" and "I've arrived"
+  /// are nonsense to them — see [handlerIsResident].
+  final bool landlordLivesInProperty;
+
   // Met confirmation — a meeting is a two-person fact, so each party records
   // only their OWN half. `met` (which gates completion) is derived: true only
   // when both have confirmed. Neither side can assert the meeting alone.
@@ -278,6 +284,7 @@ class InspectionRequest {
     this.tenantOnWayAt,
     this.handlerOnWay = false,
     this.handlerOnWayAt,
+    this.landlordLivesInProperty = false,
     this.tenantConfirmedMet = false,
     this.tenantConfirmedMetAt,
     this.handlerConfirmedMet = false,
@@ -340,6 +347,15 @@ class InspectionRequest {
 
   bool get canHandlerMarkOnWay =>
       isConfirmed && !handlerOnWay && isWithinOnWayWindow;
+
+  /// The handler is already at the property because they live in it.
+  ///
+  /// Only when the landlord handles it themselves — an assigned agent still
+  /// travels, whoever lives there. Travel language ("on my way", "I've
+  /// arrived") is meaningless for these handlers, so their UI collapses to a
+  /// single "I'm ready" confirmation.
+  bool get handlerIsResident =>
+      landlordLivesInProperty && (agentId == null || agentId!.isEmpty);
 
   // Met confirmation helpers
   /// A meeting happened only when BOTH parties have confirmed it. Derived, so
@@ -697,6 +713,7 @@ class InspectionRequest {
       tenantOnWay: data['tenantOnWay'] ?? false,
       tenantOnWayAt: (data['tenantOnWayAt'] as Timestamp?)?.toDate(),
       handlerOnWay: data['handlerOnWay'] ?? false,
+      landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
       handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
       tenantConfirmedMet: data['tenantConfirmedMet'] ?? false,
       tenantConfirmedMetAt:
