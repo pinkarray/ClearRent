@@ -434,28 +434,42 @@ class _EarningsScreenState extends State<EarningsScreen> {
           
           const SizedBox(height: 12),
           
-          // Footer
+          // Footer. Both sides are Flexible because neither string is bounded:
+          // a Paystack reference is arbitrarily long, and spaceBetween gives a
+          // non-flexible child its full natural width, so the row overflowed
+          // rather than truncating.
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.calendar_today_outlined, size: 12, color: AppColors.textHint),
-                  const SizedBox(width: 4),
-                  Text(
-                    transaction.formattedDate,
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textHint,
-                      fontSize: 11,
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_today_outlined, size: 12, color: AppColors.textHint),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        transaction.formattedDate,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textHint,
+                          fontSize: 11,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              Text(
-                'Ref: ${transaction.reference}',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textHint,
-                  fontSize: 11,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Ref: ${transaction.reference}',
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textHint,
+                    fontSize: 11,
+                  ),
                 ),
               ),
             ],
@@ -498,9 +512,13 @@ class _EarningsScreenState extends State<EarningsScreen> {
     }
   }
 
+  // ₦ rather than "NGN " — every AppTextStyles style carries the bundled
+  // Roboto glyph fallback (Outfit has no U+20A6), so the symbol renders here
+  // exactly as it does on the other 179 call sites. This screen was simply
+  // never converted.
   String _formatCurrency(double amount) {
     if (amount >= 1000000) {
-      return 'NGN ${(amount / 1000000).toStringAsFixed(2)}M';
+      return '₦${(amount / 1000000).toStringAsFixed(2)}M';
     } else if (amount >= 1000) {
       final formatted = amount.toStringAsFixed(0);
       final chars = formatted.split('').reversed.toList();
@@ -511,18 +529,18 @@ class _EarningsScreenState extends State<EarningsScreen> {
         }
         result.add(chars[i]);
       }
-      return 'NGN ${result.reversed.join('')}';
+      return '₦${result.reversed.join('')}';
     }
-    return 'NGN ${amount.toStringAsFixed(0)}';
+    return '₦${amount.toStringAsFixed(0)}';
   }
 
   String _formatCurrencyCompact(double amount) {
     if (amount >= 1000000) {
-      return 'NGN ${(amount / 1000000).toStringAsFixed(1)}M';
+      return '₦${(amount / 1000000).toStringAsFixed(1)}M';
     } else if (amount >= 1000) {
-      return 'NGN ${(amount / 1000).toStringAsFixed(0)}K';
+      return '₦${(amount / 1000).toStringAsFixed(0)}K';
     }
-    return 'NGN ${amount.toStringAsFixed(0)}';
+    return '₦${amount.toStringAsFixed(0)}';
   }
 }
 
