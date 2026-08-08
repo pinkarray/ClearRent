@@ -1158,6 +1158,47 @@ async function createRentalForAcceptedInterest(
     Number(interest.paymentAmount ?? 0);
   const agentId = (interest.agentId as string | null) ?? null;
 
+  // ── Pre-uploaded agreement ────────────────────────────────────────────
+  // A landlord can attach a blank agreement to the PROPERTY before any tenant
+  // exists. If one is on file it is copied onto this tenancy now, so accepting
+  // a tenant needs no upload step. The tenant still reviews it: the status goes
+  // to pending_review exactly as a manual upload does.
+  //
+  // The storage path is copied, not referenced. Every upload writes a new
+  // uniquely-named object (`agreement_{millis}`), so a landlord replacing the
+  // property's copy later cannot alter the document THIS tenant reviewed.
+  //
+  // Skipped when the rent has moved on since the agreement was written —
+  // binding a tenant to a document showing the old price is worse than asking
+  // the landlord to upload a current one.
+  let agreementPath = "";
+  try {
+    const aSnap = await db
+      .collection("properties")
+      .doc(propertyId)
+      .collection("private")
+      .doc("agreement")
+      .get();
+    const a = aSnap.data();
+    const storedPath = (a?.storagePath as string | undefined) ?? "";
+    const rentAtUpload = Number(a?.rentAtUpload ?? 0);
+    if (storedPath) {
+      if (rentAtUpload > 0 && rentAmount > 0 && rentAtUpload !== rentAmount) {
+        logger.info("Property agreement stale for this rent — not attached", {
+          interestId, rentAtUpload, rentAmount,
+        });
+      } else {
+        agreementPath = storedPath;
+      }
+    }
+  } catch (err) {
+    // Never block the tenancy on this — the landlord can still upload manually.
+    logger.error("Property agreement lookup failed", {
+      interestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   try {
     await db.collection("active_rentals").doc(interestId).create({
       propertyId,
@@ -1189,10 +1230,24 @@ async function createRentalForAcceptedInterest(
       nextPaymentDue: Timestamp.fromDate(leaseEnd),
       status: "pending_payment",
       hasPaymentReminder: false,
+      // pending_review is what prompts the tenant (onActiveRentalUpdated fires
+      // on that transition). Without an agreement on file both stay unset and
+      // the landlord uploads later, exactly as before.
+      ...(agreementPath ?
+        {
+          agreementUrl: agreementPath,
+          agreementStatus: "pending_review",
+          agreementUploadedAt: FieldValue.serverTimestamp(),
+          agreementFromProperty: true,
+        } :
+        {}),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    logger.info("Active rental created for accepted interest", {interestId});
+    logger.info("Active rental created for accepted interest", {
+      interestId,
+      agreementPreattached: agreementPath.length > 0,
+    });
   } catch (err) {
     const code = (err as {code?: number | string})?.code;
     if (code === 6 || code === "already-exists") {

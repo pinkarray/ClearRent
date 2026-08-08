@@ -120,6 +120,91 @@ class PropertyService {
     }
   }
 
+  // ── Per-property tenancy agreement ────────────────────────────────────
+  // A landlord can keep a blank agreement against the PROPERTY, before any
+  // tenant exists. On acceptance, createRentalForAcceptedInterest copies the
+  // path onto the new tenancy and sets it to pending_review, so accepting no
+  // longer requires an upload.
+  //
+  // Lives in the gated `properties/{id}/private/agreement` subdoc, not on the
+  // property document — that one is readable by any signed-in user and feeds
+  // public browse.
+
+  /// Store (or replace) the agreement kept against [propertyId].
+  ///
+  /// [rentAtUpload] is the rent the document was written for. Acceptance
+  /// refuses to auto-attach when it no longer matches the property's rent, so
+  /// a rent review can never bind a new tenant to the old price.
+  Future<bool> savePropertyAgreement({
+    required String propertyId,
+    required String storagePath,
+    required double rentAtUpload,
+  }) async {
+    if (propertyId.isEmpty || storagePath.isEmpty) return false;
+    try {
+      await _firestore
+          .collection('properties')
+          .doc(propertyId)
+          .collection('private')
+          .doc('agreement')
+          .set({
+        'storagePath': storagePath,
+        'rentAtUpload': rentAtUpload,
+        'uploadedAt': FieldValue.serverTimestamp(),
+        'uploadedBy': _currentUserId,
+      }, SetOptions(merge: true));
+      return true;
+    } catch (e) {
+      developer.log('❌ savePropertyAgreement failed: $e',
+          name: 'PropertyService');
+      return false;
+    }
+  }
+
+  /// The agreement on file for [propertyId], or null if there is none.
+  Future<PropertyAgreement?> getPropertyAgreement(String propertyId) async {
+    if (propertyId.isEmpty) return null;
+    try {
+      final doc = await _firestore
+          .collection('properties')
+          .doc(propertyId)
+          .collection('private')
+          .doc('agreement')
+          .get();
+      final data = doc.data();
+      final path = data?['storagePath'] as String?;
+      if (path == null || path.isEmpty) return null;
+      return PropertyAgreement(
+        storagePath: path,
+        rentAtUpload: (data?['rentAtUpload'] as num?)?.toDouble() ?? 0,
+        uploadedAt: (data?['uploadedAt'] as Timestamp?)?.toDate(),
+      );
+    } catch (e) {
+      developer.log('❌ getPropertyAgreement failed: $e',
+          name: 'PropertyService');
+      return null;
+    }
+  }
+
+  /// Remove the agreement kept against [propertyId]. Tenancies that already
+  /// copied it keep their own copy — this only stops future auto-attaches.
+  Future<bool> deletePropertyAgreement(String propertyId) async {
+    if (propertyId.isEmpty) return false;
+    try {
+      await _firestore
+          .collection('properties')
+          .doc(propertyId)
+          .collection('private')
+          .doc('agreement')
+          .delete();
+      return true;
+    } catch (e) {
+      developer.log('❌ deletePropertyAgreement failed: $e',
+          name: 'PropertyService');
+      return false;
+    }
+  }
+
   /// Upload a single image to Cloudinary
   Future<String?> uploadImage(File imageFile) async {
     try {
@@ -1333,4 +1418,27 @@ class PropertyService {
           return properties;
         });
   }
+}
+/// The blank tenancy agreement a landlord keeps against a property, ready to be
+/// copied onto a tenancy the moment one is accepted.
+class PropertyAgreement {
+  /// Private Storage path (`agreements/{uid}/…`), never a public URL.
+  final String storagePath;
+
+  /// The rent this document was written for. Acceptance compares it with the
+  /// property's current rent and declines to auto-attach when they differ, so
+  /// an agreement quoting a superseded price can't bind a new tenant.
+  final double rentAtUpload;
+
+  final DateTime? uploadedAt;
+
+  const PropertyAgreement({
+    required this.storagePath,
+    required this.rentAtUpload,
+    this.uploadedAt,
+  });
+
+  /// True when the property's rent has moved on since this was uploaded.
+  bool isStaleFor(double currentRent) =>
+      rentAtUpload > 0 && currentRent > 0 && rentAtUpload != currentRent;
 }
