@@ -11,6 +11,11 @@
 // tenant's active-rental flag, and onActiveRentalUpdated pushes the tenant the
 // "move-out confirmed" notification. This sweep additionally tells the landlord
 // their inaction auto-confirmed it.
+//
+// `moveoutPendingReminders` chases the landlord BEFORE that deadline, so
+// auto-confirm is the fallback it was designed to be rather than the normal
+// path — the landlord previously heard nothing at all until the tenancy had
+// already been ended over their head.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onSchedule} from "firebase-functions/v2/scheduler";
@@ -80,5 +85,93 @@ export const moveoutAutoConfirmSweep = onSchedule(
       scanned: snap.size,
       confirmed,
     });
+  },
+);
+
+// Days after the request on which the landlord is chased. Both land before
+// AUTO_CONFIRM_DAYS so there is a real chance to act; the day-5 one also warns
+// the tenant what happens if nobody does.
+const REMIND_DAYS = [2, 5];
+
+/**
+ * Daily nudge on move-out requests awaiting landlord confirmation.
+ *
+ * Runs an hour after the auto-confirm sweep so a request that crossed the
+ * deadline this morning is already gone — otherwise a landlord could be asked
+ * to confirm a handover that had just been confirmed for them.
+ */
+export const moveoutPendingReminders = onSchedule(
+  {schedule: "every day 09:00", timeZone: "Africa/Lagos", timeoutSeconds: 300},
+  async () => {
+    const db = getFirestore();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const snap = await db
+      .collection("active_rentals")
+      .where("status", "==", "moveout_pending")
+      .get();
+
+    let sent = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const requestedAt = d.moveOutRequestedAt as Timestamp | undefined;
+      if (!requestedAt) continue;
+
+      const ageDays = Math.floor((now - requestedAt.toMillis()) / dayMs);
+      if (!REMIND_DAYS.includes(ageDays)) continue;
+
+      const rentalId = doc.id;
+      const landlordId = d.landlordId as string | undefined;
+      const tenantId = d.tenantId as string | undefined;
+      const propertyTitle =
+        (d.propertyTitle as string | undefined) ?? "your property";
+      const daysLeft = AUTO_CONFIRM_DAYS - ageDays;
+
+      try {
+        if (landlordId) {
+          const wrote = await writeNotificationOnce(
+            `moveout_pending_L_T${ageDays}_${rentalId}`,
+            {
+              userId: landlordId,
+              type: "moveout_pending_reminder",
+              title: "Confirm a move-out",
+              body:
+                `Your tenant asked to move out of ${propertyTitle}. Confirm ` +
+                "the handover — if you don't, ClearRent confirms it in " +
+                `${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+              payload: {route: "/landlord/rentals", rentalId},
+            },
+          );
+          if (wrote) sent++;
+        }
+
+        // The tenant only needs telling once, and only when the wait is
+        // long enough to look like nothing is happening.
+        if (tenantId && ageDays === REMIND_DAYS[REMIND_DAYS.length - 1]) {
+          const wrote = await writeNotificationOnce(
+            `moveout_pending_T_T${ageDays}_${rentalId}`,
+            {
+              userId: tenantId,
+              type: "moveout_pending_reminder",
+              title: "Move-out still awaiting confirmation",
+              body:
+                "Your landlord hasn't confirmed the handover for " +
+                `${propertyTitle} yet. ClearRent confirms it automatically ` +
+                `in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+              payload: {route: "/tenant/my-rentals", rentalId},
+            },
+          );
+          if (wrote) sent++;
+        }
+      } catch (err) {
+        logger.error("Move-out pending reminder failed", {
+          rentalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    logger.info("moveoutPendingReminders complete", {scanned: snap.size, sent});
   },
 );
