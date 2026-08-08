@@ -1,7 +1,7 @@
-import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../shared/utils/agreement_file_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -51,9 +51,11 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Replace this agreement?'),
+          // Talks about the NEXT tenant, singular. "Future tenants" read as
+          // though the unit could hold several tenancies at once.
           content: const Text(
-            'The new copy goes to tenants you accept from now on. Tenancies '
-            'already using the current one are not affected — their signed '
+            'This is the blank copy kept for whoever rents next. Replacing it '
+            'changes nothing for a tenant who has already signed — their '
             'agreement stays exactly as it is.',
           ),
           actions: [
@@ -64,8 +66,12 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              // foregroundColor is not optional: without it the label takes the
+              // theme's default and disappears into the fill.
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Choose file'),
             ),
           ],
@@ -74,15 +80,12 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       if (go != true) return;
     }
 
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (image == null) return;
+    if (!mounted) return;
+    final file = await AgreementFilePicker.pick(context);
+    if (file == null || !mounted) return;
 
     setState(() => _busy = true);
-    final path = await _propertyService.uploadAgreementDoc(File(image.path));
+    final path = await _propertyService.uploadAgreementDoc(file);
     if (path == null || path.isEmpty) {
       if (mounted) {
         setState(() => _busy = false);
@@ -128,7 +131,10 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Remove'),
           ),
         ],
@@ -235,7 +241,8 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
                       _hasAgreement ? Icons.swap_horiz : Icons.upload_file,
                       size: 16,
                     ),
-                    label: Text(_hasAgreement ? 'Replace' : 'Upload agreement'),
+                    label: Text(
+                        _hasAgreement ? 'Replace' : 'Upload signed agreement'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primary,
                       side: BorderSide(color: AppColors.primary),
@@ -292,11 +299,14 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       // is one. A landlord whose sitting tenant already signed an agreement
       // reads a bare "no agreement on file" as data loss — this is about the
       // blank copy kept for FUTURE tenants, which is a different document.
+      // Says "signed" up front: the landlord signs once here, and the tenant
+      // returns that same page signed. Skip it and the executed agreement
+      // carries only the tenant's hand.
       text = (widget.property.currentTenantsCount ?? 0) > 0
-          ? 'No reusable copy saved for future tenants. Your current tenancy '
+          ? 'No signed copy saved for future tenants. Your current tenancy '
               'agreement is unaffected — see the Tenancies tab.'
-          : 'No reusable copy saved yet. Upload one and every tenant you '
-              'accept gets it automatically.';
+          : 'Sign your agreement, then upload it here. Every tenant you accept '
+              'gets that signed copy to print, sign and send back.';
     } else if (_isStale) {
       icon = Icons.warning_amber_outlined;
       color = AppColors.warning;
@@ -309,9 +319,9 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       // wrong guess ("it will change my tenant's signed lease") would stop a
       // landlord keeping the copy current.
       final on = widget.agreement?.uploadedAt;
-      text = 'Saved${on == null ? '' : ' ${_formatDate(on)}'} — goes to the '
-          'next tenant you accept. Replacing only affects future tenants; '
-          'anyone who already signed keeps their copy.';
+      text = 'Saved${on == null ? '' : ' ${_formatDate(on)}'} — the next tenant '
+          'you accept gets this to sign and return. Replacing only affects '
+          'future tenants; anyone who already signed keeps their copy.';
     }
 
     return Container(

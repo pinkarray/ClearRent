@@ -737,15 +737,20 @@ class ActiveRentalService {
   /// matters twice over: it's what unlocks the tenant's rent payment (rent is
   /// only ever collected on a finalized agreement), and it removes the step
   /// where a quiet landlord could strand an accepted tenant indefinitely.
-  /// The tenant's acceptance: a copy they printed, signed and uploaded.
+  /// The tenant's acceptance: the landlord's already-signed agreement, now
+  /// printed, signed by the tenant, and uploaded.
   ///
   /// This replaces tap-to-accept. Acceptance used to write only a status and a
   /// timestamp, which meant the sole evidence a tenant agreed was a row in our
-  /// own database — nothing bearing their hand, and trivially deniable. The
-  /// signed document IS the acceptance now.
+  /// own database — nothing bearing their hand, and trivially deniable.
   ///
-  /// Stops at `accepted`, NOT `finalized`: the landlord still counter-signs,
-  /// and [landlordUploadExecutedAgreement] is what completes it.
+  /// The landlord signs their agreement ONCE, against the property, before any
+  /// tenant exists. So the copy a tenant downloads already carries the
+  /// landlord's signature, and the copy they upload back carries BOTH — that
+  /// single document is the fully-executed agreement, which is why this
+  /// finalizes outright. There is deliberately no counter-sign round trip: it
+  /// would have the landlord print and re-upload the same document only to add
+  /// a signature they could have added once.
   ///
   /// [signedPath] is a private Storage path under the tenant's own uid.
   Future<bool> tenantUploadSignedAgreement(
@@ -759,16 +764,91 @@ class ActiveRentalService {
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'tenantSignedUrl': signedPath,
         'tenantSignedAt': FieldValue.serverTimestamp(),
-        'agreementStatus': 'accepted',
+        // Same upload, second role: both signatures are on this one document,
+        // so it is also the agreement of record.
+        'executedAgreementUrl': signedPath,
+        'executedAt': FieldValue.serverTimestamp(),
+        'agreementStatus': 'finalized',
         'tenantAcceptedAt': FieldValue.serverTimestamp(),
+        'landlordFinalizedAt': FieldValue.serverTimestamp(),
         'tenantDisputeReason': null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      developer.log('✅ Tenant signed agreement: $rentalId',
+      developer.log('✅ Agreement executed by tenant signature: $rentalId',
           name: 'ActiveRentalService');
       return true;
     } catch (e) {
       developer.log('❌ tenantUploadSignedAgreement failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// Replace the agreement on a LIVE tenancy, with the landlord declaring the
+  /// rent is unchanged.
+  ///
+  /// A revision mid-tenancy is the one place a landlord could slip a rent
+  /// increase past a tenant: the tenant is asked to sign a fresh document, and
+  /// signing it would bind them. Rent changes are therefore refused here and
+  /// routed to the rent-review flow, which is admin-approved
+  /// (`rent_review_ops.ts`) and already demands a revised agreement.
+  ///
+  /// What is left is terms and rules, which do not need an admin in the loop —
+  /// so this records the declaration and lets the tenant check it. The tenant
+  /// sees the declared rent beside the document and can contradict it via
+  /// [tenantFlagRentChange], which is what makes a false declaration provable
+  /// rather than arguable.
+  Future<bool> reviseAgreementTermsOnly({
+    required String rentalId,
+    required String agreementPath,
+    required double currentRent,
+  }) async {
+    if (rentalId.isEmpty || agreementPath.isEmpty) return false;
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'agreementUrl': agreementPath,
+        'agreementUploadedAt': FieldValue.serverTimestamp(),
+        'agreementStatus': 'pending_review',
+        'agreementRevisedAt': FieldValue.serverTimestamp(),
+        'agreementRevisionTermsOnly': true,
+        'agreementRevisionDeclaredRent': currentRent,
+        // A fresh document needs a fresh signature.
+        'tenantSignedUrl': null,
+        'tenantSignedAt': null,
+        'executedAgreementUrl': null,
+        'executedAt': null,
+        'tenantDisputeReason': null,
+        'tenantFlaggedRentChange': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ reviseAgreementTermsOnly failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// The tenant contradicts the landlord's "terms only" declaration.
+  ///
+  /// Parks the agreement as disputed — which stops it being signable — and
+  /// raises an admin alert via the onActiveRentalUpdated trigger, carrying
+  /// both the declaration and this claim.
+  Future<bool> tenantFlagRentChange(String rentalId, String reason) async {
+    if (rentalId.isEmpty) return false;
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'agreementStatus': 'disputed',
+        'tenantFlaggedRentChange': true,
+        'tenantDisputeReason': reason.trim().isEmpty
+            ? 'This revision changes my rent, but it was sent as a terms-only '
+                'change.'
+            : reason.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ tenantFlagRentChange failed: $e',
           name: 'ActiveRentalService');
       return false;
     }

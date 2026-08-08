@@ -67,6 +67,22 @@ class ActiveRental {
   /// trail behind it.
   final String? executedAgreementUrl;
   final DateTime? executedAt;
+
+  /// Set when the landlord replaces the agreement on a LIVE tenancy.
+  final DateTime? agreementRevisedAt;
+
+  /// The landlord's declaration that a revision changes terms only, leaving
+  /// the rent alone. Recorded rather than trusted: the tenant is shown it and
+  /// can contradict it, and a false declaration is then provable.
+  final bool agreementRevisionTermsOnly;
+
+  /// The rent on record when that declaration was made, so the tenant can
+  /// compare one number instead of auditing the document.
+  final double? agreementRevisionDeclaredRent;
+
+  /// The tenant says the revision DOES change the rent. Blocks signing and
+  /// raises an admin alert carrying both sides.
+  final bool tenantFlaggedRentChange;
   
   // End / move-out / contest (System G)
   final String? endReason;
@@ -145,6 +161,10 @@ class ActiveRental {
     this.tenantSignedAt,
     this.executedAgreementUrl,
     this.executedAt,
+    this.agreementRevisedAt,
+    this.agreementRevisionTermsOnly = false,
+    this.agreementRevisionDeclaredRent,
+    this.tenantFlaggedRentChange = false,
     this.endReason,
     this.endedBy,
     this.endedAt,
@@ -322,6 +342,13 @@ class ActiveRental {
       executedAgreementUrl: data['executedAgreementUrl'] as String?,
       executedAt: data['executedAt'] != null
           ? (data['executedAt'] as Timestamp).toDate() : null,
+      agreementRevisedAt: data['agreementRevisedAt'] != null
+          ? (data['agreementRevisedAt'] as Timestamp).toDate() : null,
+      agreementRevisionTermsOnly:
+          data['agreementRevisionTermsOnly'] == true,
+      agreementRevisionDeclaredRent:
+          (data['agreementRevisionDeclaredRent'] as num?)?.toDouble(),
+      tenantFlaggedRentChange: data['tenantFlaggedRentChange'] == true,
       endReason: data['endReason'] as String?,
       endedBy: data['endedBy'] as String?,
       endedAt: data['endedAt'] != null

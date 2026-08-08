@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -11,7 +10,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/rental_interest_service.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../shared/utils/agreement_file_picker.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -310,12 +309,46 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           // landlord counter-signs afterwards. Also spells out the download →
           // print → sign → upload loop, because a tenant has no way to guess
           // that "Sign & Accept" wants a photo of a signed page.
-          Text('Your landlord has sent the tenancy agreement. Download it and '
-              'read it carefully, then print and sign it, photograph the '
-              'signed pages and upload them here — that upload is how you '
-              'accept. Your landlord counter-signs, and then you pay your rent '
-              'to complete the move-in.',
+          Text('Your landlord has sent the tenancy agreement, already signed '
+              'by them. Download it and read it carefully, then print and sign '
+              'it, photograph the signed pages and upload them here — that '
+              'upload is how you accept, and it completes the agreement. '
+              'You\'ll then pay your rent to finish the move-in.',
               style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+          // A revision on a live tenancy is the one place a rent increase
+          // could be slipped past someone. Showing the rent on record turns
+          // that check into reading one number instead of auditing a document.
+          if (_rental.agreementRevisionTermsOnly) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.warning.withAlpha(60)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.fact_check_outlined,
+                      size: 18, color: AppColors.warning),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Your landlord says this revision changes the terms '
+                      'only, and that your rent stays at '
+                      '₦${_formatAmount(_rental.agreementRevisionDeclaredRent ?? _rental.rentAmount)}. '
+                      'Check the document before you sign — if it says '
+                      'anything different, flag it instead.',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 16),
 
           // View button
@@ -349,6 +382,29 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
           ),
           const SizedBox(height: 8),
+
+          // Contradicting the declaration is its own action, not buried in
+          // "Raise Concern" — it blocks signing and goes to admin with both
+          // the landlord's claim and the tenant's.
+          if (_rental.agreementRevisionTermsOnly) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isDisputing ? null : () => _flagRentChange(),
+                icon: Icon(Icons.flag_outlined,
+                    size: 18, color: AppColors.error),
+                label: Text('This changes my rent',
+                    style: TextStyle(color: AppColors.error)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: AppColors.error),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // Accept + Raise Concern buttons
           Row(children: [
@@ -628,10 +684,11 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                   .copyWith(color: AppColors.textPrimary),
             ),
             const SizedBox(height: 12),
-            _step(1, 'Download and read the agreement'),
+            _step(1, 'Download and read it — your landlord has already '
+                'signed it'),
             _step(2, 'Print and sign it, or sign on your device'),
             _step(3, 'Photograph or scan the signed pages'),
-            _step(4, 'Upload it here — that is your acceptance'),
+            _step(4, 'Upload it here — that completes the agreement'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -645,8 +702,9 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Your landlord then counter-signs. For court-admissible '
-                    'proof, get the agreement stamped at LIRS/SIRS.',
+                    'The copy you send back carries both signatures. For '
+                    'court-admissible proof, get the agreement stamped at '
+                    'LIRS/SIRS.',
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.textSecondary),
                   ),
@@ -673,19 +731,16 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
 
     if (confirmed != true) return;
 
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-    );
-    if (image == null) return;
+    if (!mounted) return;
+    final file = await AgreementFilePicker.pick(context);
+    if (file == null || !mounted) return;
 
     setState(() => _isAccepting = true);
 
     // Uploads under the TENANT's own uid, which storage rules already permit.
     // The landlord reads it back through getSignedAgreementUrl, which checks
     // tenancy membership — a storage rule cannot.
-    final path = await PropertyService().uploadAgreementDoc(File(image.path));
+    final path = await PropertyService().uploadAgreementDoc(file);
     if (path == null || path.isEmpty) {
       if (mounted) {
         setState(() => _isAccepting = false);
@@ -704,7 +759,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text(
-              'Signed agreement sent. Your landlord will counter-sign it.'),
+              'Agreement signed and complete. You can now pay your rent.'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -712,6 +767,86 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       } else {
         _toastError('Could not record your acceptance. Please try again.');
       }
+    }
+  }
+
+  /// The tenant contradicts the landlord's "terms only" declaration.
+  ///
+  /// Deliberately separate from Raise Concern: this one asserts a specific,
+  /// checkable claim about the rent, blocks signing, and reaches an admin who
+  /// can put the contradiction to the landlord.
+  Future<void> _flagRentChange() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('This changes my rent'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your landlord declared this revision keeps your rent at '
+              '₦${_formatAmount(_rental.agreementRevisionDeclaredRent ?? _rental.rentAmount)}. '
+              'Flagging it stops the agreement, and ClearRent reviews it with '
+              'your landlord. Do not sign in the meantime.',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'What does the document say? (optional)',
+                filled: true,
+                fillColor: AppColors.background,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Flag for review'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    setState(() => _isDisputing = true);
+    final ok = await _rentalService.tenantFlagRentChange(
+      _rental.id,
+      controller.text,
+    );
+    if (!mounted) return;
+    setState(() => _isDisputing = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text(
+            'Flagged. ClearRent will review this with your landlord.'),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    } else {
+      _toastError('Could not flag this. Please try again.');
     }
   }
 
