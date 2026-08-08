@@ -381,13 +381,36 @@ service cloud.firestore {
           .data.get('assignedAgentId', '') == request.auth.uid;
       }
 
+      // The landlord's blank tenancy agreement for this unit, uploaded ahead of
+      // any tenant so acceptance can attach it automatically.
+      //
+      // Deliberately NOT covered by the private/{docId} rule below: that one
+      // also admits a tenant holding a location reveal grant, and a reveal is
+      // about finding the property, not about reading the owner's documents.
+      // A tenant receives the agreement when it is copied onto their rental,
+      // where getSignedAgreementUrl checks membership.
+      match /private/agreement {
+        allow read: if request.auth != null && (
+          canRead() || propertyOwner() || propertyAgent()
+        );
+        allow write: if request.auth != null
+          && (propertyOwner() || propertyAgent());
+      }
+
       match /private/{docId} {
         // Owner, assigned agent, admin, or a tenant with a reveal grant.
+        //
+        // The reveal clause explicitly excludes `agreement`. Rules are ORed
+        // across every matching path, so the tighter match above cannot
+        // subtract access this one grants — without the docId guard, a reveal
+        // (which is about finding the property) would also open the landlord's
+        // tenancy agreement. Proven by verify_message_rules.js.
         allow read: if request.auth != null && (
           canRead()
           || propertyOwner()
           || propertyAgent()
-          || exists(/databases/$(database)/documents/properties/$(propertyId)/reveals/$(request.auth.uid))
+          || (docId != 'agreement'
+              && exists(/databases/$(database)/documents/properties/$(propertyId)/reveals/$(request.auth.uid)))
         );
         // Only the handler (owner or assigned agent) can write the exact
         // location. Requires the parent to already exist (created first).
@@ -1126,6 +1149,14 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'agreementUrl', 'agreementUploadedAt', 'agreementStatus',
               'tenantDisputeReason', 'tenantAcceptedAt', 'landlordFinalizedAt',
+              // Wet-signature trail. Acceptance used to write a status and a
+              // timestamp and nothing else — leaving the only evidence of
+              // agreement a row in our own database, which a tenant could
+              // simply deny. These hold the actual signed documents: the
+              // tenant's signed copy, then the counter-signed copy that
+              // becomes the agreement of record.
+              'tenantSignedUrl', 'tenantSignedAt',
+              'executedAgreementUrl', 'executedAt',
               'hasPaymentReminder',
               'status', 'endReason', 'endedBy', 'endedAt',
               'tenantContested', 'tenantContestStatement', 'contestedAt',
@@ -1329,10 +1360,18 @@ service cloud.firestore {
         (resource.data.userId == request.auth.uid || canRead());
 
       // Recipients can mark as read (and only as read).
+      //
+      // `unreadCount` is part of marking read, not a separate power: chat
+      // notifications are one rolling doc per conversation carrying a count of
+      // the messages behind them, and opening the row has to clear that count
+      // as well as the flag. It may only be zeroed — a recipient must not be
+      // able to invent a count — and the three still travel as one write, so
+      // this stays an allowlist rather than a general update.
       allow update: if request.auth != null &&
         resource.data.userId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['read', 'readAt']);
+          .hasOnly(['read', 'readAt', 'unreadCount']) &&
+        request.resource.data.get('unreadCount', 0) == 0;
 
       // Admin can also update freely (e.g., to fix issues).
       allow update: if isAdmin();

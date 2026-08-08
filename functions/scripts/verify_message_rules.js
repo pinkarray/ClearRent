@@ -18,7 +18,9 @@ const {
   assertFails,
   assertSucceeds,
 } = require("@firebase/rules-unit-testing");
-const {doc, setDoc, updateDoc, deleteDoc} = require("firebase/firestore");
+const {
+  doc, getDoc, setDoc, updateDoc, deleteDoc,
+} = require("firebase/firestore");
 
 const CONVO = "c1";
 const LANDLORD = "landlord1";
@@ -146,6 +148,79 @@ async function main() {
   await check("outsider CANNOT edit a message",
     await denies(updateDoc(
       msg(outsider, "theirs"), {text: "hijacked", editedAt: new Date()})));
+
+  // ── Notification read + unreadCount reset ────────────────────────────
+  // Chat notifications are one rolling doc per conversation carrying a count,
+  // so opening a row clears the flag AND the count in one write. The allowlist
+  // has to accept exactly that and nothing more.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "notifications", "n1"), {
+      userId: TENANT,
+      type: "chat_message",
+      title: "Landlord",
+      body: "hello",
+      unreadCount: 4,
+      read: false,
+    });
+  });
+
+  await check("recipient CAN mark read and clear the count",
+    await passes(updateDoc(doc(tenant, "notifications", "n1"), {
+      read: true, readAt: new Date(), unreadCount: 0})));
+  await check("recipient CANNOT invent an unread count",
+    await denies(updateDoc(
+      doc(tenant, "notifications", "n1"), {unreadCount: 99})));
+  await check("recipient CANNOT rewrite the notification body",
+    await denies(updateDoc(
+      doc(tenant, "notifications", "n1"), {read: true, body: "spoofed"})));
+  await check("outsider CANNOT touch someone else's notification",
+    await denies(updateDoc(
+      doc(outsider, "notifications", "n1"), {read: true})));
+
+  // ── Per-property tenancy agreement ───────────────────────────────────
+  // properties/{id}/private/agreement holds the blank agreement a landlord
+  // attaches before any tenant exists. The point of giving it its OWN match,
+  // rather than letting the sibling private/{docId} rule cover it, is the last
+  // case here: a location reveal must not also hand over the owner's document.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "properties", "p1"), {
+      landlordId: LANDLORD,
+      title: "A unit",
+      rent: 1000000,
+    });
+    await setDoc(doc(db, "properties", "p1", "private", "agreement"), {
+      storagePath: "agreements/landlord1/agreement_1.pdf",
+      rentAtUpload: 1000000,
+    });
+    // A tenant who paid for an inspection and had the location revealed.
+    await setDoc(doc(db, "properties", "p1", "reveals", TENANT), {
+      grantedAt: new Date(),
+    });
+    await setDoc(doc(db, "properties", "p1", "private", "location"), {
+      address: "12 Somewhere St",
+    });
+  });
+
+  const landlord = env.authenticatedContext(LANDLORD).firestore();
+  const agreementPath = ["properties", "p1", "private", "agreement"];
+
+  await check("owner CAN read the property agreement",
+    await passes(getDoc(doc(landlord, ...agreementPath))));
+  await check("owner CAN replace the property agreement",
+    await passes(setDoc(doc(landlord, ...agreementPath), {
+      storagePath: "agreements/landlord1/agreement_2.pdf",
+      rentAtUpload: 1200000})));
+  await check("a reveal grant DOES still open the location subdoc",
+    await passes(getDoc(doc(tenant, "properties", "p1", "private",
+      "location"))));
+  await check("but a reveal grant does NOT open the agreement",
+    await denies(getDoc(doc(tenant, ...agreementPath))));
+  await check("outsider CANNOT read the property agreement",
+    await denies(getDoc(doc(outsider, ...agreementPath))));
+  await check("outsider CANNOT write the property agreement",
+    await denies(setDoc(doc(outsider, ...agreementPath),
+      {storagePath: "hijacked"})));
 
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);
