@@ -75,15 +75,14 @@ class AgreementFilePicker {
 
     if (source == null) return null;
 
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: source == _Source.pdf
           ? ['pdf']
           : ['jpg', 'jpeg', 'png', 'heic', 'webp'],
-      withData: false,
     );
 
-    final path = result?.files.single.path;
+    final path = picked?.path;
     if (path == null) return null;
     return File(path);
   }
