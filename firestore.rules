@@ -1216,6 +1216,51 @@ service cloud.firestore {
             ]);
 
       allow delete: if false;
+
+      // ── Condition records: what the unit looked like ────────────────────
+      //
+      // `move_in` is the baseline and `move_out` is the handover evidence.
+      // Without a baseline a damage claim is one party's word against the
+      // other's, which is why the deduction flow treats a missing baseline as
+      // weakening the claim rather than as a neutral fact.
+      //
+      // Both sides may record: the tenant's video is what protects their
+      // deposit, and the landlord's is what substantiates a deduction. Each
+      // party writes their OWN document, so neither can overwrite or delete
+      // what the other recorded — the whole point is that the record survives
+      // the disagreement it exists to settle.
+      match /condition/{stage}/parties/{partyId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/active_rentals/$(rentalId))
+            .data.tenantId == request.auth.uid ||
+          get(/databases/$(database)/documents/active_rentals/$(rentalId))
+            .data.landlordId == request.auth.uid ||
+          canRead()
+        );
+
+        // Only for your own record, only on your own tenancy, and only the
+        // two stages that exist.
+        allow create: if request.auth != null
+          && partyId == request.auth.uid
+          && stage in ['move_in', 'move_out']
+          && (
+            get(/databases/$(database)/documents/active_rentals/$(rentalId))
+              .data.tenantId == request.auth.uid ||
+            get(/databases/$(database)/documents/active_rentals/$(rentalId))
+              .data.landlordId == request.auth.uid
+          );
+
+        // Amendable only while the upload is still finishing — a large video
+        // on a bad connection is exactly the case the retry-later state
+        // exists for. Once `capturedAt` is set the record is sealed, so
+        // evidence cannot be quietly swapped after the other side has seen it
+        // or after a deduction has been argued over it.
+        allow update: if request.auth != null
+          && partyId == request.auth.uid
+          && !('capturedAt' in resource.data);
+
+        allow delete: if false;
+      }
     }
     // Rent-review requests — a landlord files to raise rent at renewal.
     // Eligibility (rental ownership + within 6 months of leaseEndDate) is

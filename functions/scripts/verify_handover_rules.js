@@ -18,7 +18,9 @@ const {
   assertFails,
   assertSucceeds,
 } = require("@firebase/rules-unit-testing");
-const {doc, setDoc, updateDoc} = require("firebase/firestore");
+const {
+  doc, setDoc, updateDoc, deleteDoc, getDoc,
+} = require("firebase/firestore");
 
 let failures = 0;
 function check(name, cond) {
@@ -162,6 +164,45 @@ async function main() {
   check("CANNOT write an unlisted field alongside handover fields",
     await denies(updateDoc(doc(db, "active_rentals", "r1"),
       {handoverStage: "closed", rentAmount: 1})));
+
+  // ── Condition records ─────────────────────────────────────────────────
+  const cond = (d, stage, party) =>
+    doc(d, "active_rentals", "r1", "condition", stage, "parties", party);
+
+  check("tenant CAN record their own move-out condition",
+    await passes(setDoc(cond(tenantDb, "move_out", T1),
+      {videoUrls: ["condition/tenant_1/r1/v.mp4"], pending: true})));
+
+  check("landlord CAN record their own move-out condition",
+    await passes(setDoc(cond(db, "move_out", L1),
+      {imageUrls: ["condition/landlord_1/r1/a.jpg"], pending: true})));
+
+  check("landlord CANNOT write the tenant's condition record",
+    await denies(setDoc(cond(db, "move_out", T1), {imageUrls: []})));
+
+  check("tenant CANNOT overwrite the landlord's condition record",
+    await denies(setDoc(cond(tenantDb, "move_out", L1), {imageUrls: []})));
+
+  check("CAN finish an upload that was still pending",
+    await passes(updateDoc(cond(tenantDb, "move_out", T1),
+      {pending: false, capturedAt: new Date()})));
+
+  check("CANNOT alter evidence once captured",
+    await denies(updateDoc(cond(tenantDb, "move_out", T1),
+      {videoUrls: ["condition/tenant_1/r1/swapped.mp4"]})));
+
+  check("CANNOT delete evidence",
+    await denies(deleteDoc(cond(tenantDb, "move_out", T1))));
+
+  check("CANNOT invent a condition stage",
+    await denies(setDoc(cond(tenantDb, "midway", T1), {imageUrls: []})));
+
+  check("outsider CANNOT read condition evidence",
+    await denies(getDoc(cond(
+      env.authenticatedContext("stranger", {}).firestore(), "move_out", T1))));
+
+  check("landlord CAN read the tenant's condition evidence",
+    await passes(getDoc(cond(db, "move_out", T1))));
 
   await env.cleanup();
   console.log(failures === 0 ?

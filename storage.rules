@@ -70,6 +70,24 @@ service firebase.storage {
         && (request.auth.uid == uid || isAdmin());
     }
 
+    // Move-in and move-out condition media, uploaded under the recorder's own
+    // uid. This is what a caution-deposit argument is settled on, so it is
+    // write-once: a landlord cannot replace their photos after seeing the
+    // tenant's, and a tenant cannot swap a video after a deduction is claimed.
+    //
+    // The counterparty is a party to the tenancy but not the uploader, and a
+    // storage rule cannot read Firestore to check rental membership — the same
+    // constraint as agreements above. Cross-party reads therefore go through a
+    // signed URL from a callable that verifies membership server-side.
+    match /condition/{uid}/{rentalId}/{mediaId} {
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null;
+      allow update, delete: if false;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

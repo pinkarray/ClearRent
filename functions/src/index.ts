@@ -3998,6 +3998,47 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
     if (wasOccupying === isOccupying) return;
 
     const propertyId = after.propertyId as string | undefined;
+
+    // A tenancy that ended through the move-out flow leaves the PROPERTY
+    // gated. The tenant is free either way — their side is over — but the unit
+    // is not relistable until the handover is settled: condition recorded,
+    // deposit dealt with, and the outgoing tenant either paid or their claim
+    // recorded. ClearRent never holds the caution deposit, so withholding the
+    // relist is the only leverage there is.
+    //
+    // Written BEFORE the recompute below, which reads the flag when deciding
+    // availability. Setting it afterwards would leave a window — and in fact
+    // leave the unit permanently available, since the recompute would already
+    // have flipped it on the way past.
+    const endedViaMoveOut =
+      before.status === "moveout_pending" &&
+      after.status === "ended_by_tenant";
+    if (endedViaMoveOut && propertyId) {
+      const db = getFirestore();
+      try {
+        await db.collection("properties").doc(propertyId).update({
+          handoverPending: true,
+          handoverRentalId: event.params.rentalId,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        // Opens the handover. The tenant's condition evidence is the first
+        // step, and until it lands no caution deduction can be claimed.
+        await snap.after.ref.update({
+          handoverStage: "awaiting_evidence",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        logger.info("Handover opened, property gated", {
+          propertyId,
+          rentalId: event.params.rentalId,
+        });
+      } catch (err) {
+        logger.error("Failed to open handover", {
+          propertyId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     if (propertyId) {
       try {
         await recomputePropertyOccupancy(propertyId);
@@ -4025,7 +4066,57 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
       }
     }
   },
-)
+);
+
+/**
+ * Releases the property once a handover reaches `closed`.
+ *
+ * The counterpart to the gate opened in onActiveRentalStatusOccupancy. Kept
+ * beside it rather than in handover_ops.ts because it is the same concern —
+ * who owns `isAvailable` — and recomputePropertyOccupancy lives here.
+ *
+ * Deliberately keyed on the stage reaching `closed` rather than on any single
+ * route to it: the tenant confirming, the silence sweep recording the
+ * landlord's claim, and an admin adjudicating are three different paths to the
+ * same place, and all three must free the unit.
+ */
+export const onHandoverClosed = onDocumentUpdated(
+  "active_rentals/{rentalId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const before = snap.before.data();
+    const after = snap.after.data();
+
+    if (before.handoverStage === after.handoverStage) return;
+    if (after.handoverStage !== "closed") return;
+
+    const propertyId = after.propertyId as string | undefined;
+    if (!propertyId) return;
+
+    const db = getFirestore();
+    try {
+      await db.collection("properties").doc(propertyId).update({
+        handoverPending: false,
+        handoverRentalId: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      // The unit may have been re-let in the meantime (a landlord can accept a
+      // new tenant while settling with the old one), so availability is
+      // recomputed from the sources rather than assumed to be "free".
+      await recomputePropertyOccupancy(propertyId);
+      logger.info("Handover closed, property released", {
+        propertyId,
+        rentalId: event.params.rentalId,
+      });
+    } catch (err) {
+      logger.error("Failed to release property after handover", {
+        propertyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // setVerificationExempt
