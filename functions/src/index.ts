@@ -51,6 +51,10 @@ export {reportInspectionIssue} from "./inspection_dispute_ops";
 export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
+export {
+  handoverSilenceSweep,
+  handoverSettlementReminders,
+} from "./handover_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
 export {adminDailyDigestEmail} from "./admin_digest_email";
@@ -4218,7 +4222,7 @@ export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";
 
-export {getSignedAgreementUrl} from "./doc_access_ops";
+export {getSignedAgreementUrl, getConditionMediaUrl} from "./doc_access_ops";
 
 export {agentUnassignFromProperty} from "./agent_property_ops";
 
