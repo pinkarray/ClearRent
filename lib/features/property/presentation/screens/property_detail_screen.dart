@@ -137,7 +137,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     _propertyTenantsStream =
         _tenancyLinkService.propertyTenantsStream(widget.property.id);
     _determineUserContext();
-    _checkExistingRequest();
+    _unlockAddressForOwner();
     _subscribeMyInspection();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
@@ -371,6 +371,16 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       if (!mounted) return;
       final mine =
           all.where((r) => r.propertyId == widget.property.id).toList();
+
+      // The address gate is derived from this same stream rather than read
+      // once on mount. A tenant sitting on this screen while the handler
+      // approves their request — which is exactly when they are watching it —
+      // saw nothing change until they left and came back.
+      final unlocked =
+          mine.any((r) => r.isApproved || r.isCompleted) &&
+              !mine.any((r) => r.tenantPassed);
+      final justUnlocked = unlocked && !_addressUnlocked;
+
       setState(() {
         _myInspection =
             mine.where((r) => _outcomeStatuses.contains(r.status)).firstOrNull ??
@@ -378,7 +388,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     .where((r) => _inFlightStatuses.contains(r.status))
                     .firstOrNull;
         _isCheckingRequest = false;
+        _addressUnlocked = unlocked;
       });
+
+      // Only on the transition: the exact address is a gated subdoc read, and
+      // re-fetching it on every snapshot would cost a read per update.
+      if (justUnlocked) _loadExactAddressIfEntitled();
     });
   }
 
@@ -400,18 +415,19 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     context.push('/tenant/inspections');
   }
 
-  Future<void> _checkExistingRequest() async {
-    final inspectionService = InspectionService();
-    // Address gate: exact only when approved/completed AND not passed.
-    final approved =
-        await inspectionService.hasApprovedInspection(widget.property.id);
-    final passed = await inspectionService.hasPassed(widget.property.id);
-    if (mounted) {
-      setState(() {
-        _addressUnlocked = approved && !passed;
-      });
-      if (_addressUnlocked) _loadExactAddressIfEntitled();
-    }
+  /// The owner always sees their own address; a tenant earns it by having an
+  /// approved inspection. The tenant half now rides the inspection stream in
+  /// [_subscribeMyInspection] — this only covers the owner, whose entitlement
+  /// cannot change while they look at the screen.
+  ///
+  /// Compares uids directly rather than reading `_isOwner`, which is assigned
+  /// after an await inside [_determineUserContext] and is still false when
+  /// this runs from initState.
+  Future<void> _unlockAddressForOwner() async {
+    if (widget.property.landlordId != _authService.currentUser?.uid) return;
+    if (!mounted) return;
+    setState(() => _addressUnlocked = true);
+    await _loadExactAddressIfEntitled();
   }
 
   /// Loads the exact street address from the property's gated subdoc when the
@@ -773,11 +789,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     // the wrong handler. Fall back to the snapshot if the refresh fails.
     final fresh = await _propertyService.getProperty(widget.property.id);
     if (!mounted) return;
-    final result =
-        await RequestInspectionSheet.show(context, fresh ?? widget.property);
-    if (result == true && mounted) {
-      _checkExistingRequest();
-    }
+    // No refresh call needed: the new request arrives on the inspection stream
+    // in _subscribeMyInspection, which is also what re-evaluates the address
+    // gate. This used to re-read it by hand.
+    await RequestInspectionSheet.show(context, fresh ?? widget.property);
   }
 
   // ============ LANDLORD ACTIONS ============

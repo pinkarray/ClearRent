@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'dart:async';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -26,6 +27,7 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   final ActiveRentalService _rentalService = ActiveRentalService();
   final ConversationService _conversationService = ConversationService();
 
+  StreamSubscription<List<ActiveRental>>? _rentalsSub;
   List<ActiveRental> _allRentals = [];
   // Linked tenancies have no active_rental doc, so without this the
   // 'Linked Tenants → See all' jump from the home screen landed on a
@@ -37,19 +39,37 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Rentals are LIVE. Everything this screen acts on — a move-out request, an
+    // agreement signed, rent paid — is done by the tenant, so a one-shot read
+    // left the landlord looking at a screen that could not tell them anything
+    // had happened until they backed out and returned.
+    _rentalsSub = _rentalService.streamLandlordRentals().listen(
+      (rentals) {
+        if (!mounted) return;
+        setState(() {
+          _allRentals = rentals;
+          _isLoading = false;
+        });
+      },
+      onError: (Object e) {
+        developer.log('❌ streamLandlordRentals error: $e',
+            name: 'LandlordRentalsScreen');
+        if (mounted) setState(() => _isLoading = false);
+      },
+    );
     _loadRentals();
   }
 
   @override
   void dispose() {
+    _rentalsSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
+  /// Linked tenancies only. Active rentals arrive on the stream above.
   Future<void> _loadRentals() async {
-    setState(() => _isLoading = true);
     try {
-      final rentals = await _rentalService.getLandlordRentals();
       final uid = FirebaseAuth.instance.currentUser?.uid;
       List<TenancyLinkModel> links = [];
       if (uid != null) {
@@ -63,16 +83,10 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
             .toList();
       }
       if (!mounted) return;
-      setState(() {
-        _allRentals = rentals;
-        _links = links;
-        _isLoading = false;
-      });
+      setState(() => _links = links);
     } catch (e) {
-      developer.log('❌ Error loading rentals: $e',
+      developer.log('❌ Error loading linked tenancies: $e',
           name: 'LandlordRentals');
-      if (!mounted) return;
-      setState(() => _isLoading = false);
     }
   }
 

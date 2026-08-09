@@ -639,6 +639,25 @@ class ActiveRentalService {
   }
 
   /// Get all rentals for a landlord
+  /// Live equivalent of [getLandlordRentals].
+  ///
+  /// The landlord's rentals screen is where a move-out request has to be
+  /// noticed and a handover confirmed, and both of those are things the TENANT
+  /// does. Reading once on mount meant a landlord sitting on the screen never
+  /// saw the request that was waiting for them.
+  Stream<List<ActiveRental>> streamLandlordRentals() {
+    final currentUserId = _authService.currentUserId;
+    if (currentUserId == null) return Stream.value(const []);
+    return _firestore
+        .collection('active_rentals')
+        .where('landlordId', isEqualTo: currentUserId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
+            .toList());
+  }
+
   Future<List<ActiveRental>> getLandlordRentals() async {
     final currentUserId = _authService.currentUserId;
     if (currentUserId == null) return [];
