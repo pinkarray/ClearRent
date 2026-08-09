@@ -808,6 +808,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   double? _latitude;
   double? _longitude;
   String? _exactAddress;
+  bool _pinLoading = false;
 
   @override
   void initState() {
@@ -819,14 +820,40 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant _TenantUpcomingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Payment usually lands while this card is already on screen. The parent
+    // stream then pushes a NEW request into the SAME widget, so initState never
+    // runs again and the pin stayed unloaded until the tenant navigated away
+    // and back — exactly when they least want to go hunting for the map.
+    if (!widget.request.isPaid) return;
+    if (oldWidget.request.isPaid && oldWidget.request.id == widget.request.id) {
+      return;
+    }
+    if (_isToday(widget.request.requestedDate)) _loadPin();
+  }
+
   Future<void> _loadPin() async {
+    if (_pinLoading || _latitude != null) return;
+    _pinLoading = true;
     final loc = await _propertyService.getExactLocation(widget.request.propertyId);
-    if (!mounted || loc == null) return;
+    if (!mounted) {
+      _pinLoading = false;
+      return;
+    }
+    if (loc == null) {
+      // Entitlement not visible yet — leave it unloaded so a later update can
+      // retry rather than latching a permanent failure.
+      _pinLoading = false;
+      return;
+    }
     setState(() {
       _latitude = loc.latitude;
       _longitude = loc.longitude;
       if (loc.address.isNotEmpty) _exactAddress = loc.address;
     });
+    _pinLoading = false;
   }
 
   bool _isToday(DateTime d) {
