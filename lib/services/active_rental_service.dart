@@ -1289,6 +1289,143 @@ class ActiveRentalService {
     }
   }
 
+  // ============ HANDOVER (move-out settlement) ============
+  //
+  // The tenancy is already over here. What is still open is the caution
+  // deposit, which ClearRent never holds — so none of this moves money. It
+  // records what happened, and the PROPERTY stays off the market until it
+  // closes, which is the only leverage the platform actually has.
+
+  /// Tenant has recorded the condition they left the property in.
+  ///
+  /// Called after [ConditionService.submit] succeeds. Marks evidence complete
+  /// and hands over to the landlord to check the unit.
+  Future<bool> handoverEvidenceRecorded(String rentalId) async {
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'handoverStage': 'awaiting_condition',
+        'handoverEvidenceAt': FieldValue.serverTimestamp(),
+        'handoverEvidencePending': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ handoverEvidenceRecorded failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// Landlord attests they have physically checked the property.
+  ///
+  /// This is the relist lever. The landlord does not have to inspect formally
+  /// — the tenant's walkthrough is the evidence — but nothing frees the unit
+  /// until someone says they have actually looked at it.
+  Future<bool> handoverConfirmCondition(
+    String rentalId, {
+    String notes = '',
+  }) async {
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'handoverStage': 'awaiting_settlement',
+        'handoverConditionConfirmedAt': FieldValue.serverTimestamp(),
+        'handoverConditionNotes': notes.isEmpty ? null : notes,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ handoverConfirmCondition failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// Landlord declares what they are returning and how it was sent.
+  ///
+  /// [deductionAmount] of 0 means the deposit goes back in full — the default,
+  /// and what silence means. Anything withheld must carry a reason, and a
+  /// deduction cannot be claimed at all unless the tenant's evidence landed:
+  /// without it there is nothing to argue the damage against.
+  ///
+  /// [method] is the seam for taking the deposit through ClearRent later.
+  /// Today it only ever records that the money moved off-platform.
+  Future<bool> handoverSettle(
+    String rentalId, {
+    double deductionAmount = 0,
+    String? deductionReason,
+    String? proofPath,
+    String method = 'off_platform_transfer',
+  }) async {
+    try {
+      final rental = await getRentalById(rentalId);
+      if (rental == null) return false;
+
+      final deducted =
+          deductionAmount.clamp(0, rental.cautionDeposit).toDouble();
+      if (deducted > 0 &&
+          (deductionReason == null || deductionReason.trim().isEmpty)) {
+        return false;
+      }
+
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'handoverStage': 'awaiting_confirm',
+        'cautionDeductionAmount': deducted,
+        'cautionDeductionReason': deducted > 0 ? deductionReason : null,
+        'cautionDeclaredAt': FieldValue.serverTimestamp(),
+        'handoverSettlementMethod': method,
+        'handoverSettledAt': FieldValue.serverTimestamp(),
+        if (proofPath != null) 'handoverProofUrl': proofPath,
+        if (proofPath != null)
+          'handoverProofUploadedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ handoverSettle failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// Outgoing tenant confirms they were paid — which closes the handover and
+  /// releases the property (onHandoverClosed reacts to the stage).
+  Future<bool> handoverConfirmPaid(String rentalId) async {
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'handoverStage': 'closed',
+        'handoverTenantConfirmedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ handoverConfirmPaid failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
+  /// Outgoing tenant disputes the settlement.
+  ///
+  /// Deliberately does NOT close the handover: an admin decides, and the
+  /// silence sweep skips anything contested so a dispute can never be resolved
+  /// by simply running out the clock.
+  Future<bool> handoverContest(String rentalId, String statement) async {
+    if (statement.trim().isEmpty) return false;
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'tenantContested': true,
+        'tenantContestStatement': statement.trim(),
+        'contestedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ handoverContest failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
   /// Tenant adds their side to a landlord-ended rental. Annotates the record
   /// only — does NOT change rental status. Notifies the landlord. No
   /// adjudication; the timeline is preserved for any offline/legal process.

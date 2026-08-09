@@ -98,6 +98,19 @@ class ActiveRental {
   final DateTime? moveOutRequestedAt;
   final DateTime? moveOutIntendedDate;
 
+  // ── Handover ───────────────────────────────────────────────────────────
+  // The tenancy is over by the time these matter; what is still open is the
+  // caution deposit, and the PROPERTY stays off the market until it is
+  // settled. Empty until a move-out actually completes.
+  final String handoverStage;
+  final DateTime? handoverEvidenceAt;
+  final bool handoverEvidencePending;
+  final DateTime? handoverConditionConfirmedAt;
+  final String? handoverConditionNotes;
+  final DateTime? handoverSettledAt;
+  final String? handoverProofUrl;
+  final DateTime? handoverTenantConfirmedAt;
+
   // Caution deposit, snapshotted from the property at rental creation so it
   // reflects what THIS tenant was promised, not the current listing. The
   // deduction fields are the landlord's declaration at handover: 0 (or
@@ -173,6 +186,14 @@ class ActiveRental {
     this.contestedAt,
     this.moveOutRequestedAt,
     this.moveOutIntendedDate,
+    this.handoverStage = '',
+    this.handoverEvidenceAt,
+    this.handoverEvidencePending = false,
+    this.handoverConditionConfirmedAt,
+    this.handoverConditionNotes,
+    this.handoverSettledAt,
+    this.handoverProofUrl,
+    this.handoverTenantConfirmedAt,
     this.cautionDeposit = 0,
     this.cautionDepositRefundable = true,
     this.cautionDeductionAmount,
@@ -190,6 +211,33 @@ class ActiveRental {
   bool get isExpiringSoon => status == ActiveRentalStatus.expiringSoon;
   bool get isGraceLocked => status == ActiveRentalStatus.graceLocked;
   bool get isMoveoutPending => status == ActiveRentalStatus.moveoutPending;
+
+  /// A move-out is settled and the property can be listed again.
+  bool get isHandoverClosed => handoverStage == 'closed';
+
+  /// The tenancy ended through move-out and the handover is still open. The
+  /// TENANT is not waiting on any of it — their side is over — but the
+  /// property cannot be relisted until it closes.
+  bool get isHandoverOpen =>
+      handoverStage.isNotEmpty && handoverStage != 'closed';
+
+  /// Whose turn it is, in plain terms. Empty when nothing is outstanding.
+  String get handoverNextStep {
+    switch (handoverStage) {
+      case 'awaiting_evidence':
+        return handoverEvidencePending
+            ? 'Your recording is still uploading'
+            : 'Record the condition you left it in';
+      case 'awaiting_condition':
+        return 'Landlord is checking the property';
+      case 'awaiting_settlement':
+        return 'Landlord is settling your caution deposit';
+      case 'awaiting_confirm':
+        return 'Confirm whether you were paid';
+      default:
+        return '';
+    }
+  }
 
   /// Whether the landlord may confirm handover yet.
   ///
@@ -376,6 +424,20 @@ class ActiveRental {
           ? (data['moveOutRequestedAt'] as Timestamp).toDate() : null,
       moveOutIntendedDate: data['moveOutIntendedDate'] != null
           ? (data['moveOutIntendedDate'] as Timestamp).toDate() : null,
+      handoverStage: data['handoverStage'] ?? '',
+      handoverEvidenceAt: data['handoverEvidenceAt'] != null
+          ? (data['handoverEvidenceAt'] as Timestamp).toDate() : null,
+      handoverEvidencePending: data['handoverEvidencePending'] == true,
+      handoverConditionConfirmedAt:
+          data['handoverConditionConfirmedAt'] != null
+              ? (data['handoverConditionConfirmedAt'] as Timestamp).toDate()
+              : null,
+      handoverConditionNotes: data['handoverConditionNotes'],
+      handoverSettledAt: data['handoverSettledAt'] != null
+          ? (data['handoverSettledAt'] as Timestamp).toDate() : null,
+      handoverProofUrl: data['handoverProofUrl'],
+      handoverTenantConfirmedAt: data['handoverTenantConfirmedAt'] != null
+          ? (data['handoverTenantConfirmedAt'] as Timestamp).toDate() : null,
       cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
       cautionDeductionAmount:
