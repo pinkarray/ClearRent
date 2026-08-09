@@ -113,6 +113,63 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   int get _expiringCount =>
       _activeRentals.where((r) => r.isExpiringSoon || r.isGraceLocked).length;
 
+  /// Ended tenancies whose caution deposit is still unsettled. Each one is a
+  /// property that cannot be listed until it closes.
+  List<ActiveRental> get _openHandovers =>
+      _allRentals.where((r) => r.isHandoverOpen).toList();
+
+  /// What the landlord owes on a handover, stated as the reason their property
+  /// is off the market rather than as an abstract status.
+  Widget _buildHandoverBanner(ActiveRental r) {
+    final mine = r.handoverStage == 'awaiting_condition' ||
+        r.handoverStage == 'awaiting_settlement';
+    return InkWell(
+      onTap: () => context.push('/handover/${r.id}'),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: (mine ? AppColors.warning : AppColors.textSecondary)
+              .withAlpha(20),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: (mine ? AppColors.warning : AppColors.textSecondary)
+                .withAlpha(77),
+          ),
+        ),
+        child: Row(children: [
+          Icon(Icons.lock_outline,
+              size: 16,
+              color: mine ? AppColors.warning : AppColors.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${r.propertyTitle} is off the market',
+                    style: AppTextStyles.labelMedium),
+                const SizedBox(height: 2),
+                Text(
+                  r.handoverStage == 'awaiting_condition'
+                      ? 'Confirm you have checked it'
+                      : r.handoverStage == 'awaiting_settlement'
+                          ? 'Settle the caution deposit'
+                          : r.handoverStage == 'awaiting_evidence'
+                              ? 'Waiting on your former tenant to record it'
+                              : 'Waiting on your former tenant to confirm',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, size: 20, color: AppColors.textSecondary),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -147,14 +204,22 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
       body: _isLoading
           ? Center(
               child: CircularProgressIndicator(color: AppColors.primary))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildRentalList(_activeRentals,
-                    isActive: true, links: _links),
-                _buildRentalList(_pastRentals, isActive: false),
-              ],
-            ),
+          : Column(children: [
+              // Above the tabs, not inside them. An open handover means a
+              // property is off the market earning nothing, and burying that
+              // in a "Past" tab is where it would never be seen.
+              ..._openHandovers.map(_buildHandoverBanner),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildRentalList(_activeRentals,
+                        isActive: true, links: _links),
+                    _buildRentalList(_pastRentals, isActive: false),
+                  ],
+                ),
+              ),
+            ]),
     );
   }
 

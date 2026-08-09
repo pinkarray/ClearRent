@@ -33,6 +33,7 @@ import '../shared/screens/help_support_screen.dart';
 import '../shared/screens/about_screen.dart';
 import '../features/tenant/presentation/screens/rental_payment_screen.dart';
 import '../features/tenant/presentation/screens/my_rentals_screen.dart';
+import '../features/tenant/presentation/screens/handover_screen.dart';
 import '../features/tenant/presentation/screens/documents_screen.dart';
 import '../features/tenant/presentation/screens/inspection_payment_screen.dart';
 import '../features/tenant/presentation/screens/lease_details_screen.dart';
@@ -152,6 +153,13 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/tenant/my-rentals',
       builder: (context, state) => const MyRentalsScreen(),
+    ),
+    // Both parties land here — the screen decides what to show from who is
+    // signed in, so there is one move-out flow rather than two.
+    GoRoute(
+      path: '/handover/:rentalId',
+      builder: (context, state) =>
+          HandoverScreen(rentalId: state.pathParameters['rentalId']!),
     ),
     // Payments and documents are one screen with two tabs. This used to
     // redirect, which meant every "Payment History" entry point dropped the

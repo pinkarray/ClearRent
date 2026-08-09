@@ -570,6 +570,36 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                 ),
               ],
 
+              // An ended tenancy whose deposit is unresolved. Shown on the PAST
+              // card because that is where the tenant looks for a place they
+              // have left — and the deposit is the one thing still owed to
+              // them from it.
+              if (rental.isHandoverOpen) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => context.push('/handover/${rental.id}'),
+                    icon: const Icon(Icons.savings_outlined,
+                        size: 18, color: Colors.white),
+                    label: Text(
+                      rental.handoverStage == 'awaiting_evidence'
+                          ? 'Record the condition you left it in'
+                          : rental.handoverStage == 'awaiting_confirm'
+                              ? 'Were you paid your deposit?'
+                              : 'Track your caution deposit',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ],
+
               if (!isPast) ...[
                 const SizedBox(height: 16),
                 Row(children: [
