@@ -1169,6 +1169,21 @@ class ActiveRentalService {
         return false;
       }
 
+      // The tenant still lives there until the date they gave. Confirming
+      // handover early ends the tenancy over their head, frees the unit and
+      // clears their active-rental flag — the same harm the auto-confirm sweep
+      // used to do by counting from the request instead of the intended date.
+      // Allowed from the START of the intended day: they said they would be
+      // out that day, so the landlord may confirm once it arrives.
+      if (!rental.canConfirmHandover) {
+        developer.log(
+          '⚠️ Handover confirm refused — tenant moves out '
+          '${rental.moveOutIntendedDate}: $rentalId',
+          name: 'ActiveRentalService',
+        );
+        return false;
+      }
+
       // Clamp: never let a declared deduction exceed the deposit on record.
       final deposit = rental.cautionDeposit;
       final deducted = cautionDeductionAmount.clamp(0, deposit).toDouble();

@@ -537,8 +537,12 @@ class _RentalCardState extends State<_RentalCard> {
         ],
         const SizedBox(height: 4),
         Text(
-          'Confirm the handover to end the tenancy. If you don\'t, it '
-          'auto-confirms after 7 days.',
+          rental.canConfirmHandover
+              ? 'Confirm the handover to end the tenancy. If you don\'t, it '
+                  'auto-confirms 7 days after they move out.'
+              : 'Your tenant is still living here until '
+                  '${dateStr ?? 'their move-out date'}. You can confirm the '
+                  'handover from that day.',
           style:
               AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
@@ -546,7 +550,9 @@ class _RentalCardState extends State<_RentalCard> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: _confirmMoveOut,
+            // Disabled until the tenant's intended move-out day: confirming
+            // early would end the tenancy while they are still in the property.
+            onPressed: rental.canConfirmHandover ? _confirmMoveOut : null,
             icon: const Icon(Icons.check_circle_outline, size: 18),
             label: const Text('Confirm Handover'),
             style: ElevatedButton.styleFrom(

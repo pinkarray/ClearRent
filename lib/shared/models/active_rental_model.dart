@@ -190,6 +190,21 @@ class ActiveRental {
   bool get isExpiringSoon => status == ActiveRentalStatus.expiringSoon;
   bool get isGraceLocked => status == ActiveRentalStatus.graceLocked;
   bool get isMoveoutPending => status == ActiveRentalStatus.moveoutPending;
+
+  /// Whether the landlord may confirm handover yet.
+  ///
+  /// The tenant is still living there until the date they gave notice for, so
+  /// confirming before it ends the tenancy over their head — frees the unit and
+  /// clears their active-rental flag while they are mid-move. Allowed from the
+  /// START of the intended day, since that is the day they said they'd be out.
+  ///
+  /// True when no intended date is recorded, which is every request written
+  /// before the field was collected.
+  bool get canConfirmHandover {
+    final d = moveOutIntendedDate;
+    if (d == null) return true;
+    return !DateTime.now().isBefore(DateTime(d.year, d.month, d.day));
+  }
   bool get isExpired => status == ActiveRentalStatus.expired;
   bool get isTerminated => status == ActiveRentalStatus.terminated;
   bool get isEndedByTenant => status == ActiveRentalStatus.endedByTenant;

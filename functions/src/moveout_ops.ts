@@ -25,6 +25,29 @@ import {writeNotificationOnce} from "./notification_helpers";
 
 const AUTO_CONFIRM_DAYS = 7;
 
+/**
+ * When the landlord's confirmation window opens for a move-out request.
+ *
+ * The grace period runs from the day the tenant actually LEAVES, not the day
+ * they gave notice. Counting from `moveOutRequestedAt` meant 30 days' notice
+ * ended the tenancy on day 7 — freeing the unit and clearing the tenant's
+ * active-rental flag while they were still living in it.
+ *
+ * Falls back to the request time when no intended date is recorded, which is
+ * every request written before the field was collected.
+ *
+ * @param {FirebaseFirestore.DocumentData} d An active_rentals document.
+ * @return {number|null} Epoch millis the window opens, or null if unknown.
+ */
+function windowOpensAtMs(d: FirebaseFirestore.DocumentData): number | null {
+  const requestedAt = d.moveOutRequestedAt as Timestamp | undefined;
+  if (!requestedAt) return null;
+  const intended = d.moveOutIntendedDate as Timestamp | undefined;
+  // A date in the past (tenant already gone, or notice back-dated) must not
+  // pull the deadline earlier than the request itself.
+  return Math.max(requestedAt.toMillis(), intended?.toMillis() ?? 0);
+}
+
 export const moveoutAutoConfirmSweep = onSchedule(
   {schedule: "every day 08:00", timeZone: "Africa/Lagos", timeoutSeconds: 300},
   async () => {
@@ -40,9 +63,10 @@ export const moveoutAutoConfirmSweep = onSchedule(
     let confirmed = 0;
     for (const doc of snap.docs) {
       const d = doc.data();
-      const requestedAt = d.moveOutRequestedAt as Timestamp | undefined;
-      // No timestamp yet (just written) or still inside the grace window.
-      if (!requestedAt || requestedAt.toMillis() > cutoffMs) continue;
+      const opensAt = windowOpensAtMs(d);
+      // No timestamp yet (just written), or the tenant has not reached their
+      // intended move-out date plus the landlord's grace window.
+      if (opensAt === null || opensAt > cutoffMs) continue;
 
       const rentalId = doc.id;
       const landlordId = d.landlordId as string | undefined;
@@ -66,9 +90,9 @@ export const moveoutAutoConfirmSweep = onSchedule(
             type: "moveout_auto_confirmed",
             title: "Move-out auto-confirmed",
             body:
-              `A move-out request for ${propertyTitle} went unconfirmed for ` +
-              `${AUTO_CONFIRM_DAYS} days, so ClearRent confirmed the handover ` +
-              "and the tenancy is now ended.",
+              `Your tenant moved out of ${propertyTitle} over ` +
+              `${AUTO_CONFIRM_DAYS} days ago and the handover was never ` +
+              "confirmed, so ClearRent confirmed it. The tenancy has ended.",
             payload: {route: "/landlord/rentals", rentalId},
           });
         }
@@ -88,9 +112,13 @@ export const moveoutAutoConfirmSweep = onSchedule(
   },
 );
 
-// Days after the request on which the landlord is chased. Both land before
-// AUTO_CONFIRM_DAYS so there is a real chance to act; the day-5 one also warns
-// the tenant what happens if nobody does.
+// Days after the tenant's intended move-out on which the landlord is chased.
+// Both land before AUTO_CONFIRM_DAYS so there is a real chance to act; the
+// day-5 one also warns the tenant what happens if nobody does.
+//
+// Measured from the same instant as the auto-confirm deadline, so 30 days'
+// notice no longer produces a "confirm the handover" nudge on day 2, four
+// weeks before the tenant has packed.
 const REMIND_DAYS = [2, 5];
 
 /**
@@ -115,10 +143,10 @@ export const moveoutPendingReminders = onSchedule(
     let sent = 0;
     for (const doc of snap.docs) {
       const d = doc.data();
-      const requestedAt = d.moveOutRequestedAt as Timestamp | undefined;
-      if (!requestedAt) continue;
+      const opensAt = windowOpensAtMs(d);
+      if (opensAt === null) continue;
 
-      const ageDays = Math.floor((now - requestedAt.toMillis()) / dayMs);
+      const ageDays = Math.floor((now - opensAt) / dayMs);
       if (!REMIND_DAYS.includes(ageDays)) continue;
 
       const rentalId = doc.id;
