@@ -3863,6 +3863,14 @@ async function recomputePropertyOccupancy(propertyId: string): Promise<void> {
 
   const total = linksSnap.size + rentalsSnap.size;
 
+  // A unit whose last tenant moved out is NOT relistable until the handover is
+  // settled: condition recorded, deposit dealt with, tenant confirmed or the
+  // claim recorded against the landlord. ClearRent never holds the caution
+  // deposit, so relisting is the only leverage that makes a landlord settle up
+  // — which means emptiness alone must not restore availability.
+  const handoverPending =
+    propertySnap.get("handoverPending") === true;
+
   const update: Record<string, unknown> = {
     currentTenantsCount: total,
     updatedAt: FieldValue.serverTimestamp(),
@@ -3870,7 +3878,7 @@ async function recomputePropertyOccupancy(propertyId: string): Promise<void> {
   if (total >= maxTenants) {
     update.isAvailable = false;
   } else if (total <= 0) {
-    update.isAvailable = true;
+    update.isAvailable = !handoverPending;
   }
   // Partial occupancy (0 < total < max): leave isAvailable as-is, so a
   // landlord's manual "unavailable" toggle isn't overridden.
@@ -3883,6 +3891,7 @@ async function recomputePropertyOccupancy(propertyId: string): Promise<void> {
     occupyingRentals: rentalsSnap.size,
     total,
     maxTenants,
+    handoverPending,
   });
 }
 

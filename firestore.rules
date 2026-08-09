@@ -265,6 +265,20 @@ service cloud.firestore {
         // isVerified is the admin's badge (adminReviewPropertyDoc writes it) and
         // is immutable for the owner. The create rule pins it false at birth.
         && !changed(['isVerified'])
+        // Occupancy is server-owned. recomputePropertyOccupancy derives these
+        // from tenancy_links + active_rentals and is the ONLY writer; the app
+        // deliberately writes neither (_updatePropertyStatus is empty), and
+        // they were nonetheless owner-writable.
+        && !changed(['currentTenantsCount', 'handoverPending'])
+        // The landlord may still delist or relist at will — that toggle is
+        // theirs and the web listing editor writes it. What they may NOT do is
+        // relist a unit whose handover is unsettled: ClearRent never holds the
+        // caution deposit, so relisting is the only leverage that makes a
+        // landlord settle up, and it was bypassable in a single write.
+        && (
+          !changed(['isAvailable'])
+          || resource.data.get('handoverPending', false) == false
+        )
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
@@ -1175,6 +1189,29 @@ service cloud.firestore {
               // and read by the tenant.
               'cautionDeductionAmount', 'cautionDeductionReason',
               'cautionDeclaredAt',
+              // ── Handover (move-out) ──────────────────────────────────────
+              // The tenancy ends on the tenant's timeline; the PROPERTY stays
+              // gated until this reaches 'closed'. Stage is advanced by both
+              // parties in turn, which is why it is client-writable — the
+              // server trigger reads it to decide when to release the unit.
+              'handoverStage',
+              // Tenant's condition evidence. Video takes precedence over
+              // photos and both are captured live, never picked from a gallery
+              // — a gallery pick could be a video of the place on move-IN day.
+              // 'handoverEvidencePending' is the retry-later state: the
+              // tenancy has already ended, but no caution claim can be made
+              // until the upload actually lands.
+              'handoverEvidenceAt', 'handoverEvidencePending',
+              // The landlord attesting they physically checked the unit. This
+              // is the relist lever — nothing frees the property without it.
+              'handoverConditionConfirmedAt', 'handoverConditionNotes',
+              // Settlement. `handoverSettlementMethod` is the seam for taking
+              // the deposit through ClearRent later; today it only ever records
+              // that the money moved landlord-to-tenant off-platform.
+              'handoverSettlementMethod', 'handoverSettledAt',
+              'handoverProofUrl', 'handoverProofUploadedAt',
+              // Outgoing tenant's answer, and the silence fallback.
+              'handoverTenantConfirmedAt',
               'updatedAt',
             ]);
 

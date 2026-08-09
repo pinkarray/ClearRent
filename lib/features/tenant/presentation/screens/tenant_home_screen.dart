@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/utils/app_info.dart';
+import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/models/property_model.dart';
@@ -1056,6 +1057,11 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // for another, and the inspection-day reminder only lived on the
             // browse home. A tenant with any occupied rental was the one person
             // who could book an inspection and never be reminded of it.
+            //
+            // Rent owed is the same trap once more, and the costlier one: a
+            // tenant who already lives somewhere can accept a NEW place, sign
+            // for it, and never be told to pay for it. Money before scheduling.
+            _buildRentDueBanner(),
             _buildTodaysInspectionBanner(),
             Expanded(
               child: MultiRentalDashboard(
@@ -2538,6 +2544,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             ),
           // Pending link requests banner — replaces the old route-based banner
           if (pendingLinks.isNotEmpty) _buildPendingLinksBanner(pendingLinks),
+          _buildRentDueBanner(),
           _buildTodaysInspectionBanner(),
           if (_verificationStatus != VerificationStatus.verified)
             _buildVerificationPrompt(),
@@ -2561,6 +2568,97 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Rent owed on an accepted-but-unpaid tenancy.
+  ///
+  /// A rental is BORN `pending_payment` and only becomes `active` once rent
+  /// lands, so this is the window where the tenant owes money and nothing was
+  /// telling them. The dashboard's own stream deliberately carries only
+  /// OCCUPYING statuses, which excludes `pending_payment` outright — so this
+  /// reads `streamAllTenantRentals` instead, exactly as the inspection banner
+  /// runs off its own stream rather than the dashboard's state.
+  ///
+  /// Shown alongside a live tenancy, not instead of one: a tenant can be paying
+  /// for a new place while still living in the old one.
+  Widget _buildRentDueBanner() {
+    return StreamBuilder<List<ActiveRental>>(
+      stream: _activeRentalService.streamAllTenantRentals(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final owing =
+            snapshot.data!.where((r) => r.isPendingPayment).toList();
+        if (owing.isEmpty) return const SizedBox.shrink();
+
+        final r = owing.first;
+        final more = owing.length - 1;
+        // Rent only unlocks once the agreement is executed, so until then the
+        // tenant's actual next step is signing — promising "pay now" would send
+        // them to a button they cannot press.
+        final ready = r.isAgreementFinalized;
+        final title = ready
+            ? 'Rent due · ${InspectionPricing.formatNaira(r.rentAmount)}'
+            : 'Sign your tenancy agreement';
+        final subtitle = ready
+            ? (more > 0 ? '${r.propertyTitle} +$more more' : r.propertyTitle)
+            : '${r.propertyTitle} — signing it unlocks rent payment';
+
+        return GestureDetector(
+          onTap: () => context.push('/tenant/my-rentals'),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withAlpha(77)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    ready
+                        ? Icons.payments_outlined
+                        : Icons.draw_outlined,
+                    size: 18,
+                    color: AppColors.warning,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.warning,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: AppColors.warning, size: 20),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
