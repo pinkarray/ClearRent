@@ -204,6 +204,58 @@ async function main() {
   check("landlord CAN read the tenant's condition evidence",
     await passes(getDoc(cond(db, "move_out", T1))));
 
+  // ── Listing suspension ────────────────────────────────────────────────
+  const S_OK = "landlord_ok";
+  const S_INDEF = "landlord_suspended";
+  const S_TIMED = "landlord_timed";
+  const S_LAPSED = "landlord_lapsed";
+  const day = 24 * 60 * 60 * 1000;
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "users", S_OK), {verificationStatus: "verified"});
+    await setDoc(doc(d, "users", S_INDEF), {
+      verificationStatus: "verified",
+      listingSuspended: true,
+      listingSuspendedUntil: null,
+    });
+    await setDoc(doc(d, "users", S_TIMED), {
+      verificationStatus: "verified",
+      listingSuspended: true,
+      listingSuspendedUntil: new Date(Date.now() + 7 * day),
+    });
+    // Served their time — the suspension must simply lapse, with no sweep.
+    await setDoc(doc(d, "users", S_LAPSED), {
+      verificationStatus: "verified",
+      listingSuspended: true,
+      listingSuspendedUntil: new Date(Date.now() - day),
+    });
+  });
+
+  const newListing = (uid) => ({
+    landlordId: uid,
+    title: "A flat",
+    isVerified: false,
+    ownershipDocStatus: "pending",
+    ownershipDocUrl: "d.pdf",
+    ownershipDocType: "deed",
+  });
+  const listingAs = (uid, id) =>
+    setDoc(doc(env.authenticatedContext(uid, {}).firestore(),
+      "properties", id), newListing(uid));
+
+  check("unsuspended landlord CAN publish a listing",
+    await passes(listingAs(S_OK, "new_ok")));
+
+  check("indefinitely suspended landlord CANNOT publish",
+    await denies(listingAs(S_INDEF, "new_indef")));
+
+  check("timed-suspended landlord CANNOT publish",
+    await denies(listingAs(S_TIMED, "new_timed")));
+
+  check("landlord whose suspension lapsed CAN publish again",
+    await passes(listingAs(S_LAPSED, "new_lapsed")));
+
   await env.cleanup();
   console.log(failures === 0 ?
     "\nALL PASS" :

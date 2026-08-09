@@ -55,6 +55,10 @@ export {
   handoverSilenceSweep,
   handoverSettlementReminders,
 } from "./handover_ops";
+export {
+  adminResolveHandover,
+  adminSetListingSuspension,
+} from "./admin_handover_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
 export {adminDailyDigestEmail} from "./admin_digest_email";

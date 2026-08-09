@@ -229,6 +229,22 @@ service cloud.firestore {
         && request.resource.data.landlordId == request.auth.uid
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verificationStatus == 'verified'
+        // A suspended landlord may not publish. Suspension follows an admin
+        // finding — most often a caution deposit taken and never returned —
+        // and it is the only real consequence available, since ClearRent holds
+        // none of the money. `listingSuspendedUntil` is the timed form; a null
+        // alongside listingSuspended means until an admin lifts it. Expiry is
+        // evaluated here rather than swept, so a suspension simply lapses.
+        && !(
+          get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('listingSuspended', false) == true
+          && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.get('listingSuspendedUntil', null) == null
+            || get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.listingSuspendedUntil > request.time
+          )
+        )
         && buildingOwnedByCaller()
         // A listing is BORN unreviewed. Without this the owner-update guards
         // below are decoration: a modified client could simply CREATE the
