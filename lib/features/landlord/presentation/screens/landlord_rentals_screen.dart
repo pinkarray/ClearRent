@@ -627,6 +627,42 @@ class _RentalCardState extends State<_RentalCard> {
               AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 10),
+        // Answering the notice and confirming the handover are different acts.
+        // Confirming is gated to the tenant's move-out date, so until then the
+        // landlord had a notification and no way to respond to it — and the
+        // tenant saw only silence. Acknowledging costs nothing and gates
+        // nothing; a landlord who skips it stalls no part of the move-out.
+        if (!rental.canConfirmHandover && !rental.isMoveOutAcknowledged) ...[
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final ok = await widget.rentalService
+                    .landlordAcknowledgeMoveOut(rental.id);
+                if (!mounted) return;
+                if (ok) {
+                  widget.onChanged();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Could not acknowledge. Try again.')));
+                }
+              },
+              icon: const Icon(Icons.mark_email_read_outlined, size: 18),
+              label: const Text('Acknowledge notice'),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (rental.isMoveOutAcknowledged && !rental.canConfirmHandover) ...[
+          Row(children: [
+            Icon(Icons.check, size: 14, color: AppColors.success),
+            const SizedBox(width: 6),
+            Text('You acknowledged this notice',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary)),
+          ]),
+          const SizedBox(height: 8),
+        ],
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(

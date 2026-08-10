@@ -97,6 +97,9 @@ class ActiveRental {
   // (or the auto-confirm sweep does). `endReason` carries the move-out reason.
   final DateTime? moveOutRequestedAt;
   final DateTime? moveOutIntendedDate;
+  /// The landlord has seen the notice. Not the same as having the keys back —
+  /// that is [handoverConditionConfirmedAt] territory. Optional courtesy.
+  final DateTime? moveOutAcknowledgedAt;
 
   // ── Handover ───────────────────────────────────────────────────────────
   // The tenancy is over by the time these matter; what is still open is the
@@ -186,6 +189,7 @@ class ActiveRental {
     this.contestedAt,
     this.moveOutRequestedAt,
     this.moveOutIntendedDate,
+    this.moveOutAcknowledgedAt,
     this.handoverStage = '',
     this.handoverEvidenceAt,
     this.handoverEvidencePending = false,
@@ -211,6 +215,17 @@ class ActiveRental {
   bool get isExpiringSoon => status == ActiveRentalStatus.expiringSoon;
   bool get isGraceLocked => status == ActiveRentalStatus.graceLocked;
   bool get isMoveoutPending => status == ActiveRentalStatus.moveoutPending;
+
+  /// The landlord has seen the move-out notice.
+  bool get isMoveOutAcknowledged => moveOutAcknowledgedAt != null;
+
+  /// The tenant may record the condition they are leaving the property in.
+  ///
+  /// Open from the moment notice is given, NOT from when the tenancy ends —
+  /// by then they may have handed back the keys, and asking someone to film a
+  /// property they can no longer enter is asking for nothing.
+  bool get canRecordMoveOutCondition =>
+      isMoveoutPending || handoverStage == 'awaiting_evidence';
 
   /// A move-out is settled and the property can be listed again.
   bool get isHandoverClosed => handoverStage == 'closed';
@@ -523,6 +538,7 @@ class ActiveRental {
     String? endReason, String? endedBy, DateTime? endedAt,
     bool? tenantContested, String? tenantContestStatement, DateTime? contestedAt,
     DateTime? moveOutRequestedAt, DateTime? moveOutIntendedDate,
+    DateTime? moveOutAcknowledgedAt,
     double? cautionDeposit, bool? cautionDepositRefundable,
     double? cautionDeductionAmount, String? cautionDeductionReason,
     DateTime? cautionDeclaredAt,
@@ -570,6 +586,8 @@ class ActiveRental {
       endedAt: endedAt ?? this.endedAt,
       moveOutRequestedAt: moveOutRequestedAt ?? this.moveOutRequestedAt,
       moveOutIntendedDate: moveOutIntendedDate ?? this.moveOutIntendedDate,
+      moveOutAcknowledgedAt:
+          moveOutAcknowledgedAt ?? this.moveOutAcknowledgedAt,
       cautionDeposit: cautionDeposit ?? this.cautionDeposit,
       cautionDepositRefundable:
           cautionDepositRefundable ?? this.cautionDepositRefundable,

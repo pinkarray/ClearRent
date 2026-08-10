@@ -1289,6 +1289,31 @@ class ActiveRentalService {
     }
   }
 
+  /// Landlord acknowledges a move-out notice.
+  ///
+  /// Distinct from confirming handover, which is gated to the tenant's chosen
+  /// date: "I've seen your notice" and "you have gone and I have the keys" are
+  /// different statements, and collapsing them left the landlord holding a
+  /// notification they could not answer for days while the tenant heard
+  /// nothing back.
+  ///
+  /// Deliberately optional and deliberately gates nothing — a landlord who
+  /// ignores it stalls no part of the move-out, because auto-confirm already
+  /// handles silence.
+  Future<bool> landlordAcknowledgeMoveOut(String rentalId) async {
+    try {
+      await _firestore.collection('active_rentals').doc(rentalId).update({
+        'moveOutAcknowledgedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (e) {
+      developer.log('❌ landlordAcknowledgeMoveOut failed: $e',
+          name: 'ActiveRentalService');
+      return false;
+    }
+  }
+
   // ============ HANDOVER (move-out settlement) ============
   //
   // The tenancy is already over here. What is still open is the caution

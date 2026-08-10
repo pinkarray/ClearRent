@@ -10,6 +10,8 @@ import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/notification_bell.dart';
+import '../../../../shared/models/condition_record.dart';
+import '../screens/condition_capture_screen.dart';
 
 /// Minimum notice, in days, between a move-out request and the intended
 /// move-out date — the window the handover check has to be booked in.
@@ -570,16 +572,59 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Move-out requested', style: AppTextStyles.labelMedium),
-              const SizedBox(height: 2),
               Text(
-                dateStr != null
-                    ? 'Intended $dateStr. Awaiting your landlord\'s handover '
-                        'confirmation — auto-confirms after 7 days.'
-                    : 'Awaiting your landlord\'s handover confirmation — '
-                        'auto-confirms after 7 days.',
+                  rental.isMoveOutAcknowledged
+                      ? 'Move-out acknowledged'
+                      : 'Move-out requested',
+                  style: AppTextStyles.labelMedium),
+              const SizedBox(height: 2),
+              // This used to say the landlord's confirmation was awaited and
+              // that it auto-confirms "after 7 days". Both were false while
+              // the tenant was still living there: the landlord CANNOT confirm
+              // before the move-out date, and the 7 days runs from that date —
+              // so a 3-day notice resolved on day 10, not day 7. It read as a
+              // landlord dragging their feet when they were blocked by design.
+              Text(
+                dateStr == null
+                    ? 'Your landlord will confirm the handover once you have '
+                        'moved out.'
+                    : rental.isMoveOutAcknowledged
+                        ? 'Your landlord knows you are leaving on $dateStr. '
+                            'They confirm the handover from that day.'
+                        : 'You are moving out on $dateStr. Your landlord can '
+                            'confirm the handover from that day, and it '
+                            'confirms itself a week later if they don\'t.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary),
+              ),
+              // The one window where this can honestly be done: they still
+              // have keys. Once the tenancy ends and the keys go back, a
+              // walkthrough is no longer theirs to record — and it is the only
+              // thing a deduction from their deposit can be argued against.
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ConditionCaptureScreen(
+                      rentalId: rental.id,
+                      propertyTitle: rental.propertyTitle,
+                      stage: ConditionStage.moveOut,
+                      partyRole: 'tenant',
+                    ),
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.videocam_outlined,
+                      size: 15, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Record the condition you are leaving it in',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ]),
               ),
             ],
           ),

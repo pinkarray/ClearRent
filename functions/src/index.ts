@@ -4029,10 +4029,29 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
           handoverRentalId: event.params.rentalId,
           updatedAt: FieldValue.serverTimestamp(),
         });
-        // Opens the handover. The tenant's condition evidence is the first
-        // step, and until it lands no caution deduction can be claimed.
+        // The tenant can film from the moment they give notice — while they
+        // still have keys — so by the time the tenancy ends the evidence is
+        // usually already in. Asking for it again would be asking someone to
+        // photograph a property they have just handed back.
+        const tenantId = after.tenantId as string | undefined;
+        let hasEvidence = false;
+        if (tenantId) {
+          const ev = await snap.after.ref
+            .collection("condition")
+            .doc("move_out")
+            .collection("parties")
+            .doc(tenantId)
+            .get();
+          hasEvidence = ev.exists && ev.get("pending") !== true;
+        }
+
+        const openingStage =
+          hasEvidence ? "awaiting_condition" : "awaiting_evidence";
         await snap.after.ref.update({
-          handoverStage: "awaiting_evidence",
+          handoverStage: openingStage,
+          ...(hasEvidence ?
+            {handoverEvidenceAt: FieldValue.serverTimestamp()} :
+            {}),
           updatedAt: FieldValue.serverTimestamp(),
         });
         logger.info("Handover opened, property gated", {
