@@ -25,6 +25,9 @@ class ActivityModel {
   final String title;
   final String subtitle;
   final String? propertyId;
+  /// The tenancy a move-out activity belongs to. Written by the move-out
+  /// request but never parsed, so the feed could only ever open the property.
+  final String? rentalId;
   final String? propertyTitle;
   final String? actorId;
   final String? actorName;
@@ -39,6 +42,7 @@ class ActivityModel {
     required this.title,
     required this.subtitle,
     this.propertyId,
+    this.rentalId,
     this.propertyTitle,
     this.actorId,
     this.actorName,
@@ -115,6 +119,7 @@ class ActivityModel {
       title: json['title'] ?? '',
       subtitle: json['subtitle'] ?? json['message'] ?? '',
       propertyId: json['propertyId'],
+      rentalId: json['rentalId'],
       propertyTitle: json['propertyTitle'],
       actorId: json['actorId'],
       actorName: json['actorName'],
@@ -136,6 +141,7 @@ class ActivityModel {
       'title': title,
       'subtitle': subtitle,
       'propertyId': propertyId,
+      'rentalId': rentalId,
       'propertyTitle': propertyTitle,
       'actorId': actorId,
       'actorName': actorName,
@@ -192,6 +198,7 @@ class ActivityModel {
     String? title,
     String? subtitle,
     String? propertyId,
+    String? rentalId,
     String? propertyTitle,
     String? actorId,
     String? actorName,
@@ -206,6 +213,7 @@ class ActivityModel {
       title: title ?? this.title,
       subtitle: subtitle ?? this.subtitle,
       propertyId: propertyId ?? this.propertyId,
+      rentalId: rentalId ?? this.rentalId,
       propertyTitle: propertyTitle ?? this.propertyTitle,
       actorId: actorId ?? this.actorId,
       actorName: actorName ?? this.actorName,

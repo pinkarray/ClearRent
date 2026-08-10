@@ -104,7 +104,14 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
-    // Move-out — the Confirm Handover action lives on the rental card.
+    // Move-out. Once it has completed, the outstanding thing is the caution
+    // deposit and a property that cannot be relisted — both of which live on
+    // the handover. A request is still confirmed on the rental card.
+    if (activity.type == ActivityType.moveoutCompleted &&
+        activity.rentalId != null) {
+      context.push('/handover/${activity.rentalId}');
+      return;
+    }
     if (activity.type == ActivityType.moveoutRequested ||
         activity.type == ActivityType.moveoutCompleted) {
       context.push('/landlord/rentals');

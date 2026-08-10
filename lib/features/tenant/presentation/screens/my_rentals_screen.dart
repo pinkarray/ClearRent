@@ -117,9 +117,12 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                       children: [
                         // Quick Stats — only for a genuinely active (paid) lease
                         if (hasActiveLease) ...[
-                          _buildQuickStats(activeLeases.first),
+                          _buildQuickStats(activeLeases),
                           const SizedBox(height: 8),
-                          _buildPaymentAlert(activeLeases.first),
+                          // The alert is about ONE lease's next payment, so it
+                          // stays keyed to the soonest one rather than the
+                          // arbitrary first.
+                          _buildPaymentAlert(_soonestToEnd(activeLeases)),
                         ],
 
                         // Current Rentals
@@ -158,8 +161,27 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
     );
   }
 
-  Widget _buildQuickStats(ActiveRental rental) {
+  /// The lease ending first — what "days left" should count down to when a
+  /// tenant holds several.
+  ActiveRental _soonestToEnd(List<ActiveRental> leases) =>
+      leases.reduce((a, b) =>
+          a.daysUntilLeaseEnd <= b.daysUntilLeaseEnd ? a : b);
+
+  /// Summary card above the rental list.
+  ///
+  /// It used to render `activeLeases.first` — one property's title, its days
+  /// left and its rent — beside a "Total Rentals" figure counting every rental
+  /// ever held. Two different scopes in one card, so a tenant renting several
+  /// places saw one property's rent next to a 5, and neither number explained
+  /// the other. With more than one lease it now describes the portfolio; with
+  /// exactly one it says what it always said, because then the card really is
+  /// about that rental.
+  Widget _buildQuickStats(List<ActiveRental> leases) {
+    final many = leases.length > 1;
+    final rental = _soonestToEnd(leases);
     final daysLeft = rental.daysUntilLeaseEnd;
+    final totalRent =
+        leases.fold<double>(0, (sum, r) => sum + r.rentAmount);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -197,11 +219,14 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Active Rental',
+                  Text(many ? 'Active Rentals' : 'Active Rental',
                       style: AppTextStyles.caption
                           .copyWith(color: Colors.white.withAlpha(204))),
                   const SizedBox(height: 2),
-                  Text(rental.propertyTitle,
+                  Text(
+                      many
+                          ? '${leases.length} properties'
+                          : rental.propertyTitle,
                       style: AppTextStyles.labelLarge
                           .copyWith(color: Colors.white),
                       maxLines: 1,
@@ -216,7 +241,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               child: _buildStatItem(
                 icon: Icons.calendar_today_outlined,
                 value: '$daysLeft',
-                label: 'Days Left\non Lease',
+                label: many ? 'Days Left\non Soonest' : 'Days Left\non Lease',
               ),
             ),
             Container(
@@ -226,10 +251,12 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
             Expanded(
               child: _buildStatItem(
                 icon: Icons.payments_outlined,
-                value: '₦${_formatAmount(rental.rentAmount)}',
-                label: rental.rentPeriod.isNotEmpty
-                    ? rental.rentPeriod.replaceAll('/', 'Per ')
-                    : 'Per Year',
+                value: '₦${_formatAmount(many ? totalRent : rental.rentAmount)}',
+                label: many
+                    ? 'Combined\nPer Year'
+                    : rental.rentPeriod.isNotEmpty
+                        ? rental.rentPeriod.replaceAll('/', 'Per ')
+                        : 'Per Year',
               ),
             ),
             Container(
@@ -240,7 +267,9 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               child: _buildStatItem(
                 icon: Icons.history,
                 value: '${_activeRentals.length + _pastRentals.length}',
-                label: 'Total\nRentals',
+                // "Total Rentals" beside a single property's rent read as a
+                // count of THAT rental's something. Say the span out loud.
+                label: 'Rentals\nAll Time',
               ),
             ),
           ]),

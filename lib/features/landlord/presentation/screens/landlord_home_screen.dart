@@ -957,6 +957,23 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
+    // Move-out. This screen had no branch for it at all, so it fell through to
+    // the property fallback below — opening the listing, which is the one place
+    // the landlord can do nothing about a move-out. A completed move-out leaves
+    // the caution deposit outstanding and the property off the market, so it
+    // goes straight to the handover; a request is still confirmed on the
+    // rental card.
+    if (activity.type == ActivityType.moveoutCompleted &&
+        activity.rentalId != null) {
+      context.push('/handover/${activity.rentalId}');
+      return;
+    }
+    if (activity.type == ActivityType.moveoutRequested ||
+        activity.type == ActivityType.moveoutCompleted) {
+      context.push('/landlord/rentals');
+      return;
+    }
+
     // Property views and inquiries — show viewer info sheet
     if ((activity.type == ActivityType.propertyViewed ||
             activity.type == ActivityType.inquiry) &&
