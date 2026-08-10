@@ -613,15 +613,21 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                     ),
                   ),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                // The label is long and sits inside an already-indented
+                // banner, so it must be free to wrap — an unconstrained Text
+                // in a min-size Row takes its full intrinsic width and
+                // overflows the line instead.
+                child: Row(children: [
                   Icon(Icons.videocam_outlined,
                       size: 15, color: AppColors.primary),
                   const SizedBox(width: 6),
-                  Text(
-                    'Record the condition you are leaving it in',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      'Record the condition you are leaving it in',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ]),

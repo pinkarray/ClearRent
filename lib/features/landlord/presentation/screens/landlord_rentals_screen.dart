@@ -657,9 +657,13 @@ class _RentalCardState extends State<_RentalCard> {
           Row(children: [
             Icon(Icons.check, size: 14, color: AppColors.success),
             const SizedBox(width: 6),
-            Text('You acknowledged this notice',
-                style: AppTextStyles.caption
-                    .copyWith(color: AppColors.textSecondary)),
+            // Same trap as the tenant banner: an unconstrained Text beside an
+            // icon overflows on a narrow screen rather than wrapping.
+            Expanded(
+              child: Text('You acknowledged this notice',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary)),
+            ),
           ]),
           const SizedBox(height: 8),
         ],
