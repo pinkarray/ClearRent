@@ -1176,6 +1176,14 @@ service cloud.firestore {
       allow update: if request.auth != null
         && (resource.data.tenantId == request.auth.uid
             || resource.data.landlordId == request.auth.uid)
+        // The allowlist below says WHICH fields may be written, not by WHOM.
+        // Acknowledging a move-out is the landlord saying they have seen the
+        // notice; a tenant acknowledging their own is not a lesser version of
+        // that, it is a false entry in the record the tenant is then shown.
+        && (
+          !changed(['moveOutAcknowledgedAt'])
+          || resource.data.landlordId == request.auth.uid
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'agreementUrl', 'agreementUploadedAt', 'agreementStatus',
               'tenantDisputeReason', 'tenantAcceptedAt', 'landlordFinalizedAt',

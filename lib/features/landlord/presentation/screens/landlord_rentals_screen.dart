@@ -419,6 +419,7 @@ class _RentalCard extends StatefulWidget {
 
 class _RentalCardState extends State<_RentalCard> {
   bool _isMessageLoading = false;
+  bool _acknowledging = false;
 
   ActiveRental get rental => widget.rental;
 
@@ -636,17 +637,26 @@ class _RentalCardState extends State<_RentalCard> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () async {
-                final ok = await widget.rentalService
-                    .landlordAcknowledgeMoveOut(rental.id);
-                if (!mounted) return;
-                if (ok) {
-                  widget.onChanged();
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Could not acknowledge. Try again.')));
-                }
-              },
+              // The write succeeds quickly and then the button simply vanishes,
+              // replaced by a line of grey text — which reads as nothing
+              // having happened at all. Say so out loud, and say what it did
+              // for the tenant, since that is the point of the button.
+              onPressed: _acknowledging
+                  ? null
+                  : () async {
+                      setState(() => _acknowledging = true);
+                      final ok = await widget.rentalService
+                          .landlordAcknowledgeMoveOut(rental.id);
+                      if (!mounted) return;
+                      setState(() => _acknowledging = false);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(ok
+                            ? 'Acknowledged — ${rental.tenantName} can see '
+                                'that you know they are leaving.'
+                            : 'Could not acknowledge. Try again.'),
+                      ));
+                      if (ok) widget.onChanged();
+                    },
               icon: const Icon(Icons.mark_email_read_outlined, size: 18),
               label: const Text('Acknowledge notice'),
             ),
