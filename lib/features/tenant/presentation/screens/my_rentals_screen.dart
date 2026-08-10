@@ -13,6 +13,7 @@ import '../../../../services/tenancy_link_service.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
+import '../../../../shared/widgets/move_in_baseline_prompt.dart';
 
 class MyRentalsScreen extends StatefulWidget {
   const MyRentalsScreen({super.key});
@@ -569,6 +570,16 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                   ),
                 ),
               ],
+
+              // Only while the tenancy is live: after it ends the move-OUT
+              // record is what matters, and asking for a baseline then would
+              // be asking someone to photograph a property they have left.
+              if (!isPast && !rental.isHandoverOpen)
+                MoveInBaselinePrompt(
+                  rentalId: rental.id,
+                  propertyTitle: rental.propertyTitle,
+                  partyRole: 'tenant',
+                ),
 
               // An ended tenancy whose deposit is unresolved. Shown on the PAST
               // card because that is where the tenant looks for a place they

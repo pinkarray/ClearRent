@@ -13,6 +13,7 @@ import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/tab_badge.dart';
+import '../../../../shared/widgets/move_in_baseline_prompt.dart';
 
 class LandlordRentalsScreen extends StatefulWidget {
   const LandlordRentalsScreen({super.key});
@@ -1068,6 +1069,16 @@ class _RentalCardState extends State<_RentalCard> {
                   const SizedBox(height: 12),
                   _buildPaymentInfo(),
                 ],
+
+                // Only while the tenancy is live. Once a move-out is under way
+                // the move-OUT record is what matters, and the baseline can no
+                // longer honestly be captured.
+                if (widget.isActive && !rental.isMoveoutPending)
+                  MoveInBaselinePrompt(
+                    rentalId: rental.id,
+                    propertyTitle: rental.propertyTitle,
+                    partyRole: 'landlord',
+                  ),
 
                 // Move-out request — the tenant asked to move out. Confirm the
                 // handover to end the tenancy (auto-confirms after 7 days).
