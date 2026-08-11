@@ -70,6 +70,20 @@ service firebase.storage {
         && (request.auth.uid == uid || isAdmin());
     }
 
+    // Proof that a disputed payout was actually delivered — typically a
+    // screenshot of the bank transfer, uploaded by an ADMIN resolving the
+    // dispute. Admin-only both ways: it is our evidence, not the
+    // beneficiary's, and the bytes reach the dashboard through the
+    // authenticated /api/verification-image route rather than a public URL.
+    //
+    // Write-once, like every other evidence prefix here. Proof attached to a
+    // resolved dispute has to stay the bytes that were reviewed.
+    match /payout-proof/{rentalId}/{docId} {
+      allow create: if isAdmin() && resource == null;
+      allow update, delete: if false;
+      allow read: if isAdmin();
+    }
+
     // Move-in and move-out condition media, uploaded under the recorder's own
     // uid. This is what a caution-deposit argument is settled on, so it is
     // write-once: a landlord cannot replace their photos after seeing the
