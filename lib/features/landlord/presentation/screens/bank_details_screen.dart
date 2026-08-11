@@ -50,7 +50,10 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
     {'name': 'Guaranty Trust Bank (GTBank)', 'code': '058'},
     {'name': 'Heritage Bank', 'code': '030'},
     {'name': 'Keystone Bank', 'code': '082'},
-    {'name': 'Kuda Bank', 'code': '090267'},
+    // 50211, not 090267. Paystack keys fintechs/MFBs by its own 5-digit code;
+    // 090267 is Kuda's CBN/NIP code, which /bank/resolve rejects outright as
+    // "Unknown bank code" — so a Kuda account could never be verified here.
+    {'name': 'Kuda Bank', 'code': '50211'},
     {'name': 'Moniepoint MFB', 'code': '50515'},
     {'name': 'Opay', 'code': '999992'},
     {'name': 'Palmpay', 'code': '999991'},
