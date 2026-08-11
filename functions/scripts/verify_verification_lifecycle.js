@@ -163,6 +163,30 @@ async function main() {
   check("idempotent: expired user unchanged",
     expiredAgain.verificationStatus === "expired", "changed");
 
+  // ── Narrow path (fullScan=false) — what the daily job actually runs ──
+  //
+  // The range query cannot see documents with no verificationExpiresAt, so
+  // backfill is expected to be MISSED here; that is why the scheduled job
+  // still does a full read once a month. Everything time-critical — expiry
+  // and both warning buckets — must still be caught.
+  await wipe();
+  await seed(now);
+  const c3 = await runVerificationExpirySweep(now, false);
+  check("narrow: expires the lapsed user",
+    c3.expired === 1, JSON.stringify(c3));
+  check("narrow: still warns both buckets",
+    c3.warned === 2, JSON.stringify(c3));
+  check("narrow: still spares the exempt/admin users",
+    c3.skippedAdmins === 1 &&
+      (await get("u_exempt")).verificationStatus === "verified",
+    JSON.stringify(c3));
+  check("narrow: reads far fewer docs than a full scan",
+    c3.scanned < c1.scanned, `${c3.scanned} vs ${c1.scanned}`);
+  check("narrow: leaves the healthy user untouched",
+    (await get("u_safe")).verificationStatus === "verified", "touched");
+  check("narrow: cannot backfill (range query skips absent field)",
+    c3.backfilled === 0, JSON.stringify(c3));
+
   await wipe();
   console.log(failures === 0 ?
     "\nAll verification-lifecycle checks passed." :

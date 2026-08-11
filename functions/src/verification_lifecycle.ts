@@ -91,19 +91,47 @@ export async function stampVerificationClock(
  *     send a renewal-due notice;
  *   • approaching expiry → one warning per threshold bucket crossed.
  * verificationExempt users (staff/test) are skipped entirely.
+ *
+ * ## Why this does not read every verified user
+ *
+ * It used to, once a day, forever. Verification lasts a year, so roughly 364
+ * of every 365 of those reads decided nothing — the cost grew with total
+ * users while the work grew only with users actually near expiry. At 10,000
+ * verified users that is 3.65M reads a year to do a few thousand updates.
+ *
+ * The narrow query asks the only question that matters: whose clock runs out
+ * within the widest warning bucket. Anyone further out cannot be expired and
+ * cannot have crossed a threshold, so reading them is pure waste.
+ *
+ * [fullScan] restores the whole-collection read, because a RANGE query cannot
+ * match documents that lack the field at all — which is exactly what backfill
+ * looks for. Backfilling pre-feature users is a one-off that has already run
+ * (prod has zero verified users without the stamp, and onVerificationVerified
+ * stamps every new one), so the scheduled job pays for it monthly rather than
+ * daily, and tests keep the old behaviour by default.
  * @param {number} nowMs Treated as "now"; injectable for tests.
+ * @param {boolean} fullScan Read every verified user, so unstamped docs can be
+ *   backfilled. Defaults true; the daily job passes false.
  * @return {Promise<SweepCounts>} What the sweep did.
  */
 export async function runVerificationExpirySweep(
   nowMs: number = Date.now(),
+  fullScan = true,
 ): Promise<SweepCounts> {
   const db = getFirestore();
   const dayMs = 24 * 60 * 60 * 1000;
 
-  const snap = await db
+  const base = db
     .collection("users")
-    .where("verificationStatus", "==", "verified")
-    .get();
+    .where("verificationStatus", "==", "verified");
+
+  // The widest warning bucket bounds what the sweep can act on today.
+  const horizonMs = nowMs + Math.max(...WARNING_THRESHOLDS_DAYS) * dayMs;
+  const snap = await (fullScan ?
+    base.get() :
+    base
+      .where("verificationExpiresAt", "<=", Timestamp.fromMillis(horizonMs))
+      .get());
 
   const counts: SweepCounts = {
     scanned: snap.size,
