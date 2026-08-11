@@ -59,6 +59,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   VerificationStatus _verificationStatus = VerificationStatus.none;
   double _landlordRating = 0.0;
   int _totalRatings = 0;
+  // C1: the account itself lives in users/{uid}/private/bank; the user doc
+  // carries only this non-sensitive flag.
+  bool _hasBankDetails = false;
 
   // Live stream subscriptions
   StreamSubscription? _profileSubscription;
@@ -154,6 +157,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               _landlordRating = (data['rating'] ?? 0.0).toDouble();
               _totalRatings = (data['totalRatings'] ?? 0) as int;
               _verificationStatus = vStatus;
+              _hasBankDetails = data['hasBankDetails'] == true;
               _isLoadingProfile = false;
             });
           },
@@ -647,6 +651,15 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             if (_verificationStatus != VerificationStatus.verified) ...[
               const SizedBox(height: 16),
               _buildVerificationPrompt(),
+            ],
+            // Payout account prompt. Held back until verified so a brand-new
+            // landlord sees one call to action at a time, matching the agent
+            // home screen.
+            if (!_hasBankDetails &&
+                !_isLoadingProfile &&
+                _verificationStatus == VerificationStatus.verified) ...[
+              const SizedBox(height: 16),
+              _buildBankDetailsBanner(),
             ],
             // Announcements
             AnnouncementsBanner(
@@ -1467,6 +1480,60 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ),
             ),
             Icon(Icons.chevron_right, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBankDetailsBanner() {
+    return GestureDetector(
+      onTap: () => context.push('/landlord/bank-details'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.account_balance_wallet_outlined,
+                color: AppColors.warning,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add Bank Details',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Where your rent and inspection payouts are sent',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.warning.withAlpha(204),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.warning),
           ],
         ),
       ),
