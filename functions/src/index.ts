@@ -54,6 +54,7 @@ export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
   handoverSilenceSweep,
   handoverSettlementReminders,
+  onConditionEvidenceSealed,
 } from "./handover_ops";
 export {
   adminResolveHandover,
@@ -1146,12 +1147,26 @@ export const onActiveRentalUpdated = onDocumentUpdated(
  * @param {object} event Firestore create event for payments/{reference}.
  * @return {Promise<void>}
  */
-export const onRentPaymentRecorded = onDocumentCreated(
+export const onRentPaymentRecorded = onDocumentWritten(
   "payments/{reference}",
   async (event) => {
-    const snap = event.data;
-    if (!snap) return;
+    // Listens on WRITE, not create.
+    //
+    // A payment doc is not born complete. It is created, then ENRICHED — the
+    // Paystack webhook adds gatewayStatus/webhookVerified, and the client adds
+    // the rental linkage. On create-only this trigger ran against the first,
+    // half-written snapshot, found no rentalInterestId, logged
+    // "no earnings written" and gave up forever. Every rent payment since
+    // 2026-07-23 was therefore missing from the earnings ledger AND from the
+    // admin money feed, while the field it wanted sat on the very same
+    // document moments later.
+    //
+    // Re-entry is safe: the ledger rows use deterministic ids via writeOnce,
+    // and the admin alert is upserted under a fixed key.
+    const snap = event.data?.after;
+    if (!snap?.exists) return;
     const pay = snap.data();
+    if (!pay) return;
     const reference = event.params.reference;
 
     // Only completed *rent* payments generate earnings rows.
@@ -1239,13 +1254,36 @@ export const onRentPaymentRecorded = onDocumentCreated(
     }
 
     // Money visibility: surface each completed rent payment to the admin feed.
-    await writeAdminAlert({
+    // Keyed by reference — the trigger now fires on every write to the payment
+    // doc, so an auto-id alert would stack a new row each time the webhook
+    // touched it. Severity is `warning`, not `info`: this is money the
+    // platform now owes a landlord (and possibly an agent), and only
+    // warning/critical alerts push to a registered admin device — an `info`
+    // row waits in the feed for someone to happen to look.
+    // A payout can come out NEGATIVE when the rent is smaller than the fees
+    // taken out of it. The ledger already refuses to write such a row
+    // (landlordPayout > 0), so without this the alert was the only trace —
+    // and it announced "₦-3,000 is owed to the landlord", which reads as a
+    // display bug rather than the pricing problem it actually is.
+    const brokenSplit = landlordPayout < 0 || agentPayout < 0;
+    await upsertAdminAlert(`rentpay_${reference}`, {
       type: "rent_payment",
-      severity: "info",
-      title: "Rent payment received",
-      body:
-        `${tenantName} paid rent for ${propertyTitle} ` +
-        `(₦${landlordPayout.toLocaleString("en-NG")} to the landlord).`,
+      severity: brokenSplit ? "critical" : "warning",
+      title: brokenSplit ?
+        "Rent paid but the payout split is negative" :
+        "Rent paid — payout due",
+      body: brokenSplit ?
+        `${tenantName} paid ₦${Number(pay.amount ?? 0)
+          .toLocaleString("en-NG")} for ${propertyTitle}, but the split ` +
+          `computes to ₦${landlordPayout.toLocaleString("en-NG")} for the ` +
+          `landlord and ₦${agentPayout.toLocaleString("en-NG")} for the ` +
+          "agent — the fees exceed the rent. No earnings row was written; " +
+          "settle this manually." :
+        `${tenantName} paid rent for ${propertyTitle}. ` +
+        `₦${landlordPayout.toLocaleString("en-NG")} is owed to the landlord` +
+        (agentPayout > 0 ?
+          ` and ₦${agentPayout.toLocaleString("en-NG")} to the agent.` :
+          "."),
       targetCollection: "payments",
       targetId: reference,
       actors: {
@@ -2617,15 +2655,18 @@ export const resolveAccount = onCall(
       });
 
       if (!resp.ok) {
-        // Paystack returns 422 for "could not resolve" — surface
-        // as not-found so the client can show a friendly message.
-        if (resp.status === 422 || resp.status === 404) {
-          throw new HttpsError(
-            "not-found",
-            "Account could not be resolved. " +
-              "Check the number and bank.",
-          );
+        // Read Paystack's own explanation FIRST. It used to be discarded, so
+        // every unhandled status collapsed into "could not reach Paystack" —
+        // which is false for anything Paystack actually answered, and sends
+        // people to retry a request that will fail identically forever.
+        let detail = "";
+        try {
+          const errBody = (await resp.json()) as {message?: string};
+          if (typeof errBody.message === "string") detail = errBody.message;
+        } catch {
+          // Non-JSON body (gateway HTML, etc.) — nothing to quote.
         }
+
         // Paystack rate-limits /bank/resolve per integration. Surface 429
         // as resource-exhausted so the client says "slow down" rather than
         // "service unavailable" — the endpoint is up, just throttled.
@@ -2639,9 +2680,30 @@ export const resolveAccount = onCall(
               "Please wait a moment and try again.",
           );
         }
+
+        // 400 = Paystack rejected the parameters; 422/404 = understood but
+        // unresolvable. All three are about the request, not our
+        // connectivity, and all three were previously indistinguishable from
+        // an outage. Note 400 is also what TEST-mode keys return for a real
+        // account number — resolution needs live keys — so quoting Paystack
+        // verbatim is what makes that diagnosable at all.
+        if (resp.status === 400 || resp.status === 422 || resp.status === 404) {
+          logger.warn("Paystack resolve rejected the request", {
+            status: resp.status,
+            uid: request.auth.uid,
+            detail,
+          });
+          throw new HttpsError(
+            resp.status === 400 ? "invalid-argument" : "not-found",
+            detail ||
+              "Account could not be resolved. Check the number and bank.",
+          );
+        }
+
         logger.warn("Paystack resolve non-OK response", {
           status: resp.status,
           uid: request.auth.uid,
+          detail,
         });
         throw new HttpsError(
           "internal",
@@ -4236,6 +4298,7 @@ export {
 export {
   onVerificationVerified,
   verificationExpirySweep,
+  finalizeWebVerification,
 } from "./verification_ops";
 
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
