@@ -521,6 +521,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _startUnreadCountStream();
   }
 
+  /// Approved, vacant listings the handler hasn't vetted yet — tenants can't
+  /// book them. See [PropertyModel.isNotBookable].
+  int get _notBookableCount =>
+      _myProperties.where((p) => p.isNotBookable).length;
+
   String get _firstName {
     final parts = _userName.split(' ');
     return parts.isNotEmpty ? parts.first : _userName;
@@ -660,6 +665,14 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                 _verificationStatus == VerificationStatus.verified) ...[
               const SizedBox(height: 16),
               _buildBankDetailsBanner(),
+            ],
+            // Approved but unbookable listings. Admin approval is the moment a
+            // landlord thinks they are live, and it is exactly when the vetting
+            // step goes unnoticed — the property sits taking no inspections and
+            // nothing says so outside the property's own page.
+            if (_notBookableCount > 0) ...[
+              const SizedBox(height: 16),
+              _buildNotBookableBanner(),
             ],
             // Announcements
             AnnouncementsBanner(
@@ -1526,6 +1539,72 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                   const SizedBox(height: 2),
                   Text(
                     'Where your rent and inspection payouts are sent',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.warning.withAlpha(204),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.warning),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotBookableBanner() {
+    final count = _notBookableCount;
+    // Who has to act differs: on a self-handled listing the landlord vets it,
+    // on an agent-handled one the assigned agent does. Saying "confirm it's
+    // ready" to a landlord who can't would send them looking for a button that
+    // isn't theirs.
+    final anySelfHandled = _myProperties
+        .any((p) => p.isNotBookable && p.inspectionHandler != 'agent');
+    final noun = count == 1 ? 'property isn\'t' : 'properties aren\'t';
+    return GestureDetector(
+      onTap: () => setState(() => _currentNavIndex = 1),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.event_busy_outlined,
+                color: AppColors.warning,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$count $noun bookable',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    anySelfHandled
+                        ? 'Approved, but tenants can\'t book an inspection '
+                            'until you confirm it\'s ready to show'
+                        : 'Approved, but your agent still has to vet it '
+                            'before tenants can book',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.warning.withAlpha(204),
                     ),

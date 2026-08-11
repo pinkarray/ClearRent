@@ -460,6 +460,18 @@ class PropertyModel {
   bool get isPendingReview =>
       !isVerified && ownershipDocStatus != 'rejected';
 
+  /// Approved by admin and vacant, but the handler hasn't vetted it — so
+  /// tenants are blocked from booking an inspection and the listing earns
+  /// nothing. Silent unless something surfaces it, which is why the landlord
+  /// home screen counts these.
+  bool get isNotBookable {
+    if (ownershipDocStatus == 'rejected') return false;
+    if (isPendingReview) return false;
+    if ((currentTenantsCount ?? 0) > 0) return false;
+    if (!isAvailable) return false;
+    return !readyForInspections;
+  }
+
   /// One label for the state a landlord actually cares about. Availability
   /// alone can't express this: a listing awaiting review and a listing with a
   /// sitting tenant are both `isAvailable == false`, and calling the first one
@@ -469,9 +481,7 @@ class PropertyModel {
     if (isPendingReview) return 'Pending review';
     if ((currentTenantsCount ?? 0) > 0) return 'Occupied';
     if (!isAvailable) return 'Occupied'; // landlord's own "Mark Occupied"
-    // Approved and vacant, but the handler hasn't vetted it — tenants are
-    // blocked from booking an inspection, so "Available" would be a lie.
-    if (!readyForInspections) return 'Not bookable';
+    if (isNotBookable) return 'Not bookable';
     return 'Available';
   }
 
