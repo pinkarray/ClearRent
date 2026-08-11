@@ -63,11 +63,18 @@ class ActiveRentalService {
   /// tenant with an accepted application and no rental record (no agreement,
   /// no dashboard). The landlord screen offers a "finish setup" action when
   /// this returns false for an accepted interest.
+  ///
+  /// Scoped to the calling landlord: the active_rentals list rule is
+  /// per-document, so a query that doesn't filter on landlordId (or tenantId)
+  /// can't be proven safe and is denied outright.
   Future<bool> hasRentalForInterest(String rentalInterestId) async {
+    final landlordId = _authService.currentUserId;
+    if (landlordId == null) return true;
     try {
       final snap = await _firestore
           .collection('active_rentals')
           .where('rentalInterestId', isEqualTo: rentalInterestId)
+          .where('landlordId', isEqualTo: landlordId)
           .limit(1)
           .get();
       return snap.docs.isNotEmpty;
@@ -90,7 +97,13 @@ class ActiveRentalService {
   ///
   /// Best-effort client guard (rules can't cross-query the collection); the
   /// occupancy CFs remain the source of truth for currentTenantsCount.
+  ///
+  /// Scoped to the calling landlord — see [hasRentalForInterest]. A property
+  /// has exactly one landlord, so this loses no rentals. Unscoped, the list was
+  /// denied and the catch below reported every property as full.
   Future<bool> propertyHasOpenSlot(String propertyId, String tenantId) async {
+    final landlordId = _authService.currentUserId;
+    if (landlordId == null) return false;
     try {
       final propSnap =
           await _firestore.collection('properties').doc(propertyId).get();
@@ -107,6 +120,7 @@ class ActiveRentalService {
       final snap = await _firestore
           .collection('active_rentals')
           .where('propertyId', isEqualTo: propertyId)
+          .where('landlordId', isEqualTo: landlordId)
           .get();
       final takenByOthers = snap.docs.where((d) {
         final data = d.data();

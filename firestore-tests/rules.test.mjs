@@ -723,6 +723,41 @@ test("user lists active rentals by propertyId only — denied", async () => {
   );
 });
 
+// The landlord accept flow's two pre-checks (propertyHasOpenSlot /
+// hasRentalForInterest). Unscoped they are denied for the OWNING landlord too,
+// and both fail closed — which reported "already taken" on an empty property.
+test("landlord lists active rentals by propertyId only — denied", async () => {
+  await assertFails(
+    getDocs(query(collection(landlordDb(), "active_rentals"), where("propertyId", "==", "prop1")))
+  );
+});
+
+test("landlord lists active rentals by propertyId + landlordId — allowed", async () => {
+  await assertSucceeds(
+    getDocs(query(
+      collection(landlordDb(), "active_rentals"),
+      where("propertyId", "==", "prop1"),
+      where("landlordId", "==", LANDLORD),
+    ))
+  );
+});
+
+test("landlord lists active rentals by rentalInterestId only — denied", async () => {
+  await assertFails(
+    getDocs(query(collection(landlordDb(), "active_rentals"), where("rentalInterestId", "==", "ri1")))
+  );
+});
+
+test("landlord lists active rentals by rentalInterestId + landlordId — allowed", async () => {
+  await assertSucceeds(
+    getDocs(query(
+      collection(landlordDb(), "active_rentals"),
+      where("rentalInterestId", "==", "ri1"),
+      where("landlordId", "==", LANDLORD),
+    ))
+  );
+});
+
 // ─── H2: create / update fabrication guards ──────────────────────────────────
 // Clients must not be able to mint already-paid financial state. Positive =
 // the real client write still works; negative = the forgery is closed.
