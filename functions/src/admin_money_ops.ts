@@ -855,6 +855,39 @@ async function writeRentPayoutSideEffects(
     });
   }
 
+  // Tell them the money moved.
+  //
+  // This wrote an activity row and a receipt and nothing else, so the only
+  // way a landlord learned their rent had been sent was to open the app and
+  // notice a line in a feed. Money leaving ClearRent for someone's bank
+  // account is the clearest case there is for a push.
+  //
+  // Keyed off the receipt id, which is already deterministic per rental and
+  // role (PAYOUT_LANDLORD_… / PAYOUT_AGENT_…), so a retried admin action
+  // cannot notify twice.
+  try {
+    await writeNotificationOnce(`notif_${input.receiptDocId}`, {
+      userId: input.beneficiaryId,
+      type: "rent_payout",
+      title: input.activityTitle,
+      body: input.activityMessageBuilder(input.amount, propertyTitle),
+      payload: {
+        // There is no /agent/earnings route; an agent's money lives on their
+        // documents screen, which is where the receipt written below lands.
+        route: input.receiptDocId.startsWith("PAYOUT_AGENT_") ?
+          "/agent/documents" :
+          "/landlord/earnings",
+        rentalId: input.rentalId,
+      },
+    });
+  } catch (err) {
+    logger.error("rent_payout notification write failed", {
+      rentalId: input.rentalId,
+      beneficiaryId: input.beneficiaryId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Payment receipt write (deterministic ID, .create() for idempotency).
   try {
     await db.collection("payments").doc(input.receiptDocId).create({

@@ -184,6 +184,11 @@ class ActivityModel {
       case 'inspection_completed':   return ActivityType.inspectionCompleted;
       case 'inspection_rated':       return ActivityType.inspectionRated;
       case 'payout_received':        return ActivityType.payoutReceived;
+      // What the payout Cloud Functions actually write. Unmapped it fell to
+      // the default below — propertyViewed — so tapping "Rent Payout Sent"
+      // opened the viewer sheet and showed the landlord ClearRent Admin's
+      // details, as though an admin had browsed their listing.
+      case 'rent_payout':            return ActivityType.payoutReceived;
       case 'moveout_requested':      return ActivityType.moveoutRequested;
       case 'moveout_completed':      return ActivityType.moveoutCompleted;
       default:                       return ActivityType.propertyViewed;
