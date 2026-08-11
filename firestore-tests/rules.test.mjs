@@ -1229,3 +1229,87 @@ test("arrival on an inspection with no scheduled date — denied", async () => {
     })
   );
 });
+
+// ── Landlord / agent signup after a profile draft ──────────────────────────
+//
+// Regression for a signup that could never complete. The profile form
+// autosaves a `profileDraft`, which CREATES users/{uid}. The submit then does
+// a merge write — now an UPDATE, not a create — and for landlords and agents
+// that payload seeded `rating` / `totalRatings`, which the owner-update clause
+// refuses outright (audit #2 reserves them to the rating CF). The write was
+// denied every time, so "Failed to save profile. Please try again." was
+// unfixable by retrying. Tenants were unaffected: they seed neither field.
+
+async function seedDraft(uid) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `users/${uid}`), {
+      profileDraft: { fullName: "Tommy Kane", email: "kane@gmail.com" },
+    });
+  });
+}
+
+const profilePayload = (accountType) => ({
+  uid: LANDLORD,
+  fullName: "Tommy Kane",
+  fullNameLower: "tommy kane",
+  email: "kane@gmail.com",
+  accountType,
+  profileCompleted: true,
+  emailVerified: false,
+  phone: "+2349060222222",
+  phoneVerified: true,
+  updatedAt: serverTimestamp(),
+});
+
+test("landlord completes profile over a saved draft — allowed", async () => {
+  await seedDraft(LANDLORD);
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), `users/${LANDLORD}`), profilePayload("landlord"), {
+      merge: true,
+    })
+  );
+});
+
+test("agent completes profile over a saved draft — allowed", async () => {
+  await seedDraft(LANDLORD);
+  await assertSucceeds(
+    setDoc(
+      doc(landlordDb(), `users/${LANDLORD}`),
+      { ...profilePayload("agent"), isVerified: false, totalInspections: 0 },
+      { merge: true }
+    )
+  );
+});
+
+test("seeding rating alongside the profile — denied", async () => {
+  await seedDraft(LANDLORD);
+  await assertFails(
+    setDoc(
+      doc(landlordDb(), `users/${LANDLORD}`),
+      { ...profilePayload("landlord"), rating: 0.0 },
+      { merge: true }
+    )
+  );
+});
+
+test("seeding totalRatings alongside the profile — denied", async () => {
+  await seedDraft(LANDLORD);
+  await assertFails(
+    setDoc(
+      doc(landlordDb(), `users/${LANDLORD}`),
+      { ...profilePayload("landlord"), totalRatings: 0 },
+      { merge: true }
+    )
+  );
+});
+
+test("tenant completes profile over a saved draft — allowed", async () => {
+  await seedDraft(LANDLORD);
+  await assertSucceeds(
+    setDoc(
+      doc(landlordDb(), `users/${LANDLORD}`),
+      { ...profilePayload("tenant"), occupation: "Engineer" },
+      { merge: true }
+    )
+  );
+});

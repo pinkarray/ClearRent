@@ -601,16 +601,18 @@ class AuthService {
         }
         // Agent starts unverified - admin will verify later
         data['isVerified'] = false;
-        data['rating'] = 0.0;
         data['totalInspections'] = 0;
-        data['totalRatings'] = 0;
       }
 
-      // Rating fields for landlords (agents have them above)
-      if (accountType == 'landlord') {
-        data.putIfAbsent('rating', () => 0.0);
-        data.putIfAbsent('totalRatings', () => 0);
-      }
+      // NO rating / totalRatings seeded here, for either agents or landlords.
+      //
+      // Rules reserve those fields to the onInspectionRated CF (audit #2), and
+      // the owner-update clause refuses ANY write that touches them. This is a
+      // merge write, so the moment the doc already exists — which it does as
+      // soon as the form autosaves a profileDraft — it counts as an update and
+      // the whole profile save was denied. Landlords and agents could not
+      // finish signing up at all; tenants were fine only because they seed
+      // nothing. Every reader already defaults a missing rating to 0.
 
       // Add tenant-specific fields
       if (accountType == 'tenant') {
