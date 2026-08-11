@@ -819,6 +819,9 @@ class _LoginScreenState extends State<LoginScreen>
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
+            // Must match what signup saved under, or the manager holds a
+            // credential it never offers back here.
+            autofillHints: const [AutofillHints.username],
             validator: _validateEmail,
             prefixIcon: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -833,6 +836,7 @@ class _LoginScreenState extends State<LoginScreen>
             controller: _passwordController,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.password],
             validator: _validatePassword,
             onSubmitted: (_) => _submitEmail(),
             prefixIcon: Padding(

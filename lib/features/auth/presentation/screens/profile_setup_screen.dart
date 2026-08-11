@@ -430,6 +430,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 AppTextField(
                   label: 'Email Address', hint: 'you@example.com', controller: _emailController,
                   keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next,
+                  // `username` beside a `newPassword` field is what tells an
+                  // autofill service this is a REGISTRATION form — the thing
+                  // that makes it offer to generate and save a password.
+                  autofillHints: const [AutofillHints.username],
                   validator: _validateEmail,
                   prefixIcon: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -440,6 +444,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 AppTextField(
                   label: 'Password', hint: 'At least 6 characters', controller: _passwordController,
                   obscureText: _obscurePassword, textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newPassword],
                   validator: _validatePassword,
                   prefixIcon: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -453,6 +458,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 AppTextField(
                   label: 'Confirm Password', hint: 'Re-enter your password', controller: _confirmPasswordController,
                   obscureText: _obscureConfirmPassword, textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newPassword],
                   validator: _validateConfirmPassword,
                   prefixIcon: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),

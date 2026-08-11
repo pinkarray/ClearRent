@@ -21,6 +21,12 @@ class AppTextField extends StatelessWidget {
   final TextCapitalization textCapitalization;
   final TextInputAction? textInputAction;
 
+  /// What a password manager should treat this field as, e.g.
+  /// [AutofillHints.newPassword]. Without it Android's autofill service has
+  /// nothing to go on, so nothing ever offers to generate or save a password —
+  /// the app-side equivalent of the web's `autocomplete` attribute.
+  final Iterable<String>? autofillHints;
+
   const AppTextField({
     super.key,
     this.label,
@@ -40,6 +46,7 @@ class AppTextField extends StatelessWidget {
     this.focusNode,
     this.textCapitalization = TextCapitalization.none,
     this.textInputAction,
+    this.autofillHints,
   });
 
   @override
@@ -67,6 +74,7 @@ class AppTextField extends StatelessWidget {
           focusNode: focusNode,
           textCapitalization: textCapitalization,
           textInputAction: textInputAction,
+          autofillHints: autofillHints,
           inputFormatters: inputFormatters,
           style: AppTextStyles.bodyLarge,
           decoration: InputDecoration(
