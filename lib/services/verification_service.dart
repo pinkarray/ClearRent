@@ -9,27 +9,32 @@ import '../core/utils/phone_utils.dart';
 
 enum VerificationStatus { none, pending, verified, rejected, expired }
 
-// Verification fee structure
+// Verification fee structure.
+//
+// UNUSED — every screen reads PlatformPricing (pricing_service.dart), which
+// loads config/pricing so a price can change without a store release. Kept
+// only because functions/src/pricing.ts names this as the client mirror; the
+// numbers are maintained so it cannot mislead, not because anything calls it.
+//
+// Renewal is cheaper than the first time: it re-collects the role proof only,
+// never the NIN, which is permanent and carried forward.
 class VerificationFees {
-  static const double landlordFee = 12000;
-  static const double tenantFee = 3000;
-  static const double agentFee = 7000;
+  static const double landlordInitialFee = 15000;
+  static const double landlordRenewalFee = 12000;
+  static const double tenantInitialFee = 5000;
+  static const double tenantRenewalFee = 3000;
+  static const double agentInitialFee = 10000;
+  static const double agentRenewalFee = 7000;
 
-  static double getFee(String accountType) {
+  static double getFee(String accountType, {bool isRenewal = false}) {
     switch (accountType) {
-      case 'landlord': return landlordFee;
-      case 'tenant': return tenantFee;
-      case 'agent': return agentFee;
+      case 'landlord':
+        return isRenewal ? landlordRenewalFee : landlordInitialFee;
+      case 'tenant':
+        return isRenewal ? tenantRenewalFee : tenantInitialFee;
+      case 'agent':
+        return isRenewal ? agentRenewalFee : agentInitialFee;
       default: return 0;
-    }
-  }
-
-  static String getFeeLabel(String accountType) {
-    switch (accountType) {
-      case 'landlord': return '₦12,000';
-      case 'tenant': return '₦3,000';
-      case 'agent': return '₦7,000';
-      default: return '₦0';
     }
   }
 }

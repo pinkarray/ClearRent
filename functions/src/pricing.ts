@@ -17,8 +17,20 @@ import * as logger from "firebase-functions/logger";
 import {HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 
+/**
+ * What a role pays to verify, first time versus every year after.
+ *
+ * Renewal is cheaper because it re-collects only the role proof, not identity
+ * — NIN is permanent and is carried forward. The gap is the discount for
+ * already being known to the platform.
+ */
+export interface RoleFee {
+  initial: number;
+  renewal: number;
+}
+
 export interface PricingConfig {
-  verification: {tenant: number; landlord: number; agent: number};
+  verification: {tenant: RoleFee; landlord: RoleFee; agent: RoleFee};
   listing: number;
   inspection: {total: number; handler: number; platform: number};
   /** Deal-completion fee charged per party on a completed rental. */
@@ -32,11 +44,39 @@ export interface PricingConfig {
  * before the document is seeded.
  */
 export const DEFAULT_PRICING: PricingConfig = {
-  verification: {tenant: 3000, landlord: 12000, agent: 7000},
+  verification: {
+    tenant: {initial: 5000, renewal: 3000},
+    landlord: {initial: 15000, renewal: 12000},
+    agent: {initial: 10000, renewal: 7000},
+  },
   listing: 10000,
   inspection: {total: 10000, handler: 7000, platform: 3000},
   dealFee: 5000,
 };
+
+/**
+ * Accepts either shape for a role's fee.
+ *
+ * The seeded config/pricing document holds a bare number per role, from before
+ * initial and renewal were distinguished. Reading that number as BOTH prices
+ * keeps behaviour identical until the document is rewritten, so deploying this
+ * code cannot by itself change what anyone is charged.
+ *
+ * @param {unknown} value Raw value from the config document.
+ * @param {RoleFee} fallback Default for this role.
+ * @return {RoleFee} Normalised initial/renewal pair.
+ */
+function toRoleFee(value: unknown, fallback: RoleFee): RoleFee {
+  if (typeof value === "number") return {initial: value, renewal: value};
+  if (value && typeof value === "object") {
+    const v = value as Partial<RoleFee>;
+    return {
+      initial: typeof v.initial === "number" ? v.initial : fallback.initial,
+      renewal: typeof v.renewal === "number" ? v.renewal : fallback.renewal,
+    };
+  }
+  return fallback;
+}
 
 /**
  * Read the pricing schedule, falling back per-field to DEFAULT_PRICING so a
@@ -49,16 +89,21 @@ export async function getPricing(): Promise<PricingConfig> {
       .collection("config")
       .doc("pricing")
       .get();
-    const d = (snap.data() ?? {}) as Partial<PricingConfig>;
+    const d = (snap.data() ?? {}) as Record<string, unknown>;
+    const v = (d.verification ?? {}) as Record<string, unknown>;
     return {
       verification: {
-        ...DEFAULT_PRICING.verification,
-        ...(d.verification ?? {}),
+        tenant: toRoleFee(v.tenant, DEFAULT_PRICING.verification.tenant),
+        landlord: toRoleFee(v.landlord, DEFAULT_PRICING.verification.landlord),
+        agent: toRoleFee(v.agent, DEFAULT_PRICING.verification.agent),
       },
       listing: typeof d.listing === "number" ?
         d.listing :
         DEFAULT_PRICING.listing,
-      inspection: {...DEFAULT_PRICING.inspection, ...(d.inspection ?? {})},
+      inspection: {
+        ...DEFAULT_PRICING.inspection,
+        ...((d.inspection ?? {}) as Partial<PricingConfig["inspection"]>),
+      },
       dealFee: typeof d.dealFee === "number" ?
         d.dealFee :
         DEFAULT_PRICING.dealFee,
@@ -223,10 +268,25 @@ export async function resolveServerAmount(
 
   if (type === "verification") {
     const snap = await getFirestore().collection("users").doc(uid).get();
-    const accountType = snap.data()?.accountType as string | undefined;
-    const fees = pricing.verification as Record<string, number | undefined>;
+    const user = snap.data();
+    const accountType = user?.accountType as string | undefined;
+    const fees = pricing.verification as Record<string, RoleFee | undefined>;
     const fee = accountType ? fees[accountType] : undefined;
-    if (typeof fee === "number") return fee;
+    if (fee) {
+      // Renewal is decided HERE, from `verifiedAt`, and never from anything the
+      // caller sends. That field is stamped only when an admin approves a
+      // verification (verification_ops.ts), so "have they ever been verified"
+      // is a fact the client cannot assert its way into. The app's own
+      // `isRenewal` flag — derived from whether a NIN file was attached — is
+      // fine for choosing which form to show, but it is a client claim and
+      // would be a discount anyone could take by omitting a file.
+      //
+      // Deliberately NOT keyed on status == 'expired': someone renewing early,
+      // while still verified, is renewing too. Rejected-and-resubmitting has no
+      // verifiedAt and correctly pays the initial fee.
+      const isRenewal = user?.verifiedAt != null;
+      return isRenewal ? fee.renewal : fee.initial;
+    }
 
     // Unknown role — fall through to the caller's amount rather than blocking
     // a legitimate payment on a malformed profile.

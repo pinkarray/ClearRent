@@ -81,7 +81,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   // _pricing holds the compiled-in fallback until the remote load lands.
   PlatformPricing _pricing = PlatformPricing.fallback;
 
-  double get _verificationFee => _pricing.verificationFee(_accountType);
+  /// Whether this user has ever completed a verification. Mirrors the server's
+  /// renewal test; see where it is set in _loadUserDataAndVerificationStatus.
+  bool _everVerified = false;
+
+  double get _verificationFee =>
+      _pricing.verificationFee(_accountType, isRenewal: _everVerified);
   String get _verificationFeeLabel =>
       PlatformPricing.formatNaira(_verificationFee);
 
@@ -100,6 +105,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     if (profile != null && mounted) {
       setState(() {
         _accountType = profile['accountType'] ?? 'landlord';
+        // The SAME signal the server prices on (resolveServerAmount reads
+        // verifiedAt). Deriving the displayed fee from the renewal FORM state
+        // instead would let the two disagree — and the disagreement the user
+        // would notice is being quoted the renewal price and charged the
+        // first-time one.
+        _everVerified = profile['verifiedAt'] != null;
       });
     }
 

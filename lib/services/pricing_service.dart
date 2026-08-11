@@ -16,10 +16,40 @@ import '../core/utils/inspection_pricing.dart';
 ///
 /// Note this copy is DISPLAY-ONLY: the server derives the amount it actually
 /// charges from the same document, so a tampered client cannot change a price.
+/// What a role pays to verify, first time versus every year after.
+///
+/// Renewal is cheaper because it re-collects only the role proof, not identity
+/// — the NIN is permanent and carried forward.
+class RoleFee {
+  final double initial;
+  final double renewal;
+
+  const RoleFee({required this.initial, required this.renewal});
+
+  /// Accepts either shape from `config/pricing`.
+  ///
+  /// The document held a bare number per role before initial and renewal were
+  /// distinguished. Reading that as BOTH prices keeps a stale document
+  /// behaving exactly as it does today rather than silently repricing.
+  factory RoleFee.fromValue(dynamic value, RoleFee fallback) {
+    if (value is num) {
+      return RoleFee(
+          initial: value.toDouble(), renewal: value.toDouble());
+    }
+    if (value is Map) {
+      return RoleFee(
+        initial: PlatformPricing._asDouble(value['initial'], fallback.initial),
+        renewal: PlatformPricing._asDouble(value['renewal'], fallback.renewal),
+      );
+    }
+    return fallback;
+  }
+}
+
 class PlatformPricing {
-  final double tenantVerification;
-  final double landlordVerification;
-  final double agentVerification;
+  final RoleFee tenantVerification;
+  final RoleFee landlordVerification;
+  final RoleFee agentVerification;
   final double listing;
   final double inspectionTotal;
   final double inspectionHandler;
@@ -42,9 +72,9 @@ class PlatformPricing {
 
   /// Mirrors DEFAULT_PRICING in functions/src/pricing.ts.
   static const PlatformPricing fallback = PlatformPricing(
-    tenantVerification: 3000,
-    landlordVerification: 12000,
-    agentVerification: 7000,
+    tenantVerification: RoleFee(initial: 5000, renewal: 3000),
+    landlordVerification: RoleFee(initial: 15000, renewal: 12000),
+    agentVerification: RoleFee(initial: 10000, renewal: 7000),
     listing: 10000,
     inspectionTotal: 10000,
     inspectionHandler: 7000,
@@ -52,17 +82,21 @@ class PlatformPricing {
     dealFee: 5000,
   );
 
-  double verificationFee(String accountType) {
-    switch (accountType) {
-      case 'landlord':
-        return landlordVerification;
-      case 'tenant':
-        return tenantVerification;
-      case 'agent':
-        return agentVerification;
-      default:
-        return 0;
-    }
+  /// The fee to show for [accountType].
+  ///
+  /// [isRenewal] must be derived the same way the server derives it — from
+  /// whether the user has EVER been verified (`verifiedAt`) — or the price on
+  /// screen will not be the price charged. The server is authoritative either
+  /// way; this only decides what the user is told.
+  double verificationFee(String accountType, {bool isRenewal = false}) {
+    final fee = switch (accountType) {
+      'landlord' => landlordVerification,
+      'tenant' => tenantVerification,
+      'agent' => agentVerification,
+      _ => null,
+    };
+    if (fee == null) return 0;
+    return isRenewal ? fee.renewal : fee.initial;
   }
 
   static double _asDouble(dynamic value, double fallbackValue) =>
@@ -73,10 +107,12 @@ class PlatformPricing {
     final v = (map['verification'] as Map<String, dynamic>?) ?? const {};
     final i = (map['inspection'] as Map<String, dynamic>?) ?? const {};
     return PlatformPricing(
-      tenantVerification: _asDouble(v['tenant'], fallback.tenantVerification),
+      tenantVerification:
+          RoleFee.fromValue(v['tenant'], fallback.tenantVerification),
       landlordVerification:
-          _asDouble(v['landlord'], fallback.landlordVerification),
-      agentVerification: _asDouble(v['agent'], fallback.agentVerification),
+          RoleFee.fromValue(v['landlord'], fallback.landlordVerification),
+      agentVerification:
+          RoleFee.fromValue(v['agent'], fallback.agentVerification),
       listing: _asDouble(map['listing'], fallback.listing),
       inspectionTotal: _asDouble(i['total'], fallback.inspectionTotal),
       inspectionHandler: _asDouble(i['handler'], fallback.inspectionHandler),
