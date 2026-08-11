@@ -18,7 +18,9 @@
  */
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {onSchedule} from "firebase-functions/v2/scheduler";
+import {getFirestore, FieldValue, Timestamp}
+  from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import {assertAdmin, writeAuditLog} from "./admin_helpers";
 import {writeAdminAlertOnce} from "./admin_alerts";
@@ -31,8 +33,24 @@ const callableOptions = {
 
 type PayoutRole = "landlord" | "agent";
 
-/** Receipt states. Absent on the doc means "awaiting the beneficiary". */
-type ReceiptState = "confirmed" | "disputed" | "resolved";
+/**
+ * Receipt states. `awaiting` is stamped when the payout is marked paid;
+ * absent means the same thing on a doc paid before this shipped.
+ */
+type ReceiptState = "awaiting" | "confirmed" | "disputed" | "resolved";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Days after "sent" that we nudge the beneficiary to answer. */
+const REMIND_DAYS = [3, 7];
+
+/**
+ * Days of total silence after which the ADMIN is told. Silence is not consent:
+ * a beneficiary who never answers may simply not have noticed the money is
+ * missing, so someone has to look rather than the record quietly reading
+ * "awaiting" forever.
+ */
+const ESCALATE_DAY = 10;
 
 /**
  * Field names for one role's receipt. Landlord and agent are exact mirrors, so
@@ -408,5 +426,117 @@ export const resolvePayoutDispute = onCall(
 
     logger.info("Payout dispute resolved", {rentalId, role, adminUid});
     return {success: true};
+  },
+);
+
+// ============================================================
+// 3. Chase an unanswered payout, then tell an admin.
+//
+// Without this a payout nobody answered reads "awaiting confirmation"
+// forever, which is indistinguishable from a payout that silently failed —
+// the exact ambiguity this whole feature exists to remove.
+//
+// It deliberately does NOT auto-confirm. Auto-confirming would write "the
+// beneficiary said it arrived" when they never did, manufacturing the very
+// certainty an admin is meant to rely on. The move-out flow can auto-confirm
+// because silence there means "no objection"; silence about money cannot be
+// read as "yes, I got it".
+//
+// Queries the TRANSIENT `awaiting` state, which the beneficiary's answer
+// clears, so the scanned set stays small instead of growing with every rental
+// ever paid.
+// ============================================================
+export const payoutReceiptSweep = onSchedule(
+  {schedule: "every day 10:00", timeZone: "Africa/Lagos", timeoutSeconds: 300},
+  async () => {
+    const db = getFirestore();
+    const now = Date.now();
+    let reminded = 0;
+    let escalated = 0;
+
+    for (const role of ["landlord", "agent"] as PayoutRole[]) {
+      const f = fieldsFor(role);
+      const snap = await db
+        .collection("active_rentals")
+        .where(f.receipt, "==", "awaiting")
+        .get();
+
+      for (const doc of snap.docs) {
+        const d = doc.data();
+        const rentalId = doc.id;
+        const paidAtKey =
+          role === "landlord" ? "landlordPaidAt" : "agentPaidAt";
+        const paidAt = d[paidAtKey] as Timestamp | undefined;
+        if (!paidAt) continue;
+
+        const ageDays = Math.floor((now - paidAt.toMillis()) / DAY_MS);
+        const beneficiaryId = d[f.beneficiaryId] as string | undefined;
+        const propertyTitle =
+          (d.propertyTitle as string | undefined) ?? "your property";
+        const amount = Number(
+          d[role === "landlord" ? "landlordPayout" : "agentPayout"] ?? 0,
+        );
+
+        try {
+          if (REMIND_DAYS.includes(ageDays) && beneficiaryId) {
+            const wrote = await writeNotificationOnce(
+              `payout_confirm_${role}_D${ageDays}_${rentalId}`,
+              {
+                userId: beneficiaryId,
+                type: "rent_payout",
+                title: "Did your payout arrive?",
+                body:
+                  `We sent ₦${amount.toLocaleString("en-NG")} for ` +
+                  `${propertyTitle}. Tell us whether it reached your bank ` +
+                  "account — if it didn't, we'll trace it.",
+                payload: {
+                  route: role === "agent" ?
+                    "/agent/documents" :
+                    "/landlord/documents",
+                  rentalId,
+                },
+              },
+            );
+            if (wrote) reminded++;
+          }
+
+          if (ageDays >= ESCALATE_DAY) {
+            // WARNING, not info — info does not push to admin devices, and
+            // this is money whose arrival nobody has ever confirmed. Once per
+            // rental+role: writeAdminAlertOnce is a no-op after the first.
+            const wrote = await writeAdminAlertOnce(
+              `payout_unconfirmed_${role}_${rentalId}`,
+              {
+                type: "payout_unconfirmed",
+                severity: "warning",
+                title: `Payout unconfirmed after ${ageDays} days`,
+                body:
+                  `₦${amount.toLocaleString("en-NG")} for ${propertyTitle} ` +
+                  `was marked paid ${ageDays} days ago and the ${role} has ` +
+                  "neither confirmed nor disputed it. Check the transfer " +
+                  "actually landed.",
+                targetCollection: "active_rentals",
+                targetId: rentalId,
+                actors: {
+                  landlordId: (d.landlordId as string | undefined) || undefined,
+                  agentId: (d.agentId as string | undefined) || undefined,
+                  tenantId: (d.tenantId as string | undefined) || undefined,
+                },
+                meta: {role, amount, ageDays},
+              },
+            );
+            if (wrote) escalated++;
+          }
+        } catch (err) {
+          logger.error("payoutReceiptSweep item failed", {
+            rentalId,
+            role,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    logger.info("payoutReceiptSweep complete", {reminded, escalated});
   },
 );

@@ -4288,6 +4288,7 @@ export {
 export {
   confirmPayoutReceipt,
   resolvePayoutDispute,
+  payoutReceiptSweep,
 } from "./payout_receipt";
 
 export {

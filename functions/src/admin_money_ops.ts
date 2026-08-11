@@ -473,6 +473,10 @@ export const markRentLandlordPayoutPaid = onCall(
           landlordPaidBy: adminUid,
           landlordPaymentReference: input.paymentReference,
           landlordPaymentNote: input.paymentNote,
+          // Opens the receipt question. A TRANSIENT state the beneficiary's
+          // answer clears, which is what lets payoutReceiptSweep query a
+          // bounded set instead of every rental ever paid.
+          landlordPayoutReceipt: "awaiting",
         });
 
         return {
@@ -566,6 +570,8 @@ export const markRentAgentCommissionPaid = onCall(
           agentPaidBy: adminUid,
           agentPaymentReference: input.paymentReference,
           agentPaymentNote: input.paymentNote,
+          // See the landlord branch — transient, cleared by the agent's answer.
+          agentPayoutReceipt: "awaiting",
         });
 
         return {
