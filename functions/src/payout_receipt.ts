@@ -392,7 +392,7 @@ export const resolvePayoutDispute = onCall(
             payload: {
               route: role === "agent" ?
                 "/agent/documents" :
-                "/landlord/earnings",
+                "/landlord/documents",
               rentalId,
             },
           },

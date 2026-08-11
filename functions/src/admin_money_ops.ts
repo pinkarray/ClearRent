@@ -872,11 +872,13 @@ async function writeRentPayoutSideEffects(
       title: input.activityTitle,
       body: input.activityMessageBuilder(input.amount, propertyTitle),
       payload: {
-        // There is no /agent/earnings route; an agent's money lives on their
-        // documents screen, which is where the receipt written below lands.
+        // Both roles go to their documents screen: that is where the receipt
+        // written below lands, and it now carries the "did this reach your
+        // bank account?" prompt. /landlord/earnings reads `transactions` and
+        // would show the notification's subject nowhere on the page.
         route: input.receiptDocId.startsWith("PAYOUT_AGENT_") ?
           "/agent/documents" :
-          "/landlord/earnings",
+          "/landlord/documents",
         rentalId: input.rentalId,
       },
     });

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../../core/constants/colors.dart';
@@ -226,7 +227,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                           children: [
                             _buildPaymentsSummary(),
                             const SizedBox(height: 16),
-                            ..._payments.map((p) => _buildPaymentCard(p)),
+                            ..._payments.map((p) => _buildPaymentEntry(p)),
                           ],
                         ),
                       ),
@@ -298,7 +299,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           else ...[
             _buildPaymentsSummary(),
             const SizedBox(height: 16),
-            ..._payments.map((p) => _buildPaymentCard(p)),
+            ..._payments.map((p) => _buildPaymentEntry(p)),
           ],
         ],
       ),
@@ -743,6 +744,18 @@ class _DocumentsScreenState extends State<DocumentsScreen>
     );
   }
 
+  /// A payment row, plus the confirm/dispute strip when it's a payout the
+  /// signed-in user is the beneficiary of.
+  Widget _buildPaymentEntry(Map<String, dynamic> payment) {
+    final strip = _buildPayoutReceiptStrip(payment);
+    final card = _buildPaymentCard(payment);
+    if (strip == null) return card;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [card, strip],
+    );
+  }
+
   Widget _buildPaymentCard(Map<String, dynamic> payment) {
     final type = payment['type'] as String? ?? 'unknown';
     final amount = (payment['amount'] as num?)?.toDouble() ?? 0;
@@ -855,6 +868,214 @@ class _DocumentsScreenState extends State<DocumentsScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // PAYOUT RECEIPT — "did the money actually land?"
+  //
+  // Marking a payout paid only ever recorded that ClearRent SENT it. This is
+  // the beneficiary's side of that. Lives on the payments receipt because it
+  // is the one payout surface BOTH roles can read — an agent is not a party to
+  // active_rentals at all.
+  // ────────────────────────────────────────────────────────────────────
+
+  /// The confirm/dispute strip under a `rent_payout` receipt, or null when the
+  /// payment isn't a payout we can act on.
+  Widget? _buildPayoutReceiptStrip(Map<String, dynamic> payment) {
+    if (payment['type'] != 'rent_payout') return null;
+    final rentalId = payment['relatedId'] as String?;
+    if (rentalId == null || rentalId.isEmpty) return null;
+
+    final state = payment['receiptState'] as String?;
+
+    Widget wrap(Color color, IconData icon, String text, {Widget? action}) =>
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withAlpha(60)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 16, color: color),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+              if (action != null) ...[const SizedBox(height: 10), action],
+            ],
+          ),
+        );
+
+    switch (state) {
+      case 'confirmed':
+        return wrap(AppColors.success, Icons.verified,
+            'You confirmed this payout arrived.');
+      case 'disputed':
+        return wrap(AppColors.warning, Icons.error_outline,
+            'You reported this as never received. We\'re looking into it.');
+      case 'resolved':
+        final note = payment['receiptResolutionNote'] as String? ?? '';
+        return wrap(
+          AppColors.info,
+          Icons.gavel,
+          note.isEmpty ? 'This report has been resolved.' : note,
+        );
+      default:
+        return wrap(
+          AppColors.primary,
+          Icons.help_outline,
+          'Did this reach your bank account?',
+          action: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _submitPayoutReceipt(rentalId, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: BorderSide(color: AppColors.error.withAlpha(90)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: const Text('No, it didn\'t'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _submitPayoutReceipt(rentalId, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: const Text('Yes, received'),
+                ),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
+  /// Confirm, or collect a reason and dispute. Reloads on success so the strip
+  /// reflects the new state — the payments list is a one-shot read.
+  Future<void> _submitPayoutReceipt(String rentalId, bool received) async {
+    String? reason;
+    if (!received) {
+      reason = await _askDisputeReason();
+      // Cancelled the reason prompt — don't file a dispute they backed out of.
+      if (reason == null || reason.trim().isEmpty) return;
+    }
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('confirmPayoutReceipt')
+          .call<Map<String, dynamic>>({
+        'rentalId': rentalId,
+        'action': received ? 'confirm' : 'dispute',
+        if (!received) 'reason': reason!.trim(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(received
+              ? 'Thanks — payout confirmed.'
+              : 'Reported. An admin will look into it.'),
+          backgroundColor:
+              received ? AppColors.success : AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      await _loadData();
+    } on FirebaseFunctionsException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          // The CF's failed-precondition messages are written for this user
+          // ("You already confirmed this payout"), so show them as-is.
+          content: Text(e.message ?? 'Could not record that. Try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      AppLogger.e('Payout receipt failed: $e', name: 'DocumentsScreen');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not record that. Try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  Future<String?> _askDisputeReason() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Payout not received'),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tell us what you\'re seeing so an admin can trace the transfer.',
+              style: AppTextStyles.bodySmall
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'e.g. Nothing has come into my GTBank account.',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Report'),
+          ),
+        ],
       ),
     );
   }
