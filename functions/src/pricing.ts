@@ -35,6 +35,16 @@ export interface PricingConfig {
   inspection: {total: number; handler: number; platform: number};
   /** Deal-completion fee charged per party on a completed rental. */
   dealFee: number;
+  /**
+   * Lowest rent a property may be listed at.
+   *
+   * At or below `dealFee` the fee consumes the whole rent and the landlord
+   * nets nothing — createRentalInterest clamps the split at zero rather than
+   * letting it go negative, so the listing is not broken, just pointless.
+   * Configurable (rather than derived from dealFee) because testing wants tiny
+   * rents to keep card charges small while production wants a real floor.
+   */
+  minRent: number;
 }
 
 /**
@@ -52,6 +62,7 @@ export const DEFAULT_PRICING: PricingConfig = {
   listing: 10000,
   inspection: {total: 10000, handler: 7000, platform: 3000},
   dealFee: 5000,
+  minRent: 10000,
 };
 
 /**
@@ -107,6 +118,9 @@ export async function getPricing(): Promise<PricingConfig> {
       dealFee: typeof d.dealFee === "number" ?
         d.dealFee :
         DEFAULT_PRICING.dealFee,
+      minRent: typeof d.minRent === "number" ?
+        d.minRent :
+        DEFAULT_PRICING.minRent,
     };
   } catch (err) {
     logger.warn("Pricing config unreadable — using defaults", {

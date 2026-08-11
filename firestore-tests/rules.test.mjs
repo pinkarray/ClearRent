@@ -509,6 +509,57 @@ test("creating a unit in a building the caller owns — allowed", async () => {
   );
 });
 
+// ─── rent floor ──────────────────────────────────────────────────────────────
+// Below the floor the deal fee eats the whole rent and the landlord nets zero,
+// so the listing can never pay anyone. Read from config/pricing (absent here,
+// so the rule's 10000 default applies).
+test("creating a unit below the rent floor — denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_cheap"), {
+      ...newUnit(LANDLORD, null),
+      rent: 2000,
+    })
+  );
+});
+
+test("creating a unit exactly at the rent floor — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "properties/p_floor"), {
+      ...newUnit(LANDLORD, null),
+      rent: 10000,
+    })
+  );
+});
+
+test("creating a unit with no rent at all — denied", async () => {
+  const { rent, ...noRent } = newUnit(LANDLORD, null);
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_norent"), noRent)
+  );
+});
+
+test("editing rent DOWN below the floor — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_standalone"), { rent: 3000 })
+  );
+});
+
+test("editing a sub-floor listing without touching rent — allowed", async () => {
+  // Listings created before the floor existed must stay editable; they only
+  // have to meet the floor if their rent is touched.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_legacy_cheap"), {
+      ...newUnit(LANDLORD, null),
+      rent: 2000,
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_legacy_cheap"), {
+      title: "Renamed",
+    })
+  );
+});
+
 test("creating a unit in ANOTHER owner's building — denied", async () => {
   // OTHER is a verified landlord, but b1 belongs to LANDLORD.
   await assertFails(

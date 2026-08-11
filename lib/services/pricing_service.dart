@@ -59,6 +59,12 @@ class PlatformPricing {
   /// tenant's share added on top of rent at payment time.
   final double dealFee;
 
+  /// Lowest rent a property may be listed at. Below it the deal fee consumes
+  /// the whole rent and the landlord nets nothing, so the listing can never
+  /// pay anyone. Enforced server-side in firestore.rules; mirrored here only
+  /// so the add-property form can say so before the write is refused.
+  final double minRent;
+
   const PlatformPricing({
     required this.tenantVerification,
     required this.landlordVerification,
@@ -68,6 +74,7 @@ class PlatformPricing {
     required this.inspectionHandler,
     required this.inspectionPlatform,
     required this.dealFee,
+    required this.minRent,
   });
 
   /// Mirrors DEFAULT_PRICING in functions/src/pricing.ts.
@@ -80,6 +87,7 @@ class PlatformPricing {
     inspectionHandler: 7000,
     inspectionPlatform: 3000,
     dealFee: 5000,
+    minRent: 10000,
   );
 
   /// The fee to show for [accountType].
@@ -119,6 +127,7 @@ class PlatformPricing {
       inspectionPlatform:
           _asDouble(i['platform'], fallback.inspectionPlatform),
       dealFee: _asDouble(map['dealFee'], fallback.dealFee),
+      minRent: _asDouble(map['minRent'], fallback.minRent),
     );
   }
 

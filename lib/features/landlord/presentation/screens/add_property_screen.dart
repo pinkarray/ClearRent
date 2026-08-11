@@ -1120,6 +1120,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please enter a valid rent amount');
           return false;
         }
+        // Rent floor. Below it the deal fee takes the whole rent and the
+        // landlord is paid nothing, so the listing can never complete a deal.
+        // firestore.rules enforces this for real; saying it here turns an
+        // opaque permission failure at the end of the form into a fixable
+        // message on the step that caused it.
+        final pricing = PricingService().current;
+        if (_parseRentAmount() < pricing.minRent) {
+          _showError(
+            'Rent must be at least '
+            '${PlatformPricing.formatNaira(pricing.minRent)}. Below that the '
+            '${PlatformPricing.formatNaira(pricing.dealFee)} deal fee would '
+            'leave you with nothing.',
+          );
+          return false;
+        }
         if (_includeAgentFee) {
           if (_agentFeeController.text.isEmpty) {
             _showError('Please enter the agent fee');

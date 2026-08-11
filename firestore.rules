@@ -227,6 +227,31 @@ service cloud.firestore {
         return s in ['none', 'not_uploaded', 'pending', 'inherited'];
       }
 
+      // Rent floor. At or below the deal fee the fee consumes the whole rent
+      // and the landlord nets nothing — createRentalInterest clamps the split
+      // at zero rather than going negative, so such a listing isn't broken,
+      // just a dead end nobody can be paid from.
+      //
+      // Read from config/pricing so it can be lowered to test with small card
+      // charges and raised for launch WITHOUT an app release — same reason
+      // config/areas is remote. Defaults to 10000 when the field is absent, so
+      // this rule is safe to deploy before the config doc is updated.
+      //
+      // Declared inside this match block because only properties use it; a
+      // helper shared across blocks must live at the document root or it
+      // resolves to nothing and denies at runtime.
+      // The exists() guard matters: get() on a MISSING document yields null,
+      // and reading .data off it is an evaluation error, which denies. Without
+      // it, deleting config/pricing would silently block every new listing.
+      function meetsMinRent() {
+        return request.resource.data.get('rent', 0) >= (
+          exists(/databases/$(database)/documents/config/pricing)
+            ? get(/databases/$(database)/documents/config/pricing)
+                .data.get('minRent', 10000)
+            : 10000
+        );
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -272,7 +297,8 @@ service cloud.firestore {
             ? (request.resource.data.get('ownershipDocStatus', 'none') == 'inherited'
                 && !request.resource.data.keys().hasAny(['ownershipDocUrl', 'ownershipDocType']))
             : request.resource.data.get('ownershipDocStatus', 'none') != 'inherited'
-        );
+        )
+        && meetsMinRent();
 
       // Update: owner can edit own listing, but cannot reassign
       // ownership (closes listing-hijack via landlordId rewrite) and cannot
@@ -305,6 +331,12 @@ service cloud.firestore {
           !changed(['isAvailable'])
           || resource.data.get('handoverPending', false) == false
         )
+        // The rent floor holds on edit too — otherwise it is create-only and
+        // an owner lists at the floor then drops the rent afterwards. Gated on
+        // `rent` actually changing so listings created BEFORE the floor
+        // existed stay editable for everything else; they only have to come up
+        // to the floor if their rent is touched.
+        && (!changed(['rent']) || meetsMinRent())
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
