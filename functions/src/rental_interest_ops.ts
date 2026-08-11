@@ -147,9 +147,25 @@ export const createRentalInterest = onCall(
     // Same composition the client used: rent + agent fee + the tenant's share
     // of the deal-completion fee. The caution deposit is NOT collected here.
     const paymentAmount = rentAmount + agentFee + dealFee;
-    const landlordPayout = rentAmount - dealFee;
-    const agentPayout = hasAgent ? agentFee - dealFee : 0;
-    const clearrentEarnings = dealFee * (hasAgent ? 3 : 2);
+
+    // Each party pays a deal fee out of their OWN proceeds — the tenant on
+    // top, the landlord out of the rent, the agent out of the agent fee. A fee
+    // can therefore only be taken from money that party is actually owed.
+    //
+    // Unclamped, a rent (or agent fee) at or below the fee produced a NEGATIVE
+    // payout, and `dealFee * parties` then booked the shortfall as revenue —
+    // income never collected and impossible to realise, since nobody is ever
+    // sent a negative transfer. It reconciled on paper only because the
+    // negative payout cancelled the inflated take: one live rental claimed
+    // ₦15,000 kept out of a ₦7,200 payment.
+    const landlordDealFee = Math.min(dealFee, rentAmount);
+    const agentDealFee = hasAgent ? Math.min(dealFee, agentFee) : 0;
+    const landlordPayout = rentAmount - landlordDealFee;
+    const agentPayout = hasAgent ? agentFee - agentDealFee : 0;
+
+    // What is genuinely kept is whatever the tenant paid that is not being
+    // sent on. Derived, never asserted, so it cannot exceed the money held.
+    const clearrentEarnings = paymentAmount - landlordPayout - agentPayout;
 
     const ref = await db.collection("rental_interests").add({
       inspectionRequestId,
@@ -173,8 +189,10 @@ export const createRentalInterest = onCall(
       rentAmount,
       agentFee,
       tenantDealFee: dealFee,
-      landlordDealFee: dealFee,
-      agentDealFee: hasAgent ? dealFee : 0,
+      // The fee ACTUALLY taken, not the headline one, so admin can see when a
+      // party's proceeds could not cover it.
+      landlordDealFee,
+      agentDealFee,
       landlordPayout,
       agentPayout,
       clearrentEarnings,
