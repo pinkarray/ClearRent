@@ -1,7 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../../shared/utils/agreement_file_picker.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -81,7 +81,8 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
     }
 
     if (!mounted) return;
-    final file = await AgreementFilePicker.pick(context);
+    final file = await DocumentFilePicker.pick(context,
+        hint: 'A multi-page agreement should be a single PDF.');
     if (file == null || !mounted) return;
 
     setState(() => _busy = true);

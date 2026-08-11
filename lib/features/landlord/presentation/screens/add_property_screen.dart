@@ -12,6 +12,7 @@ import '../../../../shared/widgets/description_prompts.dart';
 import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
@@ -4523,12 +4524,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   Future<void> _pickOwnershipDoc() async {
     try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 90,
+      // A C of O or deed of assignment is several pages. Picking a single
+      // gallery image meant a landlord could submit page one and nothing else,
+      // so an honest document could not be uploaded at all.
+      final file = await DocumentFilePicker.pick(
+        context,
+        hint: 'A C of O or deed runs to several pages — upload it as one PDF.',
       );
-      if (image != null) {
-        setState(() => _ownershipDocFile = File(image.path));
+      if (file != null) {
+        setState(() => _ownershipDocFile = file);
       }
     } catch (e) {
       if (mounted) {

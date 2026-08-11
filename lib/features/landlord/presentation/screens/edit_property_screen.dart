@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../shared/widgets/description_prompts.dart';
@@ -2149,15 +2150,17 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   Future<void> _pickOwnershipDoc() async {
-    // Use image picker — covers JPG/PNG; landlords can photograph the document
     try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 90,
+      // PDF or image — a title document is rarely one page, and re-uploading
+      // here is exactly what a landlord does after a rejection for an
+      // unreadable or incomplete document.
+      final file = await DocumentFilePicker.pick(
+        context,
+        hint: 'A C of O or deed runs to several pages — upload it as one PDF.',
       );
-      if (image != null) {
+      if (file != null) {
         setState(() {
-          _newOwnershipDocFile = File(image.path);
+          _newOwnershipDocFile = file;
           _hasChanges = true;
         });
       }

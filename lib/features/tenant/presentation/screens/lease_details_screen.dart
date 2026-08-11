@@ -10,7 +10,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/rental_interest_service.dart';
-import '../../../../shared/utils/agreement_file_picker.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -732,7 +732,8 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     if (confirmed != true) return;
 
     if (!mounted) return;
-    final file = await AgreementFilePicker.pick(context);
+    final file = await DocumentFilePicker.pick(context,
+        hint: 'A multi-page agreement should be a single PDF.');
     if (file == null || !mounted) return;
 
     setState(() => _isAccepting = true);

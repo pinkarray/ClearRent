@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../shared/utils/agreement_file_picker.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:developer' as developer;
@@ -391,7 +391,8 @@ class _AgreementCardState extends State<_AgreementCard> {
     if (isReupload && !await _confirmTermsOnlyRevision()) return;
 
     if (!mounted) return;
-    final file = await AgreementFilePicker.pick(context);
+    final file = await DocumentFilePicker.pick(context,
+        hint: 'A multi-page agreement should be a single PDF.');
     if (file == null || !mounted) return;
 
     setState(() => _isUploading = true);
@@ -531,7 +532,8 @@ class _AgreementCardState extends State<_AgreementCard> {
     }
 
     if (!mounted) return;
-    final file = await AgreementFilePicker.pick(context);
+    final file = await DocumentFilePicker.pick(context,
+        hint: 'A multi-page agreement should be a single PDF.');
     if (file == null || !mounted) return;
 
     setState(() => _isFinalizing = true);

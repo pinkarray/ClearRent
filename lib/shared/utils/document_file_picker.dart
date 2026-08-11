@@ -6,21 +6,27 @@ import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 
-/// Picks a tenancy agreement — a PDF, or a photo of one.
+/// Picks a document — a PDF, or a photo of one.
 ///
-/// Agreements were picked with `ImagePicker.pickImage`, which takes exactly ONE
-/// gallery photo and cannot select a PDF at all. A real tenancy agreement runs
-/// to several pages, so the flow was unusable for anything but a one-pager.
-/// Web already accepted `application/pdf`; this brings the app in line.
+/// Every document flow here was built on `ImagePicker.pickImage`, which takes
+/// exactly ONE gallery photo and cannot select a PDF at all. Tenancy agreements
+/// were fixed first; ownership documents had the same problem and the same
+/// cause. A certificate of occupancy or a deed of assignment runs to several
+/// pages, so a one-image picker made it impossible to submit the real document
+/// — a landlord could only photograph the first page and hope.
 ///
-/// Deliberately does NOT re-compress: the image paths used `imageQuality: 85`,
-/// which is fine for a property photo and wrong for a page of text.
-class AgreementFilePicker {
+/// Deliberately does NOT re-compress: the image paths used `imageQuality: 85`
+/// or `90`, which is fine for a property photo and wrong for a page of text
+/// that somebody has to read a plot number off.
+class DocumentFilePicker {
   /// Returns the chosen file, or null if the user backed out.
   ///
-  /// Offers the camera as well, because photographing a freshly signed page is
-  /// the common case for a tenant who has just signed in front of you.
-  static Future<File?> pick(BuildContext context) async {
+  /// Offers the camera as well, because photographing a document you are
+  /// holding is the common case.
+  static Future<File?> pick(
+    BuildContext context, {
+    String hint = 'A multi-page document should be a single PDF.',
+  }) async {
     final source = await showModalBottomSheet<_Source>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -44,7 +50,7 @@ class AgreementFilePicker {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Text(
-                'A multi-page agreement should be a single PDF.',
+                hint,
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary),
               ),
