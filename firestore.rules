@@ -33,6 +33,20 @@ service cloud.firestore {
       return isAdmin() || isViewer();
     }
 
+    // Does this write touch any of `keys`?
+    //
+    // Declared HERE, at the top of the document tree, because rules functions
+    // are scoped to the match block that declares them. It used to live inside
+    // match /properties, and the active_rentals rule called it anyway — which
+    // compiles with only a warning ("Invalid function name") and then FAILS AT
+    // EVALUATION. That denied every tenant write to active_rentals: accepting
+    // an agreement, requesting a move-out, contesting a settlement, advancing
+    // handoverStage. Landlords were unaffected, because the call sat in an
+    // `||` whose other side was the landlord check — which masked it.
+    function changed(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+
     // Verification gate for the CALLER. Mirrors the client's messaging gate
     // (ConversationService._isUserVerified) so an unverified user can't bypass
     // the app UI and inject messages directly. Reads users/{uid}; guarded with
@@ -216,10 +230,6 @@ service cloud.firestore {
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
-      }
-
-      function changed(keys) {
-        return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
       }
 
       // Create: must self-assign ownership AND be a verified landlord.
