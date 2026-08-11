@@ -4286,6 +4286,11 @@ export {
 } from "./admin_money_ops";
 
 export {
+  confirmPayoutReceipt,
+  resolvePayoutDispute,
+} from "./payout_receipt";
+
+export {
   completeActiveRenewal,
   completeLinkedPromotion,
 } from "./renewal_ops";
