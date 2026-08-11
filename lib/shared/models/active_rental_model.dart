@@ -439,6 +439,8 @@ class ActiveRental {
           ? (data['moveOutRequestedAt'] as Timestamp).toDate() : null,
       moveOutIntendedDate: data['moveOutIntendedDate'] != null
           ? (data['moveOutIntendedDate'] as Timestamp).toDate() : null,
+      moveOutAcknowledgedAt: data['moveOutAcknowledgedAt'] != null
+          ? (data['moveOutAcknowledgedAt'] as Timestamp).toDate() : null,
       handoverStage: data['handoverStage'] ?? '',
       handoverEvidenceAt: data['handoverEvidenceAt'] != null
           ? (data['handoverEvidenceAt'] as Timestamp).toDate() : null,

@@ -11,7 +11,9 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/condition_service.dart';
 import '../../../../services/conversation_service.dart';
+import '../../../../shared/widgets/condition_evidence_list.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/move_in_baseline_prompt.dart';
 
@@ -418,6 +420,7 @@ class _RentalCard extends StatefulWidget {
 }
 
 class _RentalCardState extends State<_RentalCard> {
+  final ConditionService _conditionService = ConditionService();
   bool _isMessageLoading = false;
   bool _acknowledging = false;
 
@@ -677,6 +680,16 @@ class _RentalCardState extends State<_RentalCard> {
           ]),
           const SizedBox(height: 8),
         ],
+        // Evidence recorded during the notice period had nowhere to appear:
+        // the list lived only on the handover screen, which does not open
+        // until the tenancy has ENDED. Since the tenant films while they still
+        // have keys, the landlord could not see the walkthrough until after
+        // the point where seeing it might have changed anything. Shows nothing
+        // when there are no recordings.
+        ConditionEvidenceList(
+          rentalId: rental.id,
+          service: _conditionService,
+        ),
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(

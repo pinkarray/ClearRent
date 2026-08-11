@@ -8,6 +8,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../services/condition_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/models/condition_record.dart';
@@ -52,10 +53,18 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
   // refresh keeps it correct across rental switches.
   late Stream<QuerySnapshot> _pendingConfirmationsStream;
 
+  final ConditionService _conditionService = ConditionService();
+
+  /// The tenant's own move-out recording, if they have made one. Cached the
+  /// same way and for the same reason as the stream above.
+  late Stream<List<ConditionRecord>> _conditionStream;
+
   @override
   void initState() {
     super.initState();
     _pendingConfirmationsStream = _buildPendingConfirmationsStream();
+    _conditionStream = _conditionService.streamRecords(
+        widget.rental.id, ConditionStage.moveOut);
   }
 
   @override
@@ -63,6 +72,8 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.rental.id != widget.rental.id) {
       _pendingConfirmationsStream = _buildPendingConfirmationsStream();
+      _conditionStream = _conditionService.streamRecords(
+          widget.rental.id, ConditionStage.moveOut);
     }
   }
 
@@ -602,35 +613,57 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               // walkthrough is no longer theirs to record — and it is the only
               // thing a deduction from their deposit can be argued against.
               const SizedBox(height: 10),
-              GestureDetector(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ConditionCaptureScreen(
-                      rentalId: rental.id,
-                      propertyTitle: rental.propertyTitle,
-                      stage: ConditionStage.moveOut,
-                      partyRole: 'tenant',
-                    ),
-                  ),
-                ),
-                // The label is long and sits inside an already-indented
-                // banner, so it must be free to wrap — an unconstrained Text
-                // in a min-size Row takes its full intrinsic width and
-                // overflows the line instead.
-                child: Row(children: [
-                  Icon(Icons.videocam_outlined,
-                      size: 15, color: AppColors.primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Record the condition you are leaving it in',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
+              // Once recorded, the record is SEALED and a second attempt is
+              // refused by rules. Still inviting one sent the tenant off to
+              // shoot a whole walkthrough that could never be accepted, so the
+              // link has to say which of the two states they are in.
+              StreamBuilder<List<ConditionRecord>>(
+                stream: _conditionStream,
+                builder: (context, snap) {
+                  final mine = (snap.data ?? const <ConditionRecord>[])
+                      .where((r) => r.partyId == rental.tenantId)
+                      .toList();
+                  final done =
+                      mine.isNotEmpty && mine.first.capturedAt != null;
+                  return GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ConditionCaptureScreen(
+                          rentalId: rental.id,
+                          propertyTitle: rental.propertyTitle,
+                          stage: ConditionStage.moveOut,
+                          partyRole: 'tenant',
+                        ),
                       ),
                     ),
-                  ),
-                ]),
+                    // The label is long and sits inside an already-indented
+                    // banner, so it must be free to wrap — an unconstrained
+                    // Text in a min-size Row takes its full intrinsic width
+                    // and overflows the line instead.
+                    child: Row(children: [
+                      Icon(
+                        done
+                            ? Icons.check_circle_outline
+                            : Icons.videocam_outlined,
+                        size: 15,
+                        color: done ? AppColors.success : AppColors.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          done
+                              ? 'You recorded the condition — tap to view it'
+                              : 'Record the condition you are leaving it in',
+                          style: AppTextStyles.caption.copyWith(
+                            color:
+                                done ? AppColors.success : AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ]),
+                  );
+                },
               ),
             ],
           ),

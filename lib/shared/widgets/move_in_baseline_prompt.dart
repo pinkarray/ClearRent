@@ -76,9 +76,16 @@ class _MoveInBaselinePromptState extends State<MoveInBaselinePrompt> {
   Widget build(BuildContext context) {
     // Nothing until we know, so the card doesn't flash a prompt at someone who
     // already recorded one.
-    if (!_loaded || _mine != null) return const SizedBox.shrink();
+    //
+    // Gone only once the record is SEALED. Hiding it the moment a record
+    // EXISTS stranded anyone whose upload died halfway: they were left with a
+    // pending record holding no media, no baseline on file, and no way back to
+    // the camera — even though rules deliberately leave an unsealed record
+    // editable for exactly this case.
+    if (!_loaded || _mine?.capturedAt != null) return const SizedBox.shrink();
 
     final isTenant = widget.partyRole == 'tenant';
+    final unfinished = _mine != null;
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(12),
@@ -94,15 +101,21 @@ class _MoveInBaselinePromptState extends State<MoveInBaselinePrompt> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Record the condition now',
+              Text(
+                  unfinished
+                      ? 'Finish recording the condition'
+                      : 'Record the condition now',
                   style: AppTextStyles.labelMedium),
               const SizedBox(height: 2),
               Text(
-                isTenant
-                    ? 'If anything is already damaged, this is what proves it '
-                        'was not you when you leave.'
-                    : 'This is what a deduction can be measured against when '
-                        'the tenancy ends.',
+                unfinished
+                    ? 'Your last upload did not finish, so there is still no '
+                        'baseline on file. You will need to record it again.'
+                    : isTenant
+                        ? 'If anything is already damaged, this is what proves '
+                            'it was not you when you leave.'
+                        : 'This is what a deduction can be measured against '
+                            'when the tenancy ends.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary),
               ),
@@ -110,7 +123,9 @@ class _MoveInBaselinePromptState extends State<MoveInBaselinePrompt> {
           ),
         ),
         const SizedBox(width: 8),
-        TextButton(onPressed: _record, child: const Text('Record')),
+        TextButton(
+            onPressed: _record,
+            child: Text(unfinished ? 'Finish' : 'Record')),
       ]),
     );
   }

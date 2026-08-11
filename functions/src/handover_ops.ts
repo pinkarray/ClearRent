@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onSchedule} from "firebase-functions/v2/scheduler";
+import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {writeNotificationOnce} from "./notification_helpers";
@@ -285,6 +286,77 @@ export const handoverSettlementReminders = onSchedule(
 
     logger.info("handoverSettlementReminders complete", {
       scanned: snap.size, sent,
+    });
+  },
+);
+
+/**
+ * Tells the other party when a condition recording is sealed.
+ *
+ * The gap this closes: a tenant films the move-out condition while they still
+ * have keys, which is DURING the notice period — before the tenancy ends and
+ * therefore before the handover screen exists for the landlord at all. Nothing
+ * announced it, so a walkthrough could sit unwatched until the landlord
+ * happened to open the tenancy days later, by which point they may already
+ * have formed a view about the deposit.
+ *
+ * Fires on the SEAL, never on the pending open. A record whose upload has not
+ * landed may never finish, and "your tenant recorded the condition" would then
+ * be a claim about evidence that does not exist.
+ */
+export const onConditionEvidenceSealed = onDocumentWritten(
+  "active_rentals/{rentalId}/condition/{stage}/parties/{partyId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return;
+
+    // Only the transition INTO sealed. Rules forbid editing a sealed record,
+    // but triggers are at-least-once, so a redelivery must not re-notify.
+    if (!after.capturedAt || before?.capturedAt) return;
+
+    const {rentalId, stage, partyId} = event.params;
+
+    const db = getFirestore();
+    const snap = await db.collection("active_rentals").doc(rentalId).get();
+    const r = snap.data();
+    if (!r) return;
+
+    const tenantId = r.tenantId as string | undefined;
+    const landlordId = r.landlordId as string | undefined;
+
+    // Whoever did NOT record it is who needs to hear about it.
+    const fromTenant = partyId === tenantId;
+    const recipient = fromTenant ? landlordId : tenantId;
+    if (!recipient) return;
+
+    const propertyTitle =
+      (r.propertyTitle as string | undefined) ?? "your property";
+    const isMoveOut = stage === "move_out";
+
+    await writeNotificationOnce(
+      `condition_${stage}_${partyId}_${rentalId}`,
+      {
+        userId: recipient,
+        type: "condition_recorded",
+        title: isMoveOut ?
+          "Move-out condition recorded" :
+          "Move-in condition recorded",
+        body: fromTenant ?
+          `Your tenant recorded the condition of ${propertyTitle} on ` +
+            "video. It is sealed — neither of you can change it — and any " +
+            "claim on the caution deposit is argued against it." :
+          `Your landlord recorded the condition of ${propertyTitle} on ` +
+            "video. It is sealed, and you can watch it.",
+        payload: {
+          route: fromTenant ? "/landlord/rentals" : "/tenant/my-rentals",
+          rentalId,
+        },
+      },
+    );
+
+    logger.info("Condition evidence notification sent", {
+      rentalId, stage, partyId, recipient,
     });
   },
 );

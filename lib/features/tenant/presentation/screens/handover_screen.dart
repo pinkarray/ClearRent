@@ -12,8 +12,8 @@ import '../../../../services/active_rental_service.dart';
 import '../../../../services/condition_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/condition_record.dart';
+import '../../../../shared/widgets/condition_evidence_list.dart';
 import 'condition_capture_screen.dart';
-import 'condition_viewer_screen.dart';
 
 /// Works a move-out through to settlement, for whichever party is looking.
 ///
@@ -106,7 +106,7 @@ class _HandoverScreenState extends State<HandoverScreen> {
                 ),
 
               const SizedBox(height: 24),
-              _EvidenceList(
+              ConditionEvidenceList(
                 rentalId: rental.id,
                 service: _conditionService,
               ),
@@ -531,70 +531,6 @@ class _Waiting extends StatelessWidget {
         ]),
         if (action != null) ...[const SizedBox(height: 4), action!],
       ]),
-    );
-  }
-}
-
-// ── Evidence ────────────────────────────────────────────────────────────────
-
-class _EvidenceList extends StatelessWidget {
-  final String rentalId;
-  final ConditionService service;
-  const _EvidenceList({required this.rentalId, required this.service});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<ConditionRecord>>(
-      stream: service.streamRecords(rentalId, ConditionStage.moveOut),
-      builder: (context, snap) {
-        final records = snap.data ?? const <ConditionRecord>[];
-        if (records.isEmpty) return const SizedBox.shrink();
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('What was recorded', style: AppTextStyles.labelMedium),
-          const SizedBox(height: 8),
-          ...records.map((r) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: InkWell(
-                  // A pending record has nothing stored yet, so there is
-                  // nothing to open — the row still shows, because "they tried
-                  // and it is uploading" is itself worth knowing.
-                  onTap: r.isEvidence
-                      ? () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ConditionViewerScreen(
-                                rentalId: rentalId,
-                                record: r,
-                              ),
-                            ),
-                          )
-                      : null,
-                  child: Row(children: [
-                    Icon(
-                      r.hasVideo
-                          ? Icons.videocam_outlined
-                          : Icons.photo_camera_outlined,
-                      size: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        r.pending
-                            ? '${r.partyRole}: still uploading'
-                            : '${r.partyRole}: ${r.videoPaths.length} video, '
-                                '${r.imagePaths.length} photo',
-                        style: AppTextStyles.caption
-                            .copyWith(color: AppColors.textSecondary),
-                      ),
-                    ),
-                    if (r.isEvidence)
-                      Icon(Icons.chevron_right,
-                          size: 18, color: AppColors.textSecondary),
-                  ]),
-                ),
-              )),
-        ]);
-      },
     );
   }
 }
