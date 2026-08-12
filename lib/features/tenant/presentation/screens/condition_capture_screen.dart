@@ -170,10 +170,20 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
     try {
       final lost = await _picker.retrieveLostData();
       if (lost.isEmpty || lost.file == null) return;
+      // The parked result is a path, not a guarantee — the activity died and
+      // the cache may have been reaped since. _restoreDraft already checks
+      // this; without the same check here a dead path reached _compressVideo,
+      // whose source.length() throws PathNotFoundException.
+      final file = File(lost.file!.path);
+      if (!await file.exists()) {
+        developer.log('⚠️ Lost capture no longer on disk: ${file.path}',
+            name: 'ConditionCapture');
+        return;
+      }
       if (lost.type == RetrieveType.video) {
-        _videos.add(await _compressVideo(File(lost.file!.path)));
+        _videos.add(await _compressVideo(file));
       } else {
-        _images.add(File(lost.file!.path));
+        _images.add(file);
       }
       _recovered = true;
     } catch (e) {
@@ -293,6 +303,30 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
   }
 
   Future<void> _submit() async {
+    // Drop anything the OS reaped since it was captured. Uploading a path that
+    // no longer exists fails deep inside the upload with nothing the person
+    // can act on; telling them a clip is gone while they are still standing in
+    // the property means they can shoot it again.
+    final goneVideos = <File>[];
+    for (final f in _videos) {
+      if (!await f.exists()) goneVideos.add(f);
+    }
+    final goneImages = <File>[];
+    for (final f in _images) {
+      if (!await f.exists()) goneImages.add(f);
+    }
+    if (goneVideos.isNotEmpty || goneImages.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _videos.removeWhere(goneVideos.contains);
+        _images.removeWhere(goneImages.contains);
+        _error = 'Your phone cleared some of what you captured. '
+            'Please record it again before submitting.';
+      });
+      await _saveDraft();
+      return;
+    }
+
     if (_videos.isEmpty) {
       setState(() => _error = 'Record a walkthrough video first.');
       return;
@@ -416,8 +450,25 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               else
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: Image.file(files[i],
-                      width: 22, height: 22, fit: BoxFit.cover),
+                  // errorBuilder is not optional here. These are camera temp
+                  // files, and Android can purge the cache between capture and
+                  // render — FileImage then throws PathNotFoundException
+                  // ("Cannot retrieve length of file"). Worse, the default
+                  // ErrorWidget has no size constraint, so it replaced a 22px
+                  // thumbnail and burst the chip's Row: the crash and the
+                  // "overflowed by N pixels" underneath were the same fault.
+                  child: Image.file(
+                    files[i],
+                    width: 22,
+                    height: 22,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: Icon(Icons.broken_image_outlined,
+                          size: 14, color: AppColors.textHint),
+                    ),
+                  ),
                 ),
               const SizedBox(width: 6),
               Text('${video ? 'Video' : 'Photo'} ${i + 1}',
