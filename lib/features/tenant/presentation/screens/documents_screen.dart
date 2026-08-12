@@ -292,8 +292,8 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 icon: Icons.payment_outlined,
                 title: 'No Payments Yet',
                 subtitle:
-                    'Payments you make on ClearRent — listing fees and the '
-                    'like — will show up here with their receipts.',
+                    'Payments you make on ClearRent - listing fees and the '
+                    'like - will show up here with their receipts.',
               ),
             )
           else ...[
@@ -393,7 +393,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               child: _buildDetail(
                 Icons.calendar_today_outlined,
                 'Lease Period',
-                '${_formatDate(rental.leaseStartDate)} – ${_formatDate(rental.leaseEndDate)}',
+                '${_formatDate(rental.leaseStartDate)} - ${_formatDate(rental.leaseEndDate)}',
               ),
             ),
             Expanded(
@@ -462,7 +462,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 child: OutlinedButton.icon(
                   onPressed: () => _shareAgreement(
                     'active_rentals', rental.id,
-                    'Tenancy Agreement – ${rental.propertyTitle}',
+                    'Tenancy Agreement - ${rental.propertyTitle}',
                   ),
                   icon: const Icon(Icons.share_outlined, size: 16),
                   label: const Text('Share'),
@@ -580,7 +580,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 child: _buildDetail(
                   Icons.calendar_today_outlined,
                   'Lease Period',
-                  '${_formatDate(link.leaseStartDate!)} – ${_formatDate(link.leaseEndDate!)}',
+                  '${_formatDate(link.leaseStartDate!)} - ${_formatDate(link.leaseEndDate!)}',
                 ),
               ),
             Expanded(
@@ -620,7 +620,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
               child: OutlinedButton.icon(
                 onPressed: () => _shareAgreement(
                   'tenancy_links', link.id,
-                  'Tenancy Agreement – ${link.propertyTitle}',
+                  'Tenancy Agreement - ${link.propertyTitle}',
                 ),
                 icon: const Icon(Icons.share_outlined, size: 16),
                 label: const Text('Share'),
@@ -642,15 +642,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   String _agreementStatusLabel(AgreementStatus status) {
     switch (status) {
       case AgreementStatus.none:
-        return 'Uploaded — awaiting your review';
+        return 'Uploaded - awaiting your review';
       case AgreementStatus.pendingReview:
-        return 'Uploaded — awaiting your review';
+        return 'Uploaded - awaiting your review';
       case AgreementStatus.accepted:
-        return 'You accepted — awaiting landlord finalization';
+        return 'You accepted - awaiting landlord finalization';
       case AgreementStatus.disputed:
-        return 'You raised concerns — awaiting landlord response';
+        return 'You raised concerns - awaiting landlord response';
       case AgreementStatus.finalized:
-        return 'Finalized — agreement is in effect';
+        return 'Finalized - agreement is in effect';
     }
   }
 
@@ -992,7 +992,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(received
-              ? 'Thanks — payout confirmed.'
+              ? 'Thanks - payout confirmed.'
               : 'Reported. An admin will look into it.'),
           backgroundColor:
               received ? AppColors.success : AppColors.warning,

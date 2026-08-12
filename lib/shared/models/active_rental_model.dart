@@ -688,5 +688,5 @@ enum AgreementStatus {
   /// were required) also land here, so they can still be finalized.
   accepted,
   disputed,        // Tenant raised concerns
-  finalized,       // Counter-signed — the executed agreement is on record
+  finalized,       // Counter-signed - the executed agreement is on record
 }

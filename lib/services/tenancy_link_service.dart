@@ -202,7 +202,7 @@ class TenancyLinkService {
       final status = (linkDoc.data() as Map<String, dynamic>)['status'];
       if (status != 'pending' && status != 'confirmed') {
         developer.log(
-          '⛔ removeTenant blocked — link $linkId has status "$status" (not removable)',
+          '⛔ removeTenant blocked - link $linkId has status "$status" (not removable)',
           name: 'TenancyLinkService',
         );
         return false;
@@ -215,7 +215,7 @@ class TenancyLinkService {
 
       // Property occupancy recomputed server-side by the
       // syncPropertyOccupancyOnLinkChange Cloud Function.
-      developer.log('✅ Tenant removed from link $linkId — occupancy sync deferred to CF',
+      developer.log('✅ Tenant removed from link $linkId - occupancy sync deferred to CF',
           name: 'TenancyLinkService');
       return true;
     } catch (e) {
@@ -297,7 +297,7 @@ class TenancyLinkService {
         'acceptedAt': FieldValue.serverTimestamp(),
       });
 
-      developer.log('✅ Tenant accepted link $linkId — occupancy sync deferred to CF',
+      developer.log('✅ Tenant accepted link $linkId - occupancy sync deferred to CF',
           name: 'TenancyLinkService');
       return true;
     } catch (e) {

@@ -213,10 +213,10 @@ class _RescheduleProposalPanelState
           Text(
             _isProposer
                 ? 'You proposed ${_formatDate(proposal.proposedDate)} '
-                    '— ${proposal.proposedTimeDisplay}'
+                    '- ${proposal.proposedTimeDisplay}'
                 : '$_proposerName proposed '
                     '${_formatDate(proposal.proposedDate)} '
-                    '— ${proposal.proposedTimeDisplay}',
+                    '- ${proposal.proposedTimeDisplay}',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textPrimary),
           ),

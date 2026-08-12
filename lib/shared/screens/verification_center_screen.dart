@@ -505,7 +505,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           Flexible(
             child: Text(
               soon
-                  ? 'Expires in $daysLeft day${daysLeft == 1 ? '' : 's'} — '
+                  ? 'Expires in $daysLeft day${daysLeft == 1 ? '' : 's'} - '
                       'renew to keep full access'
                   : 'Verified until ${_formatExpiry(expires)} · renews annually',
               style: AppTextStyles.bodySmall.copyWith(color: color),

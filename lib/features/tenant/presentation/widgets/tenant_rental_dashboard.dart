@@ -541,7 +541,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(ok
-          ? 'Move-out requested — your landlord will confirm the handover.'
+          ? 'Move-out requested - your landlord will confirm the handover.'
           : 'Could not request move-out. Please try again.'),
       backgroundColor: ok ? AppColors.success : AppColors.error,
       behavior: SnackBarBehavior.floating,
@@ -652,7 +652,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                       Expanded(
                         child: Text(
                           done
-                              ? 'You recorded the condition — tap to view it'
+                              ? 'You recorded the condition - tap to view it'
                               : 'Record the condition you are leaving it in',
                           style: AppTextStyles.caption.copyWith(
                             color:

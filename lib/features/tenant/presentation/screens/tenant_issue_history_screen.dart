@@ -798,7 +798,7 @@ class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
           'resolvedAt': FieldValue.serverTimestamp(),
           'tenantConfirmedAt': FieldValue.serverTimestamp(),
         },
-        'Marked resolved — thanks for confirming!',
+        'Marked resolved - thanks for confirming!',
         AppColors.success,
       );
 
@@ -810,7 +810,7 @@ class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
         title: const Text('Not fixed?'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(
-            "Tell your landlord what's still wrong — it goes back to their "
+            "Tell your landlord what's still wrong - it goes back to their "
             'In Progress list.',
             style: AppTextStyles.caption
                 .copyWith(color: AppColors.textSecondary),

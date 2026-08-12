@@ -1832,7 +1832,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Ready for inspections — tenants can book this property.',
+                  'Ready for inspections - tenants can book this property.',
                   style: AppTextStyles.bodySmall
                       .copyWith(color: AppColors.textSecondary),
                 ),
@@ -2047,7 +2047,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Couldn\'t load tenant data. Occupancy shown may be incomplete — '
+              'Couldn\'t load tenant data. Occupancy shown may be incomplete - '
               'pull to refresh or try again.',
               style: AppTextStyles.caption.copyWith(color: AppColors.error),
             ),
@@ -2928,7 +2928,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                   property.cautionDepositRefundable
                       ? 'Refunded when you move out, if the property is left '
                           'in good condition.'
-                      : 'Non-refundable — this deposit is not returned when '
+                      : 'Non-refundable - this deposit is not returned when '
                           'you move out.',
                   style: AppTextStyles.caption.copyWith(
                     color: property.cautionDepositRefundable
@@ -4700,7 +4700,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                     ],
                     decoration: InputDecoration(
                       counterText: '',
-                      hintText: '1–${_daysInMonth(_selectedMonth)}',
+                      hintText: '1-${_daysInMonth(_selectedMonth)}',
                       hintStyle: AppTextStyles.caption.copyWith(color: AppColors.textHint),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                       filled: true,
@@ -4731,7 +4731,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
             Text('Lease Term', style: AppTextStyles.labelMedium),
             const SizedBox(height: 4),
             Text(
-              'Set automatically from the rent due date above — the current '
+              'Set automatically from the rent due date above - the current '
               'year runs to the next due date (Lagos law caps yearly rent in '
               'advance at one year).',
               style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),

@@ -296,7 +296,7 @@ class AuthService {
       }
       if (e.code == 'provider-already-linked') {
         // Already has email linked — that's fine, treat as success
-        developer.log('ℹ️ Email provider already linked — continuing');
+        developer.log('ℹ️ Email provider already linked - continuing');
         return AuthResult(success: true, user: currentUser);
       }
       if (e.code == 'invalid-email') {

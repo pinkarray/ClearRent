@@ -221,7 +221,7 @@ class TimeSlotWrap extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'This date is fully booked or unavailable — please choose another day',
+            'This date is fully booked or unavailable - please choose another day',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textHint),
           ),

@@ -51,7 +51,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
 
   PropertyModel? _property;
   String? _exactAddress; // exact street address from the gated subdoc
-  double? _exactLatitude; // exact pin, same subdoc — the agent has to get there
+  double? _exactLatitude; // exact pin, same subdoc - the agent has to get there
   double? _exactLongitude;
   bool _isLoading = true;
   String? _error;
@@ -621,7 +621,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'You\'ve marked this property ready — tenants can book inspections.',
+                'You\'ve marked this property ready - tenants can book inspections.',
                 style: AppTextStyles.bodySmall
                     .copyWith(color: AppColors.textSecondary),
               ),
@@ -1123,7 +1123,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-              'Schedule updated. Couldn\'t open chat — please message the landlord directly.',
+              'Schedule updated. Couldn\'t open chat - please message the landlord directly.',
             ),
             backgroundColor: AppColors.warning,
           ),

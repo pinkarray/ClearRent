@@ -40,7 +40,7 @@ class PaystackCheckoutScreen extends StatefulWidget {
     required String type,
     Map<String, dynamic>? metadata,
   }) async {
-    AppLogger.i('PaystackCheckout.launch — amount: $amount, type: $type',
+    AppLogger.i('PaystackCheckout.launch - amount: $amount, type: $type',
         name: 'Paystack');
     final paystack = PaystackService();
 
@@ -126,7 +126,7 @@ class _PaystackCheckoutScreenState extends State<PaystackCheckoutScreen> {
 
             // Intercept callback URL — payment is done
             if (request.url.startsWith(widget.callbackUrl)) {
-              AppLogger.i('Callback URL intercepted — verifying payment',
+              AppLogger.i('Callback URL intercepted - verifying payment',
                   name: 'Paystack');
               _verifyAndClose();
               return NavigationDecision.prevent;
@@ -247,7 +247,7 @@ class _PaystackCheckoutScreenState extends State<PaystackCheckoutScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx); // close dialog
-              Navigator.pop(context, null); // close checkout — null = cancelled
+              Navigator.pop(context, null); // close checkout - null = cancelled
             },
             child: Text(
               'Cancel',

@@ -289,7 +289,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
     final canProceed = await ensureBankDetailsOnFile(
       context,
       bankDetailsRoute: '/agent/bank-details',
-      reason: 'Add your bank account first — it\'s where your inspection '
+      reason: 'Add your bank account first - it\'s where your inspection '
           'earnings and any dispute payouts are sent.',
     );
     if (!canProceed || !mounted) return;
@@ -1406,7 +1406,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                             ? 'You\'re here. Waiting for tenant...'
                             : request.met
                                 ? 'Inspection in progress'
-                                : 'Both arrived — ready to inspect!',
+                                : 'Both arrived - ready to inspect!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.success,
                         ),

@@ -127,7 +127,7 @@ class _DescriptionPromptsState extends State<DescriptionPrompts> {
           ),
           const SizedBox(height: 2),
           Text(
-            'Tenants always ask about these — you finish the sentence',
+            'Tenants always ask about these - you finish the sentence',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textHint,
               fontSize: 10,

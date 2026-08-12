@@ -489,7 +489,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           const SizedBox(width: 4),
           Expanded(
             child: Text(
-              'Pin returned "$_geocodedRawCity" — not in our list yet, please select the closest area',
+              'Pin returned "$_geocodedRawCity" - not in our list yet, please select the closest area',
               style: AppTextStyles.caption.copyWith(
                 color: Colors.orange.shade700,
                 fontSize: 11,
@@ -854,7 +854,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           Expanded(
             child: Text(
               'Your pin is about ${distance.round()}km from '
-              '${widget.cityController.text}. Move the pin or change the area — '
+              '${widget.cityController.text}. Move the pin or change the area - '
               'the area you pick sets the inspection fee.',
               style: AppTextStyles.caption.copyWith(
                 color: Colors.orange.shade700,

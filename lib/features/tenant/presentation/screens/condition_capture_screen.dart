@@ -380,7 +380,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       _uploadProgress = null;
       // The record exists and is marked pending, so this is genuinely a retry
       // rather than starting again — say so, or people re-shoot everything.
-      _error = 'Upload did not finish. Your recording is saved — try again '
+      _error = 'Upload did not finish. Your recording is saved - try again '
           'when you have a better connection.';
     });
   }
@@ -402,7 +402,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
         title: const Text('Recorded'),
         content: Text(
           isMoveOut
-              ? 'Your walkthrough is saved and sealed — nobody can change or '
+              ? 'Your walkthrough is saved and sealed - nobody can change or '
                   'delete it now, including you. '
                   '${isTenant ? 'Your landlord' : 'Your tenant'} can see that '
                   'it exists, and any argument about the caution deposit has '
@@ -531,7 +531,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
             ]),
             const SizedBox(height: 8),
             Text(
-              '${when == null ? 'Your recording' : 'Recorded on $when'} — '
+              '${when == null ? 'Your recording' : 'Recorded on $when'} - '
               '${r.videoPaths.length} video, ${r.imagePaths.length} photo. '
               'It is sealed, so it cannot be changed or replaced by anyone, '
               'including you. That is exactly what makes it worth something '
@@ -603,7 +603,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               isMoveOut
                   ? 'Record the state you are leaving it in. This is what a '
                       'deduction from your caution deposit has to be argued '
-                      'against — without it there is nothing on your side.'
+                      'against - without it there is nothing on your side.'
                   : 'Record the state you are taking it on. If something is '
                       'already damaged, this is what proves it was not you.',
               style: AppTextStyles.caption
@@ -627,7 +627,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
                     child: Text(
                       'Your phone closed this screen while the camera was '
                       'open. What you had already captured has been brought '
-                      'back — carry on where you left off.',
+                      'back - carry on where you left off.',
                       style: AppTextStyles.caption
                           .copyWith(color: AppColors.textSecondary),
                     ),
@@ -641,7 +641,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               icon: Icons.videocam_outlined,
               title: 'Walkthrough video',
               subtitle: _compressProgress != null
-                  ? 'Optimising for upload — '
+                  ? 'Optimising for upload - '
                       '${(_compressProgress! * 100).round()}%'
                   // Multiple recordings were always allowed — a small "+" icon
                   // was the only thing saying so, which read as a limit of one.
@@ -700,7 +700,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Once submitted this cannot be changed or deleted — by '
+                    'Once submitted this cannot be changed or deleted - by '
                     'you or by the other party. That is what makes it worth '
                     'anything.',
                     style: AppTextStyles.caption
@@ -733,7 +733,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               Text(
                 _uploadProgress == null
                     ? 'Starting upload…'
-                    : 'Uploading — ${(_uploadProgress! * 100).round()}%. Keep '
+                    : 'Uploading - ${(_uploadProgress! * 100).round()}%. Keep '
                         'this screen open; a walkthrough takes a few minutes '
                         'on mobile data.',
                 style: AppTextStyles.caption

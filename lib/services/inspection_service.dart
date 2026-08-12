@@ -851,7 +851,7 @@ class InspectionService {
             type: 'transport_reminder',
             title: 'Coordinate transport directly',
             message:
-                'Transport for your inspection is arranged directly with $handlerLabel. ClearRent does not collect transport money — please discuss the amount with them in chat.',
+                'Transport for your inspection is arranged directly with $handlerLabel. ClearRent does not collect transport money - please discuss the amount with them in chat.',
             relatedId: requestId,
             propertyId: requestData['propertyId'],
           );

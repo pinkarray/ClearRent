@@ -60,7 +60,7 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
           // though the unit could hold several tenancies at once.
           content: const Text(
             'This is the blank copy kept for whoever rents next. Replacing it '
-            'changes nothing for a tenant who has already signed — their '
+            'changes nothing for a tenant who has already signed - their '
             'agreement stays exactly as it is.',
           ),
           actions: [
@@ -312,7 +312,7 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       // carries only the tenant's hand.
       text = (widget.property.currentTenantsCount ?? 0) > 0
           ? 'No signed copy saved for future tenants. Your current tenancy '
-              'agreement is unaffected — see the Tenancies tab.'
+              'agreement is unaffected - see the Tenancies tab.'
           : 'Sign your agreement, then upload it here. Every tenant you accept '
               'gets that signed copy to print, sign and send back.';
     } else if (_isStale) {
@@ -327,7 +327,7 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       // wrong guess ("it will change my tenant's signed lease") would stop a
       // landlord keeping the copy current.
       final on = widget.agreement?.uploadedAt;
-      text = 'Saved${on == null ? '' : ' ${_formatDate(on)}'} — the next tenant '
+      text = 'Saved${on == null ? '' : ' ${_formatDate(on)}'} - the next tenant '
           'you accept gets this to sign and return. Replacing only affects '
           'future tenants; anyone who already signed keeps their copy.';
     }

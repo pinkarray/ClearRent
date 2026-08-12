@@ -334,7 +334,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
     setState(() => _isLoading = false);
     _showSnack(
       ok
-          ? 'Rescheduled — sent for approval again.'
+          ? 'Rescheduled - sent for approval again.'
           : 'Could not reschedule. Please try again.',
       ok ? AppColors.success : AppColors.error,
     );
@@ -610,10 +610,10 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                   ? 'We\'re confirming your payment. Once verified, your request '
                       'goes to the ${r.isAgentHandled ? 'agent' : 'landlord'} to pick a time.'
                   : r.isDeclinedByAgent
-                      ? 'Under review — the landlord may still take this over. '
+                      ? 'Under review - the landlord may still take this over. '
                           'We\'ll notify you of the outcome.'
                       : 'Your request is with the ${r.isAgentHandled ? 'agent' : 'landlord'}. '
-                          'They\'ll confirm the time or suggest a new one — '
+                          'They\'ll confirm the time or suggest a new one - '
                           'you\'ll get a notification either way.',
               color: r.isDeclinedByAgent ? AppColors.info : AppColors.primary,
             ),
@@ -1818,7 +1818,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
             Text(
                 'On time, knew the property, professional? This isn\'t about '
                 'whether you liked the place. Rating confirms the visit '
-                'happened — it secures your handler\'s payment and unlocks '
+                'happened - it secures your handler\'s payment and unlocks '
                 'your decision on this property.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary)),
@@ -2100,7 +2100,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
         title = 'Property Rented to Another Applicant';
         subtitle =
             'The landlord accepted another tenant for this property. '
-            'Your full payment is being refunded — you don\'t need to do anything.';
+            'Your full payment is being refunded - you don\'t need to do anything.';
         action = null;
         break;
     }
@@ -2281,7 +2281,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text(
-                  'Tell us what went wrong. This goes to our team to review — '
+                  'Tell us what went wrong. This goes to our team to review - '
                   'it\'s separate from rating your agent.',
                   style: AppTextStyles.bodySmall
                       .copyWith(color: AppColors.textSecondary)),

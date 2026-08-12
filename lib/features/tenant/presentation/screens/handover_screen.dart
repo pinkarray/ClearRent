@@ -376,7 +376,7 @@ class _TenantActions extends StatelessWidget {
                   '${InspectionPricing.formatNaira(kept)} '
                   '("${rental.cautionDeductionReason ?? ''}") and says they '
                   'sent back ${InspectionPricing.formatNaira(owed.toDouble())}.'
-              : 'Your landlord says they returned your deposit in full — '
+              : 'Your landlord says they returned your deposit in full - '
                   '${InspectionPricing.formatNaira(owed.toDouble())}.',
           cta: 'Yes, I was paid',
           busy: busy,
@@ -385,7 +385,7 @@ class _TenantActions extends StatelessWidget {
         const SizedBox(height: 10),
         TextButton(
           onPressed: busy ? null : onContest,
-          child: const Text('No — something is wrong'),
+          child: const Text('No - something is wrong'),
         ),
       ]);
     }
@@ -424,7 +424,7 @@ class _LandlordActions extends StatelessWidget {
         return _ActionCard(
           title: 'Check the property',
           body: 'Confirm you have physically seen it since they left. This is '
-              'what releases the listing — nothing else does.',
+              'what releases the listing - nothing else does.',
           cta: 'I have checked it',
           busy: busy,
           onTap: onConfirmCondition,
@@ -580,7 +580,7 @@ class _SettleSheetState extends State<_SettleSheet> {
         const SizedBox(height: 4),
         Text(
           'On record: ${InspectionPricing.formatNaira(deposit)}. ClearRent '
-          'does not hold this money — you send it directly.',
+          'does not hold this money - you send it directly.',
           style:
               AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),

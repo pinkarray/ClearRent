@@ -71,7 +71,7 @@ class PaystackService {
     required String type,
     Map<String, dynamic>? metadata,
   }) async {
-    AppLogger.i('initializeTransaction — amount: $amount, type: $type',
+    AppLogger.i('initializeTransaction - amount: $amount, type: $type',
         name: 'PaystackService');
     try {
       // Email presence is enforced server-side too; this is a fast local
@@ -114,7 +114,7 @@ class PaystackService {
         reference: reference,
       );
     } on FirebaseFunctionsException catch (e) {
-      AppLogger.e('Init failed: ${e.code} — ${e.message}',
+      AppLogger.e('Init failed: ${e.code} - ${e.message}',
           name: 'PaystackService');
       return PaystackInitResult(
         success: false,
@@ -161,7 +161,7 @@ class PaystackService {
       );
     } on FirebaseFunctionsException catch (e) {
       AppLogger.w(
-        'Resolve account failed: ${e.code} — ${e.message}',
+        'Resolve account failed: ${e.code} - ${e.message}',
         name: 'PaystackService',
       );
       return AccountResolution.error(_resolveErrorMessage(e));
@@ -262,7 +262,7 @@ class PaystackService {
         error: error,
       );
     } on FirebaseFunctionsException catch (e) {
-      AppLogger.e('Verify failed: ${e.code} — ${e.message}',
+      AppLogger.e('Verify failed: ${e.code} - ${e.message}',
           name: 'PaystackService');
       return PaystackVerifyResult(
         success: false,
@@ -350,7 +350,7 @@ class PaystackService {
         return false;
       }
     } on FirebaseFunctionsException catch (e) {
-      AppLogger.e('Refund failed: ${e.code} — ${e.message}',
+      AppLogger.e('Refund failed: ${e.code} - ${e.message}',
           name: 'PaystackService');
       return false;
     } catch (e) {

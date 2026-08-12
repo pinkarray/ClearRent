@@ -1643,7 +1643,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     // unbookable with no explanation.
     message +=
         '\n\nOnce approved, open the listing and mark it ready for inspections '
-        '— tenants can\'t book a viewing until you do.';
+        '- tenants can\'t book a viewing until you do.';
 
     showDialog(
       context: context,
@@ -1834,7 +1834,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       style: AppTextStyles.labelLarge,
                     ),
                     subtitle: Text(
-                      'Record a 1–3 minute video tour',
+                      'Record a 1-3 minute video tour',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -2453,7 +2453,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'Add a 1–3 minute walkthrough video (max 50MB). Properties with video get more inquiries.',
+            'Add a 1-3 minute walkthrough video (max 50MB). Properties with video get more inquiries.',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -2586,7 +2586,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Shrinking video for a faster upload — '
+                      'Shrinking video for a faster upload - '
                       '${(_compressionProgress! * 100).clamp(0, 100).toStringAsFixed(0)}%. '
                       'Carry on, you don\'t need to wait.',
                       style: AppTextStyles.caption.copyWith(
@@ -2882,7 +2882,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'You can link them after publishing — open this property '
+                        'You can link them after publishing - open this property '
                         'and send a link request. They confirm it, and the '
                         'property is marked occupied.',
                         style: AppTextStyles.caption.copyWith(
@@ -3249,7 +3249,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             Text('Set your price', style: AppTextStyles.h4),
             const SizedBox(height: 8),
             Text(
-              'Set the total package — rent, agent fee, and caution deposit. Tenants see the full breakdown upfront.',
+              'Set the total package - rent, agent fee, and caution deposit. Tenants see the full breakdown upfront.',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -4219,7 +4219,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             const SizedBox(height: 12),
             AppTextField(
               label: 'Building address',
-              hint: 'Defaults to this unit\'s address — edit if different',
+              hint: 'Defaults to this unit\'s address - edit if different',
               controller: _buildingAddressController,
               textCapitalization: TextCapitalization.words,
             ),
@@ -4347,7 +4347,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   ? 'Select a building above. This unit will inherit the '
                       'building\'s ownership document.'
                   : 'This unit inherits the selected building\'s ownership '
-                      'document — no separate upload needed.',
+                      'document - no separate upload needed.',
               style: AppTextStyles.caption
                   .copyWith(color: AppColors.textSecondary, height: 1.5),
             ),
@@ -4544,7 +4544,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // so an honest document could not be uploaded at all.
       final file = await DocumentFilePicker.pick(
         context,
-        hint: 'A C of O or deed runs to several pages — upload it as one PDF.',
+        hint: 'A C of O or deed runs to several pages - upload it as one PDF.',
       );
       if (file != null) {
         setState(() => _ownershipDocFile = file);
@@ -4717,7 +4717,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       child: Text(
                         'Saved as $_landlordBaseArea. Inspections are a flat '
                         '${InspectionPricing.formatNaira(InspectionPricing.inspectionBookingFee)} '
-                        'anywhere in Lagos — you earn '
+                        'anywhere in Lagos - you earn '
                         '${InspectionPricing.formatNaira(InspectionPricing.handlerEarnings)} '
                         'for each one you handle yourself.',
                         style: AppTextStyles.caption.copyWith(
@@ -5394,7 +5394,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Required — choose a verified agent for inspections',
+                              'Required - choose a verified agent for inspections',
                               style: AppTextStyles.caption.copyWith(
                                 color: AppColors.textSecondary,
                               ),

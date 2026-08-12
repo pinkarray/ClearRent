@@ -120,7 +120,7 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen>
   int _attentionRank(ActiveRental r) {
     switch (r.agreementStatus) {
       case AgreementStatus.disputed:
-        return 0; // tenant raised a concern — respond now
+        return 0; // tenant raised a concern - respond now
       case AgreementStatus.none:
         return 1; // no agreement uploaded yet
       case AgreementStatus.pendingReview:
@@ -268,7 +268,7 @@ class _AgreementCardState extends State<_AgreementCard> {
     switch (r.agreementStatus) {
       case AgreementStatus.none: return 'No Agreement';
       case AgreementStatus.pendingReview: return 'Awaiting Tenant Review';
-      case AgreementStatus.accepted: return 'Tenant Accepted — Ready to Finalize';
+      case AgreementStatus.accepted: return 'Tenant Accepted - Ready to Finalize';
       case AgreementStatus.disputed: return 'Tenant Has Concerns';
       case AgreementStatus.finalized: return 'Finalized';
     }
@@ -469,7 +469,7 @@ class _AgreementCardState extends State<_AgreementCard> {
               hasTenantSignature
                   ? '${r.tenantName} has signed and returned the agreement. '
                       'Download it, add your signature, and upload the '
-                      'fully-signed copy — that becomes the agreement of '
+                      'fully-signed copy - that becomes the agreement of '
                       'record for both of you.'
                   : '${r.tenantName} has accepted the agreement. Do you want '
                       'to finalize it?',

@@ -420,7 +420,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                 ]),
                 const SizedBox(height: 6),
                 Text(
-                  'Record a fix or service — even before a tenant reports it. This builds your property\'s maintenance history.',
+                  'Record a fix or service - even before a tenant reports it. This builds your property\'s maintenance history.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textSecondary, height: 1.5),
                 ),

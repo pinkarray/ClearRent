@@ -33,7 +33,7 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        automaticallyImplyLeading: false, // No back button — user must complete setup
+        automaticallyImplyLeading: false, // No back button - user must complete setup
       ),
       body: SafeArea(
         child: SingleChildScrollView(

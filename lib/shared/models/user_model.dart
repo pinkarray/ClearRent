@@ -176,11 +176,11 @@ class UserModel {
       case 'below_100k':
         return 'Below ₦100K';
       case '100k_200k':
-        return '₦100K – ₦200K';
+        return '₦100K - ₦200K';
       case '200k_500k':
-        return '₦200K – ₦500K';
+        return '₦200K - ₦500K';
       case '500k_1m':
-        return '₦500K – ₦1M';
+        return '₦500K - ₦1M';
       case 'above_1m':
         return 'Above ₦1M';
       default:
@@ -214,7 +214,7 @@ class UserModel {
     }
     if (max <= 0) return 'From ${fmt(min)}';
     if (min <= 0) return 'Up to ${fmt(max)}';
-    return '${fmt(min)} – ${fmt(max)}';
+    return '${fmt(min)} - ${fmt(max)}';
   }
 
   /// Whether this tenant has completed the enhanced profile

@@ -276,7 +276,7 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
     final canProceed = await ensureBankDetailsOnFile(
       context,
       bankDetailsRoute: '/landlord/bank-details',
-      reason: 'Add your bank account first — it\'s where your inspection '
+      reason: 'Add your bank account first - it\'s where your inspection '
           'earnings and any dispute payouts are sent.',
     );
     if (!canProceed || !mounted) return;
@@ -1381,7 +1381,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                             ? 'You\'re here. Waiting for tenant...'
                             : r.met
                                 ? 'Inspection in progress'
-                                : 'Both arrived — ready to inspect!',
+                                : 'Both arrived - ready to inspect!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.success,
                         ),
@@ -2266,7 +2266,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Accept to finalize the agreement — the tenant pays '
+                          'Accept to finalize the agreement - the tenant pays '
                           'only after that. Nothing has been charged yet.',
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textSecondary,
@@ -2476,15 +2476,15 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.pendingAcceptance:
         statusColor = AppColors.success;
         statusIcon = Icons.how_to_reg;
-        title = 'Tenant Interested — Accept Rental';
+        title = 'Tenant Interested - Accept Rental';
         subtitle =
             '${interest.tenantName} wants to rent. Accept below to start the '
-            'agreement — they pay after it\'s finalized.';
+            'agreement - they pay after it\'s finalized.';
         break;
       case RentalInterestStatus.pendingPayment:
         statusColor = AppColors.warning;
         statusIcon = Icons.payment;
-        title = 'Tenant Interested — Payment Pending';
+        title = 'Tenant Interested - Payment Pending';
         subtitle = '${interest.tenantName} wants to rent. Waiting for payment.';
         break;
       case RentalInterestStatus.paymentUploaded:
@@ -2496,7 +2496,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.paymentVerified:
         statusColor = AppColors.success;
         statusIcon = Icons.lock;
-        title = 'Payment Verified — Accept Rental';
+        title = 'Payment Verified - Accept Rental';
         subtitle =
             '${interest.tenantName}\'s payment has been confirmed. Accept below.';
         break;
@@ -2509,7 +2509,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
       case RentalInterestStatus.accepted:
         statusColor = AppColors.info;
         statusIcon = Icons.description_outlined;
-        title = 'Accepted — Awaiting Payment';
+        title = 'Accepted - Awaiting Payment';
         subtitle =
             'Finalize the tenancy agreement with ${interest.tenantName}. '
             'They pay once it\'s finalized.';
@@ -2525,7 +2525,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         statusIcon = Icons.history;
         title = 'Not Selected';
         subtitle =
-            '${interest.tenantName} was not selected — they were not charged.';
+            '${interest.tenantName} was not selected - they were not charged.';
         break;
       case RentalInterestStatus.expired:
         statusColor = AppColors.textSecondary;
@@ -2601,7 +2601,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                 ),
                 child: Text(
                   'You accepted this tenant, but the rental record didn\'t '
-                  'finish setting up — they can\'t see the agreement yet. '
+                  'finish setting up - they can\'t see the agreement yet. '
                   'Tap below to complete it.',
                   style:
                       AppTextStyles.caption.copyWith(color: AppColors.warning),

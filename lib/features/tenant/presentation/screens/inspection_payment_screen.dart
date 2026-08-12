@@ -41,7 +41,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   static const List<String> _handlerSuggestions = [
     'How much would transport to the property cost?',
     'How do I get to the property?',
-    'Hi — I\'ve just paid for the inspection. Anything I should know before I come?',
+    'Hi - I\'ve just paid for the inspection. Anything I should know before I come?',
   ];
 
   bool _isProcessing = false;

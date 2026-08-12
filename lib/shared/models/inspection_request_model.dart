@@ -10,9 +10,9 @@ enum InspectionStatus {
   completed,           // Inspection done
   cancelled,           // Cancelled by tenant
   refunded,            // Refund processed
-  expiredUnapproved,   // Paid but never approved before the date passed —
+  expiredUnapproved,   // Paid but never approved before the date passed -
                        // tenant chooses reschedule or refund
-  awaitingOutcome,     // Approved date passed without a clear completion —
+  awaitingOutcome,     // Approved date passed without a clear completion -
                        // admin reviews (no-show / forgot to mark done)
 }
 
@@ -425,7 +425,7 @@ class InspectionRequest {
       case InspectionStatus.refunded:
         return 'Refunded';
       case InspectionStatus.expiredUnapproved:
-        return 'Expired — Action Needed';
+        return 'Expired - Action Needed';
       case InspectionStatus.awaitingOutcome:
         return 'Awaiting Review';
     }

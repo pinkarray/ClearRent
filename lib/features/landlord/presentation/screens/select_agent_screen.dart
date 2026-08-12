@@ -200,7 +200,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                 child: Text(
                   _isShowingAllAgents
                       ? widget.propertyCity != null
-                          ? 'No agents in ${widget.propertyCity} — showing all verified agents'
+                          ? 'No agents in ${widget.propertyCity} - showing all verified agents'
                           : 'Showing all verified agents'
                       : 'Showing agents available in ${widget.propertyCity}',
                   style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
@@ -367,7 +367,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Doesn\'t cover ${widget.propertyCity} — may charge a higher fee',
+                        'Doesn\'t cover ${widget.propertyCity} - may charge a higher fee',
                         style: AppTextStyles.caption.copyWith(color: AppColors.warning),
                       ),
                     ),

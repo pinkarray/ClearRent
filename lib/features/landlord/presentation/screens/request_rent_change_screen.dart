@@ -228,7 +228,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
       }
       if (!_noticeWindowOk(rental.leaseEndDate)) {
         _toast(
-          'This lease ends too soon for a scheduled review — it needs at least '
+          'This lease ends too soon for a scheduled review - it needs at least '
           '6 months\' notice before renewal.',
           isError: true,
         );
@@ -767,7 +767,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
         icon: Icons.warning_amber_rounded,
         color: AppColors.error,
         child: Text(
-          'This lease ends $renewal — too soon for a scheduled review. A rent '
+          'This lease ends $renewal - too soon for a scheduled review. A rent '
           'increase needs at least 6 months\' notice before renewal.',
           style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
         ),
@@ -860,7 +860,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
                 _isUploadingAgreement
                     ? 'Uploading…'
                     : attached
-                        ? 'Agreement attached — tap to replace'
+                        ? 'Agreement attached - tap to replace'
                         : 'Attach revised agreement',
                 style: AppTextStyles.bodyLarge.copyWith(
                   color:

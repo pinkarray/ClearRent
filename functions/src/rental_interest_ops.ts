@@ -141,6 +141,21 @@ export const createRentalInterest = onCall(
         "This property has no rent set. Contact support.",
       );
     }
+    // The rent floor, enforced again HERE and not only in firestore.rules.
+    //
+    // The rules check gates creating or repricing a LISTING, which does
+    // nothing about properties listed before the floor existed — they stay
+    // live and bookable and go on producing tenancies where the deal fee
+    // consumes the whole rent, the landlord is owed ₦0, and there is no payout
+    // anyone can ever send. This is the moment a deal actually begins, so it
+    // is the last point at which that can be refused.
+    if (rentAmount < pricing.minRent) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This property's rent is below the minimum ClearRent can process. " +
+          "The landlord needs to update it before it can be rented.",
+      );
+    }
     const hasAgent =
       typeof insp.agentId === "string" && insp.agentId.length > 0;
 

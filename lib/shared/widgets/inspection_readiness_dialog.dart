@@ -23,7 +23,7 @@ Future<bool> confirmInspectionReadiness(BuildContext context) async {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Quick check — make sure the property is on point so the tenant '
+            'Quick check - make sure the property is on point so the tenant '
             'has a good inspection:',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textSecondary),

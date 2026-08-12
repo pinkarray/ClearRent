@@ -311,7 +311,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           // that "Sign & Accept" wants a photo of a signed page.
           Text('Your landlord has sent the tenancy agreement, already signed '
               'by them. Download it and read it carefully, then print and sign '
-              'it, photograph the signed pages and upload them here — that '
+              'it, photograph the signed pages and upload them here - that '
               'upload is how you accept, and it completes the agreement. '
               'You\'ll then pay your rent to finish the move-in.',
               style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
@@ -338,7 +338,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                       'Your landlord says this revision changes the terms '
                       'only, and that your rent stays at '
                       '₦${_formatAmount(_rental.agreementRevisionDeclaredRent ?? _rental.rentAmount)}. '
-                      'Check the document before you sign — if it says '
+                      'Check the document before you sign - if it says '
                       'anything different, flag it instead.',
                       style: AppTextStyles.caption
                           .copyWith(color: AppColors.textSecondary),
@@ -609,7 +609,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your agreement is finalized — pay now to complete your move-in.',
+              'Your agreement is finalized - pay now to complete your move-in.',
               style: AppTextStyles.caption
                   .copyWith(color: AppColors.textSecondary),
             ),
@@ -640,12 +640,12 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           ]),
           const SizedBox(height: 12),
           Text(
-            'For full legal protection and court admissibility, tenancy agreements in Nigeria should be stamped at your State Internal Revenue Service (SIRS) office — e.g. LIRS in Lagos.',
+            'For full legal protection and court admissibility, tenancy agreements in Nigeria should be stamped at your State Internal Revenue Service (SIRS) office - e.g. LIRS in Lagos.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
-            'Stamp duty for tenancies under 1 year is typically ₦500–₦1,000. For longer tenancies, it\'s a small percentage of the annual rent.',
+            'Stamp duty for tenancies under 1 year is typically ₦500-₦1,000. For longer tenancies, it\'s a small percentage of the annual rent.',
             style: AppTextStyles.naira(AppTextStyles.bodySmall).copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
@@ -684,11 +684,11 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                   .copyWith(color: AppColors.textPrimary),
             ),
             const SizedBox(height: 12),
-            _step(1, 'Download and read it — your landlord has already '
+            _step(1, 'Download and read it - your landlord has already '
                 'signed it'),
             _step(2, 'Print and sign it, or sign on your device'),
             _step(3, 'Photograph or scan the signed pages'),
-            _step(4, 'Upload it here — that completes the agreement'),
+            _step(4, 'Upload it here - that completes the agreement'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),

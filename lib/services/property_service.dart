@@ -959,7 +959,7 @@ class PropertyService {
           final docStatus = data?['ownershipDocStatus'] ?? 'none';
           if (docStatus != 'verified') {
             developer.log(
-              '⚠️ Cannot make property available — ownershipDocStatus: $docStatus',
+              '⚠️ Cannot make property available - ownershipDocStatus: $docStatus',
               name: 'PropertyService',
             );
             return 'not_approved';

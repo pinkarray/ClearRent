@@ -374,7 +374,7 @@ class _LinkedTenantCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(link.tenantName, style: AppTextStyles.labelMedium),
-                  Text('Linked tenancy — not a ClearRent rental',
+                  Text('Linked tenancy - not a ClearRent rental',
                       style: AppTextStyles.caption
                           .copyWith(color: AppColors.textSecondary)),
                 ],
@@ -521,7 +521,7 @@ class _RentalCardState extends State<_RentalCard> {
               const SizedBox(height: 6),
               Text(
                 'This lease has lapsed and the tenant hasn\'t renewed. Ending '
-                'it here updates your records and notifies the tenant — it is '
+                'it here updates your records and notifies the tenant - it is '
                 'not a legal eviction. The tenant can add their own account.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary, height: 1.4),
@@ -571,7 +571,7 @@ class _RentalCardState extends State<_RentalCard> {
         await widget.rentalService.landlordRemoveTenant(rental.id, reason);
     if (!mounted) return;
     if (ok) {
-      widget.onChanged(); // reload — rental flips to ended_by_landlord → Past
+      widget.onChanged(); // reload - rental flips to ended_by_landlord → Past
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text(
@@ -654,7 +654,7 @@ class _RentalCardState extends State<_RentalCard> {
                       setState(() => _acknowledging = false);
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text(ok
-                            ? 'Acknowledged — ${rental.tenantName} can see '
+                            ? 'Acknowledged - ${rental.tenantName} can see '
                                 'that you know they are leaving.'
                             : 'Could not acknowledge. Try again.'),
                       ));
@@ -1196,7 +1196,7 @@ class _RentalCardState extends State<_RentalCard> {
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textSecondary)),
               Text(
-                '${_formatDate(rental.leaseStartDate)} – ${_formatDate(rental.leaseEndDate)}',
+                '${_formatDate(rental.leaseStartDate)} - ${_formatDate(rental.leaseEndDate)}',
                 style: AppTextStyles.labelSmall,
               ),
             ],

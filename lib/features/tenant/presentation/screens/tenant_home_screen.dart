@@ -758,7 +758,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${_fmtNaira(tempMin)} — ${tempMax >= bound ? '${_fmtNaira(bound)}+' : _fmtNaira(tempMax)}',
+                                  '${_fmtNaira(tempMin)} - ${tempMax >= bound ? '${_fmtNaira(bound)}+' : _fmtNaira(tempMax)}',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.primary,
                                   ),
@@ -1245,7 +1245,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                             ),
                           ),
                           child: Text(
-                            'Get Verified — ₦5,000',
+                            'Get Verified - ₦5,000',
                             style: AppTextStyles.labelLarge.copyWith(
                               color: AppColors.primary,
                             ),
@@ -1614,7 +1614,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   }),
                   if (docs.length > 3)
                     Text(
-                      '+${docs.length - 3} more — tap to view all',
+                      '+${docs.length - 3} more - tap to view all',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.textHint,
                       ),
@@ -2602,7 +2602,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             : 'Sign your tenancy agreement';
         final subtitle = ready
             ? (more > 0 ? '${r.propertyTitle} +$more more' : r.propertyTitle)
-            : '${r.propertyTitle} — signing it unlocks rent payment';
+            : '${r.propertyTitle} - signing it unlocks rent payment';
 
         return GestureDetector(
           onTap: () => context.push('/tenant/my-rentals'),

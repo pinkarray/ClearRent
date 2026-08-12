@@ -101,7 +101,7 @@ class RentalInterest {
       case RentalInterestStatus.rejected:
         return 'Payment Rejected';
       case RentalInterestStatus.accepted:
-        return 'Accepted — Finalize Agreement';
+        return 'Accepted - Finalize Agreement';
       case RentalInterestStatus.rentPaid:
         return 'Rent Paid';
       case RentalInterestStatus.notSelected:

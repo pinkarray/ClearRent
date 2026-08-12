@@ -41,7 +41,7 @@ class ActiveRentalService {
       }
       return success;
     } on FirebaseFunctionsException catch (e) {
-      developer.log('❌ $fn failed: ${e.code} — ${e.message}',
+      developer.log('❌ $fn failed: ${e.code} - ${e.message}',
           name: 'ActiveRentalService');
       return false;
     } catch (e) {
@@ -1146,7 +1146,7 @@ class ActiveRentalService {
       if (await hasOpenIssueForRental(
           tenantId: rental.tenantId, propertyId: rental.propertyId)) {
         developer.log(
-          '⚠️ Move-out blocked — unresolved issue on rental $rentalId',
+          '⚠️ Move-out blocked - unresolved issue on rental $rentalId',
           name: 'ActiveRentalService',
         );
         return false;
@@ -1195,7 +1195,7 @@ class ActiveRentalService {
       if (rental == null) return false;
       if (rental.status != ActiveRentalStatus.moveoutPending) {
         developer.log(
-          '⚠️ confirmMoveOut blocked — status is ${rental.statusDisplay}, '
+          '⚠️ confirmMoveOut blocked - status is ${rental.statusDisplay}, '
           'not moveout_pending: $rentalId',
           name: 'ActiveRentalService',
         );
@@ -1210,7 +1210,7 @@ class ActiveRentalService {
       // out that day, so the landlord may confirm once it arrives.
       if (!rental.canConfirmHandover) {
         developer.log(
-          '⚠️ Handover confirm refused — tenant moves out '
+          '⚠️ Handover confirm refused - tenant moves out '
           '${rental.moveOutIntendedDate}: $rentalId',
           name: 'ActiveRentalService',
         );
@@ -1263,7 +1263,7 @@ class ActiveRentalService {
       // Server-truth gate: only grace_locked rentals are removable.
       if (rental.status != ActiveRentalStatus.graceLocked) {
         developer.log(
-          '⚠️ landlordRemoveTenant blocked — status is '
+          '⚠️ landlordRemoveTenant blocked - status is '
           '${rental.statusDisplay}, not grace_locked: $rentalId',
           name: 'ActiveRentalService',
         );

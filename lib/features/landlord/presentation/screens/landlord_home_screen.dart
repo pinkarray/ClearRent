@@ -2279,7 +2279,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
       final min = budgetMin != null ? '₦${_formatAmount(budgetMin)}' : '';
       final max = budgetMax != null ? '₦${_formatAmount(budgetMax)}' : '';
       if (min.isNotEmpty && max.isNotEmpty) {
-        budgetLabel = '$min – $max / year';
+        budgetLabel = '$min - $max / year';
       } else if (max.isNotEmpty) {
         budgetLabel = 'Up to $max / year';
       } else {

@@ -373,7 +373,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
             // you and the agreement is finalized, so this is the final step.
             Center(
               child: Text(
-                'You\'re accepted and your agreement is finalized — this '
+                'You\'re accepted and your agreement is finalized - this '
                 'completes your move-in.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.caption.copyWith(color: AppColors.textHint),

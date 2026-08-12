@@ -170,7 +170,7 @@ class PricingService {
       if (doc.exists) _cached = PlatformPricing.fromMap(doc.data());
     } catch (e) {
       // Never block a fee display on config being reachable.
-      developer.log('Pricing unreadable — using fallback: $e',
+      developer.log('Pricing unreadable - using fallback: $e',
           name: 'PricingService');
     }
     // Push the inspection numbers into InspectionPricing, whose static helpers
@@ -198,7 +198,7 @@ class PricingService {
           .get();
       _apply(doc.data());
     } catch (e) {
-      developer.log('Remote areas unreadable — using compiled list: $e',
+      developer.log('Remote areas unreadable - using compiled list: $e',
           name: 'PricingService');
     }
     _watchAreas();
@@ -215,7 +215,7 @@ class PricingService {
         .listen(
       (doc) => _apply(doc.data()),
       onError: (Object e) => developer.log(
-        'Remote areas stream failed — keeping last known list: $e',
+        'Remote areas stream failed - keeping last known list: $e',
         name: 'PricingService',
       ),
     );

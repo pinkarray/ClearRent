@@ -169,7 +169,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'Add your bank account first — it\'s where your money goes if an '
+            'Add your bank account first - it\'s where your money goes if an '
             'inspection is refunded.',
           ),
           behavior: SnackBarBehavior.floating,
@@ -231,7 +231,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
     messenger.showSnackBar(const SnackBar(
       content: Text(
         'Inspection request sent! You\'ll be asked to pay once the handler '
-        'approves — no charge until then.',
+        'approves - no charge until then.',
       ),
       behavior: SnackBarBehavior.floating,
     ));

@@ -521,7 +521,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       _showError(
         'Your ${_docTypeLabel(widget.property.ownershipDocType)} was already '
         'approved. To change the document type, upload the '
-        '${_docTypeLabel(_ownershipDocType)} itself — it will go back for '
+        '${_docTypeLabel(_ownershipDocType)} itself - it will go back for '
         'review.',
       );
       return false;
@@ -704,7 +704,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           _showError(
             'This agent has a pending or scheduled inspection on this property. '
             'Wait for it to be completed or declined before changing the '
-            'handler — otherwise the tenant would be left without a handler.',
+            'handler - otherwise the tenant would be left without a handler.',
           );
           return;
         }
@@ -1310,7 +1310,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Your exact address is hidden from tenants until their inspection is approved. Only edit this to correct a typo — not to move the property to a different place.',
+                'Your exact address is hidden from tenants until their inspection is approved. Only edit this to correct a typo - not to move the property to a different place.',
                 style: AppTextStyles.caption.copyWith(color: AppColors.info, height: 1.5),
               ),
             ),
@@ -2068,7 +2068,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 child: Text(
                   'Approved as '
                   '${_docTypeLabel(widget.property.ownershipDocType)}. '
-                  'To change the type you must upload the matching document — '
+                  'To change the type you must upload the matching document - '
                   'it goes back for review and your listing is offline until '
                   'approved.',
                   style: AppTextStyles.caption
@@ -2156,7 +2156,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       // unreadable or incomplete document.
       final file = await DocumentFilePicker.pick(
         context,
-        hint: 'A C of O or deed runs to several pages — upload it as one PDF.',
+        hint: 'A C of O or deed runs to several pages - upload it as one PDF.',
       );
       if (file != null) {
         setState(() {

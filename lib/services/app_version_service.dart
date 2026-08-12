@@ -59,7 +59,7 @@ class AppVersionService {
       onError: (Object e) {
         // Keep whatever we last resolved. An unreadable config must never be
         // able to turn INTO a block.
-        developer.log('app_version unreadable — gate left open: $e',
+        developer.log('app_version unreadable - gate left open: $e',
             name: 'AppVersionService');
       },
     );

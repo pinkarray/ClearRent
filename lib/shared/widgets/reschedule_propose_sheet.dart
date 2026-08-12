@@ -275,7 +275,7 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
                                 Expanded(
                                   child: Text(
                                     'Current: ${_formatDate(widget.request.requestedDate)} '
-                                    '— ${widget.request.requestedTimeDisplay}',
+                                    '- ${widget.request.requestedTimeDisplay}',
                                     style: AppTextStyles.bodySmall.copyWith(
                                       color: AppColors.info,
                                     ),

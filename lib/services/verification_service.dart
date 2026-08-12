@@ -266,7 +266,7 @@ class VerificationService {
       }
       return success;
     } on FirebaseFunctionsException catch (e) {
-      developer.log('❌ submitNin failed: ${e.code} — ${e.message}',
+      developer.log('❌ submitNin failed: ${e.code} - ${e.message}',
           name: 'VerificationService');
       return false;
     } catch (e) {
@@ -498,7 +498,7 @@ class VerificationService {
     File? ninFile,
     required File utilityBillFile,
   }) async {
-    developer.log('⚠️ Legacy submitVerification called — use Paystack payment flow', name: 'VerificationService');
+    developer.log('⚠️ Legacy submitVerification called - use Paystack payment flow', name: 'VerificationService');
     return VerificationResult(success: false, error: 'Please use the updated payment flow');
   }
 

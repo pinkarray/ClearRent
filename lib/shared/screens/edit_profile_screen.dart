@@ -61,9 +61,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   static const List<Map<String, String>> _incomeRanges = [
     {'id': 'below_100k', 'label': 'Below ₦100K'},
-    {'id': '100k_200k', 'label': '₦100K – ₦200K'},
-    {'id': '200k_500k', 'label': '₦200K – ₦500K'},
-    {'id': '500k_1m', 'label': '₦500K – ₦1M'},
+    {'id': '100k_200k', 'label': '₦100K - ₦200K'},
+    {'id': '200k_500k', 'label': '₦200K - ₦500K'},
+    {'id': '500k_1m', 'label': '₦500K - ₦1M'},
     {'id': 'above_1m', 'label': 'Above ₦1M'},
   ];
 
