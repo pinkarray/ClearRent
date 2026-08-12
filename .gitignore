@@ -67,3 +67,6 @@ key.properties
 # Claude Code local settings — machine-specific permission grants.
 # The shared .claude/settings.json stays tracked.
 .claude/settings.local.json
+
+# Gradle build output
+android/build/
