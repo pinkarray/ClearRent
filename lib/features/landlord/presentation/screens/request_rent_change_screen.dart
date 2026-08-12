@@ -1,10 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter, TextEditingValue, TextSelection;
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/utils/app_logger.dart';
 import '../../../../shared/models/active_rental_model.dart';
@@ -170,15 +169,18 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
   }
 
   Future<void> _pickAgreement() async {
-    final picker = ImagePicker();
-    final image =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (image == null) return;
+    // A revised agreement is a full document, not a single page — pickImage
+    // could only ever capture one.
+    final file = await DocumentFilePicker.pick(
+      context,
+      hint: 'A multi-page agreement should be a single PDF.',
+    );
+    if (file == null || !mounted) return;
 
     setState(() => _isUploadingAgreement = true);
     try {
       // Private Storage (not Cloudinary) — agreements are sensitive PII.
-      final url = await _propertyService.uploadAgreementDoc(File(image.path));
+      final url = await _propertyService.uploadAgreementDoc(file);
       if (!mounted) return;
       if (url == null || url.isEmpty) {
         setState(() => _isUploadingAgreement = false);

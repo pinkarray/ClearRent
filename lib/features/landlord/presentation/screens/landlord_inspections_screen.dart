@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:image_picker/image_picker.dart';
+import '../../../../shared/utils/document_file_picker.dart';
 import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -2066,19 +2065,24 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                                 isUploading
                                     ? null
                                     : () async {
-                                      final picker = ImagePicker();
-                                      final image = await picker.pickImage(
-                                        source: ImageSource.gallery,
-                                        maxWidth: 2000,
+                                      // A tenancy agreement runs to several
+                                      // pages; pickImage could only ever take
+                                      // one photo of one page. Same picker the
+                                      // other agreement uploads already use.
+                                      final file =
+                                          await DocumentFilePicker.pick(
+                                        ctx,
+                                        hint: 'A multi-page agreement should '
+                                            'be a single PDF.',
                                       );
-                                      if (image == null) return;
+                                      if (file == null) return;
 
                                       setDialogState(() => isUploading = true);
                                       try {
                                         // Private Storage (not Cloudinary) —
                                         // agreements are sensitive PII.
                                         final url = await propertyService
-                                            .uploadAgreementDoc(File(image.path));
+                                            .uploadAgreementDoc(file);
                                         if (url != null) {
                                           setDialogState(() {
                                             uploadedUrl = url;
