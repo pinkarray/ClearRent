@@ -856,10 +856,35 @@ class _AgreementCardState extends State<_AgreementCard> {
       // Finalized → View only + stamp notice
       case AgreementStatus.finalized:
         return Column(children: [
+          // A tenant signing goes STRAIGHT to finalized — there is no
+          // counter-sign round trip (see tenantUploadSignedAgreement), so the
+          // 'accepted' case below never runs for a signed tenancy and its
+          // "view what your tenant signed" button was unreachable. Without
+          // this, the landlord got the notification that the tenant had
+          // signed, opened the agreement, and was shown their OWN unsigned
+          // copy — the one document that cannot answer "what did they sign?".
+          if (r.hasTenantSignature) ...[
+            ElevatedButton.icon(
+              onPressed: () => _viewTenantSigned(),
+              icon: const Icon(Icons.draw_outlined, size: 18),
+              label: const Text('View the signed agreement'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                minimumSize: const Size(double.infinity, 44),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           OutlinedButton.icon(
             onPressed: () => _viewAgreement(),
             icon: const Icon(Icons.visibility_outlined, size: 18),
-            label: const Text('View Agreement'),
+            label: Text(r.hasTenantSignature
+                ? 'View the copy you sent'
+                : 'View Agreement'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
               side: BorderSide(color: AppColors.success),
