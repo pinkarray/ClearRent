@@ -15,6 +15,7 @@ import '../../../../shared/widgets/property_location_map.dart';
 import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
+import '../../../landlord/presentation/widgets/property_agreement_card.dart';
 import '../../../../services/building_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -85,6 +86,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   // updates without a full reload (widget.property is immutable).
   bool _markedReadyThisSession = false;
   bool _isLoading = true;
+
+  /// The agreement kept against this property (owner view only). Loaded lazily
+  /// because it lives in a gated subdoc only the owner can read.
+  PropertyAgreement? _propertyAgreement;
+  bool _loadingAgreement = true;
 
   bool _isCheckingRequest = true;
   /// This tenant's own inspection on THIS property, live. Null when they have
@@ -262,6 +268,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
       if (_isOwner) {
         _loadExactAddressIfEntitled();
+        _loadPropertyAgreement();
+      } else if (mounted) {
+        setState(() => _loadingAgreement = false);
       }
 
       if (!_isOwner && _currentUserType == 'tenant') {
@@ -433,6 +442,18 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   /// Loads the exact street address from the property's gated subdoc when the
   /// viewer is entitled (owner, or a tenant whose inspection was approved).
   /// A denied read (non-entitled tenant) simply leaves the approximate address.
+  /// Owner-only: the agreement kept against this property, if any. Doubles as
+  /// the card's refresh callback after an upload or removal.
+  Future<void> _loadPropertyAgreement() async {
+    final agreement =
+        await PropertyService().getPropertyAgreement(widget.property.id);
+    if (!mounted) return;
+    setState(() {
+      _propertyAgreement = agreement;
+      _loadingAgreement = false;
+    });
+  }
+
   Future<void> _loadExactAddressIfEntitled() async {
     if (!_isOwner && !_addressUnlocked) return;
     final loc = await _propertyService.getExactLocation(widget.property.id);
@@ -1059,6 +1080,18 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           if (_isOwner) ...[
                             _buildReadinessCard(property),
+                            // Right after readiness, because they are the two
+                            // things that stop a listing turning into a
+                            // tenancy: nobody can book it, and nobody can be
+                            // accepted onto it without an agreement. Having
+                            // one here means acceptance never stops to ask.
+                            if (!_loadingAgreement)
+                              PropertyAgreementCard(
+                                property: property,
+                                agreement: _propertyAgreement,
+                                showPropertyHeader: false,
+                                onUpdated: _loadPropertyAgreement,
+                              ),
                           ],
 
                           if (_isOwner) ...[

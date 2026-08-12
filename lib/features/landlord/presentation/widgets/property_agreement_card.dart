@@ -20,11 +20,16 @@ class PropertyAgreementCard extends StatefulWidget {
   final PropertyAgreement? agreement;
   final VoidCallback onUpdated;
 
+  /// Thumbnail + title + rent. Wanted in the agreements LIST, where the card
+  /// has to say which property it is; redundant on the property's own page.
+  final bool showPropertyHeader;
+
   const PropertyAgreementCard({
     super.key,
     required this.property,
     required this.agreement,
     required this.onUpdated,
+    this.showPropertyHeader = true,
   });
 
   @override
@@ -181,44 +186,46 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: p.images.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: p.images.first,
-                        width: 52,
-                        height: 52,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, _, _) => _thumbFallback(),
-                      )
-                    : _thumbFallback(),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      p.title,
-                      style: AppTextStyles.labelMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${p.formattedRent}/'
-                      '${p.rentFrequency == 'yearly' ? 'yr' : 'mo'}',
-                      style: AppTextStyles.caption
-                          .copyWith(color: AppColors.textSecondary),
-                    ),
-                  ],
+          if (widget.showPropertyHeader) ...[
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: p.images.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: p.images.first,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, _, _) => _thumbFallback(),
+                        )
+                      : _thumbFallback(),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.title,
+                        style: AppTextStyles.labelMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${p.formattedRent}/'
+                        '${p.rentFrequency == 'yearly' ? 'yr' : 'mo'}',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           _buildStatusStrip(),
           const SizedBox(height: 12),
           if (_busy)

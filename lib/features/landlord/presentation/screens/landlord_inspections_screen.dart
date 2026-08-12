@@ -1694,6 +1694,7 @@ class _LandlordHistoryCard extends StatefulWidget {
 class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
   final RentalInterestService _rentalInterestService = RentalInterestService();
   final ActiveRentalService _activeRentalService = ActiveRentalService();
+  final PropertyService _propertyService = PropertyService();
   RentalInterest? _rentalInterest;
   bool _isLoadingInterest = true;
   bool _isAccepting = false;
@@ -1873,11 +1874,30 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     // application always becomes a real rental. Under pay-after-accept the
     // tenant hasn't paid yet; they pay once the agreement is finalized.
 
-    // Step 2: Require the tenancy agreement — a deal can't close without it.
-    // A null/empty result means the landlord cancelled the upload step, so we
-    // abort the accept entirely (no agreement, no deal).
+    // Step 2: the tenancy agreement — a deal can't close without one.
+    //
+    // If the landlord already keeps one against the PROPERTY, use it instead of
+    // asking again. createRentalForAcceptedInterest does the same server-side,
+    // but the client wins the race to create the rental (both write
+    // active_rentals/{interestId} and both no-op if it exists), so without this
+    // the stored agreement was never reached and the landlord was prompted for
+    // a document they had already provided.
+    //
+    // The rent test mirrors the server's exactly: an agreement written for a
+    // different rent is stale, and re-using it would bind the tenant to the
+    // old price. In that case we ask for a current one.
     String? agreementUrl;
-    if (mounted) {
+    final stored =
+        await _propertyService.getPropertyAgreement(interest.propertyId);
+    final storedUsable = stored != null &&
+        (stored.rentAtUpload <= 0 ||
+            interest.rentAmount <= 0 ||
+            stored.rentAtUpload == interest.rentAmount);
+    if (storedUsable) {
+      agreementUrl = stored.storagePath;
+    } else if (mounted) {
+      // A null/empty result means the landlord cancelled the upload step, so
+      // abort the accept entirely (no agreement, no deal).
       agreementUrl = await _showAgreementUploadDialog();
     }
     if (agreementUrl == null || agreementUrl.isEmpty) return;
@@ -1984,8 +2004,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
   }
 
   Future<String?> _showAgreementUploadDialog() async {
-    // Use PropertyService for image upload (has cloudinary_public)
-    final propertyService = PropertyService();
+    final propertyService = _propertyService;
     String? uploadedUrl;
     bool isUploading = false;
 
