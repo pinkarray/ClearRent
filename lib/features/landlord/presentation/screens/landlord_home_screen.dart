@@ -387,13 +387,21 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           (activities) {
             if (!mounted) return;
 
-            // Only show activities from the last 3 days on the dashboard
+            // Was hard-filtered to the last 3 days, which emptied the whole
+            // card for any landlord who had not opened the app that week —
+            // indistinguishable from "nothing is happening on my properties".
+            // A dashboard feed should be short, not amnesiac: keep the recent
+            // ones when there are enough of them, otherwise fall back to the
+            // latest regardless of age so the card always says something.
+            const minShown = 5;
             final cutoff = DateTime.now().subtract(const Duration(days: 3));
             final recent =
                 activities.where((a) => a.createdAt.isAfter(cutoff)).toList();
 
             setState(() {
-              _recentActivities = recent;
+              _recentActivities = recent.length >= minShown
+                  ? recent
+                  : activities.take(minShown).toList();
               _isLoadingActivities = false;
             });
           },

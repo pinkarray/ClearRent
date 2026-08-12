@@ -1327,9 +1327,17 @@ export const onRentalInterestPaid = onDocumentUpdated(
     const after = event.data?.after.data();
     if (!before || !after) return;
 
-    // Only on the transition INTO payment_verified.
-    if (before.status === "payment_verified") return;
-    if (after.status !== "payment_verified") return;
+    // Only on the transition INTO a paid state.
+    //
+    // Pay-after-accept renamed this: recordRentPayment now writes "rent_paid"
+    // (rental_interest_ops.ts), and "payment_verified" is only ever seen on
+    // legacy pay-first interests. Watching the old value alone meant this
+    // trigger stopped firing entirely — the landlord's feed never once said
+    // their tenant had paid the rent, which is the single most important thing
+    // that happens on a tenancy. Both are accepted so old docs still work.
+    const PAID = ["rent_paid", "payment_verified"];
+    if (PAID.includes(before.status as string)) return;
+    if (!PAID.includes(after.status as string)) return;
 
     const interestId = event.params.interestId;
     const landlordId = after.landlordId as string | undefined;
