@@ -94,6 +94,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late final TextEditingController _addressController;
   late final TextEditingController _cityController;
   late final TextEditingController _stateController;
+  // Unit identity within a building — grouped listings only.
+  late final TextEditingController _unitLabelController;
+  late String _floor;
+  // Single-space types only: what the tenant gets exclusively. A listing
+  // written before these existed carries null; 'shared' is the safe read for a
+  // let room, and the landlord can correct it here.
+  late String _bathroomAccess;
+  late String _toiletAccess;
+  late String _kitchenAccess;
 
   // Property details
   late String _propertyType;
@@ -187,7 +196,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _addressController = TextEditingController(text: p.address);
     _cityController = TextEditingController(text: p.city);
     _stateController = TextEditingController(text: p.state);
-    
+    _unitLabelController = TextEditingController(text: p.unitLabel ?? '');
+    _floor = p.floor ?? '';
+    _bathroomAccess = p.bathroomAccess ?? 'shared';
+    _toiletAccess = p.toiletAccess ?? 'shared';
+    _kitchenAccess = p.kitchenAccess ?? 'shared';
+
     _propertyType = p.propertyType;
     _bedrooms = p.bedrooms;
     _bathrooms = p.bathrooms;
@@ -331,6 +345,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _addressController.dispose();
     _cityController.dispose();
     _stateController.dispose();
+    _unitLabelController.dispose();
     super.dispose();
   }
 
@@ -625,6 +640,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'address': _addressController.text.trim(),
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim(),
+        // Unit identity — description only, and meaningless on a standalone
+        // listing, so it's written only for a grouped unit.
+        if (_isGrouped) 'unitLabel': _unitLabelController.text.trim(),
+        if (_isGrouped) 'floor': _floor,
+        // Only a single space carries these — a flat's own bathroom is private
+        // by construction.
+        if (_isSingleSpace) 'bathroomAccess': _bathroomAccess,
+        if (_isSingleSpace) 'toiletAccess': _toiletAccess,
+        if (_isSingleSpace) 'kitchenAccess': _kitchenAccess,
         if (!hasActiveTenants) ...{
           'rent': _parseRentAmount(),
           'rentFrequency': _rentPeriod,
@@ -1147,57 +1171,111 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Property Type
-        Text('Property Type', style: AppTextStyles.labelMedium),
+        // Property Type — what the tenant gets. What the whole building is
+        // lives on the building's `structure`.
+        Text(
+          _isGrouped ? 'What is this unit?' : 'Property Type',
+          style: AppTextStyles.labelMedium,
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: [
-            _buildTypeChip('Flat', 'flat'),
-            _buildTypeChip('Duplex', 'duplex'),
-            _buildTypeChip('Self Contain', 'selfContain'),
-            _buildTypeChip('Bungalow', 'bungalow'),
-            _buildTypeChip('Room', 'room'),
-            // Hidden alongside add-property until the commercial branch exists.
-          ],
+          // Filtered by how this listing was let, same as add-property: a
+          // grouped unit can be a Room, a whole property cannot. Shop/Office
+          // stay out until the commercial branch exists.
+          children: PropertyModel.typesForScope(inBuilding: _isGrouped)
+              .map((t) => _buildTypeChip(PropertyModel.typeLabelFor(t), t))
+              .toList(),
         ),
         const SizedBox(height: 16),
 
-        // Counters
-        Row(
-          children: [
-            Expanded(child: _buildCounter('Bedrooms', _bedrooms, (v) {
-              setState(() { _bedrooms = v; _hasChanges = true; });
-            })),
-            const SizedBox(width: 12),
-            Expanded(child: _buildCounter('Bathrooms', _bathrooms, (v) {
-              setState(() { _bathrooms = v; _hasChanges = true; });
-            })),
-            const SizedBox(width: 12),
-            Expanded(child: _buildCounter('Toilets', _toilets, (v) {
-              setState(() { _toilets = v; _hasChanges = true; });
-            })),
-          ],
-        ),
-        const SizedBox(height: 12),
+        // Unit identity — only for a grouped unit. Which BUILDING it belongs to
+        // is fixed at creation (firestore.rules pins buildingId), but what the
+        // landlord calls the unit and which floor it's on are just description.
+        if (_isGrouped) ...[
+          AppTextField(
+            label: 'Unit name',
+            hint: 'e.g. Room 2, Left flat, BQ',
+            controller: _unitLabelController,
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() => _hasChanges = true),
+          ),
+          const SizedBox(height: 16),
+          Text('Floor', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PropertyModel.floors
+                .map((f) => _buildFloorChip(f['label']!, f['value']!))
+                .toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
 
-        // Second row: Living Room, Guest Room, Kitchen
-        Row(
-          children: [
-            Expanded(child: _buildCounter('Living Room', _livingRooms, (v) {
-              setState(() { _livingRooms = v; _hasChanges = true; });
-            })),
-            const SizedBox(width: 12),
-            Expanded(child: _buildCounter('Guest Room', _guestRooms, (v) {
-              setState(() { _guestRooms = v; _hasChanges = true; });
-            })),
-            const SizedBox(width: 12),
-            Expanded(child: _buildCounter('Kitchen', _kitchens, (v) {
-              setState(() { _kitchens = v; _hasChanges = true; });
-            })),
-          ],
-        ),
+        // A single space has no meaningful room count — what matters is which
+        // facilities are the tenant's own. Mirrors add-property.
+        if (_isSingleSpace) ...[
+          Text('What comes with it', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Bathroom',
+            value: _bathroomAccess,
+            onChanged: (v) =>
+                setState(() { _bathroomAccess = v; _hasChanges = true; }),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Toilet',
+            value: _toiletAccess,
+            onChanged: (v) =>
+                setState(() { _toiletAccess = v; _hasChanges = true; }),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Kitchen',
+            value: _kitchenAccess,
+            options: const ['private', 'shared', 'none'],
+            onChanged: (v) =>
+                setState(() { _kitchenAccess = v; _hasChanges = true; }),
+          ),
+        ] else ...[
+          // Counters
+          Row(
+            children: [
+              Expanded(child: _buildCounter('Bedrooms', _bedrooms, (v) {
+                setState(() { _bedrooms = v; _hasChanges = true; });
+              })),
+              const SizedBox(width: 12),
+              Expanded(child: _buildCounter('Bathrooms', _bathrooms, (v) {
+                setState(() { _bathrooms = v; _hasChanges = true; });
+              })),
+              const SizedBox(width: 12),
+              Expanded(child: _buildCounter('Toilets', _toilets, (v) {
+                setState(() { _toilets = v; _hasChanges = true; });
+              })),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Second row: Living Room, Guest Room, Kitchen
+          Row(
+            children: [
+              Expanded(child: _buildCounter('Living Room', _livingRooms, (v) {
+                setState(() { _livingRooms = v; _hasChanges = true; });
+              })),
+              const SizedBox(width: 12),
+              Expanded(child: _buildCounter('Guest Room', _guestRooms, (v) {
+                setState(() { _guestRooms = v; _hasChanges = true; });
+              })),
+              const SizedBox(width: 12),
+              Expanded(child: _buildCounter('Kitchen', _kitchens, (v) {
+                setState(() { _kitchens = v; _hasChanges = true; });
+              })),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
 
         AppTextField(
@@ -1217,11 +1295,91 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  bool get _isSingleSpace => PropertyModel.isSingleSpace(_propertyType);
+
+  Widget _buildAccessRow({
+    required String label,
+    required String value,
+    required ValueChanged<String> onChanged,
+    List<String> options = const ['private', 'shared'],
+  }) {
+    const labels = {'private': 'Private', 'shared': 'Shared', 'none': 'None'};
+    return Row(
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(label, style: AppTextStyles.bodyMedium),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            children: options
+                .map((o) => _buildFloorChipStyle(
+                      labels[o]!,
+                      value == o,
+                      () => onChanged(o),
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Pill shared by the floor and facility choices.
+  Widget _buildFloorChipStyle(String label, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: selected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloorChip(String label, String value) {
+    final isSelected = _floor == value;
+    // Tapping the selected floor clears it — the field is optional.
+    return _buildFloorChipStyle(label, isSelected, () {
+      setState(() {
+        _floor = isSelected ? '' : value;
+        _hasChanges = true;
+      });
+    });
+  }
+
   Widget _buildTypeChip(String label, String value) {
     final isSelected = _propertyType == value;
     return GestureDetector(
       onTap: () {
-        setState(() { _propertyType = value; _hasChanges = true; });
+        setState(() {
+          _propertyType = value;
+          // Keep the counts consistent with the type — switching a 3-bedroom
+          // flat to Room otherwise leaves bedrooms at 3.
+          if (PropertyModel.isSingleSpace(value)) {
+            _bedrooms = 1;
+            _guestRooms = 0;
+            _livingRooms = value == 'roomAndParlour' ? 1 : 0;
+            if (value == 'selfContain') {
+              _bathroomAccess = 'private';
+              _toiletAccess = 'private';
+              _kitchenAccess = 'private';
+            }
+          }
+          _hasChanges = true;
+        });
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1328,12 +1486,41 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               ),
             ),
             const SizedBox(width: 12),
+            // State is not editable here: it was set from the pin at listing
+            // time and reviewed by an admin against the ownership document.
+            // Free text let it drift away from the address it was approved for.
             Expanded(
-              child: AppTextField(
-                label: 'State',
-                hint: 'State',
-                controller: _stateController,
-                textCapitalization: TextCapitalization.words,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('State', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_outline,
+                            size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: 8),
+                        Text(
+                          _stateController.text.trim().isEmpty
+                              ? 'Lagos'
+                              : _stateController.text.trim(),
+                          style: AppTextStyles.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

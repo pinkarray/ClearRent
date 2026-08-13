@@ -184,7 +184,7 @@ class PropertyCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      _getPropertyTypeLabel(property.propertyType),
+                      PropertyModel.typeLabelFor(property.propertyType),
                       style: AppTextStyles.labelSmall.copyWith(
                         color: Colors.white,
                       ),
@@ -242,6 +242,21 @@ class PropertyCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
 
+                  // Which unit this is, when it's one of several in a building.
+                  // Without it two identical flats in one compound are the same
+                  // card twice.
+                  if (property.unitDescriptor.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      property.unitDescriptor,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+
                   const SizedBox(height: 4),
 
                   // Location
@@ -266,30 +281,58 @@ class PropertyCard extends StatelessWidget {
 
                   const SizedBox(height: 12),
 
-                  // Features
-                  Row(
-                    children: [
-                      if (property.bedrooms > 0)
-                        _FeatureChip(
-                          icon: Icons.bed_outlined,
-                          label: '${property.bedrooms}',
+                  // Features. A single space (room / room & parlour / self
+                  // contain) has no meaningful room COUNT — showing
+                  // "1 bed · 1 bath" made a shared room identical to a
+                  // self-contained one-bedroom flat. What it gets exclusively
+                  // is the real spec, so that is what's shown.
+                  if (property.isSingleSpaceListing)
+                    Row(
+                      children: [
+                        Icon(
+                          property.sharedFacilities.isEmpty
+                              ? Icons.lock_outlined
+                              : Icons.group_outlined,
+                          size: 14,
+                          color: AppColors.textSecondary,
                         ),
-                      if (property.bathrooms > 0) ...[
-                        const SizedBox(width: 12),
-                        _FeatureChip(
-                          icon: Icons.bathtub_outlined,
-                          label: '${property.bathrooms}',
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            property.sharedFacilities.isEmpty
+                                ? 'Private bathroom & kitchen'
+                                : property.sharedFacilities,
+                            style: AppTextStyles.bodySmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
-                      if (property.toilets > 0) ...[
-                        const SizedBox(width: 12),
-                        _FeatureChip(
-                          icon: Icons.wc_outlined,
-                          label: '${property.toilets}',
-                        ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        if (property.bedrooms > 0)
+                          _FeatureChip(
+                            icon: Icons.bed_outlined,
+                            label: '${property.bedrooms}',
+                          ),
+                        if (property.bathrooms > 0) ...[
+                          const SizedBox(width: 12),
+                          _FeatureChip(
+                            icon: Icons.bathtub_outlined,
+                            label: '${property.bathrooms}',
+                          ),
+                        ],
+                        if (property.toilets > 0) ...[
+                          const SizedBox(width: 12),
+                          _FeatureChip(
+                            icon: Icons.wc_outlined,
+                            label: '${property.toilets}',
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
                 ],
               ),
             ),
@@ -299,24 +342,6 @@ class PropertyCard extends StatelessWidget {
     );
   }
 
-  String _getPropertyTypeLabel(String type) {
-    switch (type) {
-      case 'flat':
-        return 'Flat';
-      case 'duplex':
-        return 'Duplex';
-      case 'selfContain':
-        return 'Self Contain';
-      case 'room':
-        return 'Room';
-      case 'shop':
-        return 'Shop';
-      case 'office':
-        return 'Office';
-      default:
-        return type;
-    }
-  }
 }
 
 class _FeatureChip extends StatelessWidget {

@@ -18,6 +18,7 @@ import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/building_service.dart';
 import '../../../../shared/models/building_model.dart';
+import '../../../../shared/models/property_model.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/paystack_service.dart';
 import '../../../../services/pricing_service.dart';
@@ -85,7 +86,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   final ImagePicker _imagePicker = ImagePicker();
 
   int _currentStep = 0;
-  final int _totalSteps = 5;
+  final int _totalSteps = 6;
+
+  // Step indices. Named because the letting-scope step was inserted at the
+  // front and every switch below used to be a bare number.
+  static const int _stepLetting = 0;
+  static const int _stepPhotos = 1;
+  static const int _stepLocation = 2;
+  static const int _stepDetails = 3;
+  static const int _stepPricing = 4;
+  static const int _stepPreview = 5;
   bool _isPublishing = false;
   bool _isCheckingVerification = true;
   bool _isRestoringDraft = false;
@@ -163,6 +173,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   double? _longitude;
 
   String _propertyType = '';
+  // For single-space types only (room / room & parlour / self contain): what
+  // the tenant gets exclusively. Defaults to 'shared' because that is the norm
+  // for a let room — a landlord upgrading to 'private' is making a claim, which
+  // is the right way round.
+  String _bathroomAccess = 'shared';
+  String _toiletAccess = 'shared';
+  String _kitchenAccess = 'shared';
   int _bedrooms = 1;
   int _bathrooms = 1;
   int _toilets = 1;
@@ -218,8 +235,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // Building / compound grouping. When [_isInBuilding] the unit inherits a
   // building's shared ownership doc instead of uploading its own:
   //   - join existing → [_selectedBuildingId] set, [_creatingNewBuilding] false
-  //   - create new    → [_creatingNewBuilding] true, name/address + the
-  //     ownership-doc picker above feed BuildingService.createBuilding
+  //   - create new    → [_creatingNewBuilding] true; name/address/structure are
+  //     collected on the letting step and the ownership doc on the pricing
+  //     step, and publish feeds all of them to BuildingService.createBuilding
   final BuildingService _buildingService = BuildingService();
   // Cached so the form's frequent setState()s don't recreate this stream and
   // flash the building picker.
@@ -231,6 +249,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   final TextEditingController _buildingNameController = TextEditingController();
   final TextEditingController _buildingAddressController =
       TextEditingController();
+  // What the whole building is (BuildingModel.structures) — asked only when
+  // creating a new building; joining one inherits its structure.
+  String _buildingStructure = '';
+  // Which unit this is, in the landlord's own words, and which floor it sits on.
+  final TextEditingController _unitLabelController = TextEditingController();
+  String _floor = '';
+  // Set once the landlord answers "what are you letting out?" — until then
+  // neither choice is selected, so the question can't be skipped by default.
+  bool _lettingScopeChosen = false;
 
   final List<String> _weekDays = [
     'Monday',
@@ -441,6 +468,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'selectedBuildingId': _selectedBuildingId,
       'buildingName': _buildingNameController.text,
       'buildingAddress': _buildingAddressController.text,
+      'buildingStructure': _buildingStructure,
+      'unitLabel': _unitLabelController.text,
+      'floor': _floor,
+      'lettingScopeChosen': _lettingScopeChosen,
+      'bathroomAccess': _bathroomAccess,
+      'toiletAccess': _toiletAccess,
+      'kitchenAccess': _kitchenAccess,
       // Media paths (not the File objects) — see PropertyDraftService.persistMedia
       'imagePaths': _selectedImageFiles.map((f) => f.path).toList(),
       'videoPath': _selectedVideoFile?.path,
@@ -500,6 +534,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _selectedBuildingId = draft['selectedBuildingId'] as String?;
       _buildingNameController.text = draft['buildingName'] ?? '';
       _buildingAddressController.text = draft['buildingAddress'] ?? '';
+      _buildingStructure = draft['buildingStructure'] ?? '';
+      _unitLabelController.text = draft['unitLabel'] ?? '';
+      _floor = draft['floor'] ?? '';
+      // Drafts saved before the letting-scope step existed have no answer to
+      // restore. Treat them as answered only if they had already been grouped,
+      // so a standalone draft is asked the question rather than defaulted past it.
+      _lettingScopeChosen = draft['lettingScopeChosen'] ?? _isInBuilding;
+      _bathroomAccess = draft['bathroomAccess'] ?? 'shared';
+      _toiletAccess = draft['toiletAccess'] ?? 'shared';
+      _kitchenAccess = draft['kitchenAccess'] ?? 'shared';
 
       // Lists
       _selectedAmenities.clear();
@@ -557,7 +601,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // them back to the media step rather than letting them find out at
       // preview. Photos are required to publish anyway.
       var savedStep = draft['step'] ?? 0;
-      if ((missingImages > 0 || missingVideo) && savedStep > 0) savedStep = 0;
+      if ((missingImages > 0 || missingVideo) && savedStep > _stepPhotos) {
+        savedStep = _stepPhotos;
+      }
+      // A draft saved before the letting step existed carries an index from the
+      // old 5-step flow, and no answer to the letting question. Send it back to
+      // step 0 to be asked rather than letting it publish on the old default.
+      if (savedStep > _totalSteps - 1) savedStep = _totalSteps - 1;
+      if (!_lettingScopeChosen) savedStep = _stepLetting;
       _currentStep = savedStep;
       if (missingImages > 0 || missingVideo) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -967,6 +1018,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _detailsScrollController.dispose();
     _buildingNameController.dispose();
     _buildingAddressController.dispose();
+    _unitLabelController.dispose();
     _draftSaveTimer?.cancel();
     super.dispose();
   }
@@ -976,24 +1028,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     if (_titleManuallyEdited) return;
     if (_propertyType.isEmpty) return;
 
-    final typeLabels = {
-      'flat': 'Flat',
-      'duplex': 'Duplex',
-      'selfContain': 'Self Contain',
-      'bungalow': 'Bungalow',
-      'room': 'Room',
-      'shop': 'Shop',
-      'office': 'Office',
-    };
-
-    final label = typeLabels[_propertyType] ?? 'Property';
+    final label = PropertyModel.typeLabels[_propertyType] ?? 'Property';
+    final unit = _unitLabelController.text.trim();
 
     // Shop/Office don't need bedroom count
     if (_propertyType == 'shop' || _propertyType == 'office') {
       _titleController.text = label;
+    } else if (_isSingleSpace) {
+      // A single space has no bedroom count to state — "1 Bedroom Room" is what
+      // the old unconditional template produced, and it's in live data. The
+      // unit name leads when there is one, so sibling rooms are tellable apart.
+      _titleController.text = unit.isNotEmpty ? '$unit - $label' : label;
+    } else if (unit.isNotEmpty) {
+      _titleController.text = '$unit - $_bedrooms Bedroom $label';
     } else {
       _titleController.text = '$_bedrooms Bedroom $label';
     }
+  }
+
+  /// "a, b and c"
+  String _joinWords(List<String> words) {
+    if (words.length == 1) return words.first;
+    return '${words.sublist(0, words.length - 1).join(', ')} and ${words.last}';
   }
 
   /// Auto-generate description from property type, bedrooms & amenities
@@ -1006,7 +1062,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'duplex': 'duplex',
       'selfContain': 'self contain',
       'bungalow': 'bungalow',
+      'miniFlat': 'mini flat',
       'room': 'room',
+      'roomAndParlour': 'room and parlour',
       'shop': 'shop',
       'office': 'office space',
     };
@@ -1016,6 +1074,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
     if (_propertyType == 'shop' || _propertyType == 'office') {
       buffer.write('Well-maintained $label');
+    } else if (_isSingleSpace) {
+      // Lead with what's shared — it's the thing a tenant is comparing, and
+      // stating it plainly avoids the listing being read as self-contained.
+      buffer.write('A $label');
+      final shared = <String>[];
+      if (_bathroomAccess == 'shared') shared.add('bathroom');
+      if (_toiletAccess == 'shared') shared.add('toilet');
+      if (_kitchenAccess == 'shared') shared.add('kitchen');
+      if (shared.isNotEmpty) {
+        buffer.write(' with shared ${_joinWords(shared)}');
+      } else if (_kitchenAccess == 'none') {
+        buffer.write(' with private facilities and no kitchen');
+      } else {
+        buffer.write(' with private bathroom and kitchen');
+      }
     } else {
       buffer.write('$_bedrooms bedroom $label');
       if (_bathrooms > 0) {
@@ -1075,13 +1148,44 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   bool _validateCurrentStep() {
     switch (_currentStep) {
-      case 0: // Photos
+      case _stepLetting:
+        if (!_lettingScopeChosen) {
+          _showError('Please choose what you are letting out');
+          return false;
+        }
+        if (_isInBuilding) {
+          if (!_creatingNewBuilding && _selectedBuildingId == null) {
+            _showError(
+              'Please pick the building this unit is in, or add a new one.',
+            );
+            return false;
+          }
+          if (_creatingNewBuilding) {
+            if (_buildingNameController.text.trim().isEmpty) {
+              _showError('Please name the building or compound.');
+              return false;
+            }
+            if (_buildingStructure.isEmpty) {
+              _showError('Please say what the whole building is.');
+              return false;
+            }
+          }
+          // The unit label is what tells two units of the same shape apart —
+          // without it a compound of identical flats is unreadable to the
+          // tenant, the admin reviewer and the landlord's own list.
+          if (_unitLabelController.text.trim().isEmpty) {
+            _showError('Please give this unit a name, e.g. "Room 2".');
+            return false;
+          }
+        }
+        return true;
+      case _stepPhotos:
         if (_selectedImageFiles.isEmpty) {
           _showError('Please add at least one photo');
           return false;
         }
         return true;
-      case 1: // Location
+      case _stepLocation:
         if (_addressController.text.isEmpty) {
           _showError('Please enter the address');
           return false;
@@ -1101,7 +1205,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           return false;
         }
         return true;
-      case 2: // Details
+      case _stepDetails:
         if (_titleController.text.isEmpty) {
           _showError('Please enter a title');
           return false;
@@ -1111,7 +1215,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           return false;
         }
         return true;
-      case 3: // Pricing
+      case _stepPricing:
         if (_rentController.text.isEmpty) {
           _showError('Please enter the rent amount');
           return false;
@@ -1165,22 +1269,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please select an agent to handle inspections');
           return false;
         }
-        // Grouping-aware ownership validation.
-        if (_isInBuilding && !_creatingNewBuilding) {
-          // Joining an existing building — inherits its doc, none required here.
-          if (_selectedBuildingId == null) {
-            _showError(
-              'Please select the building this unit belongs to, or create a new one.',
-            );
-            return false;
-          }
-        } else {
-          // Standalone OR creating a new building — a document is required.
-          if (_creatingNewBuilding &&
-              _buildingNameController.text.trim().isEmpty) {
-            _showError('Please enter a name for the new building.');
-            return false;
-          }
+        // Grouping-aware ownership validation. WHICH building this unit is in
+        // is settled back on the letting step; what's left here is the document
+        // that follows from that answer — none when joining an existing
+        // building, one when standalone or starting a new building.
+        if (!(_isInBuilding && !_creatingNewBuilding)) {
           if (_ownershipDocFile == null) {
             _showError(
               _creatingNewBuilding
@@ -1337,6 +1430,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           buildingId = await _buildingService.createBuilding(
             name: _buildingNameController.text.trim(),
             address: buildingAddress,
+            structure: _buildingStructure,
             ownershipDocUrl: uploadedUrl,
             ownershipDocType: _ownershipDocType,
           );
@@ -1505,6 +1599,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         ownershipDocUrl: ownershipDocUrl,
         ownershipDocType: buildingId != null ? null : _ownershipDocType,
         buildingId: buildingId,
+        // Only meaningful inside a building; a whole-property listing has no
+        // sibling units to be told apart from.
+        unitLabel: buildingId != null
+            ? _unitLabelController.text.trim()
+            : null,
+        floor: buildingId != null && _floor.isNotEmpty ? _floor : null,
+        // Only for a single space. A flat's own bathroom is private by
+        // construction, so writing the fields there would be noise.
+        bathroomAccess: _isSingleSpace ? _bathroomAccess : null,
+        toiletAccess: _isSingleSpace ? _toiletAccess : null,
+        kitchenAccess: _isSingleSpace ? _kitchenAccess : null,
         listingFeePaymentReference: _listingFeePaymentReference,
         assignedAgentId:
             _inspectionHandler == 'agent' ? _selectedAgentId : null,
@@ -2138,6 +2243,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 controller: _pageController,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
+                  _buildLettingScopeStep(),
                   _buildPhotosStep(),
                   _buildLocationStep(),
                   _buildDetailsStep(),
@@ -2202,15 +2308,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   String _getStepTitle(int step) {
     switch (step) {
-      case 0:
+      case _stepLetting:
+        return 'What you\'re letting';
+      case _stepPhotos:
         return 'Photos & Video';
-      case 1:
+      case _stepLocation:
         return 'Location';
-      case 2:
+      case _stepDetails:
         return 'Details';
-      case 3:
+      case _stepPricing:
         return 'Pricing';
-      case 4:
+      case _stepPreview:
         return 'Preview';
       default:
         return '';
@@ -2706,6 +2814,203 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
+  String _accessLabel(String access) {
+    switch (access) {
+      case 'private':
+        return 'Private';
+      case 'none':
+        return 'None';
+      default:
+        return 'Shared';
+    }
+  }
+
+  /// Clear the chosen type when changing the letting scope no longer offers it
+  /// — picking "Room" as a unit and then switching to "the whole property"
+  /// otherwise leaves 'room' selected with no chip showing it.
+  void _dropTypeIfNotOffered() {
+    if (_propertyType.isEmpty) return;
+    final offered = PropertyModel.typesForScope(inBuilding: _isInBuilding);
+    if (!offered.contains(_propertyType)) _propertyType = '';
+  }
+
+  /// Bring the room counts in line with the type just picked, so a listing
+  /// can't carry a count the type contradicts. Without this, choosing Flat and
+  /// setting 3 bedrooms, then switching to Room, keeps bedrooms at 3 — and the
+  /// card renders "3 bed" for a single room.
+  void _applyTypeDefaults(String type) {
+    if (!PropertyModel.isSingleSpace(type)) return;
+    _bedrooms = 1;
+    _guestRooms = 0;
+    // A room & parlour is exactly that: the room plus a sitting room.
+    _livingRooms = type == 'roomAndParlour' ? 1 : 0;
+    // Self contain means self-contained — its whole point is private
+    // facilities. The other two default to shared, which is the norm.
+    if (type == 'selfContain') {
+      _bathroomAccess = 'private';
+      _toiletAccess = 'private';
+      _kitchenAccess = 'private';
+    }
+  }
+
+  /// True when the chosen type is one space, so its spec is "what do you
+  /// share" rather than "how many rooms".
+  bool get _isSingleSpace =>
+      _propertyType.isNotEmpty && PropertyModel.isSingleSpace(_propertyType);
+
+  /// The six counters, for a multi-room dwelling where bedroom count is a real
+  /// question. Unchanged — only the condition around them is new.
+  Widget _buildRoomCounters() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildCounter(
+                'Bedrooms',
+                _bedrooms,
+                (v) => setState(() {
+                  _bedrooms = v;
+                  _updateAutoTitle();
+                  _updateAutoDescription();
+                }),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildCounter(
+                'Bathrooms',
+                _bathrooms,
+                (v) => setState(() {
+                  _bathrooms = v;
+                  _updateAutoDescription();
+                }),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildCounter(
+                'Toilets',
+                _toilets,
+                (v) => setState(() => _toilets = v),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildCounter(
+                'Living Room',
+                _livingRooms,
+                (v) => setState(() => _livingRooms = v),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildCounter(
+                'Guest Room',
+                _guestRooms,
+                (v) => setState(() => _guestRooms = v),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildCounter(
+                'Kitchen',
+                _kitchens,
+                (v) => setState(() => _kitchens = v),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// What a single space actually needs answering. A room's bedroom count is a
+  /// tautology; what a tenant is choosing between is whether the bathroom and
+  /// kitchen are theirs. This is the axis that separates a single room from a
+  /// room & parlour from a self contain.
+  Widget _buildFacilitiesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('What comes with it?', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 4),
+        Text(
+          'The most important thing a tenant wants to know about a '
+          '${PropertyModel.typeLabelFor(_propertyType).toLowerCase()} - and '
+          'what your listing is compared against.',
+          style: AppTextStyles.caption
+              .copyWith(color: AppColors.textSecondary, height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        _buildAccessRow(
+          label: 'Bathroom',
+          value: _bathroomAccess,
+          onChanged: (v) => setState(() {
+            _bathroomAccess = v;
+            _updateAutoDescription();
+          }),
+        ),
+        const SizedBox(height: 12),
+        _buildAccessRow(
+          label: 'Toilet',
+          value: _toiletAccess,
+          onChanged: (v) => setState(() => _toiletAccess = v),
+        ),
+        const SizedBox(height: 12),
+        _buildAccessRow(
+          label: 'Kitchen',
+          value: _kitchenAccess,
+          // A room with no kitchen at all is common and worth stating plainly
+          // rather than leaving a tenant to assume there is one.
+          options: const ['private', 'shared', 'none'],
+          onChanged: (v) => setState(() {
+            _kitchenAccess = v;
+            _updateAutoDescription();
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessRow({
+    required String label,
+    required String value,
+    required ValueChanged<String> onChanged,
+    List<String> options = const ['private', 'shared'],
+  }) {
+    const labels = {
+      'private': 'Private',
+      'shared': 'Shared',
+      'none': 'None',
+    };
+    return Row(
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(label, style: AppTextStyles.bodyMedium),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 8,
+            children: options
+                .map((o) => _buildSelectableChip(
+                      label: labels[o]!,
+                      selected: value == o,
+                      onTap: () => onChanged(o),
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDetailsStep() {
     return SingleChildScrollView(
       controller: _detailsScrollController,
@@ -2726,93 +3031,37 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 20),
 
-          // Property Type
-          Text('Property Type', style: AppTextStyles.labelMedium),
+          // Property Type — what the TENANT gets. What the whole BUILDING is
+          // lives on BuildingModel.structure, asked on the letting step, so
+          // this no longer has to answer both at once. The list is filtered by
+          // that answer: "the whole property" never offers Room (a lone room is
+          // a unit in something, and that path records what it sits in).
+          //
+          // Shop/Office are in neither list until the commercial branch exists
+          // — the rest of this step still assumes a home, so a commercial
+          // listing comes out wrong. Their labels are still handled everywhere.
+          Text(
+            _isInBuilding ? 'What is this unit?' : 'Property Type',
+            style: AppTextStyles.labelMedium,
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [
-              _buildTypeChip('Flat', 'flat'),
-              _buildTypeChip('Duplex', 'duplex'),
-              _buildTypeChip('Self Contain', 'selfContain'),
-              _buildTypeChip('Bungalow', 'bungalow'),
-              _buildTypeChip('Room', 'room'),
-              // Shop/Office are hidden until the commercial branch exists — the
-              // rest of this step (bedrooms, kitchen, residential amenities)
-              // still assumes a home, so a commercial listing comes out wrong.
-              // The type values are still handled everywhere; restoring these
-              // two chips is all it takes to bring them back.
-            ],
+            children: PropertyModel.typesForScope(inBuilding: _isInBuilding)
+                .map((t) => _buildTypeChip(PropertyModel.typeLabelFor(t), t))
+                .toList(),
           ),
           const SizedBox(height: 24),
 
-          // Bedrooms, Bathrooms, Toilets
-          Row(
-            children: [
-              Expanded(
-                child: _buildCounter(
-                  'Bedrooms',
-                  _bedrooms,
-                  (v) => setState(() {
-                    _bedrooms = v;
-                    _updateAutoTitle();
-                    _updateAutoDescription();
-                  }),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildCounter(
-                  'Bathrooms',
-                  _bathrooms,
-                  (v) => setState(() {
-                    _bathrooms = v;
-                    _updateAutoDescription();
-                  }),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildCounter(
-                  'Toilets',
-                  _toilets,
-                  (v) => setState(() => _toilets = v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Second row: Living Room, Guest Room, Kitchen
-          Row(
-            children: [
-              Expanded(
-                child: _buildCounter(
-                  'Living Room',
-                  _livingRooms,
-                  (v) => setState(() => _livingRooms = v),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildCounter(
-                  'Guest Room',
-                  _guestRooms,
-                  (v) => setState(() => _guestRooms = v),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildCounter(
-                  'Kitchen',
-                  _kitchens,
-                  (v) => setState(() => _kitchens = v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+          // A single space is described by what it SHARES, not by room counts.
+          if (_isSingleSpace) ...[
+            _buildFacilitiesSection(),
+            const SizedBox(height: 24),
+          ] else ...[
+            _buildRoomCounters(),
+            const SizedBox(height: 20),
+          ],
 
           // Model A: one unit = one rent = one tenancy. A property is let to a
           // single household (its bedroom count captures size) — it is not
@@ -3101,6 +3350,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       onTap:
           () => setState(() {
             _propertyType = value;
+            _applyTypeDefaults(value);
             _updateAutoTitle();
             _updateAutoDescription();
           }),
@@ -3491,12 +3741,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             _buildTotalPackagePreview(),
             const SizedBox(height: 32),
 
-            // ── Building / compound grouping ──
-            _buildBuildingGroupingSection(),
-
-            const SizedBox(height: 24),
-
-            // ── Proof of ownership (conditional on grouping choice) ──
+            // ── Proof of ownership (follows from the letting-scope answer) ──
             _buildOwnershipDocStep(),
 
             const SizedBox(height: 32),
@@ -4114,54 +4359,118 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     return double.tryParse(cleanedText) ?? 0;
   }
 
-  // ── Building / compound grouping ──────────────────────────────────────────
-  // Lets the landlord mark this listing as one unit in a building/compound they
-  // own. Units in the same building share ONE ownership document (verified once
-  // for all), so a grouped unit skips its own doc upload.
-  Widget _buildBuildingGroupingSection() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Property Grouping', style: AppTextStyles.h4),
-      const SizedBox(height: 4),
-      Text(
-        'Is this a standalone listing, or one unit in a building/compound you '
-        'own? Units in the same building share one ownership document.',
-        style: AppTextStyles.caption
-            .copyWith(color: AppColors.textSecondary, height: 1.5),
-      ),
-      const SizedBox(height: 12),
-      Row(children: [
-        Expanded(
-          child: _buildGroupingChoiceCard(
-            label: 'Standalone',
-            subtitle: 'One unit, its own document',
-            icon: Icons.home_outlined,
-            selected: !_isInBuilding,
-            onTap: () => setState(() {
-              _isInBuilding = false;
-              _creatingNewBuilding = false;
-              _selectedBuildingId = null;
-            }),
-          ),
+  // ── What you're letting ───────────────────────────────────────────────────
+  // The first step, deliberately. This used to be asked at the BOTTOM of the
+  // pricing step, in ownership language ("Standalone / In a building — shares
+  // one document"), which described the paperwork rather than the letting: a
+  // landlord letting one room of their own duplex saw themselves in neither
+  // option. Asking what is being let first makes the document consequence
+  // follow from it, and the building is where the STRUCTURE now lives, so
+  // propertyType is free to mean only "what the tenant gets".
+  Widget _buildLettingScopeStep() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('What are you letting out?', style: AppTextStyles.h4),
+        const SizedBox(height: 8),
+        Text(
+          'This decides how the listing is described and whose ownership '
+          'document covers it.',
+          style: AppTextStyles.bodySmall
+              .copyWith(color: AppColors.textSecondary, height: 1.5),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildGroupingChoiceCard(
-            label: 'In a building',
-            subtitle: 'Shares one document',
-            icon: Icons.apartment_outlined,
-            selected: _isInBuilding,
-            onTap: () => setState(() => _isInBuilding = true),
-          ),
+        const SizedBox(height: 20),
+        _buildLettingChoiceCard(
+          label: 'The whole property',
+          subtitle:
+              'One tenant gets the entire place - a flat, a bungalow, a whole '
+              'duplex.',
+          icon: Icons.home_outlined,
+          selected: _lettingScopeChosen && !_isInBuilding,
+          onTap: () => setState(() {
+            _lettingScopeChosen = true;
+            _isInBuilding = false;
+            _creatingNewBuilding = false;
+            _selectedBuildingId = null;
+            _unitLabelController.clear();
+            _floor = '';
+            _dropTypeIfNotOffered();
+          }),
         ),
+        const SizedBox(height: 12),
+        _buildLettingChoiceCard(
+          label: 'One unit inside it',
+          subtitle:
+              'A room or flat in a house, compound or building you own. You '
+              'list each unit separately at its own rent, and one ownership '
+              'document covers them all.',
+          icon: Icons.meeting_room_outlined,
+          selected: _lettingScopeChosen && _isInBuilding,
+          onTap: () => setState(() {
+            _lettingScopeChosen = true;
+            _isInBuilding = true;
+            _dropTypeIfNotOffered();
+          }),
+        ),
+        if (_lettingScopeChosen && _isInBuilding) ...[
+          const SizedBox(height: 28),
+          Text('Which building is it in?', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Pick one you have already listed under, or add it now.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          _buildBuildingPicker(),
+          const SizedBox(height: 24),
+          Text('What do you call this unit?',
+              style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Tenants and our reviewers see this to tell it apart from the '
+            'other units in the same building.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          AppTextField(
+            label: 'Unit name',
+            hint: 'e.g. Room 2, Left flat, BQ',
+            controller: _unitLabelController,
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(_updateAutoTitle),
+          ),
+          const SizedBox(height: 20),
+          Text('Which floor is it on?', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Optional.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PropertyModel.floors
+                .map((f) => _buildSelectableChip(
+                      label: f['label']!,
+                      selected: _floor == f['value'],
+                      // Tapping the selected chip clears it — the field is
+                      // optional and there is no other way back to "unset".
+                      onTap: () => setState(
+                        () => _floor = _floor == f['value'] ? '' : f['value']!,
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
       ]),
-      if (_isInBuilding) ...[
-        const SizedBox(height: 16),
-        _buildBuildingPicker(),
-      ],
-    ]);
+    );
   }
 
-  Widget _buildGroupingChoiceCard({
+  Widget _buildLettingChoiceCard({
     required String label,
     required String subtitle,
     required IconData icon,
@@ -4171,7 +4480,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary.withAlpha(20) : AppColors.surface,
           borderRadius: BorderRadius.circular(12),
@@ -4180,20 +4489,56 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(icon,
               color: selected ? AppColors.primary : AppColors.textSecondary,
-              size: 22),
-          const SizedBox(height: 8),
-          Text(label,
-              style: AppTextStyles.labelMedium.copyWith(
-                color: selected ? AppColors.primary : AppColors.textPrimary,
-              )),
-          const SizedBox(height: 2),
-          Text(subtitle,
-              style: AppTextStyles.caption
-                  .copyWith(color: AppColors.textSecondary)),
+              size: 24),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: AppTextStyles.labelLarge.copyWith(
+                        color:
+                            selected ? AppColors.primary : AppColors.textPrimary,
+                      )),
+                  const SizedBox(height: 4),
+                  Text(subtitle,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.5,
+                      )),
+                ]),
+          ),
         ]),
+      ),
+    );
+  }
+
+  /// Small selectable pill, used for the structure and floor choices.
+  Widget _buildSelectableChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: selected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }
@@ -4219,9 +4564,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             const SizedBox(height: 12),
             AppTextField(
               label: 'Building address',
-              hint: 'Defaults to this unit\'s address - edit if different',
+              hint: 'Optional - defaults to this unit\'s address',
               controller: _buildingAddressController,
               textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 16),
+            // The structure lives on the BUILDING, not the listing. It is what
+            // lets a room say "a room in a duplex" without the listing itself
+            // claiming to be the duplex.
+            Text('What is the whole building?',
+                style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: BuildingModel.structures
+                  .map((s) => _buildSelectableChip(
+                        label: s['label']!,
+                        selected: _buildingStructure == s['value'],
+                        onTap: () =>
+                            setState(() => _buildingStructure = s['value']!),
+                      ))
+                  .toList(),
             ),
           ],
         ]);
@@ -4292,14 +4656,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   Widget _buildCreateBuildingTile() {
     final selected = _creatingNewBuilding;
     return GestureDetector(
+      // The building address is left blank on purpose: this step now runs
+      // BEFORE the location step, so there is no unit address to prefill from
+      // yet. Publish falls back to the unit's address when it's still empty.
       onTap: () => setState(() {
         _creatingNewBuilding = true;
         _selectedBuildingId = null;
-        // A compound shares the unit's street address — prefill it so the
-        // landlord doesn't retype what they already entered (still editable).
-        if (_buildingAddressController.text.trim().isEmpty) {
-          _buildingAddressController.text = _addressController.text.trim();
-        }
       }),
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -4344,8 +4706,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           Expanded(
             child: Text(
               _selectedBuildingId == null
-                  ? 'Select a building above. This unit will inherit the '
-                      'building\'s ownership document.'
+                  ? 'Go back to the first step and pick this unit\'s building. '
+                      'It will inherit that building\'s ownership document.'
                   : 'This unit inherits the selected building\'s ownership '
                       'document - no separate upload needed.',
               style: AppTextStyles.caption
@@ -5684,15 +6046,34 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           const SizedBox(height: 24),
 
           // Details summary
-          _buildPreviewSection('Property Type', _propertyType.toUpperCase()),
-          _buildPreviewSection('Bedrooms', '$_bedrooms'),
-          _buildPreviewSection('Bathrooms', '$_bathrooms'),
-          _buildPreviewSection('Toilets', '$_toilets'),
-          if (_livingRooms > 0)
-            _buildPreviewSection('Living Rooms', '$_livingRooms'),
-          if (_guestRooms > 0)
-            _buildPreviewSection('Guest Rooms', '$_guestRooms'),
-          if (_kitchens > 0) _buildPreviewSection('Kitchens', '$_kitchens'),
+          _buildPreviewSection(
+            'Letting',
+            _isInBuilding ? 'One unit in a building' : 'The whole property',
+          ),
+          if (_isInBuilding && _unitLabelController.text.trim().isNotEmpty)
+            _buildPreviewSection('Unit', _unitLabelController.text.trim()),
+          if (_isInBuilding && _floor.isNotEmpty)
+            _buildPreviewSection('Floor', PropertyModel.floorLabelFor(_floor)),
+          _buildPreviewSection(
+            'Property Type',
+            PropertyModel.typeLabelFor(_propertyType),
+          ),
+          // A single space is described by what it shares, not by counts —
+          // showing "Bedrooms 1" for a room is the tautology this replaced.
+          if (_isSingleSpace) ...[
+            _buildPreviewSection('Bathroom', _accessLabel(_bathroomAccess)),
+            _buildPreviewSection('Toilet', _accessLabel(_toiletAccess)),
+            _buildPreviewSection('Kitchen', _accessLabel(_kitchenAccess)),
+          ] else ...[
+            _buildPreviewSection('Bedrooms', '$_bedrooms'),
+            _buildPreviewSection('Bathrooms', '$_bathrooms'),
+            _buildPreviewSection('Toilets', '$_toilets'),
+            if (_livingRooms > 0)
+              _buildPreviewSection('Living Rooms', '$_livingRooms'),
+            if (_guestRooms > 0)
+              _buildPreviewSection('Guest Rooms', '$_guestRooms'),
+            if (_kitchens > 0) _buildPreviewSection('Kitchens', '$_kitchens'),
+          ],
           _buildPreviewSection(
             'Inspections',
             _inspectionHandler == 'self' ? 'Handled by you' : 'Assigned agent',

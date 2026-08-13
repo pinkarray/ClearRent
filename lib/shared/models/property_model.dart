@@ -90,6 +90,28 @@ class PropertyModel {
   // (one C of O covers every unit of the same owner). Null = standalone listing.
   final String? buildingId;
 
+  // What the landlord calls this unit within its building — "Room 2",
+  // "Left flat", "BQ". Two units of the same shape in one compound are
+  // otherwise indistinguishable: both render as their auto-title
+  // ("1 Bedroom Flat") to the tenant, the admin reviewer and the landlord's own
+  // list. Only meaningful when [buildingId] is set.
+  final String? unitLabel;
+
+  // Which floor the unit is on: 'ground' | '1' | '2' … Stored as a string so
+  // 'ground' and a number share one field. Not cosmetic in Lagos — no lift,
+  // water pressure at the top, security on the ground floor.
+  final String? floor;
+
+  // What the tenant gets exclusively, for single-space types (see
+  // [isSingleSpace]). 'private' | 'shared'; kitchen also allows 'none'.
+  // This is the axis that separates a single room from a room & parlour from a
+  // self contain — they differ by what is shared, not by room count. Null on a
+  // multi-room dwelling (a flat's own bathroom is private by construction) and
+  // on every listing written before this field existed.
+  final String? bathroomAccess;
+  final String? toiletAccess;
+  final String? kitchenAccess;
+
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
 
@@ -181,7 +203,140 @@ class PropertyModel {
     this.ownershipDocStatus = 'none',
     this.ownershipDocRejectionReason,
     this.buildingId,
+    this.unitLabel,
+    this.floor,
+    this.bathroomAccess,
+    this.toiletAccess,
+    this.kitchenAccess,
   });
+
+  /// Every propertyType value with its label. ONE vocabulary: the add/edit
+  /// chips, the tenant and agent filters, the cards and the admin all read from
+  /// here. They used to hold four different lists — the tenant filter offered
+  /// 'self_contain', 'studio' and 'mansion', none of which anything writes, so
+  /// picking Self Contain matched nothing.
+  /// 'shop'/'office' are pickable in neither list (hidden until the commercial
+  /// branch exists) but keep their labels so an existing doc still renders.
+  static const Map<String, String> typeLabels = {
+    'flat': 'Flat',
+    'duplex': 'Duplex',
+    'bungalow': 'Bungalow',
+    'selfContain': 'Self Contain',
+    'miniFlat': 'Mini Flat',
+    'room': 'Room',
+    'roomAndParlour': 'Room & Parlour',
+    'shop': 'Shop',
+    'office': 'Office',
+  };
+
+  /// Types offered when the landlord lets the WHOLE property. 'room' is absent
+  /// deliberately: a lone room IS a unit in something, so that answer belongs
+  /// to the grouped path, where the building it sits in gets recorded.
+  static const List<String> wholePropertyTypes = [
+    'flat',
+    'duplex',
+    'bungalow',
+    'selfContain',
+    'miniFlat',
+  ];
+
+  /// Types offered for one unit inside a building. 'duplex' stays: a compound
+  /// can genuinely contain a duplex, and one in production does.
+  static const List<String> unitTypes = [
+    'room',
+    'roomAndParlour',
+    'selfContain',
+    'miniFlat',
+    'flat',
+    'duplex',
+  ];
+
+  /// The union, for filters and any surface that isn't asking the landlord to
+  /// choose. Order is picker order.
+  static const List<String> selectableTypes = [
+    'flat',
+    'duplex',
+    'bungalow',
+    'selfContain',
+    'miniFlat',
+    'room',
+    'roomAndParlour',
+  ];
+
+  static List<String> typesForScope({required bool inBuilding}) =>
+      inBuilding ? unitTypes : wholePropertyTypes;
+
+  /// Types that ARE a single space. There is no bedroom count to give — "1
+  /// Bedroom Room" is a tautology, and it made a room render as `1 bed · 1 bath`
+  /// on the card, byte-identical to a self-contained one-bedroom flat. What
+  /// separates these rungs of the Lagos ladder is not room COUNT, it is which
+  /// facilities the tenant gets exclusively — see [sharedFacilities].
+  static bool isSingleSpace(String type) =>
+      type == 'room' || type == 'roomAndParlour' || type == 'selfContain';
+
+  static String typeLabelFor(String value) => typeLabels[value] ?? value;
+
+  /// Floor options offered to a landlord, in order. Value is what's stored.
+  static const List<Map<String, String>> floors = [
+    {'value': 'ground', 'label': 'Ground floor'},
+    {'value': '1', 'label': '1st floor'},
+    {'value': '2', 'label': '2nd floor'},
+    {'value': '3', 'label': '3rd floor'},
+    {'value': '4', 'label': '4th floor'},
+  ];
+
+  /// Human label for [floor], or empty when unset.
+  String get floorLabel => floorLabelFor(floor);
+
+  /// True when this listing is one space and its spec is about what's shared,
+  /// not how many rooms it has.
+  bool get isSingleSpaceListing => isSingleSpace(propertyType);
+
+  /// What the tenant SHARES, as a display line: "shared bathroom · shared
+  /// kitchen". Empty when everything is private — the assumption a tenant makes
+  /// unless told otherwise, so there is nothing to say.
+  ///
+  /// This is what a room's card shows in place of `1 bed · 1 bath · 1 toilet`,
+  /// which was indistinguishable from a self-contained one-bedroom flat.
+  String get sharedFacilities {
+    final parts = <String>[];
+    if (bathroomAccess == 'shared') parts.add('shared bathroom');
+    if (toiletAccess == 'shared') parts.add('shared toilet');
+    if (kitchenAccess == 'shared') {
+      parts.add('shared kitchen');
+    } else if (kitchenAccess == 'none') {
+      parts.add('no kitchen');
+    }
+    return parts.join(' · ');
+  }
+
+  /// The one-line spec for a card: the type, then whatever is shared.
+  /// "Room · shared bathroom · shared kitchen", or "Self Contain" when the
+  /// tenant gets everything to themselves.
+  String get spaceSummary {
+    final shared = sharedFacilities;
+    final label = typeLabelFor(propertyType);
+    return shared.isEmpty ? label : '$label · $shared';
+  }
+
+  /// One line naming this unit inside its building — "Room 2 · 1st floor".
+  /// Empty for a standalone listing, which has no siblings to be told from.
+  String get unitDescriptor {
+    final parts = <String>[];
+    if (unitLabel != null && unitLabel!.isNotEmpty) parts.add(unitLabel!);
+    if (floorLabel.isNotEmpty) parts.add(floorLabel);
+    return parts.join(' · ');
+  }
+
+  /// Label for a floor value, or empty when unset. Falls back to "Floor N" so a
+  /// value written before an option existed still reads.
+  static String floorLabelFor(String? value) {
+    if (value == null || value.isEmpty) return '';
+    for (final f in floors) {
+      if (f['value'] == value) return f['label']!;
+    }
+    return 'Floor $value';
+  }
 
   /// Address shown to a viewer who is NOT yet entitled to the exact address.
   /// Area-level only: LGA, city, state — enough to judge location without
@@ -372,6 +527,11 @@ class PropertyModel {
     String? ownershipDocStatus,
     String? ownershipDocRejectionReason,
     String? buildingId,
+    String? unitLabel,
+    String? floor,
+    String? bathroomAccess,
+    String? toiletAccess,
+    String? kitchenAccess,
     String? videoUrl,
     List<String>? ceilingTypes,
     List<Map<String, dynamic>>? recurringDues,
@@ -441,6 +601,11 @@ class PropertyModel {
       ownershipDocStatus: ownershipDocStatus ?? this.ownershipDocStatus,
       ownershipDocRejectionReason: ownershipDocRejectionReason ?? this.ownershipDocRejectionReason,
       buildingId: buildingId ?? this.buildingId,
+      unitLabel: unitLabel ?? this.unitLabel,
+      floor: floor ?? this.floor,
+      bathroomAccess: bathroomAccess ?? this.bathroomAccess,
+      toiletAccess: toiletAccess ?? this.toiletAccess,
+      kitchenAccess: kitchenAccess ?? this.kitchenAccess,
     );
   }
 
@@ -574,6 +739,11 @@ class PropertyModel {
       ownershipDocStatus: json['ownershipDocStatus'] as String? ?? 'none',
       ownershipDocRejectionReason: json['ownershipDocRejectionReason'] as String?,
       buildingId: json['buildingId'] as String?,
+      unitLabel: json['unitLabel'] as String?,
+      floor: json['floor'] as String?,
+      bathroomAccess: json['bathroomAccess'] as String?,
+      toiletAccess: json['toiletAccess'] as String?,
+      kitchenAccess: json['kitchenAccess'] as String?,
     );
   }
 
@@ -671,6 +841,11 @@ class PropertyModel {
       ownershipDocStatus: data['ownershipDocStatus'] as String? ?? 'none',
       ownershipDocRejectionReason: data['ownershipDocRejectionReason'] as String?,
       buildingId: data['buildingId'] as String?,
+      unitLabel: data['unitLabel'] as String?,
+      floor: data['floor'] as String?,
+      bathroomAccess: data['bathroomAccess'] as String?,
+      toiletAccess: data['toiletAccess'] as String?,
+      kitchenAccess: data['kitchenAccess'] as String?,
     );
   }
 
@@ -737,6 +912,11 @@ class PropertyModel {
       'ownershipDocStatus': ownershipDocStatus,
       if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
       if (buildingId != null) 'buildingId': buildingId,
+      if (unitLabel != null) 'unitLabel': unitLabel,
+      if (floor != null) 'floor': floor,
+      if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
+      if (toiletAccess != null) 'toiletAccess': toiletAccess,
+      if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
     };
   }
 
@@ -809,6 +989,11 @@ class PropertyModel {
       'ownershipDocStatus': ownershipDocStatus,
       if (ownershipDocRejectionReason != null) 'ownershipDocRejectionReason': ownershipDocRejectionReason,
       if (buildingId != null) 'buildingId': buildingId,
+      if (unitLabel != null) 'unitLabel': unitLabel,
+      if (floor != null) 'floor': floor,
+      if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
+      if (toiletAccess != null) 'toiletAccess': toiletAccess,
+      if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
     };
   }
 }

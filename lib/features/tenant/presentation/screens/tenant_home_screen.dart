@@ -37,15 +37,15 @@ import 'dart:io';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 
-const List<Map<String, String>> propertyTypes = [
-  {'label': 'All', 'value': 'all'},
-  {'label': 'Flat', 'value': 'flat'},
-  {'label': 'Duplex', 'value': 'duplex'},
-  {'label': 'Bungalow', 'value': 'bungalow'},
-  {'label': 'Self Contain', 'value': 'self_contain'},
-  {'label': 'Room & Parlour', 'value': 'room_and_parlour'},
-  {'label': 'Studio', 'value': 'studio'},
-  {'label': 'Mansion', 'value': 'mansion'},
+// Derived from the one vocabulary in PropertyModel. This list used to be its
+// own invention — 'self_contain', 'room_and_parlour', 'studio' and 'mansion'
+// are values nothing has ever written, so those filters matched no property at
+// all while 'room' and 'selfContain' listings were unreachable.
+final List<Map<String, String>> propertyTypes = [
+  const {'label': 'All', 'value': 'all'},
+  ...PropertyModel.selectableTypes.map(
+    (t) => {'label': PropertyModel.typeLabelFor(t), 'value': t},
+  ),
 ];
 
 const List<String> lagosAreas = [

@@ -17,6 +17,7 @@ import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
 import '../../../landlord/presentation/widgets/property_agreement_card.dart';
 import '../../../../services/building_service.dart';
+import '../../../../shared/models/building_model.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/inspection_service.dart';
@@ -68,7 +69,35 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   // For a unit grouped under a building, the shared ownership doc lives on the
   // building. Loaded async; null until then (or for standalone listings).
-  String? _buildingDocStatus;
+  BuildingModel? _building;
+  String? get _buildingDocStatus => _building?.ownershipDocStatus;
+
+  /// "Room 2 · 1st floor · in a duplex" — what this unit is and what it sits
+  /// in. Empty for a standalone listing, and degrades cleanly while the
+  /// building loads or if it carries no structure.
+  ///
+  /// The building NAME is address-gated. The add-property hint asks for
+  /// "Olu Compound, 12 Allen Ave", so a name routinely carries the street the
+  /// `private/location` subdoc exists to withhold until the inspection is paid.
+  /// The structure is area-agnostic and safe for everyone.
+  String get _unitContextLine {
+    if (widget.property.buildingId == null) return '';
+    final parts = <String>[];
+    final unit = widget.property.unitDescriptor;
+    if (unit.isNotEmpty) parts.add(unit);
+    final b = _building;
+    if (b != null) {
+      final structure = b.structureLabel;
+      if (_isOwner || _addressUnlocked) {
+        parts.add(
+          structure.isEmpty ? 'in ${b.name}' : 'in ${b.name} ($structure)',
+        );
+      } else if (structure.isNotEmpty) {
+        parts.add('in a ${structure.toLowerCase()}');
+      }
+    }
+    return parts.join(' · ');
+  }
 
   /// Ownership-doc status that actually governs this listing: the building's
   /// shared status when grouped (property.ownershipDocStatus is 'inherited'
@@ -171,7 +200,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (buildingId == null || buildingId.isEmpty) return;
     final building = await _buildingService.getBuilding(buildingId);
     if (!mounted || building == null) return;
-    setState(() => _buildingDocStatus = building.ownershipDocStatus);
+    setState(() => _building = building);
   }
 
   @override
@@ -1028,6 +1057,32 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           const SizedBox(height: 16),
 
                           Text(property.title, style: AppTextStyles.h3),
+
+                          // What this unit is and what it sits in — "Room 2 ·
+                          // 1st floor · in Ade's Compound (Duplex)". Only for a
+                          // grouped unit; a standalone listing is its own
+                          // building and the line would be noise.
+                          if (_unitContextLine.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.apartment_outlined,
+                                  size: 18,
+                                  color: AppColors.textSecondary,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    _unitContextLine,
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
 
                           const SizedBox(height: 8),
 
@@ -3297,7 +3352,83 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
+  /// What a room / room & parlour / self contain actually comes with. Each
+  /// facility says private or shared outright, because the difference is the
+  /// whole basis on which a tenant picks between them.
+  Widget _buildFacilitiesRow(PropertyModel property) {
+    final rows = <Widget>[
+      _facilityItem(
+        icon: Icons.bathtub_outlined,
+        label: 'Bathroom',
+        access: property.bathroomAccess,
+      ),
+      _facilityItem(
+        icon: Icons.wc_outlined,
+        label: 'Toilet',
+        access: property.toiletAccess,
+      ),
+      _facilityItem(
+        icon: Icons.kitchen_outlined,
+        label: 'Kitchen',
+        access: property.kitchenAccess,
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('What comes with it', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: rows,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One facility. A listing written before this field existed carries null —
+  /// shown as "Not stated" rather than guessed either way, since guessing
+  /// "private" would overclaim and "shared" would undersell.
+  Widget _facilityItem({
+    required IconData icon,
+    required String label,
+    required String? access,
+  }) {
+    final (String value, Color color) = switch (access) {
+      'private' => ('Private', AppColors.success),
+      'shared' => ('Shared', AppColors.textPrimary),
+      'none' => ('None', AppColors.textSecondary),
+      _ => ('Not stated', AppColors.textHint),
+    };
+    return Column(
+      children: [
+        Icon(icon, size: 22, color: AppColors.textSecondary),
+        const SizedBox(height: 6),
+        Text(value, style: AppTextStyles.labelMedium.copyWith(color: color)),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+        ),
+      ],
+    );
+  }
+
   Widget _buildFeaturesRow(PropertyModel property) {
+    // A single space is specified by what the tenant gets EXCLUSIVELY, not by
+    // room counts — "1 Bedroom / 1 Bathroom / 1 Toilet" described a shared room
+    // and a self-contained flat identically.
+    if (property.isSingleSpaceListing) return _buildFacilitiesRow(property);
+
     final hasFeatures =
         property.bedrooms > 0 || property.bathrooms > 0 || property.toilets > 0;
     if (!hasFeatures) return const SizedBox.shrink();

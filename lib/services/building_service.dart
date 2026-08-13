@@ -22,6 +22,8 @@ class BuildingService {
   Future<String?> createBuilding({
     required String name,
     String address = '',
+    String structure = '',
+    int? totalFloors,
     String? ownershipDocUrl,
     String? ownershipDocType,
   }) async {
@@ -33,6 +35,8 @@ class BuildingService {
         landlordId: uid,
         name: name.trim(),
         address: address.trim(),
+        structure: structure,
+        totalFloors: totalFloors,
         ownershipDocUrl: ownershipDocUrl,
         ownershipDocType: ownershipDocType,
         ownershipDocStatus:

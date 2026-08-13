@@ -343,13 +343,14 @@ class _AgentDiscoverPropertiesScreenState
       child: Row(children: [
         Expanded(child: _dropdown(_selectedCity, _cities.map((c) => DropdownMenuItem(value: c, child: Text(c, style: AppTextStyles.labelMedium))).toList(), (v) => setState(() => _selectedCity = v ?? 'All Areas'))),
         const SizedBox(width: 10),
-        Expanded(child: _dropdown(_selectedType, const [
-          DropdownMenuItem(value: 'all', child: Text('All Types')),
-          DropdownMenuItem(value: 'flat', child: Text('Flat')),
-          DropdownMenuItem(value: 'self_contain', child: Text('Self Contain')),
-          DropdownMenuItem(value: 'duplex', child: Text('Duplex')),
-          DropdownMenuItem(value: 'bungalow', child: Text('Bungalow')),
-          DropdownMenuItem(value: 'room', child: Text('Single Room')),
+        // Built from PropertyModel's one vocabulary — 'self_contain' here never
+        // matched the 'selfContain' that add-property writes.
+        Expanded(child: _dropdown(_selectedType, [
+          const DropdownMenuItem(value: 'all', child: Text('All Types')),
+          ...PropertyModel.selectableTypes.map((t) => DropdownMenuItem(
+                value: t,
+                child: Text(PropertyModel.typeLabelFor(t)),
+              )),
         ], (v) => setState(() => _selectedType = v ?? 'all'))),
       ]),
     );

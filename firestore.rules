@@ -252,6 +252,38 @@ service cloud.firestore {
         );
       }
 
+      // NOTE — there is deliberately NO `state` guard here. ClearRent operates
+      // in Lagos today, but the gate is ADMIN REVIEW, not rules: a listing is
+      // born isVerified:false / isAvailable:false and cannot be browsed or
+      // booked until an admin approves it, so nothing outside Lagos can reach a
+      // tenant without a human saying yes.
+      //
+      // A rules guard would add nothing to that and would cost a rules deploy
+      // AND an app release on the day we open another state. The inspection fee
+      // is flat (₦10k; clusters are display-only and fall back when
+      // unresolved), so an out-of-state listing is degraded — no local agents,
+      // area not in the dropdown — not broken. The app flags it to the landlord
+      // and the admin dashboard badges it "Outside Lagos" for the reviewer.
+
+      // One listing = one tenancy. Everything priced on this doc is singular —
+      // one rent, one caution deposit, one agent fee, one agreement, one
+      // Paystack split — so a second tenant on the same listing would buy an
+      // unspecified thing at someone else's price. Two lettable units are TWO
+      // listings under one `buildingId`, which is also how they share one
+      // verified C of O.
+      //
+      // The Flutter form has always pinned maxTenants to 1, but the web listing
+      // form exposed it as a free number, and propertyHasOpenSlot / the accept
+      // CF both key their slot guard off whatever is stored. Enforced here so
+      // the guard can't be widened by a client at all.
+      //
+      // Declared inside this match block — a helper called from outside the
+      // block that declares it compiles with a warning and then denies at
+      // evaluation.
+      function oneTenancyPerListing() {
+        return request.resource.data.get('maxTenants', 1) == 1;
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -287,6 +319,7 @@ service cloud.firestore {
         // admin at all. isVerified is the admin's badge (adminReviewPropertyDoc
         // writes it), not a mirror of the landlord's own verification.
         && request.resource.data.get('isVerified', false) == false
+        && oneTenancyPerListing()
         && ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
         // The rejection reason is the admin's words — never seeded by the owner.
         && !request.resource.data.keys().hasAny(['ownershipDocRejectionReason'])
@@ -322,6 +355,9 @@ service cloud.firestore {
         // deliberately writes neither (_updatePropertyStatus is empty), and
         // they were nonetheless owner-writable.
         && !changed(['currentTenantsCount', 'handoverPending'])
+        // Holds on edit too, or the pin is create-only: list with 1, raise it
+        // afterwards, and the slot guard lets a second tenant in.
+        && oneTenancyPerListing()
         // The landlord may still delist or relist at will — that toggle is
         // theirs and the web listing editor writes it. What they may NOT do is
         // relist a unit whose handover is unsettled: ClearRent never holds the
@@ -539,7 +575,8 @@ service cloud.firestore {
         && resource.data.landlordId == request.auth.uid
         && request.resource.data.landlordId == resource.data.landlordId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'name', 'address', 'ownershipDocUrl', 'ownershipDocType',
+              'name', 'address', 'structure', 'totalFloors',
+              'ownershipDocUrl', 'ownershipDocType',
               'ownershipDocStatus', 'updatedAt',
             ])
         && (

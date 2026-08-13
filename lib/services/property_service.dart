@@ -324,6 +324,17 @@ class PropertyService {
     // When set, this unit belongs to a building/compound and inherits the
     // building's shared ownership doc — no per-property doc is stored.
     String? buildingId,
+    // What the landlord calls this unit within its building ("Room 2", "Left
+    // flat") and which floor it's on. Both are only meaningful alongside a
+    // buildingId.
+    String? unitLabel,
+    String? floor,
+    // For single-space types (room / room & parlour / self contain) only:
+    // 'private' | 'shared', and 'none' for a kitchen. This is what separates
+    // those rungs from each other — not the bedroom count.
+    String? bathroomAccess,
+    String? toiletAccess,
+    String? kitchenAccess,
     String? listingFeePaymentReference,
     String? assignedAgentId,
     String? assignedAgentName,
@@ -442,6 +453,11 @@ class PropertyService {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         if (buildingId != null) 'buildingId': buildingId,
+        if (unitLabel != null && unitLabel.isNotEmpty) 'unitLabel': unitLabel,
+        if (floor != null && floor.isNotEmpty) 'floor': floor,
+        if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
+        if (toiletAccess != null) 'toiletAccess': toiletAccess,
+        if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
         if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
         if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
         // Grouped units inherit the building's doc status (resolved at read

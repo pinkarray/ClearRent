@@ -161,9 +161,11 @@ async function main() {
   // ── The create path ───────────────────────────────────────────────────
   // Every guard above is downstream of a review. If a listing can be BORN
   // approved, none of them matter — this is the hole that made the rest moot.
+  // Mirrors what PropertyService.createProperty actually sends, `state`
+  // included — ClearRent is Lagos-only and `create` is gated on it.
   const newProp = {
     landlordId: L1, title: "x", currentTenantsCount: 0,
-    rent: 1000000, agentFee: 0, cautionDeposit: 0,
+    rent: 1000000, agentFee: 0, cautionDeposit: 0, state: "Lagos",
   };
 
   check("create: CANNOT be born ownershipDocStatus 'verified'",
@@ -255,6 +257,55 @@ async function main() {
   check("property: CANNOT detach from a building either",
     await denies(updateDoc(doc(db, "properties", "unit1"),
       {buildingId: null})));
+
+  // ── One listing = one tenancy ─────────────────────────────────────────
+  // Everything priced on the doc is singular. The web listing form used to
+  // send maxTenants as a free number, and the slot guards key off whatever
+  // is stored, so a second tenant could be accepted against one rent.
+  check("create: CANNOT be born with maxTenants > 1",
+    await denies(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "none", isVerified: false,
+        maxTenants: 3})));
+
+  check("create: CAN publish with maxTenants 1",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "none", isVerified: false,
+        maxTenants: 1})));
+
+  check("property: CANNOT raise maxTenants after creation",
+    await denies(updateDoc(doc(db, "properties", "p2"), {maxTenants: 2})));
+
+  // ── State is NOT gated in rules, on purpose ───────────────────────────
+  // ClearRent operates in Lagos today, but the gate is admin review: a listing
+  // is born isVerified:false / isAvailable:false, so nothing outside Lagos can
+  // reach a tenant without a human approving it. Rules enforcement would add
+  // nothing and would cost a rules deploy AND an app release the day another
+  // state opens. These two cases exist so the decision is deliberate — if a
+  // state guard is ever added, they fail loudly rather than the behaviour
+  // changing silently.
+  check("create: an out-of-state listing IS allowed (admin rejects it, not rules)",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "none", isVerified: false,
+        state: "Enugu"})));
+
+  check("create: it is still born unreviewed, so no tenant can see it",
+    await passes(addDoc(collection(db, "properties"),
+      {...newProp, ownershipDocStatus: "none", isVerified: false,
+        state: "Enugu", isAvailable: false})));
+
+  // ── Unit identity travels with the listing ────────────────────────────
+  check("grouped unit: CAN set its unit label and floor",
+    await passes(updateDoc(doc(db, "properties", "unit1"),
+      {unitLabel: "Room 2", floor: "1"})));
+
+  // ── buildings: structure is editable, still can't self-verify ─────────
+  check("building: CAN set its structure",
+    await passes(updateDoc(doc(db, "buildings", "b1"),
+      {structure: "duplex", totalFloors: 2})));
+
+  check("building: CANNOT self-verify while setting structure",
+    await denies(updateDoc(doc(db, "buildings", "b1"),
+      {structure: "compound", ownershipDocStatus: "verified"})));
 
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);

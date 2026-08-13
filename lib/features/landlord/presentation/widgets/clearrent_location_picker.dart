@@ -395,12 +395,13 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
 
         const SizedBox(height: 20),
 
-        // 3. State
-        _buildTextField(
-          label: 'State',
-          hint: 'e.g. Lagos',
-          controller: widget.stateController,
-        ),
+        // 3. State — derived from the pin, never typed. Leaving it editable let
+        // a landlord type "Lagos" over an address the geocoder had placed in
+        // another state, which is exactly what the admin reviewer needs to be
+        // able to trust. ClearRent operates in Lagos today but does not BLOCK
+        // elsewhere: the listing is flagged here, and an admin approves or
+        // rejects it.
+        _buildStateField(),
 
         const SizedBox(height: 24),
 
@@ -705,40 +706,69 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     );
   }
 
-  Widget _buildTextField({
-    required String label,
-    required String hint,
-    required TextEditingController controller,
-  }) {
+  /// Read-only State row. Shows whatever the pin resolved to — including a
+  /// state ClearRent doesn't operate in yet, flagged here as a warning rather
+  /// than quietly overwritten with 'Lagos'. Not a blocker: an admin reviews
+  /// every listing before it can be browsed, and that is where the call is made.
+  Widget _buildStateField() {
+    // The controller is written outside setState (in _selectPlace), so this
+    // listens rather than relying on a rebuild happening to occur.
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: widget.stateController,
+      builder: (context, value, _) => _buildStateRow(value.text.trim()),
+    );
+  }
+
+  Widget _buildStateRow(String state) {
+    final resolved = state.isEmpty ? 'Lagos' : state;
+    final outsideLagos =
+        state.isNotEmpty && state.toLowerCase() != 'lagos';
+    final warn = Colors.orange.shade700;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTextStyles.labelMedium),
+        Text('State', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          textCapitalization: TextCapitalization.words,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(color: AppColors.textHint),
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: outsideLagos ? warn : AppColors.border,
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                outsideLagos
+                    ? Icons.warning_amber_rounded
+                    : Icons.lock_outline,
+                size: 16,
+                color: outsideLagos ? warn : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                resolved,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: outsideLagos ? warn : AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          outsideLagos
+              ? 'ClearRent operates in Lagos today. You can still submit this, '
+                  'but our team reviews every listing and may not approve one '
+                  'outside Lagos yet. If the state is wrong, move the pin.'
+              : 'Set from your pin, so it always matches the real address.',
+          style: AppTextStyles.caption.copyWith(
+            color: outsideLagos ? warn : AppColors.textSecondary,
+            height: 1.4,
           ),
         ),
       ],
