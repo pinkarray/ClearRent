@@ -217,14 +217,20 @@ class PropertyModel {
   /// picking Self Contain matched nothing.
   /// 'shop'/'office' are pickable in neither list (hidden until the commercial
   /// branch exists) but keep their labels so an existing doc still renders.
+  /// 'miniFlat' is NOT pickable: it is the same dwelling as 'roomAndParlour' —
+  /// one room plus a sitting room — under the estate-agent word for it, and
+  /// offering both re-created the duplication this model exists to remove.
+  /// "Room & Parlour" is what a Nigerian landlord and tenant actually say. The
+  /// label stays so any doc written while both were offered still renders.
   static const Map<String, String> typeLabels = {
     'flat': 'Flat',
     'duplex': 'Duplex',
+    'semiDetachedDuplex': 'Semi-Detached Duplex',
     'bungalow': 'Bungalow',
     'selfContain': 'Self Contain',
-    'miniFlat': 'Mini Flat',
     'room': 'Room',
     'roomAndParlour': 'Room & Parlour',
+    'miniFlat': 'Mini Flat',
     'shop': 'Shop',
     'office': 'Office',
   };
@@ -235,20 +241,23 @@ class PropertyModel {
   static const List<String> wholePropertyTypes = [
     'flat',
     'duplex',
+    'semiDetachedDuplex',
     'bungalow',
     'selfContain',
-    'miniFlat',
+    'roomAndParlour',
   ];
 
-  /// Types offered for one unit inside a building. 'duplex' stays: a compound
-  /// can genuinely contain a duplex, and one in production does.
+  /// Types offered for one unit inside a building. A compound genuinely holds
+  /// any of these — one in production holds a duplex — so the only thing the
+  /// two lists differ on is 'room', which is a unit by definition.
   static const List<String> unitTypes = [
     'room',
     'roomAndParlour',
     'selfContain',
-    'miniFlat',
     'flat',
     'duplex',
+    'semiDetachedDuplex',
+    'bungalow',
   ];
 
   /// The union, for filters and any surface that isn't asking the landlord to
@@ -256,9 +265,9 @@ class PropertyModel {
   static const List<String> selectableTypes = [
     'flat',
     'duplex',
+    'semiDetachedDuplex',
     'bungalow',
     'selfContain',
-    'miniFlat',
     'room',
     'roomAndParlour',
   ];
@@ -271,8 +280,13 @@ class PropertyModel {
   /// on the card, byte-identical to a self-contained one-bedroom flat. What
   /// separates these rungs of the Lagos ladder is not room COUNT, it is which
   /// facilities the tenant gets exclusively — see [sharedFacilities].
+  /// 'miniFlat' is included so a doc written while it was briefly offered is
+  /// still described by what it shares rather than by a bedroom count.
   static bool isSingleSpace(String type) =>
-      type == 'room' || type == 'roomAndParlour' || type == 'selfContain';
+      type == 'room' ||
+      type == 'roomAndParlour' ||
+      type == 'selfContain' ||
+      type == 'miniFlat';
 
   static String typeLabelFor(String value) => typeLabels[value] ?? value;
 

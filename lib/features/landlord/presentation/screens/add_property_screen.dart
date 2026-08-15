@@ -2845,11 +2845,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     // A room & parlour is exactly that: the room plus a sitting room.
     _livingRooms = type == 'roomAndParlour' ? 1 : 0;
     // Self contain means self-contained — its whole point is private
-    // facilities. The other two default to shared, which is the norm.
-    if (type == 'selfContain') {
+    // facilities. And anything let as the WHOLE property has nobody to share
+    // with by definition. A room or room & parlour inside a building defaults
+    // to shared, which is the norm there.
+    if (type == 'selfContain' || !_isInBuilding) {
       _bathroomAccess = 'private';
       _toiletAccess = 'private';
       _kitchenAccess = 'private';
+    } else {
+      _bathroomAccess = 'shared';
+      _toiletAccess = 'shared';
+      _kitchenAccess = 'shared';
     }
   }
 
