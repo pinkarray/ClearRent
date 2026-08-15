@@ -114,7 +114,15 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     FAQItem(
       category: 'Account & Security',
       question: 'How do I update my profile information?',
-      answer: 'Go to Profile → Edit Profile. You can:\n\n• Update your phone number\n• Change your profile photo (verified users only)\n\nNote: Your name and email are linked to your account and cannot be changed directly. Contact support if you need to update these.',
+      // Kept honest against edit_profile_screen: name, email AND phone are all
+      // read-only there. This entry used to say you could change your phone
+      // number in Edit Profile, which sent people to a locked field.
+      answer: 'Go to Profile → Edit Profile. You can change your profile photo (verified users only), and tenants can update their work area and preferred areas.\n\nYour name, email and phone number are tied to your account and its verification, so they cannot be edited there. Email info@verealtytech.com and our team will update them for you.',
+    ),
+    FAQItem(
+      category: 'Account & Security',
+      question: 'I have lost my phone number - can I still sign in?',
+      answer: 'Yes. Your number is only one of two ways in.\n\nOn the sign-in screen, switch to the Email tab and sign in with the email address and password you registered with. If you have forgotten the password, tap Forgot Password on that tab and we will email you a reset link.\n\nThen email info@verealtytech.com so we can put your new number on the account. This matters even after you are back in: your number is what landlords, tenants and agents use to reach you, and it is shown on your listings.',
     ),
     FAQItem(
       category: 'Account & Security',

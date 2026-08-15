@@ -332,7 +332,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Your name and email are linked to your account verification and cannot be changed directly. Contact support if you need to update them.',
+                              'Your name, email and phone number are linked to your account verification and cannot be changed here. Email info@verealtytech.com and our team will update them for you.',
                               style: AppTextStyles.bodySmall.copyWith(color: AppColors.info),
                             ),
                           ),
