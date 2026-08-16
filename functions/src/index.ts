@@ -1092,7 +1092,14 @@ export const onActiveRentalUpdated = onDocumentUpdated(
       }
     }
 
-    // ── Tenant contests a landlord-ended rental ──
+    // ── Tenant contests ──
+    //
+    // `tenantContested` carries TWO different disputes and they need different
+    // words. Contesting a landlord-ENDED tenancy is "I did not leave". During
+    // a handover it is "the caution deposit never reached me" — money, not the
+    // ending. Telling a landlord his tenant "added their account of the ended
+    // tenancy" when they actually said the deposit never arrived hides the
+    // one fact he has to act on, and points him at the wrong screen.
     if (
       after.tenantContested === true &&
       before.tenantContested !== true &&
@@ -1100,26 +1107,47 @@ export const onActiveRentalUpdated = onDocumentUpdated(
     ) {
       const statement =
         (after.tenantContestStatement as string | undefined) ?? "";
+      const isSettlement = after.handoverStage === "awaiting_confirm";
+      const quoted = statement ? `: "${statement}"` : ".";
+
       await writeNotificationOnce(
         `rental_${rentalId}_contested_${rev}`,
         {
           userId: landlordId,
-          type: "rental_end_contested",
-          title: "Tenant contested the tenancy end",
-          body:
+          type: isSettlement ?
+            "handover_settlement_contested" :
+            "rental_end_contested",
+          title: isSettlement ?
+            "Your tenant says the deposit has not arrived" :
+            "Tenant contested the tenancy end",
+          body: isSettlement ?
+            `${tenantName} has not confirmed the caution deposit for ` +
+              `${propertyTitle}${quoted} The unit stays off the market ` +
+              "until this is resolved." :
             `${tenantName} added their account of the ended tenancy for ` +
-            `${propertyTitle}${statement ? `: "${statement}"` : "."}`,
-          payload: landlordRentalsRoute,
+              `${propertyTitle}${quoted}`,
+          // A settlement dispute is resolved on the handover, not the
+          // rentals list — the deposit, the proof and the stage all live there.
+          payload: isSettlement ?
+            {route: `/handover/${rentalId}`,
+              ...(propertyId ? {propertyId} : {})} :
+            landlordRentalsRoute,
         },
       );
-      // A contested tenancy end is a two-sided dispute — loop in the admin.
+      // Two-sided dispute — loop in the admin either way.
       await writeAdminAlert({
-        type: "rental_end_contested",
+        type: isSettlement ?
+          "handover_settlement_contested" :
+          "rental_end_contested",
         severity: "warning",
-        title: "Tenancy end contested",
-        body:
+        title: isSettlement ?
+          "Caution deposit contested" :
+          "Tenancy end contested",
+        body: isSettlement ?
+          `${tenantName} says the caution deposit for ${propertyTitle} has ` +
+            `not arrived${quoted}` :
           `${tenantName} contested the ended tenancy for ${propertyTitle}` +
-          `${statement ? `: "${statement}"` : "."}`,
+            `${quoted}`,
         targetCollection: "active_rentals",
         targetId: rentalId,
         actors: {tenantId, landlordId},
