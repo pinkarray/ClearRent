@@ -185,6 +185,26 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     }
   }
 
+  /// Keep the house number the landlord already typed.
+  ///
+  /// OSM usually matches a STREET, not a building, so its result carries no
+  /// `house_number` and `streetAddress` is just the road. Assigning that over
+  /// the field erased the "12" from "12 Allen Ave" the moment a suggestion was
+  /// tapped — the landlord had typed the one part of the address OSM does not
+  /// know. Their number survives; the picked street replaces the rest.
+  String _keepTypedHouseNumber(String typed, NominatimPlace place) {
+    final proposed = place.streetAddress.trim();
+    if (place.houseNumber.isNotEmpty || proposed.isEmpty) return proposed;
+    // "12", "12A", "12/14" — a leading number is a house number; anything else
+    // is part of the street name and is the suggestion's to replace.
+    final match = RegExp(r'^(\d+[A-Za-z]?(?:\s*[/-]\s*\d+[A-Za-z]?)?)\s+')
+        .firstMatch(typed.trim());
+    if (match == null) return proposed;
+    final number = match.group(1)!;
+    if (proposed.startsWith(number)) return proposed;
+    return '$number $proposed';
+  }
+
   void _selectPlace(NominatimPlace place) {
     final location = LatLng(place.lat, place.lng);
     // The area, once chosen explicitly, outranks anything OSM returns.
@@ -206,7 +226,8 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     });
 
     _suppressSearch = true;
-    widget.addressController.text = place.streetAddress;
+    widget.addressController.text =
+        _keepTypedHouseNumber(widget.addressController.text, place);
     if (!_areaExplicitlySet) {
       widget.stateController.text =
           place.state.isNotEmpty ? place.state : 'Lagos';
@@ -907,6 +928,10 @@ class NominatimPlace {
   final double lng;
   final String displayName;
   final String streetAddress;
+  /// Empty whenever OSM matched a STREET rather than a building — the normal
+  /// case in Lagos. Kept separate so the caller can tell "this result has no
+  /// number" from "the number is part of the string".
+  final String houseNumber;
   final String city;
   final String state;
 
@@ -915,6 +940,7 @@ class NominatimPlace {
     required this.lng,
     required this.displayName,
     required this.streetAddress,
+    this.houseNumber = '',
     required this.city,
     required this.state,
   });
@@ -942,6 +968,7 @@ class NominatimPlace {
       lat: double.tryParse(json['lat'].toString()) ?? 0.0,
       lng: double.tryParse(json['lon'].toString()) ?? 0.0,
       displayName: json['display_name'] ?? '',
+      houseNumber: houseNumber.toString(),
       streetAddress:
           streetAddress.isNotEmpty
               ? streetAddress
