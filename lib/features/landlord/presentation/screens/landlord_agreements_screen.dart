@@ -869,7 +869,9 @@ class _AgreementCardState extends State<_AgreementCard> {
               icon: const Icon(Icons.draw_outlined, size: 18),
               label: const Text('View the signed agreement'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
+                // Viewing is a plain action. Green is reserved for affirming
+                // something (accept / confirm / finalize).
+                backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(

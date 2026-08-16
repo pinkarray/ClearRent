@@ -531,7 +531,11 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
+                      // Primary, not success: green is the status palette, and
+                      // this is a plain save, not a confirm/approve. Using it
+                      // here claimed success before anything was written, and
+                      // out-shouted the brand teal it sits next to.
+                      backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(

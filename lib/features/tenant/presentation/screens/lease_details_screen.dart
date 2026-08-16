@@ -722,7 +722,8 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success, foregroundColor: Colors.white),
+                // Opens a file picker — a plain next step, not an approval.
+                backgroundColor: AppColors.primary, foregroundColor: Colors.white),
             child: const Text('Choose signed copy'),
           ),
         ],

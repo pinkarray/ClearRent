@@ -82,9 +82,12 @@ const _light = _Palette(
   border: Color(0xFFE5E7EB),
   divider: Color(0xFFF3F4F6),
 
-  // Status
-  success: Color(0xFF10B981),
-  successLight: Color(0xFFD1FAE5),
+  // Status. `success` is derived from the brand teal above rather than lifted
+  // from a stock palette: the old #10B981 (Tailwind emerald) was a different
+  // hue AND far brighter, so any green next to the brand read as a second
+  // design system — loudest wherever it filled a button.
+  success: Color(0xFF0E8F6B),
+  successLight: Color(0xFFD6F0E7),
   error: Color(0xFFEF4444),
   errorLight: Color(0xFFFEE2E2),
   warning: Color(0xFFF59E0B),
@@ -123,8 +126,8 @@ const _dark = _Palette(
   divider: Color(0xFF252525),
 
   // Status – same hues, slightly muted for dark context
-  success: Color(0xFF34D399),
-  successLight: Color(0xFF064E3B),
+  success: Color(0xFF2FB894),
+  successLight: Color(0xFF06463A),
   error: Color(0xFFF87171),
   errorLight: Color(0xFF7F1D1D),
   warning: Color(0xFFFBBF24),
