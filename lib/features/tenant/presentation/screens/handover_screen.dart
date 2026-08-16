@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -95,6 +96,7 @@ class _HandoverScreenState extends State<HandoverScreen> {
                     'Could not confirm. Try again.',
                   ),
                   onContest: () => _contest(rental),
+                  onViewProof: () => _viewProof(rental),
                 )
               else
                 _LandlordActions(
@@ -213,6 +215,28 @@ class _HandoverScreenState extends State<HandoverScreen> {
       ),
       'Could not record the settlement. A deduction needs a reason.',
     );
+  }
+
+  /// Opens the landlord's proof of transfer. Storage rules admit only the
+  /// uploader, so the counterparty's view has to go through the callable that
+  /// checks tenancy membership server-side.
+  Future<void> _viewProof(ActiveRental rental) async {
+    final path = rental.handoverProofUrl ?? '';
+    if (path.isEmpty) return;
+    setState(() => _busy = true);
+    final url = await _conditionService.mediaUrl(rental.id, path);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Could not open the proof. Try again.'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   Future<void> _contest(ActiveRental rental) async {
@@ -344,6 +368,7 @@ class _TenantActions extends StatelessWidget {
   final VoidCallback onCapture;
   final VoidCallback onConfirmPaid;
   final VoidCallback onContest;
+  final VoidCallback onViewProof;
 
   const _TenantActions({
     required this.rental,
@@ -351,6 +376,7 @@ class _TenantActions extends StatelessWidget {
     required this.onCapture,
     required this.onConfirmPaid,
     required this.onContest,
+    required this.onViewProof,
   });
 
   @override
@@ -382,6 +408,18 @@ class _TenantActions extends StatelessWidget {
           busy: busy,
           onTap: onConfirmPaid,
         ),
+        // The landlord already attached proof of transfer; the tenant was
+        // never shown it. Checking a receipt against your own bank app is a
+        // far better basis for answering than memory — and it turns most of
+        // this from a dispute into a look.
+        if ((rental.handoverProofUrl ?? '').isNotEmpty) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: busy ? null : onViewProof,
+            icon: const Icon(Icons.receipt_long_outlined, size: 18),
+            label: const Text('See their proof of payment'),
+          ),
+        ],
         const SizedBox(height: 10),
         TextButton(
           onPressed: busy ? null : onContest,
