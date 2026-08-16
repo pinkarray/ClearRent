@@ -121,6 +121,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   List<TenantRental> _tenantRentals = const [];
   bool _tenantRentalsLoaded = false;
   StreamSubscription<List<TenantRental>>? _tenantRentalsSub;
+  // Rentals that have ENDED but whose handover is still open. These are absent
+  // from _tenantRentals by design, so without this the tenant is never told
+  // their caution deposit is waiting on them — and the landlord's unit stays
+  // off the market meanwhile.
+  List<ActiveRental> _openHandovers = const [];
+  StreamSubscription<List<ActiveRental>>? _openHandoversSub;
   // Saved properties
   Set<String> _savedProperties = {};
   /// Saved properties that browse does not carry — typically because they are
@@ -189,6 +195,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
     _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
     _inspectionsStream = _inspectionService.getTenantRequests();
+    _openHandoversSub =
+        _activeRentalService.streamTenantOpenHandovers().listen((rows) {
+      if (mounted) setState(() => _openHandovers = rows);
+    });
     _tenantRentalsSub = _activeRentalService.streamTenantRentals().listen((
       rentals,
     ) {
@@ -233,6 +243,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   void dispose() {
     _activeRentalSub?.cancel();
     _tenantRentalsSub?.cancel();
+    _openHandoversSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -1042,8 +1053,17 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         );
       }
       if (_tenantRentals.isEmpty) {
-        // No occupied rentals — fall through to browse home.
-        return SafeArea(child: _buildHomeTab(pendingLinks));
+        // No occupied rentals — fall through to browse home. The handover
+        // banner has to come too: a tenant whose only rental just ended lands
+        // HERE, which is exactly when their deposit is outstanding.
+        return SafeArea(
+          child: Column(
+            children: [
+              _buildHandoverBanner(),
+              Expanded(child: _buildHomeTab(pendingLinks)),
+            ],
+          ),
+        );
       }
       return SafeArea(
         child: Column(
@@ -1062,6 +1082,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // tenant who already lives somewhere can accept a NEW place, sign
             // for it, and never be told to pay for it. Money before scheduling.
             _buildRentDueBanner(),
+            _buildHandoverBanner(),
             _buildTodaysInspectionBanner(),
             Expanded(
               child: MultiRentalDashboard(
@@ -2582,6 +2603,73 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   ///
   /// Shown alongside a live tenancy, not instead of one: a tenant can be paying
   /// for a new place while still living in the old one.
+  /// The tenancy is over; the caution deposit is not. Leads to the handover.
+  ///
+  /// This exists because the ended rental leaves the dashboard entirely, so
+  /// the only route to the handover was My Rentals — a screen nobody visits
+  /// after moving out. Meanwhile the landlord's property stays off the market
+  /// waiting on an answer the tenant was never asked for.
+  Widget _buildHandoverBanner() {
+    if (_openHandovers.isEmpty) return const SizedBox.shrink();
+    final r = _openHandovers.first;
+    // Only the confirm step is the TENANT's to act on. The others are the
+    // landlord's, and are shown as progress so silence doesn't read as a
+    // demand on the wrong person.
+    final mine = r.handoverStage == 'awaiting_confirm' ||
+        r.handoverStage == 'awaiting_evidence';
+    return InkWell(
+      onTap: () => context.push('/handover/${r.id}'),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: (mine ? AppColors.warning : AppColors.textSecondary)
+              .withAlpha(20),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: (mine ? AppColors.warning : AppColors.textSecondary)
+                .withAlpha(60),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.savings_outlined,
+                size: 18,
+                color: mine ? AppColors.warning : AppColors.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.handoverStage == 'awaiting_confirm'
+                        ? 'Were you paid your deposit?'
+                        : 'Your caution deposit',
+                    style: AppTextStyles.labelMedium,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    r.handoverStage == 'awaiting_confirm'
+                        ? '${r.landlordName} says they have returned it for '
+                            '${r.propertyTitle}. Confirm so it can be closed.'
+                        : r.handoverNextStep.isNotEmpty
+                            ? r.handoverNextStep
+                            : 'Still being settled for ${r.propertyTitle}.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                size: 18, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRentDueBanner() {
     return StreamBuilder<List<ActiveRental>>(
       stream: _activeRentalService.streamAllTenantRentals(),

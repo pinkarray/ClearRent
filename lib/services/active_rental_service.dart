@@ -652,6 +652,32 @@ class ActiveRentalService {
     return controller.stream;
   }
 
+  /// Rentals whose TENANCY is over but whose handover is still open — the
+  /// caution deposit is unresolved and the property cannot be relisted.
+  ///
+  /// Deliberately separate from [streamTenantRentals], which filters to
+  /// rentals the tenant still occupies. An ended rental therefore vanishes
+  /// from the dashboard completely, and the tenant was never told their
+  /// landlord was waiting on them to confirm the deposit — the unit sat off
+  /// the market until a 7-day silence sweep closed it.
+  ///
+  /// Filtered in memory rather than with a second `where`: an equality plus a
+  /// `whereIn` needs a composite index, and a missing index makes Firestore
+  /// throw rather than degrade. The `tenantId` filter is what satisfies the
+  /// ownership-scoping rules require.
+  Stream<List<ActiveRental>> streamTenantOpenHandovers() {
+    final currentUserId = _authService.currentUserId;
+    if (currentUserId == null) return Stream.value(const []);
+    return _firestore
+        .collection('active_rentals')
+        .where('tenantId', isEqualTo: currentUserId)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => ActiveRental.fromFirestore(doc.data(), doc.id))
+            .where((r) => r.isHandoverOpen)
+            .toList());
+  }
+
   /// Get all rentals for a landlord
   /// Live equivalent of [getLandlordRentals].
   ///
