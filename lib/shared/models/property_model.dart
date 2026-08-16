@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'building_model.dart';
+
 class PropertyModel {
   final String id;
   final String landlordId;
@@ -102,15 +104,34 @@ class PropertyModel {
   // water pressure at the top, security on the ground floor.
   final String? floor;
 
-  // What the tenant gets exclusively, for single-space types (see
-  // [isSingleSpace]). 'private' | 'shared'; kitchen also allows 'none'.
-  // This is the axis that separates a single room from a room & parlour from a
-  // self contain — they differ by what is shared, not by room count. Null on a
-  // multi-room dwelling (a flat's own bathroom is private by construction) and
-  // on every listing written before this field existed.
+  // What the tenant gets exclusively. 'private' | 'shared'; kitchen also
+  // allows 'none'.
+  //
+  // Set for any listing that is one UNIT inside a building, whatever its type:
+  // sharing is a fact about the arrangement, not about the type, so a self
+  // contain in a face-me-I-face-you bungalow can still share the toilet, and a
+  // two-bedroom flat in a compound can have its toilet outside. Null when the
+  // whole property is let (nobody to share with) and on every listing written
+  // before this field existed.
+  //
+  // For a single space this is also the axis that separates a room from a room
+  // & parlour from a self contain — see [isSingleSpace], which governs the
+  // room COUNTS only and must not be used to decide whether to ask this.
   final String? bathroomAccess;
   final String? toiletAccess;
   final String? kitchenAccess;
+  // A sitting room can be shared too — ordinary in a face-me-I-face-you, where
+  // the parlour is common ground. Same values as the others.
+  final String? livingRoomAccess;
+
+  // What the unit's OWN building is, when the site holds more than one. The
+  // building doc is the ownership group (one C of O over the land); when its
+  // structure is 'compound' that land can carry a duplex AND a bungalow, and
+  // the site's structure alone would lose which one this unit sits in.
+  // Values are BuildingModel.structures. Null unless the site is a compound.
+  final String? unitBuildingStructure;
+  // Which of them — "A", "B" — when a compound holds two of the same kind.
+  final String? unitBuildingLabel;
 
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
@@ -208,6 +229,9 @@ class PropertyModel {
     this.bathroomAccess,
     this.toiletAccess,
     this.kitchenAccess,
+    this.livingRoomAccess,
+    this.unitBuildingStructure,
+    this.unitBuildingLabel,
   });
 
   /// Every propertyType value with its label. ONE vocabulary: the add/edit
@@ -247,9 +271,15 @@ class PropertyModel {
     'roomAndParlour',
   ];
 
-  /// Types offered for one unit inside a building. A compound genuinely holds
-  /// any of these — one in production holds a duplex — so the only thing the
-  /// two lists differ on is 'room', which is a unit by definition.
+  /// Types offered for one unit inside a building. These are things that ARE a
+  /// unit. 'bungalow' is deliberately absent: a bungalow is what the BUILDING
+  /// is, and offering it here let a landlord create "Room 2 - 1 Bedroom
+  /// Bungalow" — a unit named Room 2 that claims to be a bungalow. That axis
+  /// belongs to [BuildingModel.structure].
+  ///
+  /// Duplex and semi-detached duplex stay: a compound genuinely holds either
+  /// (one in production holds a duplex), and semi-detached is two dwellings
+  /// sharing a wall, so several in one compound is ordinary.
   static const List<String> unitTypes = [
     'room',
     'roomAndParlour',
@@ -257,7 +287,6 @@ class PropertyModel {
     'flat',
     'duplex',
     'semiDetachedDuplex',
-    'bungalow',
   ];
 
   /// The union, for filters and any surface that isn't asking the landlord to
@@ -321,6 +350,7 @@ class PropertyModel {
     } else if (kitchenAccess == 'none') {
       parts.add('no kitchen');
     }
+    if (livingRoomAccess == 'shared') parts.add('shared living room');
     return parts.join(' · ');
   }
 
@@ -338,8 +368,30 @@ class PropertyModel {
   String get unitDescriptor {
     final parts = <String>[];
     if (unitLabel != null && unitLabel!.isNotEmpty) parts.add(unitLabel!);
+    // What the unit sits in — "in duplex A" on a compound, "in a face me i
+    // face you" anywhere else. A tenant comparing a room needs this in the
+    // LIST, not only after opening the listing: a room in a face-me-I-face-you
+    // and a room in a block of flats are different products.
+    final b = unitBuildingDescriptor;
+    if (b.isNotEmpty) {
+      final which = unitBuildingLabel;
+      parts.add(which == null || which.isEmpty
+          ? 'in a ${b.toLowerCase()}'
+          : 'in ${b.toLowerCase()}');
+    }
     if (floorLabel.isNotEmpty) parts.add(floorLabel);
     return parts.join(' · ');
+  }
+
+  /// "Duplex A" — the unit's own building within a compound. Empty when the
+  /// site is a single building, which the building doc already describes.
+  String get unitBuildingDescriptor {
+    final s = unitBuildingStructure;
+    if (s == null || s.isEmpty) return '';
+    final label = BuildingModel.structureLabelFor(s);
+    if (label.isEmpty) return '';
+    final which = unitBuildingLabel;
+    return which == null || which.isEmpty ? label : '$label $which';
   }
 
   /// Label for a floor value, or empty when unset. Falls back to "Floor N" so a
@@ -546,6 +598,9 @@ class PropertyModel {
     String? bathroomAccess,
     String? toiletAccess,
     String? kitchenAccess,
+    String? livingRoomAccess,
+    String? unitBuildingStructure,
+    String? unitBuildingLabel,
     String? videoUrl,
     List<String>? ceilingTypes,
     List<Map<String, dynamic>>? recurringDues,
@@ -620,6 +675,10 @@ class PropertyModel {
       bathroomAccess: bathroomAccess ?? this.bathroomAccess,
       toiletAccess: toiletAccess ?? this.toiletAccess,
       kitchenAccess: kitchenAccess ?? this.kitchenAccess,
+      livingRoomAccess: livingRoomAccess ?? this.livingRoomAccess,
+      unitBuildingStructure:
+          unitBuildingStructure ?? this.unitBuildingStructure,
+      unitBuildingLabel: unitBuildingLabel ?? this.unitBuildingLabel,
     );
   }
 
@@ -758,6 +817,9 @@ class PropertyModel {
       bathroomAccess: json['bathroomAccess'] as String?,
       toiletAccess: json['toiletAccess'] as String?,
       kitchenAccess: json['kitchenAccess'] as String?,
+      livingRoomAccess: json['livingRoomAccess'] as String?,
+      unitBuildingStructure: json['unitBuildingStructure'] as String?,
+      unitBuildingLabel: json['unitBuildingLabel'] as String?,
     );
   }
 
@@ -860,6 +922,9 @@ class PropertyModel {
       bathroomAccess: data['bathroomAccess'] as String?,
       toiletAccess: data['toiletAccess'] as String?,
       kitchenAccess: data['kitchenAccess'] as String?,
+      livingRoomAccess: data['livingRoomAccess'] as String?,
+      unitBuildingStructure: data['unitBuildingStructure'] as String?,
+      unitBuildingLabel: data['unitBuildingLabel'] as String?,
     );
   }
 
@@ -931,6 +996,10 @@ class PropertyModel {
       if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
       if (toiletAccess != null) 'toiletAccess': toiletAccess,
       if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
+      if (livingRoomAccess != null) 'livingRoomAccess': livingRoomAccess,
+      if (unitBuildingStructure != null)
+        'unitBuildingStructure': unitBuildingStructure,
+      if (unitBuildingLabel != null) 'unitBuildingLabel': unitBuildingLabel,
     };
   }
 
@@ -1008,6 +1077,10 @@ class PropertyModel {
       if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
       if (toiletAccess != null) 'toiletAccess': toiletAccess,
       if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
+      if (livingRoomAccess != null) 'livingRoomAccess': livingRoomAccess,
+      if (unitBuildingStructure != null)
+        'unitBuildingStructure': unitBuildingStructure,
+      if (unitBuildingLabel != null) 'unitBuildingLabel': unitBuildingLabel,
     };
   }
 }

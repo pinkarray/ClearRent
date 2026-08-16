@@ -87,7 +87,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (unit.isNotEmpty) parts.add(unit);
     final b = _building;
     if (b != null) {
-      final structure = b.structureLabel;
+      // On a compound the SITE structure says only "in a compound" — the
+      // building the tenant is actually renting in is on the unit, because one
+      // C of O can cover a duplex and a bungalow side by side.
+      final own = widget.property.unitBuildingDescriptor;
+      final structure = own.isNotEmpty ? own : b.structureLabel;
       if (_isOwner || _addressUnlocked) {
         parts.add(
           structure.isEmpty ? 'in ${b.name}' : 'in ${b.name} ($structure)',
@@ -3490,6 +3494,28 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     value: '${property.kitchens}',
                     label: 'Kitchen',
                   ),
+              ],
+            ),
+          ],
+          // A multi-room unit can share facilities too — a flat in a compound
+          // whose toilet is outside. The counts above say how many exist, not
+          // who else uses them, so without this the listing reads as fully
+          // self-contained.
+          if (property.sharedFacilities.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.group_outlined, size: 18, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Shared: ${property.sharedFacilities}',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],

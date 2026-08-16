@@ -173,13 +173,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   double? _longitude;
 
   String _propertyType = '';
-  // For single-space types only (room / room & parlour / self contain): what
-  // the tenant gets exclusively. Defaults to 'shared' because that is the norm
-  // for a let room — a landlord upgrading to 'private' is making a claim, which
-  // is the right way round.
+  // What the tenant gets exclusively. Asked for any UNIT inside a building —
+  // sharing is a fact about the arrangement, not about the type, so a self
+  // contain in a face-me-I-face-you compound can still share the toilet.
+  // Never asked when the whole property is let: there is nobody to share with.
   String _bathroomAccess = 'shared';
   String _toiletAccess = 'shared';
   String _kitchenAccess = 'shared';
+  String _livingRoomAccess = 'shared';
+  // Multi-room units are usually self-contained, so they answer one yes/no
+  // first and only open the three rows when it is yes. A single space is
+  // DEFINED by what it shares, so it is asked outright and ignores this.
+  bool _sharesFacilities = false;
   int _bedrooms = 1;
   int _bathrooms = 1;
   int _toilets = 1;
@@ -252,8 +257,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // What the whole building is (BuildingModel.structures) — asked only when
   // creating a new building; joining one inherits its structure.
   String _buildingStructure = '';
-  // Which unit this is, in the landlord's own words, and which floor it sits on.
+  // The structure of an EXISTING building the landlord joined, so the details
+  // step can show what the unit sits in without re-reading the stream.
+  String _selectedBuildingStructure = '';
+  // A compound is LAND, not a building: one C of O can cover a duplex and a
+  // bungalow standing side by side. The site's own structure would lose which
+  // of them this unit sits in, so a compound asks per unit. Only for compounds
+  // — every other structure IS a single building and every unit inherits it.
+  String _unitBuildingStructure = '';
+  int _unitBuildingNumber = 1;
+  // Which unit this is. The landlord no longer types this: it is derived from
+  // the unit TYPE plus a number, so "Self Contain 2" instead of free text that
+  // could contradict the type ("Room 2" on a listing typed as a bungalow).
+  // Still stored as a string — live docs carry hand-typed labels like "BQ".
   final TextEditingController _unitLabelController = TextEditingController();
+  int _unitNumber = 1;
   String _floor = '';
   // Set once the landlord answers "what are you letting out?" — until then
   // neither choice is selected, so the question can't be skipped by default.
@@ -469,12 +487,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'buildingName': _buildingNameController.text,
       'buildingAddress': _buildingAddressController.text,
       'buildingStructure': _buildingStructure,
+      'selectedBuildingStructure': _selectedBuildingStructure,
       'unitLabel': _unitLabelController.text,
+      'unitNumber': _unitNumber,
       'floor': _floor,
       'lettingScopeChosen': _lettingScopeChosen,
       'bathroomAccess': _bathroomAccess,
       'toiletAccess': _toiletAccess,
       'kitchenAccess': _kitchenAccess,
+      'livingRoomAccess': _livingRoomAccess,
+      'sharesFacilities': _sharesFacilities,
+      'unitBuildingStructure': _unitBuildingStructure,
+      'unitBuildingNumber': _unitBuildingNumber,
       // Media paths (not the File objects) — see PropertyDraftService.persistMedia
       'imagePaths': _selectedImageFiles.map((f) => f.path).toList(),
       'videoPath': _selectedVideoFile?.path,
@@ -535,6 +559,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _buildingNameController.text = draft['buildingName'] ?? '';
       _buildingAddressController.text = draft['buildingAddress'] ?? '';
       _buildingStructure = draft['buildingStructure'] ?? '';
+      _selectedBuildingStructure = draft['selectedBuildingStructure'] ?? '';
+      // A draft saved before the unit number existed keeps whatever label it
+      // had typed; the number only takes over once the landlord touches it.
+      _unitNumber = draft['unitNumber'] ?? 1;
       _unitLabelController.text = draft['unitLabel'] ?? '';
       _floor = draft['floor'] ?? '';
       // Drafts saved before the letting-scope step existed have no answer to
@@ -544,6 +572,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _bathroomAccess = draft['bathroomAccess'] ?? 'shared';
       _toiletAccess = draft['toiletAccess'] ?? 'shared';
       _kitchenAccess = draft['kitchenAccess'] ?? 'shared';
+      _livingRoomAccess = draft['livingRoomAccess'] ?? 'shared';
+      _unitBuildingStructure = draft['unitBuildingStructure'] ?? '';
+      _unitBuildingNumber = draft['unitBuildingNumber'] ?? 1;
+      // A draft saved before the toggle existed infers it from what it stored,
+      // so a restored multi-room unit doesn't hide an answer it already has.
+      _sharesFacilities = draft['sharesFacilities'] ??
+          (_bathroomAccess == 'shared' ||
+              _toiletAccess == 'shared' ||
+              _kitchenAccess == 'shared');
 
       // Lists
       _selectedAmenities.clear();
@@ -1037,11 +1074,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     } else if (_isSingleSpace) {
       // A single space has no bedroom count to state — "1 Bedroom Room" is what
       // the old unconditional template produced, and it's in live data. The
-      // unit name leads when there is one, so sibling rooms are tellable apart.
-      _titleController.text = unit.isNotEmpty ? '$unit - $label' : label;
-    } else if (unit.isNotEmpty) {
-      _titleController.text = '$unit - $_bedrooms Bedroom $label';
+      // derived unit name already reads "Self Contain 2", so it stands alone.
+      _titleController.text = unit.isNotEmpty ? unit : label;
     } else {
+      // A flat, duplex or semi-detached duplex genuinely varies in size, so the
+      // bedroom count leads. The unit NUMBER is not glued on here — it would
+      // read "2 Bedroom Flat 2"; the card shows it as a separate line.
       _titleController.text = '$_bedrooms Bedroom $label';
     }
   }
@@ -1078,21 +1116,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // Lead with what's shared — it's the thing a tenant is comparing, and
       // stating it plainly avoids the listing being read as self-contained.
       buffer.write('A $label');
-      final shared = <String>[];
-      if (_bathroomAccess == 'shared') shared.add('bathroom');
-      if (_toiletAccess == 'shared') shared.add('toilet');
-      if (_kitchenAccess == 'shared') shared.add('kitchen');
-      if (shared.isNotEmpty) {
-        buffer.write(' with shared ${_joinWords(shared)}');
-      } else if (_kitchenAccess == 'none') {
-        buffer.write(' with private facilities and no kitchen');
-      } else {
-        buffer.write(' with private bathroom and kitchen');
+      // Only a unit has an audience to share with. A whole self contain says
+      // nothing here rather than claiming facilities it was never asked about.
+      if (_sharingApplies) {
+        final shared = _sharedFacilities;
+        if (shared.isNotEmpty) {
+          buffer.write(' with shared ${_joinWords(shared)}');
+        } else if (_kitchenAccess == 'none') {
+          buffer.write(' with private facilities and no kitchen');
+        } else {
+          buffer.write(' with private bathroom and kitchen');
+        }
       }
     } else {
       buffer.write('$_bedrooms bedroom $label');
       if (_bathrooms > 0) {
         buffer.write(' with $_bathrooms bathroom${_bathrooms > 1 ? 's' : ''}');
+      }
+      // A multi-room unit can still share — a flat in a compound whose toilet
+      // is outside. Left unsaid, the listing reads as fully self-contained.
+      final shared = _sharingApplies ? _sharedFacilities : const <String>[];
+      if (shared.isNotEmpty) {
+        buffer.write(', sharing the ${_joinWords(shared)}');
       }
     }
 
@@ -1170,11 +1215,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               return false;
             }
           }
-          // The unit label is what tells two units of the same shape apart —
-          // without it a compound of identical flats is unreadable to the
-          // tenant, the admin reviewer and the landlord's own list.
-          if (_unitLabelController.text.trim().isEmpty) {
-            _showError('Please give this unit a name, e.g. "Room 2".');
+          // The unit's type is asked here now, and its name is derived from it
+          // plus the number — so requiring the type covers both. Without it a
+          // compound of identical flats is unreadable to the tenant, the admin
+          // reviewer and the landlord's own list.
+          if (_propertyType.isEmpty) {
+            _showError('Please say what kind of unit this is.');
+            return false;
+          }
+          // Without it a compound's units all read "in a compound", losing the
+          // duplex-vs-bungalow distinction the tenant is actually choosing on.
+          if (_isCompoundSite && _unitBuildingStructure.isEmpty) {
+            _showError('Please say which building in the compound this is.');
             return false;
           }
         }
@@ -1605,11 +1657,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ? _unitLabelController.text.trim()
             : null,
         floor: buildingId != null && _floor.isNotEmpty ? _floor : null,
-        // Only for a single space. A flat's own bathroom is private by
-        // construction, so writing the fields there would be noise.
-        bathroomAccess: _isSingleSpace ? _bathroomAccess : null,
-        toiletAccess: _isSingleSpace ? _toiletAccess : null,
-        kitchenAccess: _isSingleSpace ? _kitchenAccess : null,
+        // Only for a unit inside a building. A whole-property letting has
+        // nobody to share with, so writing the fields there would be noise.
+        bathroomAccess: _sharingApplies ? _bathroomAccess : null,
+        toiletAccess: _sharingApplies ? _toiletAccess : null,
+        kitchenAccess: _sharingApplies ? _kitchenAccess : null,
+        livingRoomAccess: _sharingApplies ? _livingRoomAccess : null,
+        // Recorded for EVERY grouped unit, not just compounds, so a tenant
+        // browsing the list sees "in a face me i face you" without the card
+        // having to load the building doc. A compound asks which of its
+        // buildings this is; every other site IS one building, so it is copied
+        // from the site. The letter only means anything on a compound.
+        unitBuildingStructure: !_isInBuilding
+            ? null
+            : (_isCompoundSite
+                ? (_unitBuildingStructure.isNotEmpty
+                    ? _unitBuildingStructure
+                    : null)
+                : (_siteStructure.isNotEmpty ? _siteStructure : null)),
+        unitBuildingLabel:
+            _isInBuilding && _isCompoundSite && _unitBuildingStructure.isNotEmpty
+                ? _unitBuildingLabel
+                : null,
         listingFeePaymentReference: _listingFeePaymentReference,
         assignedAgentId:
             _inspectionHandler == 'agent' ? _selectedAgentId : null,
@@ -2825,13 +2894,67 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     }
   }
 
+  /// What the SITE is — the thing the ownership document covers.
+  String get _siteStructure =>
+      _creatingNewBuilding ? _buildingStructure : _selectedBuildingStructure;
+
+  /// A compound is land that can carry several buildings, so the unit has to
+  /// name its own. Every other structure is one building already.
+  bool get _isCompoundSite => _siteStructure == 'compound';
+
+  /// "A", "B" — which of the compound's buildings this unit is in. Derived from
+  /// a number for the same reason the unit name is: free text could contradict.
+  String get _unitBuildingLabel =>
+      String.fromCharCode(64 + _unitBuildingNumber.clamp(1, 26));
+
+  /// "Self Contain 2, in a bungalow" — what this unit is and what it sits in,
+  /// for the details step. The unit's own type is chosen on the letting step,
+  /// so this only confirms it alongside the building's axis.
+  String _unitContextSummary() {
+    final unit = _unitLabelController.text.trim();
+    final parts = <String>[if (unit.isNotEmpty) unit];
+    // On a compound, what the unit sits in is its OWN building, not the site.
+    if (_isCompoundSite) {
+      final b = BuildingModel.structureLabelFor(_unitBuildingStructure);
+      if (b.isNotEmpty) {
+        parts.add('in ${b.toLowerCase()} $_unitBuildingLabel');
+      }
+      parts.add('in a compound');
+    } else {
+      final site = BuildingModel.structureLabelFor(_siteStructure);
+      if (site.isNotEmpty) parts.add('in a ${site.toLowerCase()}');
+    }
+    return parts.isEmpty ? 'A unit in this building' : parts.join(', ');
+  }
+
+  /// Derive the unit's name from its type and number — "Self Contain 2". The
+  /// landlord used to type this, which let the name contradict the type.
+  /// Only for a grouped unit; a whole-property listing has no siblings.
+  void _syncUnitLabel() {
+    if (!_isInBuilding || _propertyType.isEmpty) {
+      _unitLabelController.clear();
+      return;
+    }
+    _unitLabelController.text =
+        '${PropertyModel.typeLabelFor(_propertyType)} $_unitNumber';
+  }
+
   /// Clear the chosen type when changing the letting scope no longer offers it
   /// — picking "Room" as a unit and then switching to "the whole property"
   /// otherwise leaves 'room' selected with no chip showing it.
   void _dropTypeIfNotOffered() {
     if (_propertyType.isEmpty) return;
     final offered = PropertyModel.typesForScope(inBuilding: _isInBuilding);
-    if (!offered.contains(_propertyType)) _propertyType = '';
+    if (!offered.contains(_propertyType)) {
+      _propertyType = '';
+      _syncUnitLabel();
+      return;
+    }
+    // The type survived the scope change, but its sharing defaults did not:
+    // a self contain answers "shared?" as a unit and is never asked as a whole
+    // property, so re-derive rather than carry the old scope's answer over.
+    _applyTypeDefaults(_propertyType);
+    _syncUnitLabel();
   }
 
   /// Bring the room counts in line with the type just picked, so a listing
@@ -2839,30 +2962,55 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// setting 3 bedrooms, then switching to Room, keeps bedrooms at 3 — and the
   /// card renders "3 bed" for a single room.
   void _applyTypeDefaults(String type) {
-    if (!PropertyModel.isSingleSpace(type)) return;
-    _bedrooms = 1;
-    _guestRooms = 0;
-    // A room & parlour is exactly that: the room plus a sitting room.
-    _livingRooms = type == 'roomAndParlour' ? 1 : 0;
-    // Self contain means self-contained — its whole point is private
-    // facilities. And anything let as the WHOLE property has nobody to share
-    // with by definition. A room or room & parlour inside a building defaults
-    // to shared, which is the norm there.
-    if (type == 'selfContain' || !_isInBuilding) {
-      _bathroomAccess = 'private';
-      _toiletAccess = 'private';
-      _kitchenAccess = 'private';
-    } else {
-      _bathroomAccess = 'shared';
-      _toiletAccess = 'shared';
-      _kitchenAccess = 'shared';
+    if (PropertyModel.isSingleSpace(type)) {
+      _bedrooms = 1;
+      _guestRooms = 0;
+      // A room & parlour is exactly that: the room plus a sitting room.
+      _livingRooms = type == 'roomAndParlour' ? 1 : 0;
     }
+    // Defaults only — every one of these is editable, because the type does
+    // not decide the answer. A plain room or room & parlour inside a building
+    // starts shared, since that is the norm for those rungs; everything else
+    // starts private and the landlord says otherwise. A whole-property letting
+    // has nobody to share with, so it stays private and is never asked.
+    final sharedByDefault =
+        _isInBuilding && (type == 'room' || type == 'roomAndParlour');
+    _sharesFacilities = sharedByDefault;
+    final access = sharedByDefault ? 'shared' : 'private';
+    _bathroomAccess = access;
+    _toiletAccess = access;
+    _kitchenAccess = access;
+    // A plain room has no parlour of its own; every other type does.
+    _livingRoomAccess = type == 'room' ? 'none' : access;
   }
 
-  /// True when the chosen type is one space, so its spec is "what do you
-  /// share" rather than "how many rooms".
+  /// True when the chosen type is one space, so it has no bedroom count worth
+  /// giving. This governs the COUNTERS only — it must never govern sharing,
+  /// which is a fact about the arrangement rather than the type.
   bool get _isSingleSpace =>
       _propertyType.isNotEmpty && PropertyModel.isSingleSpace(_propertyType);
+
+  /// Sharing can only arise when the letting is one unit inside something, and
+  /// then it arises for EVERY type: a face-me-I-face-you bungalow holds self
+  /// contains and room & parlours that still share the toilet and kitchen.
+  /// Letting the whole property leaves nobody to share with, so the question is
+  /// never asked there — that journey answers what is PRESENT instead.
+  bool get _sharingApplies => _isInBuilding && _propertyType.isNotEmpty;
+
+  /// Counters answer "what is present", which is always a real question for a
+  /// whole property and for a multi-room unit. Only a single space inside a
+  /// building has nothing to count.
+  bool get _showCounters => !(_isInBuilding && _isSingleSpace);
+
+  /// The facilities the landlord has marked shared, in display order.
+  List<String> get _sharedFacilities {
+    final shared = <String>[];
+    if (_bathroomAccess == 'shared') shared.add('bathroom');
+    if (_toiletAccess == 'shared') shared.add('toilet');
+    if (_kitchenAccess == 'shared') shared.add('kitchen');
+    if (_livingRoomAccess == 'shared') shared.add('living room');
+    return shared;
+  }
 
   /// The six counters, for a multi-room dwelling where bedroom count is a real
   /// question. Unchanged — only the condition around them is new.
@@ -2936,52 +3084,123 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
-  /// What a single space actually needs answering. A room's bedroom count is a
-  /// tautology; what a tenant is choosing between is whether the bathroom and
-  /// kitchen are theirs. This is the axis that separates a single room from a
-  /// room & parlour from a self contain.
+  /// Whether the tenant gets the bathroom, toilet and kitchen to themselves.
+  /// Shown for any unit inside a building, whatever its type.
+  ///
+  /// A single space is DEFINED by what it shares — it is the axis separating a
+  /// single room from a room & parlour from a self contain — so it is asked
+  /// outright. A multi-room unit is usually self-contained, so it answers one
+  /// yes/no and only opens the detail when the answer is yes.
   Widget _buildFacilitiesSection() {
+    if (_isSingleSpace) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('What comes with it?', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'The most important thing a tenant wants to know about a '
+            '${PropertyModel.typeLabelFor(_propertyType).toLowerCase()} - and '
+            'what your listing is compared against.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          ..._buildAccessRows(),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('What comes with it?', style: AppTextStyles.labelMedium),
+        Text('Shared facilities', style: AppTextStyles.labelMedium),
         const SizedBox(height: 4),
         Text(
-          'The most important thing a tenant wants to know about a '
-          '${PropertyModel.typeLabelFor(_propertyType).toLowerCase()} - and '
-          'what your listing is compared against.',
+          'Does this unit share a bathroom, toilet or kitchen with the other '
+          'units in the building?',
           style: AppTextStyles.caption
               .copyWith(color: AppColors.textSecondary, height: 1.5),
         ),
-        const SizedBox(height: 16),
-        _buildAccessRow(
-          label: 'Bathroom',
-          value: _bathroomAccess,
-          onChanged: (v) => setState(() {
-            _bathroomAccess = v;
-            _updateAutoDescription();
-          }),
-        ),
         const SizedBox(height: 12),
-        _buildAccessRow(
-          label: 'Toilet',
-          value: _toiletAccess,
-          onChanged: (v) => setState(() => _toiletAccess = v),
+        Wrap(
+          spacing: 8,
+          children: [
+            _buildSelectableChip(
+              label: 'No, all private',
+              selected: !_sharesFacilities,
+              onTap: () => setState(() {
+                _sharesFacilities = false;
+                _bathroomAccess = 'private';
+                _toiletAccess = 'private';
+                _kitchenAccess = 'private';
+                _livingRoomAccess = 'private';
+                _updateAutoDescription();
+              }),
+            ),
+            _buildSelectableChip(
+              label: 'Yes, some are shared',
+              selected: _sharesFacilities,
+              onTap: () => setState(() {
+                _sharesFacilities = true;
+                _bathroomAccess = 'shared';
+                _toiletAccess = 'shared';
+                _kitchenAccess = 'shared';
+                _livingRoomAccess = 'shared';
+                _updateAutoDescription();
+              }),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        _buildAccessRow(
-          label: 'Kitchen',
-          value: _kitchenAccess,
-          // A room with no kitchen at all is common and worth stating plainly
-          // rather than leaving a tenant to assume there is one.
-          options: const ['private', 'shared', 'none'],
-          onChanged: (v) => setState(() {
-            _kitchenAccess = v;
-            _updateAutoDescription();
-          }),
-        ),
+        if (_sharesFacilities) ...[
+          const SizedBox(height: 16),
+          ..._buildAccessRows(),
+        ],
       ],
     );
+  }
+
+  List<Widget> _buildAccessRows() {
+    return [
+      _buildAccessRow(
+        label: 'Bathroom',
+        value: _bathroomAccess,
+        onChanged: (v) => setState(() {
+          _bathroomAccess = v;
+          _updateAutoDescription();
+        }),
+      ),
+      const SizedBox(height: 12),
+      _buildAccessRow(
+        label: 'Toilet',
+        value: _toiletAccess,
+        onChanged: (v) => setState(() => _toiletAccess = v),
+      ),
+      const SizedBox(height: 12),
+      _buildAccessRow(
+        label: 'Kitchen',
+        value: _kitchenAccess,
+        // A room with no kitchen at all is common and worth stating plainly
+        // rather than leaving a tenant to assume there is one.
+        options: const ['private', 'shared', 'none'],
+        onChanged: (v) => setState(() {
+          _kitchenAccess = v;
+          _updateAutoDescription();
+        }),
+      ),
+      const SizedBox(height: 12),
+      _buildAccessRow(
+        label: 'Living room',
+        value: _livingRoomAccess,
+        // The parlour is common ground in a face-me-I-face-you, and a plain
+        // room has none at all — both need saying.
+        options: const ['private', 'shared', 'none'],
+        onChanged: (v) => setState(() {
+          _livingRoomAccess = v;
+          _updateAutoDescription();
+        }),
+      ),
+    ];
   }
 
   Widget _buildAccessRow({
@@ -3037,36 +3256,64 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 20),
 
-          // Property Type — what the TENANT gets. What the whole BUILDING is
-          // lives on BuildingModel.structure, asked on the letting step, so
-          // this no longer has to answer both at once. The list is filtered by
-          // that answer: "the whole property" never offers Room (a lone room is
-          // a unit in something, and that path records what it sits in).
-          //
           // Shop/Office are in neither list until the commercial branch exists
           // — the rest of this step still assumes a home, so a commercial
           // listing comes out wrong. Their labels are still handled everywhere.
-          Text(
-            _isInBuilding ? 'What is this unit?' : 'Property Type',
-            style: AppTextStyles.labelMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: PropertyModel.typesForScope(inBuilding: _isInBuilding)
-                .map((t) => _buildTypeChip(PropertyModel.typeLabelFor(t), t))
-                .toList(),
-          ),
+          //
+          // A unit's own type is answered on the letting step, next to its
+          // number — asking it twice was how a listing ended up named "Room 2"
+          // while typed as a bungalow. Here the unit only confirms what it
+          // SITS IN, which is the building's axis.
+          if (_isInBuilding) ...[
+            Text('This unit is in', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.apartment_outlined,
+                      size: 18, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _unitContextSummary(),
+                      style: AppTextStyles.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            Text('Property Type', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PropertyModel.typesForScope(inBuilding: false)
+                  .map((t) => _buildTypeChip(PropertyModel.typeLabelFor(t), t))
+                  .toList(),
+            ),
+          ],
           const SizedBox(height: 24),
 
-          // A single space is described by what it SHARES, not by room counts.
-          if (_isSingleSpace) ...[
-            _buildFacilitiesSection(),
-            const SizedBox(height: 24),
-          ] else ...[
+          // Two independent questions. Counts say what is PRESENT, and are a
+          // real question for a whole property and for a multi-room unit alike
+          // — only a single space has nothing to count. Sharing says who else
+          // uses it, which can only arise inside a building and then applies to
+          // every type. They are not alternatives: a two-bedroom flat in a
+          // compound has 2 bedrooms AND a shared toilet.
+          if (_showCounters) ...[
             _buildRoomCounters(),
             const SizedBox(height: 20),
+          ],
+          if (_sharingApplies) ...[
+            _buildFacilitiesSection(),
+            const SizedBox(height: 24),
           ],
 
           // Model A: one unit = one rent = one tenancy. A property is let to a
@@ -4430,23 +4677,129 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           const SizedBox(height: 12),
           _buildBuildingPicker(),
           const SizedBox(height: 24),
-          Text('What do you call this unit?',
-              style: AppTextStyles.labelMedium),
+          // The unit's own type, asked here rather than on the details step.
+          // It is what the tenant is renting, and it decides everything after:
+          // whether there is a room count to give at all, and what the unit is
+          // called. The building's own type lives on the building.
+          Text('What kind of unit is it?', style: AppTextStyles.labelMedium),
           const SizedBox(height: 4),
           Text(
-            'Tenants and our reviewers see this to tell it apart from the '
-            'other units in the same building.',
+            'What the tenant actually gets. The type carries the size - a room '
+            'is one room, a self contain is one space.',
             style: AppTextStyles.caption
                 .copyWith(color: AppColors.textSecondary, height: 1.5),
           ),
           const SizedBox(height: 12),
-          AppTextField(
-            label: 'Unit name',
-            hint: 'e.g. Room 2, Left flat, BQ',
-            controller: _unitLabelController,
-            textCapitalization: TextCapitalization.words,
-            onChanged: (_) => setState(_updateAutoTitle),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PropertyModel.typesForScope(inBuilding: true)
+                .map((t) => _buildSelectableChip(
+                      label: PropertyModel.typeLabelFor(t),
+                      selected: _propertyType == t,
+                      onTap: () => setState(() {
+                        _propertyType = t;
+                        _applyTypeDefaults(t);
+                        _syncUnitLabel();
+                        _updateAutoTitle();
+                        _updateAutoDescription();
+                      }),
+                    ))
+                .toList(),
           ),
+          if (_propertyType.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Text('Which one is it?', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Only matters when the building has more than one '
+              '${PropertyModel.typeLabelFor(_propertyType).toLowerCase()}. '
+              'Tenants and our reviewers see this to tell them apart.',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 150,
+                  child: _buildCounter('Unit number', _unitNumber, (v) {
+                    if (v < 1) return;
+                    setState(() {
+                      _unitNumber = v;
+                      _syncUnitLabel();
+                      _updateAutoTitle();
+                    });
+                  }),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    'Listed as "${_unitLabelController.text}"',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          // A compound is LAND. One C of O can cover a duplex and a bungalow
+          // standing side by side, and the site's own structure would say only
+          // "in a compound" — losing which building the tenant is renting in.
+          // Asked only for compounds; every other structure is one building.
+          if (_isCompoundSite) ...[
+            const SizedBox(height: 24),
+            Text('Which building in the compound?',
+                style: AppTextStyles.labelMedium),
+            const SizedBox(height: 4),
+            Text(
+              'A compound can hold a duplex on one side and a bungalow on the '
+              'other. This says which one this unit is in.',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textSecondary, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              // 'compound' itself is excluded — a compound inside a compound
+              // says nothing, and this axis is the BUILDING on the land.
+              children: BuildingModel.structures
+                  .where((s) => s['value'] != 'compound')
+                  .map((s) => _buildSelectableChip(
+                        label: s['label']!,
+                        selected: _unitBuildingStructure == s['value'],
+                        onTap: () => setState(
+                          () => _unitBuildingStructure = s['value']!,
+                        ),
+                      ))
+                  .toList(),
+            ),
+            if (_unitBuildingStructure.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 150,
+                    child: _buildCounter(
+                        'Which one', _unitBuildingNumber, (v) {
+                      if (v < 1 || v > 26) return;
+                      setState(() => _unitBuildingNumber = v);
+                    }),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      'Shown as "${BuildingModel.structureLabelFor(_unitBuildingStructure)} '
+                      '$_unitBuildingLabel"',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
           const SizedBox(height: 20),
           Text('Which floor is it on?', style: AppTextStyles.labelMedium),
           const SizedBox(height: 4),
@@ -4606,6 +4959,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       onTap: () => setState(() {
         _creatingNewBuilding = false;
         _selectedBuildingId = b.id;
+        // Kept so the details step can say what this unit sits in without
+        // re-reading the stream. A building written before `structure` existed
+        // has none, and the line degrades to naming the unit only.
+        _selectedBuildingStructure = b.structure;
       }),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -6058,19 +6415,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           if (_isInBuilding && _unitLabelController.text.trim().isNotEmpty)
             _buildPreviewSection('Unit', _unitLabelController.text.trim()),
+          if (_isInBuilding && _isCompoundSite && _unitBuildingStructure.isNotEmpty)
+            _buildPreviewSection(
+              'Building',
+              '${BuildingModel.structureLabelFor(_unitBuildingStructure)} '
+                  '$_unitBuildingLabel',
+            ),
           if (_isInBuilding && _floor.isNotEmpty)
             _buildPreviewSection('Floor', PropertyModel.floorLabelFor(_floor)),
           _buildPreviewSection(
             'Property Type',
             PropertyModel.typeLabelFor(_propertyType),
           ),
-          // A single space is described by what it shares, not by counts —
-          // showing "Bedrooms 1" for a room is the tautology this replaced.
-          if (_isSingleSpace) ...[
-            _buildPreviewSection('Bathroom', _accessLabel(_bathroomAccess)),
-            _buildPreviewSection('Toilet', _accessLabel(_toiletAccess)),
-            _buildPreviewSection('Kitchen', _accessLabel(_kitchenAccess)),
-          ] else ...[
+          // Counts and sharing are independent, so the preview shows whichever
+          // of the two the landlord was actually asked.
+          if (_showCounters) ...[
             _buildPreviewSection('Bedrooms', '$_bedrooms'),
             _buildPreviewSection('Bathrooms', '$_bathrooms'),
             _buildPreviewSection('Toilets', '$_toilets'),
@@ -6079,6 +6438,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             if (_guestRooms > 0)
               _buildPreviewSection('Guest Rooms', '$_guestRooms'),
             if (_kitchens > 0) _buildPreviewSection('Kitchens', '$_kitchens'),
+          ],
+          if (_sharingApplies) ...[
+            _buildPreviewSection('Bathroom', _accessLabel(_bathroomAccess)),
+            _buildPreviewSection('Toilet', _accessLabel(_toiletAccess)),
+            _buildPreviewSection('Kitchen', _accessLabel(_kitchenAccess)),
+            _buildPreviewSection(
+                'Living room', _accessLabel(_livingRoomAccess)),
           ],
           _buildPreviewSection(
             'Inspections',

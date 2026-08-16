@@ -329,12 +329,18 @@ class PropertyService {
     // buildingId.
     String? unitLabel,
     String? floor,
-    // For single-space types (room / room & parlour / self contain) only:
-    // 'private' | 'shared', and 'none' for a kitchen. This is what separates
-    // those rungs from each other — not the bedroom count.
+    // For any UNIT inside a building, whatever its type: 'private' | 'shared',
+    // plus 'none' for a kitchen or living room. Sharing is a fact about the
+    // arrangement, not the type — a self contain in a compound can still share
+    // the toilet. Null when the whole property is let.
     String? bathroomAccess,
     String? toiletAccess,
     String? kitchenAccess,
+    String? livingRoomAccess,
+    // Which building on the land this unit sits in, when the site is a
+    // compound — one C of O can cover a duplex and a bungalow side by side.
+    String? unitBuildingStructure,
+    String? unitBuildingLabel,
     String? listingFeePaymentReference,
     String? assignedAgentId,
     String? assignedAgentName,
@@ -458,6 +464,10 @@ class PropertyService {
         if (bathroomAccess != null) 'bathroomAccess': bathroomAccess,
         if (toiletAccess != null) 'toiletAccess': toiletAccess,
         if (kitchenAccess != null) 'kitchenAccess': kitchenAccess,
+        if (livingRoomAccess != null) 'livingRoomAccess': livingRoomAccess,
+        if (unitBuildingStructure != null)
+          'unitBuildingStructure': unitBuildingStructure,
+        if (unitBuildingLabel != null) 'unitBuildingLabel': unitBuildingLabel,
         if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
         if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
         // Grouped units inherit the building's doc status (resolved at read

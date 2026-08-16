@@ -97,12 +97,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // Unit identity within a building — grouped listings only.
   late final TextEditingController _unitLabelController;
   late String _floor;
-  // Single-space types only: what the tenant gets exclusively. A listing
+  // Units inside a building only: what the tenant gets exclusively. A listing
   // written before these existed carries null; 'shared' is the safe read for a
   // let room, and the landlord can correct it here.
   late String _bathroomAccess;
   late String _toiletAccess;
   late String _kitchenAccess;
+  late String _livingRoomAccess;
 
   // Property details
   late String _propertyType;
@@ -201,6 +202,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _bathroomAccess = p.bathroomAccess ?? 'shared';
     _toiletAccess = p.toiletAccess ?? 'shared';
     _kitchenAccess = p.kitchenAccess ?? 'shared';
+    _livingRoomAccess = p.livingRoomAccess ?? 'shared';
 
     _propertyType = p.propertyType;
     _bedrooms = p.bedrooms;
@@ -644,11 +646,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         // listing, so it's written only for a grouped unit.
         if (_isGrouped) 'unitLabel': _unitLabelController.text.trim(),
         if (_isGrouped) 'floor': _floor,
-        // Only a single space carries these — a flat's own bathroom is private
-        // by construction.
-        if (_isSingleSpace) 'bathroomAccess': _bathroomAccess,
-        if (_isSingleSpace) 'toiletAccess': _toiletAccess,
-        if (_isSingleSpace) 'kitchenAccess': _kitchenAccess,
+        // Only a unit inside a building carries these — a whole-property
+        // letting has nobody to share with.
+        if (_sharingApplies) 'bathroomAccess': _bathroomAccess,
+        if (_sharingApplies) 'toiletAccess': _toiletAccess,
+        if (_sharingApplies) 'kitchenAccess': _kitchenAccess,
+        if (_sharingApplies) 'livingRoomAccess': _livingRoomAccess,
         if (!hasActiveTenants) ...{
           'rent': _parseRentAmount(),
           'rentFrequency': _rentPeriod,
@@ -1214,33 +1217,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           const SizedBox(height: 16),
         ],
 
-        // A single space has no meaningful room count — what matters is which
-        // facilities are the tenant's own. Mirrors add-property.
-        if (_isSingleSpace) ...[
-          Text('What comes with it', style: AppTextStyles.labelMedium),
-          const SizedBox(height: 12),
-          _buildAccessRow(
-            label: 'Bathroom',
-            value: _bathroomAccess,
-            onChanged: (v) =>
-                setState(() { _bathroomAccess = v; _hasChanges = true; }),
-          ),
-          const SizedBox(height: 12),
-          _buildAccessRow(
-            label: 'Toilet',
-            value: _toiletAccess,
-            onChanged: (v) =>
-                setState(() { _toiletAccess = v; _hasChanges = true; }),
-          ),
-          const SizedBox(height: 12),
-          _buildAccessRow(
-            label: 'Kitchen',
-            value: _kitchenAccess,
-            options: const ['private', 'shared', 'none'],
-            onChanged: (v) =>
-                setState(() { _kitchenAccess = v; _hasChanges = true; }),
-          ),
-        ] else ...[
+        // Counts and sharing are independent — see add-property. Counts are a
+        // real question for anything but a single space; sharing is a real
+        // question for any unit inside a building, whatever its type.
+        if (_showCounters) ...[
           // Counters
           Row(
             children: [
@@ -1276,6 +1256,52 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             ],
           ),
         ],
+        if (_sharingApplies) ...[
+          if (_showCounters) const SizedBox(height: 20),
+          Text(
+            _isSingleSpace ? 'What comes with it' : 'Shared facilities',
+            style: AppTextStyles.labelMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _isSingleSpace
+                ? 'Which of these are the tenant\'s own.'
+                : 'Which of these this unit shares with the other units in '
+                    'the building.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Bathroom',
+            value: _bathroomAccess,
+            onChanged: (v) =>
+                setState(() { _bathroomAccess = v; _hasChanges = true; }),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Toilet',
+            value: _toiletAccess,
+            onChanged: (v) =>
+                setState(() { _toiletAccess = v; _hasChanges = true; }),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Kitchen',
+            value: _kitchenAccess,
+            options: const ['private', 'shared', 'none'],
+            onChanged: (v) =>
+                setState(() { _kitchenAccess = v; _hasChanges = true; }),
+          ),
+          const SizedBox(height: 12),
+          _buildAccessRow(
+            label: 'Living room',
+            value: _livingRoomAccess,
+            options: const ['private', 'shared', 'none'],
+            onChanged: (v) =>
+                setState(() { _livingRoomAccess = v; _hasChanges = true; }),
+          ),
+        ],
         const SizedBox(height: 16),
 
         AppTextField(
@@ -1295,7 +1321,20 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  /// Governs the COUNTERS only — a single space has nothing to count. Sharing
+  /// is deliberately NOT keyed off this: see [_sharingApplies].
   bool get _isSingleSpace => PropertyModel.isSingleSpace(_propertyType);
+
+  /// Sharing is a fact about the arrangement, not the type. Only a unit inside
+  /// a building has anyone to share with, and then every type can — a self
+  /// contain in a face-me-I-face-you bungalow still shares the toilet.
+  ///
+  /// Unlike add-property there is no "does it share anything?" toggle here:
+  /// the values already exist on the doc, and hiding them behind a collapsed
+  /// answer would let a landlord edit a listing without seeing what it claims.
+  bool get _sharingApplies => _isGrouped;
+
+  bool get _showCounters => !(_isGrouped && _isSingleSpace);
 
   Widget _buildAccessRow({
     required String label,

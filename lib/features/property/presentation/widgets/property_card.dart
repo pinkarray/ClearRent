@@ -309,7 +309,7 @@ class PropertyCard extends StatelessWidget {
                         ),
                       ],
                     )
-                  else
+                  else ...[
                     Row(
                       children: [
                         if (property.bedrooms > 0)
@@ -333,6 +333,32 @@ class PropertyCard extends StatelessWidget {
                         ],
                       ],
                     ),
+                    // A multi-room unit can share too — a flat in a compound
+                    // whose toilet is outside. Counts alone would read as
+                    // fully self-contained, which is the same confusion the
+                    // single-space line exists to prevent.
+                    if (property.sharedFacilities.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.group_outlined,
+                            size: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              property.sharedFacilities,
+                              style: AppTextStyles.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ],
               ),
             ),
