@@ -462,6 +462,63 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  /// Phone-tab recovery: send a one-time code instead of a password.
+  ///
+  /// "Forgot Password?" on the email tab sends a reset EMAIL, which is no use
+  /// to someone who signed up by phone and may have no email on file at all —
+  /// and sign-up goes through phone OTP, so that is a real slice of users.
+  /// Web already treats OTP as the recovery path; this gives the app the same
+  /// route instead of a dead end.
+  Future<void> _forgotPhonePassword() async {
+    setState(() => _errorMessage = null);
+    final raw = _phoneController.text.trim();
+    if (raw.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your phone number first');
+      return;
+    }
+    String phone = raw.replaceAll(RegExp(r'[\s\-]'), '');
+    if (phone.startsWith('0')) phone = phone.substring(1);
+    final fullPhone = '+234$phone';
+
+    setState(() => _isLoading = true);
+    final result = await _authService.sendOtp(phoneNumber: fullPhone);
+    if (!mounted) return;
+
+    if (!result.success) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = result.error ?? 'Could not send a code. Try again.';
+      });
+      return;
+    }
+
+    // Auto-verified (some Android devices retrieve the SMS themselves) — sign
+    // straight in rather than showing a code screen with nothing to type.
+    if (result.autoVerified && result.credential != null) {
+      final authResult =
+          await _authService.signInWithCredential(result.credential!);
+      if (!mounted) return;
+      if (authResult.success) {
+        await _biometricService.setOnboardingCompleted();
+        if (!mounted) return;
+        await _navigateAfterAuth();
+        return;
+      }
+      setState(() {
+        _isLoading = false;
+        _errorMessage = authResult.error;
+      });
+      return;
+    }
+
+    setState(() => _isLoading = false);
+    if (!mounted) return;
+    context.push('/otp', extra: {
+      'phoneNumber': fullPhone,
+      'verificationId': result.verificationId,
+    });
+  }
+
   // ============ BIOMETRIC DIALOG ============
 
   Future<bool> _showBiometricEnableDialog() async {
@@ -941,7 +998,21 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _isLoading ? null : _forgotPhonePassword,
+              child: Text(
+                'Forgot Password?',
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
 
           AppButton(
             text: 'Sign In',

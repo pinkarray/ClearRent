@@ -49,6 +49,9 @@ export {nudgeInspectionParty, messageInspectionParties}
   from "./inspection_admin_ops";
 export {reportInspectionIssue} from "./inspection_dispute_ops";
 export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
+// A contested deposit used to be an alert an admin could only dismiss, which
+// changed nothing about the stalled unit. This is the lever.
+export {nudgeHandoverParty} from "./handover_admin_ops";
 export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
