@@ -1100,13 +1100,26 @@ export const onActiveRentalUpdated = onDocumentUpdated(
     // ending. Telling a landlord his tenant "added their account of the ended
     // tenancy" when they actually said the deposit never arrived hides the
     // one fact he has to act on, and points him at the wrong screen.
+    // Fires on the FIRST contest and on any RESTATEMENT. It used to be a pure
+    // rising edge (`before.tenantContested !== true`), which meant that once
+    // the flag was set it could never fire again: a tenant could re-submit a
+    // dispute a million times and the landlord was told exactly once, about
+    // the first wording. The write always landed, so the tenant saw their
+    // statement saved and assumed it had been sent. `rev` is updatedAt, which
+    // differs per write, so writeNotificationOnce does not swallow the repeat.
+    const contestedStatement =
+      (after.tenantContestStatement as string | undefined) ?? "";
+    const contestedBefore =
+      (before.tenantContestStatement as string | undefined) ?? "";
+    const contestIsNew = before.tenantContested !== true;
+    const contestRestated =
+      !contestIsNew && contestedStatement !== contestedBefore;
     if (
       after.tenantContested === true &&
-      before.tenantContested !== true &&
+      (contestIsNew || contestRestated) &&
       landlordId
     ) {
-      const statement =
-        (after.tenantContestStatement as string | undefined) ?? "";
+      const statement = contestedStatement;
       const isSettlement = after.handoverStage === "awaiting_confirm";
       const quoted = statement ? `: "${statement}"` : ".";
 
@@ -1118,7 +1131,9 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             "handover_settlement_contested" :
             "rental_end_contested",
           title: isSettlement ?
-            "Your tenant says the deposit has not arrived" :
+            (contestRestated ?
+              "Your tenant has restated the deposit problem" :
+              "Your tenant says the deposit has not arrived") :
             "Tenant contested the tenancy end",
           body: isSettlement ?
             `${tenantName} has not confirmed the caution deposit for ` +
