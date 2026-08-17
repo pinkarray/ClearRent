@@ -158,8 +158,18 @@ class InspectionService {
       }
     }
 
-    // Self-handled by landlord
-    if (property.inspectionHandler == 'self') {
+    // Self-handled — by the landlord, or by the caretaker they appointed.
+    //
+    // `!= 'agent'` rather than `== 'self'` deliberately. This method returns
+    // null when no branch matches, and a null breakdown takes the inspection
+    // booking sheet down with it, so a handler value that falls through here is
+    // not a degraded experience but a dead flow. The fee is flat (₦10k / ₦7k /
+    // ₦3k) and the ₦7k still settles to the landlord either way — no inspection
+    // request carries an agentId when it isn't agent-handled — so the two cases
+    // differ only in who is asked to show up.
+    if (property.isSelfHandled) {
+      final byCaretaker = property.inspectionHandler == 'caretaker' &&
+          property.caretakerId != null;
       final propertyArea = _resolvePropertyArea(property);
       // Prefer the cluster resolved at listing time (see agent path above).
       final propertyCluster = property.inspectionPropertyCluster ??
@@ -167,7 +177,14 @@ class InspectionService {
               ? InspectionPricing.getClusterForArea(propertyArea)
               : null);
 
-      if (property.landlordLivesInProperty == true) {
+      // Whoever actually opens the door is the one who may not have to travel:
+      // for a caretaker that is caretakerLivesOnPremises, which until now was
+      // pure display metadata.
+      final handlerOnSite = byCaretaker
+          ? property.caretakerLivesOnPremises == true
+          : property.landlordLivesInProperty == true;
+
+      if (handlerOnSite) {
         return InspectionPricing.calculateSelfHandledFee(
           landlordLivesInProperty: true,
           propertyCluster: propertyCluster ?? 'maryland_ikeja',
@@ -175,11 +192,11 @@ class InspectionService {
         );
       }
 
-      // Landlord lives elsewhere — get their baseLocation
+      // Handler lives elsewhere — get their baseLocation
       try {
         final landlordDoc = await _firestore
             .collection('users')
-            .doc(property.landlordId)
+            .doc(byCaretaker ? property.caretakerId! : property.landlordId)
             .get();
 
         String? landlordCluster;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../shared/widgets/description_prompts.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/caretaker_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -124,6 +126,30 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late bool _cautionDepositRefundable;
   final List<String> _ceilingTypes = [];
 
+  // Caretaker. Read-only here on purpose: `caretakerId` is admin-SDK-only, so
+  // the screen never writes it — it invites (a callable) and revokes (a
+  // callable), and re-reads what came back.
+  String? _caretakerId;
+  String? _caretakerName;
+  final CaretakerService _caretakerService = CaretakerService();
+
+  /// An invite that has been SENT but not yet answered. `caretakerId` only
+  /// lands on the property when the invitee accepts, so without this the
+  /// section keeps offering "Invite a caretaker" after one is already in
+  /// flight — and the second attempt is rejected with "you already have a
+  /// caretaker invite waiting", which reads like a bug rather than the truth.
+  CaretakerInvite? _pendingInvite;
+
+  Future<void> _loadCaretakerState() async {
+    final invites = await _caretakerService.invitesForLandlord().first;
+    if (!mounted) return;
+    setState(() {
+      _pendingInvite = invites
+          .where((i) => i.isPending && i.propertyIds.contains(widget.property.id))
+          .firstOrNull;
+    });
+  }
+
   // Agent assignment
   String? _assignedAgentId;
   String? _assignedAgentName;
@@ -216,6 +242,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _selectedRules = List.from(p.rules);
     _isAvailable = p.isAvailable;
     _inspectionHandler = p.inspectionHandler;
+    _caretakerId = p.caretakerId;
+    _caretakerName = p.caretakerName;
+    _loadCaretakerState();
     _includeAgentFee = p.agentFee > 0; // Derive from existing data
     _cautionDepositRefundable = p.cautionDepositRefundable;
     
@@ -688,9 +717,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         updates['isAvailable'] = false;
       }
 
-      // Handle agent assignment changes
-      if (_inspectionHandler == 'self') {
-        // Clear agent if switching to self
+      // Handle agent assignment changes.
+      // `!= 'agent'` covers caretaker-handled too: switching away from an agent
+      // must drop them whoever takes over, or the unit keeps a stale
+      // assignedAgentId that the detail screen and the fee logic still read.
+      if (_inspectionHandler != 'agent') {
+        // Clear agent if switching to self or caretaker
         updates['assignedAgentId'] = null;
         updates['assignedAgentName'] = null;
         updates['assignedAgentPhone'] = null;
@@ -708,8 +740,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       // agent's own self-unassign guard (agentHasActiveInspectionOnProperty).
       // Query by propertyId only and filter in code, to avoid a composite index.
       final currentAgentId = widget.property.assignedAgentId;
+      // `!= 'agent'` again, not `== 'self'`: switching an agent-handled unit to
+      // CARETAKER removes that agent just as surely, and keying this on 'self'
+      // alone would let a landlord strand a tenant mid-inspection simply by
+      // choosing the caretaker option instead.
       final removingAgent = currentAgentId != null &&
-          (_inspectionHandler == 'self' || _assignedAgentId != currentAgentId);
+          (_inspectionHandler != 'agent' || _assignedAgentId != currentAgentId);
       if (removingAgent) {
         const activeStatuses = [
           'pending',
@@ -1982,8 +2018,58 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                   ),
                 ),
               ),
+              // A third handler, offered ONLY once a caretaker has actually
+              // accepted. Priced and paid exactly as self-handled — the fee is
+              // flat and the handler share still settles to the landlord,
+              // because no inspection request carries an agentId unless an
+              // agent handles it. It only changes who is asked to open up.
+              if (_caretakerId != null) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _inspectionHandler = 'caretaker';
+                        // Same reasoning as 'self': no agent, no agent fee.
+                        _includeAgentFee = false;
+                        _agentFeeController.clear();
+                        _hasChanges = true;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _inspectionHandler == 'caretaker' ? AppColors.primary.withAlpha(26) : AppColors.background,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _inspectionHandler == 'caretaker' ? AppColors.primary : AppColors.border,
+                          width: _inspectionHandler == 'caretaker' ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.handyman_outlined,
+                            color: _inspectionHandler == 'caretaker' ? AppColors.primary : AppColors.textSecondary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Caretaker',
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: _inspectionHandler == 'caretaker' ? AppColors.primary : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
+
+          const SizedBox(height: 20),
+          _buildCaretakerSection(),
 
           // Agent assignment section (only shown when 'agent' is selected)
           if (_inspectionHandler == 'agent') ...[
@@ -2115,6 +2201,371 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   /// NEW: Agent assignment section
+  /// Who manages this unit day to day. Distinct from the two occupancy
+  /// booleans on the property, which only say whether someone is on the ground.
+  Widget _buildCaretakerSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Caretaker', style: AppTextStyles.labelLarge),
+        const SizedBox(height: 4),
+        Text(
+          _caretakerId == null
+              ? 'Invite someone to handle issues, maintenance and tenant '
+                  'messages for you. They can never change rent or anything '
+                  'to do with money.'
+              : 'Handles issues, maintenance and tenant messages. Cannot '
+                  'change rent or anything to do with money.',
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 12),
+        if (_caretakerId == null && _pendingInvite != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppColors.warning.withAlpha(26),
+                  child: Icon(Icons.hourglass_empty,
+                      color: AppColors.warning, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_pendingInvite!.caretakerName,
+                          style: AppTextStyles.labelMedium),
+                      Text(
+                        'Invited — waiting for them to accept',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: _withdrawInvite,
+                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                  child: const Text('Withdraw'),
+                ),
+              ],
+            ),
+          )
+        else if (_caretakerId != null)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppColors.primary.withAlpha(26),
+                  child: Icon(Icons.handyman_outlined,
+                      color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _caretakerName ?? 'Your caretaker',
+                    style: AppTextStyles.labelMedium,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _removeCaretaker,
+                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                  child: const Text('Remove'),
+                ),
+              ],
+            ),
+          )
+        else
+          OutlinedButton.icon(
+            onPressed: _showInviteCaretakerSheet,
+            icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+            label: const Text('Invite a caretaker'),
+          ),
+      ],
+    );
+  }
+
+  /// Withdraw an invitation that hasn't been answered yet. Same callable as
+  /// removing a sitting caretaker — a pending invite and an accepted one are
+  /// the same arrangement at different stages.
+  Future<void> _withdrawInvite() async {
+    final invite = _pendingInvite;
+    if (invite == null) return;
+    final error = await _caretakerService.revoke(inviteId: invite.id);
+    if (!mounted) return;
+    if (error == null) setState(() => _pendingInvite = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Invitation withdrawn.'),
+        backgroundColor: error != null ? AppColors.error : null,
+      ),
+    );
+  }
+
+  /// Revoking runs through the callable, which also clears every OTHER unit the
+  /// same invite covered and closes the caretaker out of the tenant threads.
+  /// Clearing `caretakerId` from here would leave all of that behind.
+  Future<void> _removeCaretaker() async {
+    final invites = await _caretakerService.invitesForLandlord().first;
+    final grant = invites
+        .where((i) => i.isActive && i.propertyIds.contains(widget.property.id))
+        .firstOrNull;
+    if (grant == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not find that caretaker arrangement.'),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final unitCount = grant.propertyIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove this caretaker?'),
+        content: Text(
+          unitCount > 1
+              ? '${grant.caretakerName} manages $unitCount of your units under '
+                  'one arrangement, so removing them here removes them from '
+                  'all $unitCount.'
+              : '${grant.caretakerName} will stop managing this property and '
+                  'will be told.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final error = await _caretakerService.revoke(inviteId: grant.id);
+    if (!mounted) return;
+    if (error == null) {
+      setState(() {
+        _caretakerId = null;
+        _caretakerName = null;
+        // The CF reverts a caretaker-handled unit to self-handled; mirror that
+        // locally so the selector doesn't sit on a handler that no longer has
+        // anyone behind it.
+        if (_inspectionHandler == 'caretaker') _inspectionHandler = 'self';
+      });
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Caretaker removed.'),
+        backgroundColor: error != null ? AppColors.error : null,
+      ),
+    );
+  }
+
+  Future<void> _showInviteCaretakerSheet() async {
+    final phoneController = TextEditingController();
+    bool applyToBuilding = false;
+    bool sending = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Invite a caretaker', style: AppTextStyles.h4),
+              const SizedBox(height: 8),
+              Text(
+                'They must already have a ClearRent account and a verified '
+                'identity. We\'ll send them an invitation to accept.',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              AppTextField(
+                controller: phoneController,
+                label: 'Their phone number',
+                hint: '0803 123 4567',
+                keyboardType: TextInputType.phone,
+              ),
+              // Bulk-apply: one invite covering every unit of the building, so
+              // the caretaker accepts once and there is a single arrangement to
+              // revoke later.
+              if (widget.property.buildingId != null) ...[
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: applyToBuilding,
+                  onChanged: (v) =>
+                      setSheetState(() => applyToBuilding = v ?? false),
+                  title: Text('Every unit in this building',
+                      style: AppTextStyles.labelMedium),
+                  subtitle: Text(
+                    'One invitation covering all your units here',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: sending
+                      ? null
+                      : () async {
+                          setSheetState(() => sending = true);
+                          final error = await _sendCaretakerInvite(
+                            phoneController.text.trim(),
+                            applyToBuilding,
+                          );
+                          if (!sheetCtx.mounted) return;
+                          setSheetState(() => sending = false);
+                          if (error == null) {
+                            Navigator.pop(sheetCtx);
+                            // Reflect the invite we just sent, so the section
+                            // shows "waiting for them to accept" instead of
+                            // offering to invite all over again.
+                            unawaited(_loadCaretakerState());
+                          }
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(error ??
+                                  'Invitation sent. They\'ll appear here once '
+                                      'they accept.'),
+                              backgroundColor:
+                                  error != null ? AppColors.error : null,
+                            ),
+                          );
+                        },
+                  child: sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Send invitation'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    phoneController.dispose();
+  }
+
+  /// Returns null on success, or the message to show.
+  ///
+  /// Two steps on purpose: resolve the number to a NAME and make the landlord
+  /// confirm it, then send. A single mistyped digit otherwise appoints a real
+  /// stranger to a tenant's issues and message thread, and they could accept.
+  Future<String?> _sendCaretakerInvite(
+    String phone,
+    bool applyToBuilding,
+  ) async {
+    if (phone.isEmpty) return 'Enter their phone number.';
+
+    var propertyIds = [widget.property.id];
+    final buildingId = widget.property.buildingId;
+    if (applyToBuilding && buildingId != null) {
+      final snap = await FirebaseFirestore.instance
+          .collection('properties')
+          .where('landlordId', isEqualTo: widget.property.landlordId)
+          .where('buildingId', isEqualTo: buildingId)
+          .get();
+      // The CF rejects the whole invite if ANY unit already has a caretaker, so
+      // filter those out here rather than making the landlord hunt for which
+      // one blocked it.
+      final ids = snap.docs
+          .where((d) => (d.data()['caretakerId'] as String?) == null)
+          .map((d) => d.id)
+          .toList();
+      if (ids.isNotEmpty) propertyIds = ids;
+    }
+
+    // Step 1 — who is this? Throws with a message if the number isn't on
+    // ClearRent, isn't verified, is you, or is your sitting tenant.
+    final String candidateName;
+    try {
+      candidateName = await _caretakerService.lookupCandidate(
+        phone: phone,
+        propertyIds: propertyIds,
+      );
+    } on CaretakerLookupException catch (e) {
+      return e.message;
+    }
+
+    // Step 2 — the landlord confirms the NAME, not the digits.
+    if (!mounted) return 'Could not continue. Please try again.';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Invite $candidateName?'),
+        content: Text(
+          propertyIds.length > 1
+              ? '$candidateName will be asked to manage ${propertyIds.length} '
+                  'of your units. They will handle issues, maintenance and '
+                  'messages with your tenants.'
+              : '$candidateName will be asked to manage this property. They '
+                  'will handle issues, maintenance and messages with your '
+                  'tenant.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not them'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send invitation'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return 'Invitation not sent.';
+
+    return _caretakerService.invite(
+      phone: phone,
+      propertyIds: propertyIds,
+      buildingId: applyToBuilding ? buildingId : null,
+    );
+  }
+
   Widget _buildAgentAssignmentSection() {
     return Container(
       padding: const EdgeInsets.all(14),

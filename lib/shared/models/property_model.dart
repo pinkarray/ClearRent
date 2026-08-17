@@ -48,7 +48,13 @@ class PropertyModel {
   final int savedCount;
 
   // Inspection handling
-  final String inspectionHandler; // 'self' or 'agent'
+  // 'self' (landlord), 'agent', or 'caretaker'. 'caretaker' is priced and paid
+  // exactly like 'self' — the fee is flat and the handler share still routes to
+  // the landlord (there is no agentId on the request) — it only changes WHO is
+  // asked to open the door. Anything that branches on this must treat
+  // 'caretaker' as self-handled, never fall through: a missed branch returns a
+  // null fee breakdown and inspection booking dies.
+  final String inspectionHandler;
   final String? assignedAgentId;
   final String? assignedAgentName;
   final int maxTenants;
@@ -155,6 +161,27 @@ class PropertyModel {
   final bool? hasCaretaker;
   final bool? caretakerLivesOnPremises;
 
+  /// True when an assigned AGENT shows the property.
+  ///
+  /// Use these two rather than comparing [inspectionHandler] to `'self'`.
+  /// Adding `'caretaker'` produced three separate bugs from readers that tested
+  /// for `'self'` and silently fell through: a null fee breakdown that killed
+  /// inspection booking outright, a stale `assignedAgentId` left on the unit,
+  /// and a bypass of the guard that stops an agent being dropped mid-inspection.
+  /// Anything that is not agent-handled is self-handled — landlord or caretaker
+  /// — and is priced, paid and gated identically.
+  bool get isAgentHandled => inspectionHandler == 'agent';
+  bool get isSelfHandled => !isAgentHandled;
+
+  // Who MANAGES this unit on ClearRent, as opposed to the two booleans above,
+  // which only say whether someone is on the ground. Set server-side when a
+  // caretaker accepts an invite (see caretaker_invites) — the landlord may
+  // CLEAR it to revoke, but may never set it, or an invite would be bypassable
+  // and a third party would reach the tenant's data without ever consenting.
+  // Null on every legacy property; the detail screen falls back to the booleans.
+  final String? caretakerId;
+  final String? caretakerName;
+
   PropertyModel({
     required this.id,
     required this.landlordId,
@@ -219,6 +246,8 @@ class PropertyModel {
     this.currentTenantsCount,
     this.hasCaretaker,
     this.caretakerLivesOnPremises,
+    this.caretakerId,
+    this.caretakerName,
     this.ownershipDocUrl,
     this.ownershipDocType,
     this.ownershipDocStatus = 'none',
@@ -588,6 +617,8 @@ class PropertyModel {
     int? currentTenantsCount,
     bool? hasCaretaker,
     bool? caretakerLivesOnPremises,
+    String? caretakerId,
+    String? caretakerName,
     String? ownershipDocUrl,
     String? ownershipDocType,
     String? ownershipDocStatus,
@@ -665,6 +696,8 @@ class PropertyModel {
       currentTenantsCount: currentTenantsCount ?? this.currentTenantsCount,
       hasCaretaker: hasCaretaker ?? this.hasCaretaker,
       caretakerLivesOnPremises: caretakerLivesOnPremises ?? this.caretakerLivesOnPremises,
+      caretakerId: caretakerId ?? this.caretakerId,
+      caretakerName: caretakerName ?? this.caretakerName,
       ownershipDocUrl: ownershipDocUrl ?? this.ownershipDocUrl,
       ownershipDocType: ownershipDocType ?? this.ownershipDocType,
       ownershipDocStatus: ownershipDocStatus ?? this.ownershipDocStatus,
@@ -807,6 +840,8 @@ class PropertyModel {
       currentTenantsCount: (json['currentTenantsCount'] as num?)?.toInt(),
       hasCaretaker: json['hasCaretaker'] as bool?,
       caretakerLivesOnPremises: json['caretakerLivesOnPremises'] as bool?,
+      caretakerId: json['caretakerId'] as String?,
+      caretakerName: json['caretakerName'] as String?,
       ownershipDocUrl: json['ownershipDocUrl'] as String?,
       ownershipDocType: json['ownershipDocType'] as String?,
       ownershipDocStatus: json['ownershipDocStatus'] as String? ?? 'none',
@@ -912,6 +947,8 @@ class PropertyModel {
       currentTenantsCount: (data['currentTenantsCount'] as num?)?.toInt(),
       hasCaretaker: data['hasCaretaker'] as bool?,
       caretakerLivesOnPremises: data['caretakerLivesOnPremises'] as bool?,
+      caretakerId: data['caretakerId'] as String?,
+      caretakerName: data['caretakerName'] as String?,
       ownershipDocUrl: data['ownershipDocUrl'] as String?,
       ownershipDocType: data['ownershipDocType'] as String?,
       ownershipDocStatus: data['ownershipDocStatus'] as String? ?? 'none',
@@ -986,6 +1023,11 @@ class PropertyModel {
       'currentTenantsCount': currentTenantsCount,
       'hasCaretaker': hasCaretaker,
       'caretakerLivesOnPremises': caretakerLivesOnPremises,
+      // Null-guarded deliberately: emitting an explicit null would REVOKE the
+      // caretaker on any round-trip save. Revoking is its own act, never a
+      // side effect of serialising a property.
+      if (caretakerId != null) 'caretakerId': caretakerId,
+      if (caretakerName != null) 'caretakerName': caretakerName,
       'ownershipDocUrl': ownershipDocUrl,
       'ownershipDocType': ownershipDocType,
       'ownershipDocStatus': ownershipDocStatus,
@@ -1067,6 +1109,10 @@ class PropertyModel {
       'currentTenantsCount': currentTenantsCount,
       'hasCaretaker': hasCaretaker,
       'caretakerLivesOnPremises': caretakerLivesOnPremises,
+      // See toJson: never emit an explicit null, or saving a property would
+      // silently revoke its caretaker.
+      if (caretakerId != null) 'caretakerId': caretakerId,
+      if (caretakerName != null) 'caretakerName': caretakerName,
       if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
       if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
       'ownershipDocStatus': ownershipDocStatus,

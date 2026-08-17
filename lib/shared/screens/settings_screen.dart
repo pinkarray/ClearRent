@@ -7,6 +7,7 @@ import '../../core/utils/app_info.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/auth_service.dart';
 import '../../services/biometric_service.dart';
+import '../../services/caretaker_service.dart';
 import '../../shared/widgets/theme_selector.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -23,6 +24,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final AuthService _authService = AuthService();
   final BiometricService _biometricService = BiometricService();
+  final CaretakerService _caretakerService = CaretakerService();
+  // Built once — see CaretakerPropertiesScreen. Settings rebuilds on every
+  // toggle (theme, biometrics), and a stream created in build() would
+  // resubscribe each time.
+  late final Stream<List<CaretakerInvite>> _caretakerInvites =
+      _caretakerService.myInvites();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   bool _isSendingReset = false;
@@ -675,6 +682,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
 
             const SizedBox(height: 24),
+
+            // Caretaker Section — only for users who actually have a caretaker
+            // relationship, so it stays invisible to everyone else. A caretaker
+            // can be any accountType, so this cannot live in one shell's menu;
+            // Settings is the only surface all three shells share.
+            StreamBuilder<List<CaretakerInvite>>(
+              stream: _caretakerInvites,
+              builder: (context, snap) {
+                final live = (snap.data ?? const <CaretakerInvite>[])
+                    .where((i) => i.isPending || i.isActive)
+                    .toList();
+                if (live.isEmpty) return const SizedBox.shrink();
+                final pending = live.where((i) => i.isPending).length;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSectionHeader('Caretaking'),
+                    const SizedBox(height: 12),
+                    _buildSettingsCard([
+                      _SettingsItem(
+                        icon: Icons.handyman_outlined,
+                        title: 'Properties you manage',
+                        subtitle: pending > 0
+                            ? '$pending invitation(s) waiting on you'
+                            : '${live.length} property arrangement(s)',
+                        onTap: () => context.push('/caretaker/properties'),
+                      ),
+                    ]),
+                    const SizedBox(height: 24),
+                  ],
+                );
+              },
+            ),
 
             // App Section
             _buildSectionHeader('App'),

@@ -53,6 +53,7 @@ import '../features/landlord/presentation/screens/request_rent_change_screen.dar
 import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
 import '../services/route_observer_service.dart';
 import '../features/tenant/presentation/screens/renewal_payment_screen.dart';
+import '../features/caretaker/presentation/screens/caretaker_properties_screen.dart';
 
 /// Coerce a navigation-extra `initialTab` to an int. In-app pushes pass an
 /// `int`, but notification payloads (FCM data + the Firestore inbox doc) carry
@@ -126,6 +127,24 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/verification',
       builder: (context, state) => const VerificationCenterScreen(),
+    ),
+    // Caretaker surfaces are shell-independent on purpose: a caretaker is an
+    // existing tenant, landlord or agent, and accountType still decides their
+    // home at splash, so these hang off the root rather than any one shell.
+    // `/caretaker/invites` is the route the invitation push deep-links to.
+    GoRoute(
+      path: '/caretaker/properties',
+      builder: (context, state) => const CaretakerPropertiesScreen(),
+    ),
+    // Same screen: invitations already render above the managed list, so the
+    // push lands with the answer buttons on top.
+    GoRoute(
+      path: '/caretaker/invites',
+      builder: (context, state) => const CaretakerPropertiesScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/caretakers',
+      builder: (context, state) => const LandlordCaretakersScreen(),
     ),
     GoRoute(
       path: '/notifications',
@@ -335,6 +354,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         return LandlordIssuesScreen(
           propertyId: extra?['propertyId'] as String?,
+          asCaretaker: extra?['asCaretaker'] as bool? ?? false,
           category: extra?['category'] as String?,
           initialTab: _initialTab(extra?['initialTab']) ?? 0,
           propertyTitle: extra?['propertyTitle'] as String?,

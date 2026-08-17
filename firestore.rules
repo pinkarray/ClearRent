@@ -59,6 +59,32 @@ service cloud.firestore {
              .data.get('verificationStatus', 'none') == 'verified';
     }
 
+    // Is the caller the accepted caretaker of this property?
+    //
+    // Declared HERE, at the document root, for the same reason changed() is:
+    // `issues` and `maintenance_logs` are separate match blocks and both need
+    // this. A helper called from outside the block that declares it compiles
+    // with only a warning ("Invalid function name") and then FAILS AT
+    // EVALUATION, which denies — the failure that took down every tenant write
+    // for six hours.
+    //
+    // The exists() guard is load-bearing: get() on a MISSING document yields
+    // null and reading .data off null is an evaluation error. Without it, a
+    // single issue whose property had been deleted would deny the caller's
+    // ENTIRE list query, not just that row.
+    //
+    // `caretakerId` is written only by the caretaker_ops callables on the admin
+    // SDK, when an invited caretaker accepts (the properties update rule below
+    // forbids an owner setting it), so this can never be self-granted.
+    function isPropertyCaretaker(propertyId) {
+      return request.auth != null
+        && propertyId is string
+        && propertyId != ''
+        && exists(/databases/$(database)/documents/properties/$(propertyId))
+        && get(/databases/$(database)/documents/properties/$(propertyId))
+             .data.get('caretakerId', '') == request.auth.uid;
+    }
+
     // Internal — locked. Only Cloud Functions (admin SDK) write here.
     match /_rate_limits/{docId} {
       allow read, write: if false;
@@ -323,6 +349,12 @@ service cloud.firestore {
         && ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
         // The rejection reason is the admin's words — never seeded by the owner.
         && !request.resource.data.keys().hasAny(['ownershipDocRejectionReason'])
+        // A listing is BORN with no caretaker. The update rule below stops an
+        // owner appointing one, but guarding update alone left the front door
+        // open: create the listing with caretakerId already set to any uid and
+        // the invite is bypassed entirely — a third party would reach a
+        // tenant's issues and message thread having never agreed to anything.
+        && !request.resource.data.keys().hasAny(['caretakerId', 'caretakerName'])
         // A grouped unit carries no doc fields; a standalone listing has no
         // building to inherit from, so it may not claim 'inherited'.
         && (
@@ -376,6 +408,18 @@ service cloud.firestore {
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
+        // A caretaker is INVITED and must accept; `caretakerId` is stamped by
+        // respondToCaretakerInvite on the admin SDK. This rule has no hasOnly,
+        // so every field it doesn't name is owner-writable — without this guard
+        // a landlord could appoint any user as caretaker of their property in a
+        // single write, with no invite and no consent, handing a third party
+        // their tenant's issues and message thread. The owner may CLEAR it
+        // (that is revoking, which is theirs to do) and may never set it.
+        // Covers caretakerName too, or the owner could relabel who is acting.
+        && (
+          !changed(['caretakerId', 'caretakerName'])
+          || request.resource.data.get('caretakerId', null) == null
+        )
         // Owner may move the doc back to review but may NOT self-verify or
         // self-reject — those are admin-only (the admin clause below bypasses
         // this). Allowlisted, so 'inherited'/'not_uploaded' can't slip past.
@@ -452,6 +496,35 @@ service cloud.firestore {
       // Field-scoped, same as the readiness clause — nothing else can change.
       allow update: if request.auth != null
         && resource.data.assignedAgentId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['inspectionDays', 'inspectionTimeSlots', 'updatedAt']);
+
+      // A caretaker-handled unit (inspectionHandler == 'caretaker') puts the
+      // caretaker where the assigned agent stands on an agent-handled one: they
+      // vet readiness and they set the inspection availability, because they are
+      // the person who actually opens the door. Two clauses mirroring the agent
+      // pair above, field-scoped with hasOnly — rent, ownership, availability
+      // and `caretakerId` itself are all unreachable through them, so this
+      // access can neither be widened nor used to extend itself.
+      //
+      // .get() with a default rather than a bare field read: every property
+      // created before this feature has no caretakerId at all, and a bare read
+      // of a missing field is an evaluation error.
+      // BOTH conditions, not just the caretakerId. Being the caretaker is not
+      // the same as being the HANDLER: on an agent-handled unit the agent owns
+      // readiness and the showing slots, and a caretaker who could still write
+      // them would wipe the agent's availability and stop the unit being
+      // booked. The comment above used to claim this check; it wasn't there.
+      allow update: if request.auth != null
+        && resource.data.get('caretakerId', '') == request.auth.uid
+        && resource.data.get('inspectionHandler', 'self') == 'caretaker'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['readyForInspections', 'readinessCheckedAt',
+                    'readinessCheckedBy', 'readinessChecklist', 'updatedAt']);
+
+      allow update: if request.auth != null
+        && resource.data.get('caretakerId', '') == request.auth.uid
+        && resource.data.get('inspectionHandler', 'self') == 'caretaker'
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['inspectionDays', 'inspectionTimeSlots', 'updatedAt']);
 
@@ -636,9 +709,15 @@ service cloud.firestore {
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
+        // The caretaker↔tenant thread is three-party (landlord, tenant,
+        // caretaker), so the landlord can read it — openly, as a listed
+        // participant rather than a silent observer, which is why no new
+        // "observer" concept was introduced. The caretaker's own dedup check
+        // queries by caretakerId, exactly as the agent path queries by agentId.
+        resource.data.caretakerId == request.auth.uid ||
         canRead()
       );
-      
+
       // Create: user must be in the participants list they're creating
       allow create: if request.auth != null && 
         request.auth.uid in request.resource.data.participants;
@@ -1340,11 +1419,30 @@ service cloud.firestore {
       // what the other recorded — the whole point is that the record survives
       // the disagreement it exists to settle.
       match /condition/{stage}/parties/{partyId} {
+        // The caretaker walks the unit at move-out, so they may record what it
+        // looked like — and NOTHING else about the handover. They get no
+        // clause on the parent active_rental, so the deduction declaration
+        // (`cautionDeductionAmount`), the condition confirmation that frees the
+        // unit for relisting, and the settlement are all unreachable from here.
+        // Evidence yes, money no.
+        //
+        // Two document reads deep (rental → property) because a caretaker is
+        // attached to the PROPERTY, not the tenancy. Well inside the ten-access
+        // limit, and it keeps caretakerId as the single source of truth rather
+        // than denormalising it onto every rental.
+        function rentalCaretaker() {
+          return isPropertyCaretaker(
+            get(/databases/$(database)/documents/active_rentals/$(rentalId))
+              .data.get('propertyId', '')
+          );
+        }
+
         allow read: if request.auth != null && (
           get(/databases/$(database)/documents/active_rentals/$(rentalId))
             .data.tenantId == request.auth.uid ||
           get(/databases/$(database)/documents/active_rentals/$(rentalId))
             .data.landlordId == request.auth.uid ||
+          rentalCaretaker() ||
           canRead()
         );
 
@@ -1357,7 +1455,8 @@ service cloud.firestore {
             get(/databases/$(database)/documents/active_rentals/$(rentalId))
               .data.tenantId == request.auth.uid ||
             get(/databases/$(database)/documents/active_rentals/$(rentalId))
-              .data.landlordId == request.auth.uid
+              .data.landlordId == request.auth.uid ||
+            rentalCaretaker()
           );
 
         // Amendable only while the upload is still finishing — a large video
@@ -1410,20 +1509,33 @@ service cloud.firestore {
     match /issues/{issueId} {
       allow create: if request.auth != null;
       
+      // The caretaker of the property is a party to its issues — triaging them
+      // is the whole job. Costs one property read per issue evaluated; at this
+      // scale that is nothing, and the alternative (denormalising caretakerId
+      // onto every issue) goes stale the moment the caretaker changes.
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
+        isPropertyCaretaker(resource.data.get('propertyId', '')) ||
         canRead()
       );
 
-      // List/query: parties only (tenant or landlord on the issue), or admin.
-      // Hardened (H1): was `if request.auth != null`, which let any authed
-      // user enumerate every issue. Every caller scopes by their own id —
-      // tenant dashboards by tenantId, LandlordIssuesScreen + PropertyHealth
-      // by landlordId (PropertyHealth client-filters propertyId).
+      // List/query: parties only (tenant, landlord, or caretaker on the issue),
+      // or admin. Hardened (H1): was `if request.auth != null`, which let any
+      // authed user enumerate every issue.
+      //
+      // EACH PRINCIPAL MUST QUERY ON THE FIELD ITS OWN BRANCH READS. A list
+      // rule is evaluated against the QUERY's constraints, not against the
+      // stored documents: a field the query pins by equality is known, and
+      // every other field reads as undefined, which is an evaluation error and
+      // denies. So a caretaker filters by propertyId (what isPropertyCaretaker
+      // reads) while the landlord keeps filtering by landlordId and the tenant
+      // by tenantId — a propertyId-only query is denied for BOTH of them, even
+      // though every matching document plainly names them.
       allow list: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
+        isPropertyCaretaker(resource.data.get('propertyId', '')) ||
         canRead()
       );
 
@@ -1433,27 +1545,67 @@ service cloud.firestore {
         canRead()
       );
 
+      // The caretaker's own update clause is an ALLOWLIST, unlike the parties'
+      // blanket one above: these are exactly the keys _updateStatus writes, so
+      // a caretaker drives the triage lifecycle and cannot rewrite tenantId,
+      // landlordId or propertyId — which would move an issue onto a different
+      // unit or reassign whose problem it is.
+      allow update: if request.auth != null
+        && isPropertyCaretaker(resource.data.get('propertyId', ''))
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt',
+                    'pendingConfirmationAt', 'resolvedAt']);
+
       allow delete: if false;
     }
 
-    // Maintenance logs — landlord-only proactive maintenance records
+    // Maintenance logs — proactive maintenance records for a property, written
+    // by whoever manages it (the owner, or their caretaker).
     match /maintenance_logs/{logId} {
-      // Only the landlord who owns the property can create logs
-      allow create: if request.auth != null &&
-        request.resource.data.landlordId == request.auth.uid;
+      // Only the landlord who owns the property can create logs.
+      //
+      // The ownership get() is not redundant with the landlordId check: naming
+      // YOURSELF as landlordId satisfied that on its own, so any user could
+      // create a log pointing at someone else's propertyId. That was invisible
+      // while the only reader queried by landlordId, but the caretaker's feed
+      // queries by propertyId — so without this a stranger could inject a
+      // maintenance note into the health history of a property they have
+      // nothing to do with.
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid
+        && exists(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+        && get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+             .data.landlordId == request.auth.uid;
 
-      // Landlord reads their own logs; admin can read all
+      // A caretaker logs maintenance on a unit they manage. `landlordId` on the
+      // doc stays the OWNER's uid — the log belongs to the property, not to
+      // whoever happened to type it — so the landlord's existing queries keep
+      // returning it. `loggedBy` carries who actually did the work, which is
+      // the only reason the distinction is recorded at all.
+      allow create: if request.auth != null
+        && isPropertyCaretaker(request.resource.data.get('propertyId', ''))
+        && request.resource.data.loggedBy == request.auth.uid
+        && request.resource.data.landlordId
+             == get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+                  .data.landlordId;
+
+      // Landlord reads their own logs; the caretaker reads the ones on the unit
+      // they manage; admin can read all.
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
+        isPropertyCaretaker(resource.data.get('propertyId', '')) ||
         canRead()
       );
 
-      // List/query: the owning landlord only, or admin. Hardened (H1): was
-      // `if request.auth != null`, which let any authed user enumerate every
-      // maintenance log. PropertyHealthScreen now scopes by landlordId and
-      // client-filters propertyId.
+      // List/query: the owning landlord, the property's caretaker, or admin.
+      // Hardened (H1): was `if request.auth != null`, which let any authed user
+      // enumerate every maintenance log. As with issues, the landlord must
+      // filter by landlordId and the caretaker by propertyId — a list rule is
+      // evaluated against the query's constraints, so each principal has to
+      // pin the field its own branch reads.
       allow list: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
+        isPropertyCaretaker(resource.data.get('propertyId', '')) ||
         canRead()
       );
 
@@ -1463,7 +1615,47 @@ service cloud.firestore {
 
       allow delete: if request.auth != null &&
         resource.data.landlordId == request.auth.uid;
+
+      // A caretaker corrects or removes a log they wrote themselves — never
+      // one the landlord wrote. Same principle as the message-edit rules: you
+      // may clean up your own entry and nobody else's.
+      allow update: if request.auth != null
+        && resource.data.get('loggedBy', '') == request.auth.uid
+        && isPropertyCaretaker(resource.data.get('propertyId', ''))
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['category', 'note', 'updatedAt']);
+
+      allow delete: if request.auth != null
+        && resource.data.get('loggedBy', '') == request.auth.uid
+        && isPropertyCaretaker(resource.data.get('propertyId', ''));
     }
+    // Caretaker invitations. Modelled on tenancy_links: the landlord offers,
+    // the invitee answers, and neither writes the consequence — accepting is
+    // what stamps `caretakerId` onto the properties, and only the admin SDK
+    // does that (see caretaker_ops.ts). Clients never create or mutate these
+    // directly; every transition runs through a callable, so the only thing
+    // granted here is the READ each side needs to see the invite at all.
+    match /caretaker_invites/{inviteId} {
+      allow read: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.caretakerId == request.auth.uid ||
+        canRead()
+      );
+
+      // List: the landlord's "who manages what" list and the invitee's pending
+      // invites. Both scope by their own uid, matching this constraint.
+      allow list: if request.auth != null && (
+        resource.data.landlordId == request.auth.uid ||
+        resource.data.caretakerId == request.auth.uid ||
+        canRead()
+      );
+
+      // Create/update/delete are callable-only. A client-written invite would
+      // be a client-chosen caretakerId, which is the one thing the invite
+      // exists to prevent.
+      allow write: if false;
+    }
+
     match /tenancy_links/{linkId} {
       allow create: if request.auth != null &&
         request.resource.data.landlordId == request.auth.uid;

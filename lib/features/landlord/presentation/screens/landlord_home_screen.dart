@@ -12,6 +12,7 @@ import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/activity_model.dart';
 import '../../../../shared/widgets/capsule_nav.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
+import '../../../../shared/widgets/caretaker_banner.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/verification_service.dart';
@@ -688,6 +689,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               accountType: 'landlord',
               notificationsRoute: '/notifications',
             ),
+            // A landlord can be someone else's caretaker too.
+            const CaretakerBanner(),
             const SizedBox(height: 8),
 
             const SizedBox(height: 24),

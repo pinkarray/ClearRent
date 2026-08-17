@@ -107,6 +107,14 @@ class ConversationService {
     required String tenantName,
     String? agentId,
     String? agentName,
+    // A caretaker thread is THREE-party: landlord, tenant, caretaker. The
+    // landlord is a listed participant rather than a hidden observer, so the
+    // tenant can see who is in the room — no silent-reader concept was added.
+    // It is also a SEPARATE thread from the plain landlord↔tenant one, because
+    // that history can include rent negotiation the caretaker has no business
+    // reading.
+    String? caretakerId,
+    String? caretakerName,
   }) async {
     // CRITICAL: Validate required IDs are not empty
     if (landlordId.isEmpty) {
@@ -173,7 +181,14 @@ class ConversationService {
         final data = d.data();
         return data['propertyId'] == propertyId &&
             data['landlordId'] == landlordId &&
-            data['tenantId'] == tenantId;
+            data['tenantId'] == tenantId &&
+            // Part of the tuple, or the caretaker thread would dedup onto the
+            // direct landlord↔tenant one and hand over its whole history.
+            // Defaulted on BOTH sides: every conversation written before this
+            // field existed has no caretakerId at all, and comparing a missing
+            // field against '' would miss them and duplicate every legacy
+            // thread.
+            (data['caretakerId'] ?? '') == (caretakerId ?? '');
       }).toList();
 
       if (matches.isNotEmpty) {
@@ -213,6 +228,9 @@ class ConversationService {
       if (agentId != null && agentId.isNotEmpty) {
         participants.add(agentId);
       }
+      if (caretakerId != null && caretakerId.isNotEmpty) {
+        participants.add(caretakerId);
+      }
 
       // Build unread counts - include agent if present
       final unreadCounts = <String, int>{
@@ -221,6 +239,9 @@ class ConversationService {
       };
       if (agentId != null && agentId.isNotEmpty) {
         unreadCounts[agentId] = 0;
+      }
+      if (caretakerId != null && caretakerId.isNotEmpty) {
+        unreadCounts[caretakerId] = 0;
       }
 
       final conversationData = {
@@ -234,6 +255,10 @@ class ConversationService {
         'tenantName': tenantName,
         'agentId': agentId ?? '',
         'agentName': agentName ?? '',
+        // Read by the conversations list rule and by revokeCaretaker, which
+        // uses it to close a removed caretaker out of the threads they were in.
+        'caretakerId': caretakerId ?? '',
+        'caretakerName': caretakerName ?? '',
         'participants': participants,
         'lastMessage': '',
         'lastMessageTime': Timestamp.fromDate(now),
@@ -1227,6 +1252,8 @@ class ConversationData {
   final String tenantName;
   final String? agentId;
   final String? agentName;
+  final String? caretakerId;
+  final String? caretakerName;
   final List<String> participants;
   final String lastMessage;
   final DateTime lastMessageTime;
@@ -1244,6 +1271,8 @@ class ConversationData {
     required this.tenantName,
     this.agentId,
     this.agentName,
+    this.caretakerId,
+    this.caretakerName,
     required this.participants,
     required this.lastMessage,
     required this.lastMessageTime,
@@ -1264,6 +1293,8 @@ class ConversationData {
       tenantName: data['tenantName'] ?? '',
       agentId: data['agentId'],
       agentName: data['agentName'],
+      caretakerId: data['caretakerId'],
+      caretakerName: data['caretakerName'],
       participants: List<String>.from(data['participants'] ?? []),
       lastMessage: data['lastMessage'] ?? '',
       lastMessageTime:
@@ -1281,6 +1312,7 @@ class ConversationData {
   String getUserRole(String userId) {
     if (userId == landlordId) return 'landlord';
     if (userId == agentId) return 'agent';
+    if (userId == caretakerId) return 'caretaker';
     if (userId == tenantId) return 'tenant';
     return 'unknown';
   }

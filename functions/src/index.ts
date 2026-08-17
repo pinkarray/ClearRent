@@ -4372,6 +4372,13 @@ export {getSignedAgreementUrl, getConditionMediaUrl} from "./doc_access_ops";
 
 export {agentUnassignFromProperty} from "./agent_property_ops";
 
+export {
+  lookupCaretakerCandidate,
+  inviteCaretaker,
+  respondToCaretakerInvite,
+  revokeCaretaker,
+} from "./caretaker_ops";
+
 export {inspectionLifecycleSweep} from "./inspection_lifecycle_ops";
 
 export {rentalInterestStrandSweep} from "./rent_interest_ops";

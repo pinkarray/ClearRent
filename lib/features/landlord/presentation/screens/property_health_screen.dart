@@ -34,18 +34,36 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
   final PropertyService _propertyService = PropertyService();
   String? _exactAddress; // exact street address from the gated subdoc
 
+  // The caretaker sees the same health screen as the owner, but CANNOT run the
+  // owner's query. A Firestore list rule is evaluated against the query's
+  // constraints rather than the stored documents, so each principal has to pin
+  // the field its own rule branch reads: the landlord pins landlordId, and the
+  // caretaker pins propertyId alone (which is what isPropertyCaretaker reads).
+  // Give the caretaker the landlord's query and every document plainly names
+  // the owner — and the whole query is still denied.
+  late final bool _isCaretaker =
+      widget.property.caretakerId != null &&
+      widget.property.caretakerId == _authService.currentUserId;
+
   // Cached once (widget.property is immutable) so tab changes and issue-stream
   // emissions don't recreate these and flash their sections.
-  late final Stream<QuerySnapshot> _issuesStream = FirebaseFirestore.instance
-      .collection('issues')
-      .where('landlordId', isEqualTo: widget.property.landlordId)
-      .where('propertyId', isEqualTo: widget.property.id)
+  late final Stream<QuerySnapshot> _issuesStream = (_isCaretaker
+          ? FirebaseFirestore.instance
+              .collection('issues')
+              .where('propertyId', isEqualTo: widget.property.id)
+          : FirebaseFirestore.instance
+              .collection('issues')
+              .where('landlordId', isEqualTo: widget.property.landlordId)
+              .where('propertyId', isEqualTo: widget.property.id))
       .snapshots();
-  late final Stream<QuerySnapshot> _maintenanceStream = FirebaseFirestore
-      .instance
-      .collection('maintenance_logs')
-      .where('landlordId', isEqualTo: widget.property.landlordId)
-      .where('propertyId', isEqualTo: widget.property.id)
+  late final Stream<QuerySnapshot> _maintenanceStream = (_isCaretaker
+          ? FirebaseFirestore.instance
+              .collection('maintenance_logs')
+              .where('propertyId', isEqualTo: widget.property.id)
+          : FirebaseFirestore.instance
+              .collection('maintenance_logs')
+              .where('landlordId', isEqualTo: widget.property.landlordId)
+              .where('propertyId', isEqualTo: widget.property.id))
       .orderBy('loggedAt', descending: true)
       .limit(10)
       .snapshots();
@@ -180,12 +198,16 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
         onPressed: () => context.pop(),
       ),
       actions: [
-        IconButton(
-          icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
-          tooltip: 'Edit Property',
-          onPressed: () =>
-              context.push('/landlord/edit-property/${widget.property.id}'),
-        ),
+        // Owner only. Editing a listing is rent, availability and ownership
+        // documents — every one of which the rules deny a caretaker, so
+        // showing it to them offers a form whose every save fails.
+        if (!_isCaretaker)
+          IconButton(
+            icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+            tooltip: 'Edit Property',
+            onPressed: () =>
+                context.push('/landlord/edit-property/${widget.property.id}'),
+          ),
       ],
       flexibleSpace: FlexibleSpaceBar(
         collapseMode: CollapseMode.pin,
@@ -357,6 +379,10 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
 
     context.push('/landlord/issues', extra: {
       'propertyId': widget.property.id,
+      // Without this the caretaker lands on a landlordId-scoped query, sees an
+      // empty list, and can never reach the triage the rules already allow —
+      // a working backend behind an unreachable button.
+      'asCaretaker': _isCaretaker,
       'category': category,
       'initialTab': tab,
       'propertyTitle': widget.property.title,
@@ -568,7 +594,12 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
         .collection('maintenance_logs')
         .add({
       'propertyId': widget.property.id,
-      'landlordId': uid,
+      // The OWNER's uid, not the writer's. A log belongs to the property, so
+      // the landlord's landlordId-scoped query must return the caretaker's
+      // entries too — writing the writer here would file a caretaker's note
+      // where the owner can never see it. `loggedBy` carries who did the work.
+      'landlordId': widget.property.landlordId,
+      'loggedBy': uid,
       'category': category,
       'note': note,
       'loggedAt': FieldValue.serverTimestamp(),

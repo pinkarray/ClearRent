@@ -139,9 +139,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Determine other party and check their verification + call permission
       String? otherPartyId;
+      final caretakerId = _conversation!.caretakerId;
+      final hasCaretaker = caretakerId != null && caretakerId.isNotEmpty;
       if (_currentUserId == _conversation!.tenantId) {
-        // Current user is tenant, other party is landlord
-        otherPartyId = _conversation!.landlordId;
+        // Tenant's counterpart is whoever actually manages the place: the
+        // caretaker when one is on the thread, otherwise the landlord.
+        otherPartyId = hasCaretaker ? caretakerId : _conversation!.landlordId;
+      } else if (hasCaretaker && _currentUserId == caretakerId) {
+        // The caretaker is here to deal with the tenant.
+        otherPartyId = _conversation!.tenantId;
       } else if (_currentUserId == _conversation!.landlordId) {
         // Landlord's other party: tenant if present, otherwise agent
         if (_conversation!.tenantId.isNotEmpty) {
@@ -198,6 +204,7 @@ class _ChatScreenState extends State<ChatScreen> {
       (uid: c.landlordId, name: c.landlordName, role: 'Landlord'),
       (uid: c.tenantId, name: c.tenantName, role: 'Tenant'),
       (uid: c.agentId ?? '', name: c.agentName ?? '', role: 'Agent'),
+      (uid: c.caretakerId ?? '', name: c.caretakerName ?? '', role: 'Caretaker'),
     ].where((e) => e.uid.isNotEmpty && e.uid != _currentUserId).toList();
 
     // First name, stripped to word characters so punctuation in a stored name
@@ -639,6 +646,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return const Color(0xFF6366F1); // Indigo
       case 'agent':
         return const Color(0xFF10B981); // Green/Teal
+      case 'caretaker':
+        return const Color(0xFFF59E0B); // Amber
       case 'tenant':
         return const Color(0xFF3B82F6); // Blue
       default:
@@ -655,6 +664,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return 'Landlord';
       case 'agent':
         return 'Agent';
+      case 'caretaker':
+        return 'Caretaker';
       case 'tenant':
         return 'Tenant';
       default:
@@ -692,15 +703,22 @@ class _ChatScreenState extends State<ChatScreen> {
       final c = _conversation!;
       final hasTenant = c.tenantId.isNotEmpty;
       final hasAgent = c.agentId != null && c.agentId!.isNotEmpty;
+      final hasCaretaker = c.caretakerId != null && c.caretakerId!.isNotEmpty;
       if (_currentUserId == c.landlordId) {
         // Landlord's counterpart: tenant if present, else agent.
         otherPersonRole = hasTenant ? 'Tenant' : (hasAgent ? 'Agent' : 'User');
       } else if (_currentUserId == c.agentId) {
         // Agent's counterpart: tenant if present, else landlord.
         otherPersonRole = hasTenant ? 'Tenant' : 'Landlord';
+      } else if (hasCaretaker && _currentUserId == c.caretakerId) {
+        // Caretaker's counterpart is the tenant they manage for.
+        otherPersonRole = hasTenant ? 'Tenant' : 'Landlord';
       } else if (_currentUserId == c.tenantId) {
-        // Tenant's counterpart: landlord (plus agent if one is on the thread).
-        otherPersonRole = hasAgent ? 'Landlord / Agent' : 'Landlord';
+        // Tenant's counterpart. On a caretaker thread the landlord is present
+        // too and can read it — say so rather than implying a private line.
+        otherPersonRole = hasCaretaker
+            ? 'Caretaker / Landlord'
+            : (hasAgent ? 'Landlord / Agent' : 'Landlord');
       }
     }
 
@@ -1084,6 +1102,8 @@ class _ChatScreenState extends State<ChatScreen> {
         senderRole = 'landlord';
       } else if (message.senderId == _conversation!.agentId) {
         senderRole = 'agent';
+      } else if (message.senderId == _conversation!.caretakerId) {
+        senderRole = 'caretaker';
       } else if (message.senderId == _conversation!.tenantId) {
         senderRole = 'tenant';
       }

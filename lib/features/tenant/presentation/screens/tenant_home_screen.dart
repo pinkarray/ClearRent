@@ -33,6 +33,7 @@ import '../widgets/multi_rental_dashboard.dart';
 import '../widgets/linked_rent_due_card.dart';
 import '../../../../shared/models/tenant_rental.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
+import '../../../../shared/widgets/caretaker_banner.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
@@ -1084,6 +1085,13 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             _buildRentDueBanner(),
             _buildHandoverBanner(),
             _buildTodaysInspectionBanner(),
+            // And the same trap a fourth time. Caretaking is the one role that
+            // has nothing to do with whether you rent somewhere — renting a
+            // flat is exactly why you might be on the premises to look after
+            // another one — yet the banner lived only on the browse home, so
+            // the tenant most likely to BE a caretaker was the one person who
+            // could never see the invitation.
+            const CaretakerBanner(),
             Expanded(
               child: MultiRentalDashboard(
                 rentals: _tenantRentals,
@@ -2505,6 +2513,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
               notificationsRoute: '/notifications',
             ),
           ),
+          // A caretaker can be any accountType, so the invitation prompt sits
+          // beside the announcements banner in every shell. Renders nothing
+          // when there is no pending invite.
+          const CaretakerBanner(),
           // Back to dashboard banner when browsing from rental dashboard
           if (_browsingFromDashboard && _activeRental != null)
             GestureDetector(

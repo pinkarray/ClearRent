@@ -33,6 +33,7 @@ const LANDLORD = "landlord1";
 const TENANT = "tenant1";
 const AGENT = "agent1";
 const OTHER = "other1";
+const CARETAKER = "caretaker1";
 
 let testEnv;
 
@@ -228,6 +229,39 @@ beforeEach(async () => {
       participants: [OTHER], landlordId: OTHER, tenantId: OTHER,
       propertyId: "prop2", lastMessage: "hi",
     });
+    // Caretaker fixtures. isPropertyCaretaker() get()s the property, so these
+    // docs have to exist for ANY caretaker rule to evaluate at all — prop1 is
+    // managed by CARETAKER, prop2 is somebody else's and has none.
+    await setDoc(doc(db, "properties/prop1"), {
+      landlordId: LANDLORD,
+      caretakerId: CARETAKER,
+      caretakerName: "Caretaker One",
+      title: "Test Flat",
+      rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false,
+      ownershipDocStatus: "pending",
+      inspectionHandler: "caretaker", readyForInspections: false,
+    });
+    await setDoc(doc(db, "properties/prop2"), {
+      landlordId: OTHER,
+      title: "Other Flat",
+      rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false,
+      ownershipDocStatus: "pending",
+      inspectionHandler: "self", readyForInspections: false,
+    });
+    await setDoc(doc(db, "maintenance_logs/ml_caretaker"), {
+      landlordId: LANDLORD, propertyId: "prop1", loggedBy: CARETAKER,
+      category: "plumbing", note: "Replaced washer",
+      loggedAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, "caretaker_invites/ci1"), {
+      landlordId: LANDLORD, caretakerId: CARETAKER,
+      caretakerName: "Caretaker One", propertyIds: ["prop1"],
+      status: "accepted", createdAt: serverTimestamp(),
+    });
   });
 });
 
@@ -235,6 +269,7 @@ const landlordDb = () => testEnv.authenticatedContext(LANDLORD).firestore();
 const tenantDb = () => testEnv.authenticatedContext(TENANT).firestore();
 const agentDb = () => testEnv.authenticatedContext(AGENT).firestore();
 const otherDb = () => testEnv.authenticatedContext(OTHER).firestore();
+const caretakerDb = () => testEnv.authenticatedContext(CARETAKER).firestore();
 const adminDb = () =>
   testEnv.authenticatedContext("admin1", { admin: true }).firestore();
 
@@ -1397,5 +1432,439 @@ test("tenant completes profile over a saved draft — allowed", async () => {
       { ...profilePayload("tenant"), occupation: "Engineer" },
       { merge: true }
     )
+  );
+});
+
+// ── Caretaker ────────────────────────────────────────────────────────────────
+//
+// The FIRST test here is deliberately a positive one. isPropertyCaretaker() is
+// declared at the document root and called from two other match blocks; if that
+// call ever stops resolving, it compiles with a warning and then denies at
+// evaluation — so a passing positive case is the only real proof the helper is
+// wired up. A suite of negatives would all still "pass" against a broken rule.
+
+test("caretaker lists issues on the property they manage — allowed", async () => {
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(caretakerDb(), "issues"),
+        where("propertyId", "==", "prop1")
+      )
+    )
+  );
+});
+
+// A list rule is evaluated against the QUERY's constraints, not the stored
+// documents: only fields the query pins by equality are known, and reading any
+// other field is an evaluation error that denies. So the landlord cannot ride
+// the caretaker's propertyId-shaped query even though every matching issue
+// names them — they must keep pinning landlordId, which is the field their own
+// branch reads. PropertyHealth therefore builds a DIFFERENT query per role.
+test("landlord lists issues by propertyId alone — denied", async () => {
+  await assertFails(
+    getDocs(
+      query(
+        collection(landlordDb(), "issues"),
+        where("propertyId", "==", "prop1")
+      )
+    )
+  );
+});
+
+test("landlord lists issues by landlordId + propertyId — allowed", async () => {
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(landlordDb(), "issues"),
+        where("landlordId", "==", LANDLORD),
+        where("propertyId", "==", "prop1")
+      )
+    )
+  );
+});
+
+test("caretaker lists issues on a property they don't manage — denied", async () => {
+  await assertFails(
+    getDocs(
+      query(
+        collection(caretakerDb(), "issues"),
+        where("propertyId", "==", "prop2")
+      )
+    )
+  );
+});
+
+test("caretaker triages an issue on their property — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(caretakerDb(), "issues/iss_party"), {
+      status: "in_progress",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker reassigns an issue's landlord — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "issues/iss_party"), {
+      status: "resolved",
+      landlordId: CARETAKER,
+    })
+  );
+});
+
+test("caretaker moves an issue to another property — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "issues/iss_party"), {
+      status: "resolved",
+      propertyId: "prop2",
+    })
+  );
+});
+
+test("non-caretaker triages an issue — denied", async () => {
+  await assertFails(
+    updateDoc(doc(otherDb(), "issues/iss_party"), { status: "resolved" })
+  );
+});
+
+// The landlord's own create path, which the ownership get() above tightened
+// and which nothing covered before. PropertyHealth._saveMaintenanceLog writes
+// exactly this shape.
+test("landlord logs maintenance on their own property — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "maintenance_logs/ml_own"), {
+      landlordId: LANDLORD,
+      propertyId: "prop1",
+      category: "plumbing",
+      note: "Serviced the pump",
+      loggedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker logs maintenance on their property — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(caretakerDb(), "maintenance_logs/ml_new"), {
+      landlordId: LANDLORD,
+      propertyId: "prop1",
+      loggedBy: CARETAKER,
+      category: "electrical",
+      note: "Changed socket",
+      loggedAt: serverTimestamp(),
+    })
+  );
+});
+
+// Naming yourself as landlordId used to be enough to create a log against ANY
+// propertyId. Harmless while the only reader queried by landlordId; not
+// harmless once the caretaker's feed queries by propertyId, which is why the
+// create rule now also checks who owns the property.
+test("caretaker logs maintenance claiming the wrong owner — denied", async () => {
+  await assertFails(
+    setDoc(doc(caretakerDb(), "maintenance_logs/ml_bad"), {
+      landlordId: CARETAKER,
+      propertyId: "prop1",
+      loggedBy: CARETAKER,
+      category: "electrical",
+      note: "Changed socket",
+      loggedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("stranger injects a log into another owner's property — denied", async () => {
+  await assertFails(
+    setDoc(doc(otherDb(), "maintenance_logs/ml_inject"), {
+      landlordId: OTHER,
+      propertyId: "prop1",
+      category: "electrical",
+      note: "Injected",
+      loggedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker logs maintenance on a property they don't manage — denied", async () => {
+  await assertFails(
+    setDoc(doc(caretakerDb(), "maintenance_logs/ml_bad2"), {
+      landlordId: OTHER,
+      propertyId: "prop2",
+      loggedBy: CARETAKER,
+      category: "electrical",
+      note: "Changed socket",
+      loggedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker lists maintenance logs on their property — allowed", async () => {
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(caretakerDb(), "maintenance_logs"),
+        where("propertyId", "==", "prop1")
+      )
+    )
+  );
+});
+
+test("caretaker edits their own maintenance log — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(caretakerDb(), "maintenance_logs/ml_caretaker"), {
+      note: "Replaced washer and seal",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker edits the landlord's maintenance log — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "maintenance_logs/ml_landlord"), {
+      note: "Rewritten by the caretaker",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord appoints a caretaker by writing the field — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/prop2"), {
+      caretakerId: CARETAKER,
+      caretakerName: "Caretaker One",
+    })
+  );
+});
+
+test("landlord renames the sitting caretaker — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/prop1"), {
+      caretakerName: "Someone Else",
+    })
+  );
+});
+
+test("landlord revokes by clearing the caretaker — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/prop1"), {
+      caretakerId: null,
+      caretakerName: null,
+    })
+  );
+});
+
+test("caretaker attests inspection readiness — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(caretakerDb(), "properties/prop1"), {
+      readyForInspections: true,
+      readinessCheckedAt: serverTimestamp(),
+      readinessCheckedBy: CARETAKER,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker sets inspection availability — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(caretakerDb(), "properties/prop1"), {
+      inspectionDays: ["monday"],
+      inspectionTimeSlots: ["10:00"],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker changes the rent — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "properties/prop1"), { rent: 100000 })
+  );
+});
+
+test("caretaker relists the property — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "properties/prop1"), { isAvailable: false })
+  );
+});
+
+test("caretaker promotes themselves on another property — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "properties/prop2"), {
+      caretakerId: CARETAKER,
+    })
+  );
+});
+
+test("caretaker extends their own readiness grant to rent — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "properties/prop1"), {
+      readyForInspections: true,
+      rent: 100000,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("both parties read the caretaker invite — allowed", async () => {
+  await assertSucceeds(getDoc(doc(landlordDb(), "caretaker_invites/ci1")));
+  await assertSucceeds(getDoc(doc(caretakerDb(), "caretaker_invites/ci1")));
+});
+
+test("a stranger reads the caretaker invite — denied", async () => {
+  await assertFails(getDoc(doc(otherDb(), "caretaker_invites/ci1")));
+});
+
+test("landlord writes a caretaker invite directly — denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "caretaker_invites/ci_forged"), {
+      landlordId: LANDLORD,
+      caretakerId: OTHER,
+      propertyIds: ["prop1"],
+      status: "accepted",
+    })
+  );
+});
+
+test("caretaker accepts their own invite directly — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "caretaker_invites/ci1"), {
+      status: "accepted",
+    })
+  );
+});
+
+// ── Caretaker: handover evidence only ────────────────────────────────────────
+//
+// The caretaker walks the unit, so they may record what it looked like. Every
+// money-bearing part of the handover lives on the PARENT active_rental, where
+// they have no clause at all — so these tests prove the split holds.
+
+test("caretaker records move-out condition evidence — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${CARETAKER}`), {
+      recordedBy: CARETAKER,
+      photos: ['a.jpg'],
+    })
+  );
+});
+
+test("caretaker reads the tenant's condition record — allowed", async () => {
+  await assertSucceeds(
+    getDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${TENANT}`))
+  );
+});
+
+test("caretaker records evidence under someone else's name — denied", async () => {
+  await assertFails(
+    setDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${TENANT}`), {
+      recordedBy: CARETAKER,
+    })
+  );
+});
+
+test("caretaker records evidence on a rental they don't manage — denied", async () => {
+  await assertFails(
+    setDoc(doc(caretakerDb(), `active_rentals/ar_other/condition/move_out/parties/${CARETAKER}`), {
+      recordedBy: CARETAKER,
+    })
+  );
+});
+
+test("caretaker declares a caution deduction — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
+      cautionDeductionAmount: 50000,
+      cautionDeductionReason: 'Damage',
+    })
+  );
+});
+
+test("caretaker confirms the handover condition check — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
+      handoverConditionConfirmedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker settles the deposit — denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
+      handoverSettlementMethod: 'cash',
+      handoverSettledAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker reads the tenancy itself — denied", async () => {
+  await assertFails(getDoc(doc(caretakerDb(), 'active_rentals/ar1')));
+});
+
+// ── Caretaker: the two holes the code review found ───────────────────────────
+
+test("landlord creates a listing with a caretaker pre-set — denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), 'properties/prop_forged'), {
+      landlordId: LANDLORD,
+      caretakerId: CARETAKER,
+      title: 'Forged',
+      rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      ownershipDocStatus: 'pending',
+    })
+  );
+});
+
+test("landlord creates a clean listing — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), 'properties/prop_clean'), {
+      landlordId: LANDLORD,
+      title: 'Clean',
+      rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      ownershipDocStatus: 'pending',
+    })
+  );
+});
+
+// Being the caretaker is not being the HANDLER. On an agent-handled unit the
+// agent owns readiness and the showing slots.
+test("caretaker wipes slots on an agent-handled unit — denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'properties/prop1'), {
+      landlordId: LANDLORD, caretakerId: CARETAKER, caretakerName: 'Caretaker One',
+      title: 'Test Flat', rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false,
+      ownershipDocStatus: 'pending',
+      inspectionHandler: 'agent', assignedAgentId: AGENT,
+      readyForInspections: true,
+    });
+  });
+  await assertFails(
+    updateDoc(doc(caretakerDb(), 'properties/prop1'), {
+      inspectionDays: [],
+      inspectionTimeSlots: [],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("caretaker attests readiness on an agent-handled unit — denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'properties/prop1'), {
+      landlordId: LANDLORD, caretakerId: CARETAKER, caretakerName: 'Caretaker One',
+      title: 'Test Flat', rent: 500000, agentFee: 0, cautionDeposit: 0,
+      maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false,
+      ownershipDocStatus: 'pending',
+      inspectionHandler: 'agent', assignedAgentId: AGENT,
+      readyForInspections: false,
+    });
+  });
+  await assertFails(
+    updateDoc(doc(caretakerDb(), 'properties/prop1'), {
+      readyForInspections: true,
+      readinessCheckedBy: CARETAKER,
+      updatedAt: serverTimestamp(),
+    })
   );
 });

@@ -22,6 +22,12 @@ import '../../../../shared/widgets/guidance_empty_state.dart';
 ///   - `propertyTitle` (String?) — shown in the app bar when filtering
 class LandlordIssuesScreen extends StatefulWidget {
   final String? propertyId;
+  /// Viewing as the property's caretaker rather than its owner. Changes WHICH
+  /// query is run, not what is shown: a list rule is evaluated against the
+  /// query's constraints, so the caretaker must pin `propertyId` (the field
+  /// isPropertyCaretaker reads) and the owner must pin `landlordId`. Give the
+  /// caretaker the owner's query and it is denied outright.
+  final bool asCaretaker;
   final String? category;
   final int initialTab;
   final String? propertyTitle;
@@ -29,6 +35,7 @@ class LandlordIssuesScreen extends StatefulWidget {
   const LandlordIssuesScreen({
     super.key,
     this.propertyId,
+    this.asCaretaker = false,
     this.category,
     this.initialTab = 0,
     this.propertyTitle,
@@ -75,9 +82,13 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
   void _listenIssues() {
     final uid = _authService.currentUserId;
     if (uid == null) return;
-    _issuesSub = FirebaseFirestore.instance
-        .collection('issues')
-        .where('landlordId', isEqualTo: uid)
+    _issuesSub = (widget.asCaretaker && widget.propertyId != null
+            ? FirebaseFirestore.instance
+                .collection('issues')
+                .where('propertyId', isEqualTo: widget.propertyId)
+            : FirebaseFirestore.instance
+                .collection('issues')
+                .where('landlordId', isEqualTo: uid))
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
@@ -249,6 +260,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
             status: 'open',
             authService: _authService,
             propertyId: widget.propertyId,
+            asCaretaker: widget.asCaretaker,
             category: widget.category,
             onMoved: _goToTabForStatus,
           ),
@@ -256,6 +268,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
             status: 'in_progress',
             authService: _authService,
             propertyId: widget.propertyId,
+            asCaretaker: widget.asCaretaker,
             category: widget.category,
             onMoved: _goToTabForStatus,
           ),
@@ -263,6 +276,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
             status: 'pending_confirmation',
             authService: _authService,
             propertyId: widget.propertyId,
+            asCaretaker: widget.asCaretaker,
             category: widget.category,
             onMoved: _goToTabForStatus,
           ),
@@ -270,6 +284,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
             status: 'resolved',
             authService: _authService,
             propertyId: widget.propertyId,
+            asCaretaker: widget.asCaretaker,
             category: widget.category,
             onMoved: _goToTabForStatus,
           ),
@@ -290,6 +305,7 @@ class _IssuesTab extends StatefulWidget {
   final String status;
   final AuthService authService;
   final String? propertyId;
+  final bool asCaretaker;
   final String? category;
   final void Function(String newStatus)? onMoved;
 
@@ -297,6 +313,7 @@ class _IssuesTab extends StatefulWidget {
     required this.status,
     required this.authService,
     this.propertyId,
+    this.asCaretaker = false,
     this.category,
     this.onMoved,
   });
@@ -314,11 +331,18 @@ class _IssuesTabState extends State<_IssuesTab> {
   Stream<QuerySnapshot>? _buildStream() {
     final currentUserId = widget.authService.currentUserId;
     if (currentUserId == null) return null;
-    Query query = FirebaseFirestore.instance
-        .collection('issues')
-        .where('landlordId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: widget.status);
-    if (widget.propertyId != null) {
+    // See LandlordIssuesScreen.asCaretaker: each principal must pin the field
+    // its own rule branch reads, or the query is denied wholesale.
+    Query query = widget.asCaretaker && widget.propertyId != null
+        ? FirebaseFirestore.instance
+            .collection('issues')
+            .where('propertyId', isEqualTo: widget.propertyId)
+            .where('status', isEqualTo: widget.status)
+        : FirebaseFirestore.instance
+            .collection('issues')
+            .where('landlordId', isEqualTo: currentUserId)
+            .where('status', isEqualTo: widget.status);
+    if (!widget.asCaretaker && widget.propertyId != null) {
       query = query.where('propertyId', isEqualTo: widget.propertyId);
     }
     if (widget.category != null) {
