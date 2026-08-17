@@ -394,6 +394,62 @@ class _TenantActions extends StatelessWidget {
     if (rental.handoverStage == 'awaiting_confirm') {
       final kept = rental.cautionDeductionAmount ?? 0;
       final owed = (rental.cautionDeposit - kept).clamp(0, double.infinity);
+      // Already reported. Without this the screen looked identical before and
+      // after submitting, so a tenant could report the same problem over and
+      // over with no sign any of it had registered — which is exactly how it
+      // was found. Their own words are echoed back as the receipt.
+      if (rental.tenantContested) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.error.withAlpha(20),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.error.withAlpha(70)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.flag_outlined, size: 18, color: AppColors.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('You reported a problem',
+                      style: AppTextStyles.labelMedium),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              if ((rental.tenantContestStatement ?? '').isNotEmpty)
+                Text('"${rental.tenantContestStatement}"',
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(fontStyle: FontStyle.italic)),
+              const SizedBox(height: 8),
+              Text(
+                'Your landlord has been told and ClearRent is reviewing it. '
+                'This will not close on its own while it is open, so waiting '
+                'costs you nothing.',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary, height: 1.5),
+              ),
+              if ((rental.handoverProofUrl ?? '').isNotEmpty) ...[
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  onPressed: busy ? null : onViewProof,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: const Text('See their proof of payment'),
+                ),
+              ],
+              // Still reachable: the answer can change — the money may land
+              // after the report, and confirming is what frees the property.
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: busy ? null : onConfirmPaid,
+                child: const Text('It has arrived now - close this'),
+              ),
+            ],
+          ),
+        );
+      }
       return Column(children: [
         _ActionCard(
           title: 'Were you paid?',
