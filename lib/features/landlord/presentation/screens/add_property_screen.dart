@@ -263,6 +263,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // of them this unit sits in, so a compound asks per unit. Only for compounds
   // — every other structure IS a single building and every unit inherits it.
   String _unitBuildingStructure = '';
+
+  /// Buildings already described by other units in the selected compound, so
+  /// "the same duplex" is one tap rather than a remembered letter.
+  List<Map<String, String>> _compoundBuildings = const [];
   int _unitBuildingNumber = 1;
   // Which unit this is. The landlord no longer types this: it is derived from
   // the unit TYPE plus a number, so "Self Contain 2" instead of free text that
@@ -556,6 +560,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _buildingNameController.text = draft['buildingName'] ?? '';
       _buildingStructure = draft['buildingStructure'] ?? '';
       _selectedBuildingStructure = draft['selectedBuildingStructure'] ?? '';
+      // Resuming a draft skips the tile tap that normally loads these.
+      if (_selectedBuildingStructure == 'compound' &&
+          (_selectedBuildingId ?? '').isNotEmpty) {
+        _loadCompoundBuildings(_selectedBuildingId!);
+      }
       // A draft saved before the unit number existed keeps whatever label it
       // had typed; the number only takes over once the landlord touches it.
       _unitNumber = draft['unitNumber'] ?? 1;
@@ -2893,6 +2902,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// name its own. Every other structure is one building already.
   bool get _isCompoundSite => _siteStructure == 'compound';
 
+  Future<void> _loadCompoundBuildings(String buildingId) async {
+    final found = await _propertyService.getUnitBuildingsInCompound(buildingId);
+    if (!mounted || _selectedBuildingId != buildingId) return;
+    setState(() => _compoundBuildings = found);
+  }
+
+  /// Letter back to the counter's number — 'A' is 1, matching
+  /// [_unitBuildingLabel] in the other direction.
+  int _numberForLabel(String label) {
+    if (label.isEmpty) return 1;
+    return (label.toUpperCase().codeUnitAt(0) - 64).clamp(1, 26);
+  }
+
   /// The landlord typed "compound" into the name but recorded the site as
   /// something else. Only a hint — plenty of Lagos sites are called a compound
   /// loosely — but it is the one contradiction that silently costs them the
@@ -4758,6 +4780,39 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               style: AppTextStyles.caption
                   .copyWith(color: AppColors.textSecondary, height: 1.5),
             ),
+            // Buildings other units in this compound already named. Picking one
+            // sets both the structure and the letter, so a second unit in the
+            // same duplex can't drift onto a different one by a mistyped count.
+            if (_compoundBuildings.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Already in this compound',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _compoundBuildings.map((b) {
+                  final structure = b['structure'] ?? '';
+                  final label = b['label'] ?? '';
+                  final isSel = _unitBuildingStructure == structure &&
+                      _unitBuildingLabel == label;
+                  return _buildSelectableChip(
+                    label:
+                        '${BuildingModel.structureLabelFor(structure)} $label',
+                    selected: isSel,
+                    onTap: () => setState(() {
+                      _unitBuildingStructure = structure;
+                      _unitBuildingNumber = _numberForLabel(label);
+                    }),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Text('Or describe a different one',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary)),
+            ],
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -4986,6 +5041,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         // re-reading the stream. A building written before `structure` existed
         // has none, and the line degrades to naming the unit only.
         _selectedBuildingStructure = b.structure;
+        _compoundBuildings = const [];
+        if (b.structure == 'compound') _loadCompoundBuildings(b.id);
       }),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),

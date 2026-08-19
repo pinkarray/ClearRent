@@ -726,6 +726,42 @@ class PropertyService {
     }
   }
 
+  /// The buildings already named inside one compound, taken from the units
+  /// already listed in it — e.g. `[{structure: duplex, label: A}]`.
+  ///
+  /// A compound's buildings are not records of their own: each unit describes
+  /// the one it sits in. So adding a second unit to the SAME duplex meant
+  /// re-picking the structure and landing on the same letter by memory, and a
+  /// slip silently split one duplex into two. This lets the picker offer what
+  /// is already there.
+  Future<List<Map<String, String>>> getUnitBuildingsInCompound(
+    String buildingId,
+  ) async {
+    if (buildingId.isEmpty) return const [];
+    try {
+      final snapshot =
+          await _propertiesRef.where('buildingId', isEqualTo: buildingId).get();
+      final seen = <String>{};
+      final out = <Map<String, String>>[];
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final structure = (data['unitBuildingStructure'] ?? '').toString();
+        final label = (data['unitBuildingLabel'] ?? '').toString();
+        if (structure.isEmpty || label.isEmpty) continue;
+        if (!seen.add('$structure|$label')) continue;
+        out.add({'structure': structure, 'label': label});
+      }
+      out.sort((a, b) => '${a['structure']}${a['label']}'
+          .compareTo('${b['structure']}${b['label']}'));
+      return out;
+    } catch (e) {
+      // Non-fatal: the landlord can still describe the building by hand.
+      developer.log('Compound buildings unreadable: $e',
+          name: 'PropertyService');
+      return const [];
+    }
+  }
+
   /// Get properties by landlord ID (for landlord dashboard)
   Future<List<PropertyModel>> getLandlordProperties() async {
     try {
