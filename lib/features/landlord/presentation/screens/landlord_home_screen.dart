@@ -2804,7 +2804,7 @@ class _LandlordPropertyCard extends StatelessWidget {
                         ),
                         decoration: BoxDecoration(
                           color:
-                              property.isAvailable
+                              property.statusIsPositive
                                   ? AppColors.successLight
                                   : AppColors.warningLight,
                           borderRadius: BorderRadius.circular(4),
@@ -2813,7 +2813,7 @@ class _LandlordPropertyCard extends StatelessWidget {
                           property.statusLabel,
                           style: AppTextStyles.labelSmall.copyWith(
                             color:
-                                property.isAvailable
+                                property.statusIsPositive
                                     ? AppColors.success
                                     : AppColors.warning,
                             fontSize: 10,

@@ -503,7 +503,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: property.isAvailable
+                              color: property.statusIsPositive
                                   ? AppColors.success.withAlpha(26)
                                   : AppColors.textHint.withAlpha(26),
                               borderRadius: BorderRadius.circular(8),
@@ -511,7 +511,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                             child: Text(
                               property.statusLabel,
                               style: AppTextStyles.labelSmall.copyWith(
-                                color: property.isAvailable ? AppColors.success : AppColors.textHint,
+                                color: property.statusIsPositive ? AppColors.success : AppColors.textHint,
                               ),
                             ),
                           ),

@@ -1605,7 +1605,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     ),
                     decoration: BoxDecoration(
                       color:
-                          property.isAvailable
+                          property.statusIsPositive
                               ? AppColors.success
                               : AppColors.warning,
                       borderRadius: BorderRadius.circular(8),

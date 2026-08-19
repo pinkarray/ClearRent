@@ -762,6 +762,12 @@ class PropertyModel {
     return 'Available';
   }
 
+  /// Whether [statusLabel] is the one good state — a listing a tenant can book
+  /// right now. Colour must key off THIS, not `isAvailable`: a not-bookable
+  /// listing is still `isAvailable == true`, so keying off availability drew
+  /// "Not bookable" in green and read as ready to let.
+  bool get statusIsPositive => statusLabel == 'Available';
+
   /// Ceiling types, folding in the legacy single-value `ceilingType` field so
   /// documents written before the multi-select still read correctly.
   static List<String> _parseCeilingTypes(Map<String, dynamic> data) {
