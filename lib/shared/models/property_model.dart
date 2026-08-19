@@ -355,6 +355,12 @@ class PropertyModel {
     {'value': '2', 'label': '2nd floor'},
     {'value': '3', 'label': '3rd floor'},
     {'value': '4', 'label': '4th floor'},
+    {'value': '5', 'label': '5th floor'},
+    {'value': '6', 'label': '6th floor'},
+    {'value': '7', 'label': '7th floor'},
+    {'value': '8', 'label': '8th floor'},
+    {'value': '9', 'label': '9th floor'},
+    {'value': '10', 'label': '10th floor'},
   ];
 
   /// Human label for [floor], or empty when unset.

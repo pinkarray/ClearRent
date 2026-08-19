@@ -252,8 +252,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   bool _creatingNewBuilding = false;
   String? _selectedBuildingId;
   final TextEditingController _buildingNameController = TextEditingController();
-  final TextEditingController _buildingAddressController =
-      TextEditingController();
   // What the whole building is (BuildingModel.structures) — asked only when
   // creating a new building; joining one inherits its structure.
   String _buildingStructure = '';
@@ -485,7 +483,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'creatingNewBuilding': _creatingNewBuilding,
       'selectedBuildingId': _selectedBuildingId,
       'buildingName': _buildingNameController.text,
-      'buildingAddress': _buildingAddressController.text,
       'buildingStructure': _buildingStructure,
       'selectedBuildingStructure': _selectedBuildingStructure,
       'unitLabel': _unitLabelController.text,
@@ -557,7 +554,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _creatingNewBuilding = draft['creatingNewBuilding'] ?? false;
       _selectedBuildingId = draft['selectedBuildingId'] as String?;
       _buildingNameController.text = draft['buildingName'] ?? '';
-      _buildingAddressController.text = draft['buildingAddress'] ?? '';
       _buildingStructure = draft['buildingStructure'] ?? '';
       _selectedBuildingStructure = draft['selectedBuildingStructure'] ?? '';
       // A draft saved before the unit number existed keeps whatever label it
@@ -1054,7 +1050,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _pricingScrollController.dispose();
     _detailsScrollController.dispose();
     _buildingNameController.dispose();
-    _buildingAddressController.dispose();
     _unitLabelController.dispose();
     _draftSaveTimer?.cancel();
     super.dispose();
@@ -1475,13 +1470,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
         if (_creatingNewBuilding) {
           _updateUploadProgress('Creating building...');
-          final buildingAddress =
-              _buildingAddressController.text.trim().isNotEmpty
-                  ? _buildingAddressController.text.trim()
-                  : _addressController.text.trim();
           buildingId = await _buildingService.createBuilding(
             name: _buildingNameController.text.trim(),
-            address: buildingAddress,
+            address: _addressController.text.trim(),
             structure: _buildingStructure,
             ownershipDocUrl: uploadedUrl,
             ownershipDocType: _ownershipDocType,
@@ -2901,6 +2892,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// A compound is land that can carry several buildings, so the unit has to
   /// name its own. Every other structure is one building already.
   bool get _isCompoundSite => _siteStructure == 'compound';
+
+  /// The landlord typed "compound" into the name but recorded the site as
+  /// something else. Only a hint — plenty of Lagos sites are called a compound
+  /// loosely — but it is the one contradiction that silently costs them the
+  /// per-unit building question.
+  bool get _buildingNameStructureMismatch =>
+      _buildingNameController.text.toLowerCase().contains('compound') &&
+      _buildingStructure.isNotEmpty &&
+      _buildingStructure != 'compound';
 
   /// "A", "B" — which of the compound's buildings this unit is in. Derived from
   /// a number for the same reason the unit name is: free text could contradict.
@@ -4914,18 +4914,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _buildCreateBuildingTile(),
           if (_creatingNewBuilding) ...[
             const SizedBox(height: 12),
+            // Name only. The address is asked once, further down on the
+            // location step, and the building takes it from there — a second
+            // address field here just invited a different answer to the same
+            // question, and pushed landlords into naming the site after a
+            // street.
             AppTextField(
               label: 'Building / compound name',
-              hint: 'e.g. Olu Compound, 12 Allen Ave',
+              hint: 'e.g. Olu Compound',
               controller: _buildingNameController,
               textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 12),
-            AppTextField(
-              label: 'Building address',
-              hint: 'Optional - defaults to this unit\'s address',
-              controller: _buildingAddressController,
-              textCapitalization: TextCapitalization.words,
+              // So the mismatch hint below re-evaluates as they type, not only
+              // when a structure chip happens to trigger a rebuild.
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
             // The structure lives on the BUILDING, not the listing. It is what
@@ -4946,6 +4947,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       ))
                   .toList(),
             ),
+            // A site called "X's Compound" saved as anything else silently
+            // loses the "which building is this unit in?" question, because
+            // that only fires on structure == 'compound'. Nothing flagged the
+            // contradiction, so the name and the record just drifted apart.
+            if (_buildingNameStructureMismatch) ...[
+              const SizedBox(height: 10),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.info_outline,
+                    size: 16, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'You named this a compound but picked '
+                    '"${BuildingModel.structureLabelFor(_buildingStructure)}". '
+                    'Pick Compound if it holds more than one building, so you '
+                    'can say which one each unit is in.',
+                    style: AppTextStyles.caption.copyWith(
+                        color: Colors.orange.shade700, height: 1.4),
+                  ),
+                ),
+              ]),
+            ],
           ],
         ]);
       },
