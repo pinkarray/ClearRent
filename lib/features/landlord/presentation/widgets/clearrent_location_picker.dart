@@ -37,10 +37,14 @@ class LocationPickerWidget extends StatefulWidget {
   final TextEditingController stateController;
   final Function(double lat, double lng)? onLocationSelected;
 
-  /// Fired when the pin/autocomplete returns a city not in the known areas list.
-  /// Use this to log to Firestore (e.g. 'admin_requests' collection) so the
-  /// admin can review and add the area to the dropdown.
-  final Function(String rawAreaName, double lat, double lng)?
+  /// Fired when the pin/autocomplete returns a city not in the known areas
+  /// list, AND when a search returns nothing at all. Use this to log to
+  /// Firestore (e.g. 'admin_requests') so the admin can add the area.
+  ///
+  /// Coordinates are null for the no-result case — there is no place to take
+  /// them from, which is exactly the signal that separates "we found it but
+  /// don't map it" from "nothing matched what they typed".
+  final Function(String rawAreaName, double? lat, double? lng)?
   onUnknownAreaDetected;
 
   const LocationPickerWidget({
@@ -64,6 +68,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   List<NominatimPlace> _suggestions = [];
   bool _isSearching = false;
   bool _showSuggestions = false;
+
+  /// The last search that matched nothing, so the landlord is told rather than
+  /// left staring at an empty box. Cleared on the next result or selection.
+  String? _noResultQuery;
   Timer? _debounceTimer;
   bool _suppressSearch = false;
 
@@ -174,7 +182,15 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
             _suggestions = places;
             _showSuggestions = places.isNotEmpty;
             _isSearching = false;
+            _noResultQuery = places.isEmpty ? query : null;
           });
+          // A search that matches nothing used to end here in silence: the
+          // landlord saw no list and no reason, and admin never heard about
+          // the area at all. It is the more useful report of the two — the
+          // geocoder didn't even know the place.
+          if (places.isEmpty) {
+            widget.onUnknownAreaDetected?.call(query, null, null);
+          }
         }
       } else {
         if (mounted) setState(() => _isSearching = false);
@@ -205,6 +221,33 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     return '$number $proposed';
   }
 
+  /// Shown when the map search matched nothing. Says so, and points at the one
+  /// thing that still works — dropping the pin by hand.
+  Widget _buildNoResultHint() {
+    final warn = Colors.orange.shade700;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: warn.withAlpha(20),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: warn.withAlpha(60)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.search_off, size: 16, color: warn),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'We couldn\'t find "$_noResultQuery" on the map. Tap the map below '
+            'to drop the pin yourself — we\'ve told our team about this area '
+            'so it can be added.',
+            style: AppTextStyles.caption.copyWith(color: warn, height: 1.4),
+          ),
+        ),
+      ]),
+    );
+  }
+
   void _selectPlace(NominatimPlace place) {
     final location = LatLng(place.lat, place.lng);
     // The area, once chosen explicitly, outranks anything OSM returns.
@@ -217,6 +260,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       _selectedLocation = location;
       _showSuggestions = false;
       _suggestions = [];
+      _noResultQuery = null;
       _addressSuggestion = null;
       if (!_areaExplicitlySet) {
         _geocodedRawCity = place.city;
@@ -417,6 +461,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         // 1. Street address with autocomplete
         _buildAddressField(),
         if (_showSuggestions) _buildSuggestions(),
+        if (!_showSuggestions && _noResultQuery != null) _buildNoResultHint(),
 
         const SizedBox(height: 20),
 

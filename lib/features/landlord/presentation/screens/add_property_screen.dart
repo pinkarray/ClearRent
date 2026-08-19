@@ -2876,9 +2876,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     .add({
                       'type': 'unknown_area',
                       'rawName': rawName,
-                      'lat': lat,
-                      'lng': lng,
-                      'source': 'add_property',
+                      // Null when the search matched nothing at all — there is
+                      // no place to take coordinates from. Admin publishes an
+                      // area from the name and a chosen LGA, so it needs
+                      // neither, and the absence is itself the useful signal.
+                      if (lat != null) 'lat': lat,
+                      if (lng != null) 'lng': lng,
+                      'source':
+                          lat == null ? 'add_property_no_match' : 'add_property',
                       'status': 'pending',
                       'createdAt': FieldValue.serverTimestamp(),
                     });
