@@ -73,6 +73,7 @@ export {
   onVerificationSubmitted,
   onInspectionCompleted,
   onRentalInterestCreated,
+  onPropertyCreated,
   onAgreementReady,
 } from "./admin_alert_triggers";
 

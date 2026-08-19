@@ -1758,6 +1758,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _showPendingReviewDialog(
         hasDoc: hasDoc || buildingId != null,
         requiresListingFee: _requiresListingFee,
+        propertyId: propertyId,
       );
     } catch (e, stackTrace) {
       if (mounted) {
@@ -1803,6 +1804,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   void _showPendingReviewDialog({
     required bool hasDoc,
     required bool requiresListingFee,
+    required String propertyId,
   }) {
     String message;
     if (!hasDoc) {
@@ -1909,6 +1911,29 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       // what they want to see, not the dashboard.
                       context.go('/landlord/home?tab=1');
                     },
+                  ),
+                ),
+                // Appointing a caretaker needs a property that exists — the
+                // invite checks the caller owns the unit, which is what stops
+                // the phone-to-name lookup being a bare PII query. So it can't
+                // be asked during the wizard, and buried in Edit Property it
+                // was simply forgotten. This is the moment they are still
+                // thinking about the unit.
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      context.push('/landlord/edit-property/$propertyId');
+                    },
+                    icon: Icon(Icons.person_add_alt_1_outlined,
+                        size: 18, color: AppColors.primary),
+                    label: Text(
+                      'Add a caretaker for this unit',
+                      style: AppTextStyles.labelMedium
+                          .copyWith(color: AppColors.primary),
+                    ),
                   ),
                 ),
               ],

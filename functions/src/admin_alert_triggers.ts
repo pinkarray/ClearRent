@@ -390,3 +390,67 @@ export const onAgreementReady = onDocumentUpdated(
     logger.info("Agreement-ready admin alert raised", {rentalId, replaced});
   },
 );
+
+/**
+ * A landlord published a listing.
+ *
+ * Nothing watched `properties` before this: the admin dashboard surfaced new
+ * listings only through its "docs pending review" count, which resolves a
+ * grouped unit's status from its BUILDING. So a unit added under a building
+ * whose ownership document was already verified resolved to `verified`, never
+ * entered that count, and arrived with no trace anywhere — the only way to
+ * find it was to already know it had been submitted.
+ *
+ * Raised for every new listing, with the body naming what (if anything) still
+ * needs reviewing, since that is the part that differs.
+ */
+export const onPropertyCreated = onDocumentCreated(
+  "properties/{propertyId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const d = snap.data();
+
+    const propertyId = event.params.propertyId;
+    const title = (d.title as string | undefined) ?? "A property";
+    const landlordName =
+      (d.landlordName as string | undefined) ?? "A landlord";
+    const docStatus = (d.ownershipDocStatus as string | undefined) ?? "none";
+    const buildingId = (d.buildingId as string | undefined) ?? null;
+    const city = (d.city as string | undefined) ?? "";
+    const state = (d.state as string | undefined) ?? "";
+    const where = [city, state].filter((s) => s.length > 0).join(", ");
+
+    let needs: string;
+    if (docStatus === "pending") {
+      needs = "Its ownership document is waiting for review.";
+    } else if (docStatus === "inherited") {
+      needs =
+        "It sits under a building whose document is already verified, " +
+        "so only the listing itself needs a look.";
+    } else {
+      needs = "No ownership document was attached.";
+    }
+
+    await writeAdminAlert({
+      type: "property_created",
+      severity: "info",
+      title: "New listing submitted",
+      body:
+        `${landlordName} listed "${title}"` +
+        (where ? ` in ${where}` : "") + `. ${needs}`,
+      targetCollection: "properties",
+      targetId: propertyId,
+      actors: {
+        landlordId: (d.landlordId as string | undefined) ?? undefined,
+      },
+      meta: {
+        ownershipDocStatus: docStatus,
+        buildingId,
+        rent: Number(d.rent ?? 0),
+        state,
+      },
+    });
+    logger.info("New-listing admin alert raised", {propertyId, docStatus});
+  },
+);
