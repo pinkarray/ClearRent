@@ -92,6 +92,12 @@ class InspectionPricing {
   /// Outer/long-distance LGA (Epe, Badagry, Sango, Ibeju-Lekki)
   static const String outerLGA = 'outer';
 
+  /// Bucket for areas outside Lagos entirely. Kept separate from [outerLGA]
+  /// so Epe and Badagry keep reading as Lagos outskirts. Nothing is compiled
+  /// into it — it exists so `config/areas` can publish an out-of-state area
+  /// without a release, since [applyRemoteAreas] drops any unknown LGA.
+  static const String otherLGA = 'other';
+
   // ══════════════════════════════════════════════
   //  AREA → LGA MAPPING
   // ══════════════════════════════════════════════
@@ -322,7 +328,7 @@ class InspectionPricing {
   static void applyRemoteAreas(Map<String, dynamic>? raw) {
     final merged = Map<String, String>.from(_defaultAreaToLGA);
     if (raw != null) {
-      final valid = {...lgas, outerLGA};
+      final valid = {...lgas, outerLGA, otherLGA};
       raw.forEach((area, lga) {
         if (lga is! String) return;
         final key = area.trim().toLowerCase();
@@ -355,6 +361,7 @@ class InspectionPricing {
     'ajeromi_ifelodun': 'Ajeromi-Ifelodun LGA',
     'obafemi_owode': 'Obafemi-Owode LGA (Ogun)',
     'outer': 'Outer Lagos',
+    'other': 'Other areas',
   };
 
   // ══════════════════════════════════════════════
@@ -407,7 +414,7 @@ class InspectionPricing {
   static List<String> getAreasForCluster(String lga) => getAreasForLGA(lga);
 
   /// Get all LGA names (for dropdowns, etc.)
-  static List<String> get allLGAs => [...lgas, outerLGA];
+  static List<String> get allLGAs => [...lgas, outerLGA, otherLGA];
 
   /// Backward-compatible alias.
   static List<String> get allClusters => allLGAs;

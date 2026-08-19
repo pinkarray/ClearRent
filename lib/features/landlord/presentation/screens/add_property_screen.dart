@@ -5442,7 +5442,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       child: Text(
                         'Saved as $_landlordBaseArea. Inspections are a flat '
                         '${InspectionPricing.formatNaira(InspectionPricing.inspectionBookingFee)} '
-                        'anywhere in Lagos - you earn '
+                        'anywhere you list - you earn '
                         '${InspectionPricing.formatNaira(InspectionPricing.handlerEarnings)} '
                         'for each one you handle yourself.',
                         style: AppTextStyles.caption.copyWith(

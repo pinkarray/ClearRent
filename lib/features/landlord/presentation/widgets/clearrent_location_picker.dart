@@ -221,7 +221,16 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       if (!_areaExplicitlySet) {
         _geocodedRawCity = place.city;
         _areaMatchedFromPin = matched != null;
-        if (matched != null) widget.cityController.text = matched;
+        // Outside the mapped areas the dropdown has nothing to offer, so
+        // leaving this empty dead-ended the listing on the "Please enter the
+        // city" check with no way forward. Take the name the geocoder gave
+        // instead; it is still reported below so the area can be added to the
+        // picker, and the fee is flat either way.
+        if (matched != null) {
+          widget.cityController.text = matched;
+        } else if (place.city.isNotEmpty) {
+          widget.cityController.text = place.city;
+        }
       }
     });
 
@@ -783,9 +792,9 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         const SizedBox(height: 6),
         Text(
           outsideLagos
-              ? 'ClearRent operates in Lagos today. You can still submit this, '
-                  'but our team reviews every listing and may not approve one '
-                  'outside Lagos yet. If the state is wrong, move the pin.'
+              ? 'ClearRent is expanding beyond Lagos, so you can submit this. '
+                  'Flagged only so you can check the pin landed where you '
+                  'meant. If the state is wrong, move the pin.'
               : 'Set from your pin, so it always matches the real address.',
           style: AppTextStyles.caption.copyWith(
             color: outsideLagos ? warn : AppColors.textSecondary,
