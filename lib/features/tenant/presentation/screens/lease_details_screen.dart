@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +16,10 @@ import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
+
+/// Minimum notice, in days, between a move-out request and the intended
+/// move-out date — the window the handover check has to be booked in.
+const int kMoveOutNoticeDays = 3;
 
 class LeaseDetailsScreen extends StatefulWidget {
   final ActiveRental rental;
@@ -231,6 +237,18 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                       color: AppColors.primary,
                       onTap: () => _messageLandlord(),
                     ),
+                    // Hidden once a request is already pending — the rental
+                    // dashboard's banner is what covers that state.
+                    if (!_rental.isMoveoutPending) ...[
+                      const SizedBox(height: 8),
+                      _actionTile(
+                        icon: Icons.logout,
+                        title: 'Request Move-Out',
+                        subtitle: 'Tell your landlord you are leaving',
+                        color: AppColors.textSecondary,
+                        onTap: _showMoveOutSheet,
+                      ),
+                    ],
                   ],
 
                   const SizedBox(height: 40),
@@ -241,6 +259,278 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
         ],
       ),
     );
+  }
+
+  /// Opens the move-out confirmation sheet. Tenant picks a reason, confirms,
+  /// and the rental is marked ended_by_tenant server-side; the switcher stream
+  /// then drops it from the list so no manual navigation is needed.
+  Future<void> _showMoveOutSheet() async {
+    // Check before opening the sheet, not after the tenant has filled it in —
+    // an unresolved fault has to be closed first, and they deserve to know why
+    // up front rather than hitting a generic failure at submit.
+    final blocked = await _rentalService.hasOpenIssueForRental(
+      tenantId: _rental.tenantId,
+      propertyId: _rental.propertyId,
+    );
+    if (!mounted) return;
+    if (blocked) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Unresolved issue'),
+          content: const Text(
+            'You have a maintenance issue on this property that hasn\'t been '
+            'resolved yet. Close it out with your landlord before requesting '
+            'to move out.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    const reasons = [
+      'Moving to a new area',
+      'Found a better place',
+      'Cost / affordability',
+      'Other',
+    ];
+    String? selectedReason;
+    // Minimum notice: the handover has to be schedulable, so the earliest
+    // intended move-out is 3 days out. Must stay in step with the picker's
+    // firstDate below — an initialDate before firstDate asserts.
+    DateTime selectedDate =
+        DateTime.now().add(const Duration(days: kMoveOutNoticeDays));
+    final otherController = TextEditingController();
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('Request Move-Out', style: AppTextStyles.h4),
+                const SizedBox(height: 6),
+                Text(
+                  'Tell your landlord you\'re moving out. They confirm the '
+                  'handover to end the tenancy. If they don\'t respond within '
+                  '7 days, it\'s confirmed automatically.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                ...reasons.map((r) {
+                  final isSel = selectedReason == r;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: GestureDetector(
+                      onTap: () => setSheet(() => selectedReason = r),
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSel
+                              ? AppColors.primary.withAlpha(20)
+                              : AppColors.background,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSel ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            isSel
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 18,
+                            color: isSel
+                                ? AppColors.primary
+                                : AppColors.textHint,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            r,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: isSel
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  );
+                }),
+                if (selectedReason == 'Other') ...[
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: otherController,
+                    maxLines: 2,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'Tell us a bit more (optional)',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                // Intended move-out date
+                GestureDetector(
+                  onTap: () async {
+                    final now = DateTime.now();
+                    final picked = await showDatePicker(
+                      context: sheetCtx,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(now.year, now.month, now.day)
+                          .add(const Duration(days: kMoveOutNoticeDays)),
+                      lastDate: now.add(const Duration(days: 90)),
+                    );
+                    if (picked != null) setSheet(() => selectedDate = picked);
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(children: [
+                      Icon(Icons.event_outlined,
+                          size: 18, color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      Text('Intended date',
+                          style: AppTextStyles.bodyMedium
+                              .copyWith(color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        '${selectedDate.day} '
+                        '${const [
+                          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                        ][selectedDate.month - 1]} '
+                        '${selectedDate.year}',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.textPrimary),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right,
+                          size: 18, color: AppColors.textHint),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: selectedReason == null
+                        ? null
+                        : () => Navigator.pop(sheetCtx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: AppColors.border,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text('Request Move-Out',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || selectedReason == null) return;
+
+    final reason = selectedReason == 'Other' &&
+            otherController.text.trim().isNotEmpty
+        ? otherController.text.trim()
+        : selectedReason!;
+
+    final ok = await _rentalService.tenantRequestMoveOut(
+      _rental.id,
+      reason,
+      selectedDate,
+    );
+
+    // Landlord recent-activity entry (the push itself comes from the
+    // onActiveRentalUpdated Cloud Function). Field must be `landlordId` — the
+    // activity feed only queries that field — matching the issue writes below.
+    if (ok) {
+      try {
+        await FirebaseFirestore.instance.collection('activities').add({
+          'landlordId': _rental.landlordId,
+          'type': 'moveout_requested',
+          'title': 'Move-out Requested',
+          'message':
+              '${_rental.tenantName} requested to move out of '
+              '${_rental.propertyTitle}: "$reason". Confirm handover to end '
+              'the tenancy.',
+          'propertyId': _rental.propertyId,
+          'rentalId': _rental.id,
+          'actorId': _rental.tenantId,
+          'actorName': _rental.tenantName,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // Non-fatal: the request itself already succeeded and the landlord is
+        // notified via the bell regardless.
+        developer.log('Move-out activity write failed: $e',
+            name: 'LeaseDetailsScreen');
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(ok
+          ? 'Move-out requested - your landlord will confirm the handover.'
+          : 'Could not request move-out. Please try again.'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+    // On success the rental becomes moveout_pending — still shown as current,
+    // now with the pending banner until the landlord confirms.
   }
 
   // ── Agreement Section — the main new piece ──
@@ -1097,6 +1387,29 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
         if (_rental.agentFee > 0) ...[
           const SizedBox(height: 8),
           _finRow('Agent Fee', '₦${_formatAmount(_rental.agentFee)}'),
+        ],
+        // Snapshotted onto the rental at creation. The tenant saw this while
+        // browsing and then never again — so at move-out, when it is being
+        // deducted from or withheld, they had nothing on record saying what it
+        // was or whether it ever comes back.
+        if (_rental.cautionDeposit > 0) ...[
+          const SizedBox(height: 8),
+          _finRow('Caution Deposit',
+              '₦${_formatAmount(_rental.cautionDeposit)}'),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _rental.cautionDepositRefundable
+                  ? 'Refundable at move-out, less any agreed deductions.'
+                  : 'Non-refundable — this is not returned at move-out.',
+              style: AppTextStyles.caption.copyWith(
+                color: _rental.cautionDepositRefundable
+                    ? AppColors.textSecondary
+                    : AppColors.warning,
+              ),
+            ),
+          ),
         ],
         const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
         _finRow('Total Paid', '₦${_formatAmount(_rental.totalPaid)}', bold: true, color: AppColors.success),
