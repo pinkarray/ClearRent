@@ -184,13 +184,13 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
             _isSearching = false;
             _noResultQuery = places.isEmpty ? query : null;
           });
-          // A search that matches nothing used to end here in silence: the
-          // landlord saw no list and no reason, and admin never heard about
-          // the area at all. It is the more useful report of the two — the
-          // geocoder didn't even know the place.
-          if (places.isEmpty) {
-            widget.onUnknownAreaDetected?.call(query, null, null);
-          }
+          // Deliberately NOT reported as an unknown area. This field is the
+          // STREET address, so the query is "10 Olaginra Street", not a place
+          // admin could ever add to the area list — and it runs on a debounce,
+          // so one typing session filed a row per partial ("10 Ol", "10 Olagin",
+          // …). An address we can't geocode is answered by dropping the pin;
+          // an area we don't know is reported from the area picker, which is
+          // the field that actually means an area.
         }
       } else {
         if (mounted) setState(() => _isSearching = false);
@@ -499,6 +499,13 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                   ? widget.cityController.text
                   : null,
           onSelected: _onAreaSelected,
+          // The ONLY source of unknown-area reports. Carries the pin if one is
+          // down, so admin can place the area on a map when deciding its LGA.
+          onAreaNotFound: (name) => widget.onUnknownAreaDetected?.call(
+            name,
+            _selectedLocation?.latitude,
+            _selectedLocation?.longitude,
+          ),
         ),
         if (_isLocatingArea)
           Padding(

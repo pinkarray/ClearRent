@@ -30,6 +30,12 @@ class AreaDropdown extends StatefulWidget {
   /// Optional helper text below the label
   final String? helperText;
 
+  /// Called when the landlord says their area is not on the list, with the
+  /// name they searched for. Only add-property passes this — it is what files
+  /// the unknown-area report, and it must come from THIS field: the street
+  /// address box next to it holds addresses, not areas.
+  final ValueChanged<String>? onAreaNotFound;
+
   const AreaDropdown({
     super.key,
     this.selectedArea,
@@ -37,6 +43,7 @@ class AreaDropdown extends StatefulWidget {
     this.hint = 'Select area',
     this.label,
     this.helperText,
+    this.onAreaNotFound,
   });
 
   @override
@@ -146,6 +153,7 @@ class _AreaDropdownState extends State<AreaDropdown> {
           Navigator.pop(ctx);
           widget.onSelected(area);
         },
+        onAreaNotFound: widget.onAreaNotFound,
       ),
     );
   }
@@ -302,7 +310,21 @@ class _AreaPickerSheet extends StatefulWidget {
   final String? selectedArea;
   final ValueChanged<String> onSelected;
 
-  const _AreaPickerSheet({this.selectedArea, required this.onSelected});
+  final ValueChanged<String>? onAreaNotFound;
+
+  const _AreaPickerSheet({
+    this.selectedArea,
+    required this.onSelected,
+    this.onAreaNotFound,
+  });
+
+  /// Areas are grouped by LGA, so an area we don't carry has no row to tap.
+  /// This is the only place a landlord can say so, and the only place an
+  /// unknown-area report should ever come from.
+  static const String notFoundHelp =
+      'Areas are grouped by local government. If yours is missing, tell us '
+      'and we will add it — usually the same day. In the meantime pick the '
+      'nearest listed area, then set the exact spot with the map pin.';
 
   @override
   State<_AreaPickerSheet> createState() => _AreaPickerSheetState();
@@ -312,6 +334,69 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   late final List<Map<String, dynamic>> _groups;
+  bool _reported = false;
+
+  /// Shown when the search matches no area. Explains how areas work, and lets
+  /// the landlord report theirs with one deliberate tap — never automatically,
+  /// so a half-typed word can't file a request.
+  Widget _buildNotFound() {
+    final typed = _searchQuery.trim();
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.location_off_outlined, size: 32, color: AppColors.textHint),
+          const SizedBox(height: 12),
+          Text('No area matches "$typed"', style: AppTextStyles.labelLarge),
+          const SizedBox(height: 8),
+          Text(
+            _AreaPickerSheet.notFoundHelp,
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+          if (widget.onAreaNotFound != null) ...[
+            const SizedBox(height: 20),
+            if (_reported)
+              Row(children: [
+                Icon(Icons.check_circle_outline,
+                    size: 18, color: AppColors.success),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Thanks — we\'ve got "$typed". Pick the nearest area for '
+                    'now and we\'ll add yours.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.success, height: 1.4),
+                  ),
+                ),
+              ])
+            else
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    widget.onAreaNotFound!(typed);
+                    setState(() => _reported = true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                  label: Text('Tell us about "$typed"',
+                      style: AppTextStyles.labelMedium
+                          .copyWith(color: Colors.white)),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -394,7 +479,9 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
 
           // List
           Expanded(
-            child: ListView.builder(
+            child: _filteredGroups.isEmpty && _searchQuery.trim().isNotEmpty
+                ? _buildNotFound()
+                : ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               itemCount: _filteredGroups.length,
               itemBuilder: (context, groupIndex) {
