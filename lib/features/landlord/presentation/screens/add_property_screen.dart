@@ -264,9 +264,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // — every other structure IS a single building and every unit inherits it.
   String _unitBuildingStructure = '';
 
-  /// Buildings already described by other units in the selected compound, so
-  /// "the same duplex" is one tap rather than a remembered letter.
-  List<Map<String, String>> _compoundBuildings = const [];
+  /// Units already listed in the selected building. Drives both the "already
+  /// in this compound" chips and the duplicate-unit-name warning.
+  List<Map<String, String>> _existingUnits = const [];
   int _unitBuildingNumber = 1;
   // Which unit this is. The landlord no longer types this: it is derived from
   // the unit TYPE plus a number, so "Self Contain 2" instead of free text that
@@ -563,7 +563,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // Resuming a draft skips the tile tap that normally loads these.
       if (_selectedBuildingStructure == 'compound' &&
           (_selectedBuildingId ?? '').isNotEmpty) {
-        _loadCompoundBuildings(_selectedBuildingId!);
+        _loadExistingUnits(_selectedBuildingId!);
       }
       // A draft saved before the unit number existed keeps whatever label it
       // had typed; the number only takes over once the landlord touches it.
@@ -1231,6 +1231,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           // duplex-vs-bungalow distinction the tenant is actually choosing on.
           if (_isCompoundSite && _unitBuildingStructure.isEmpty) {
             _showError('Please say which building in the compound this is.');
+            return false;
+          }
+          // Checked after the building question, because inside a compound the
+          // same name in a DIFFERENT building is fine. Fails open: if the
+          // existing units couldn't be read, the list is empty and nothing is
+          // blocked.
+          if (_unitNameTaken) {
+            _showError(
+              '"${_unitLabelController.text}" is already listed in this '
+              'building. Use a different unit number.',
+            );
             return false;
           }
         }
@@ -2902,10 +2913,43 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// name its own. Every other structure is one building already.
   bool get _isCompoundSite => _siteStructure == 'compound';
 
-  Future<void> _loadCompoundBuildings(String buildingId) async {
-    final found = await _propertyService.getUnitBuildingsInCompound(buildingId);
+  Future<void> _loadExistingUnits(String buildingId) async {
+    final found = await _propertyService.getUnitsInBuilding(buildingId);
     if (!mounted || _selectedBuildingId != buildingId) return;
-    setState(() => _compoundBuildings = found);
+    setState(() => _existingUnits = found);
+  }
+
+  /// Distinct buildings the compound's existing units have declared.
+  List<Map<String, String>> get _compoundBuildings {
+    final seen = <String>{};
+    final out = <Map<String, String>>[];
+    for (final u in _existingUnits) {
+      final s = u['structure'] ?? '';
+      final l = u['buildingLabel'] ?? '';
+      if (s.isEmpty || l.isEmpty) continue;
+      if (!seen.add('$s|$l')) continue;
+      out.add({'structure': s, 'label': l});
+    }
+    out.sort((a, b) =>
+        '${a['structure']}${a['label']}'.compareTo('${b['structure']}${b['label']}'));
+    return out;
+  }
+
+  /// True when the name this unit would get is already used by another unit in
+  /// the SAME building. Inside a compound that means the same building within
+  /// it — "Flat 1" in Duplex A and "Flat 1" in Bungalow B are different flats.
+  bool get _unitNameTaken {
+    final mine = _unitLabelController.text.trim().toLowerCase();
+    if (mine.isEmpty) return false;
+    for (final u in _existingUnits) {
+      if ((u['unitLabel'] ?? '').toLowerCase() != mine) continue;
+      if (!_isCompoundSite) return true;
+      if ((u['structure'] ?? '') == _unitBuildingStructure &&
+          (u['buildingLabel'] ?? '') == _unitBuildingLabel) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Letter back to the counter's number — 'A' is 1, matching
@@ -4764,6 +4808,26 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 ),
               ],
             ),
+            // The number always starts at 1, so a second flat in the same
+            // building was named "Flat 1" again unless the landlord happened to
+            // remember. Nothing downstream tells the two apart.
+            if (_unitNameTaken) ...[
+              const SizedBox(height: 10),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.error_outline,
+                    size: 16, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '"${_unitLabelController.text}" is already listed'
+                    '${_isCompoundSite ? " in this building" : " here"}. '
+                    'Use a different number so tenants can tell them apart.',
+                    style: AppTextStyles.caption.copyWith(
+                        color: Colors.orange.shade700, height: 1.4),
+                  ),
+                ),
+              ]),
+            ],
           ],
           // A compound is LAND. One C of O can cover a duplex and a bungalow
           // standing side by side, and the site's own structure would say only
@@ -5041,8 +5105,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         // re-reading the stream. A building written before `structure` existed
         // has none, and the line degrades to naming the unit only.
         _selectedBuildingStructure = b.structure;
-        _compoundBuildings = const [];
-        if (b.structure == 'compound') _loadCompoundBuildings(b.id);
+        _existingUnits = const [];
+        if (b.structure == 'compound') _loadExistingUnits(b.id);
       }),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),

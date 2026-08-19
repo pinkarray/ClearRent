@@ -726,37 +726,37 @@ class PropertyService {
     }
   }
 
-  /// The buildings already named inside one compound, taken from the units
-  /// already listed in it — e.g. `[{structure: duplex, label: A}]`.
+  /// The units already listed in one building, as
+  /// `{unitLabel, structure, buildingLabel}` — the last two naming which
+  /// building inside a compound the unit sits in, empty elsewhere.
   ///
-  /// A compound's buildings are not records of their own: each unit describes
-  /// the one it sits in. So adding a second unit to the SAME duplex meant
-  /// re-picking the structure and landing on the same letter by memory, and a
-  /// slip silently split one duplex into two. This lets the picker offer what
-  /// is already there.
-  Future<List<Map<String, String>>> getUnitBuildingsInCompound(
+  /// Feeds two things the add-property flow had no way to know:
+  ///  * which buildings a compound already contains. They are not records of
+  ///    their own — each unit describes the one it sits in — so adding a
+  ///    second unit to the SAME duplex meant re-picking the structure and
+  ///    landing on the same letter from memory, and a slip silently split one
+  ///    duplex into two.
+  ///  * which unit names are taken, since the name is derived from a counter
+  ///    that always starts at 1 and nothing stopped two flats both being
+  ///    "Flat 1".
+  Future<List<Map<String, String>>> getUnitsInBuilding(
     String buildingId,
   ) async {
     if (buildingId.isEmpty) return const [];
     try {
       final snapshot =
           await _propertiesRef.where('buildingId', isEqualTo: buildingId).get();
-      final seen = <String>{};
-      final out = <Map<String, String>>[];
-      for (final doc in snapshot.docs) {
+      return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        final structure = (data['unitBuildingStructure'] ?? '').toString();
-        final label = (data['unitBuildingLabel'] ?? '').toString();
-        if (structure.isEmpty || label.isEmpty) continue;
-        if (!seen.add('$structure|$label')) continue;
-        out.add({'structure': structure, 'label': label});
-      }
-      out.sort((a, b) => '${a['structure']}${a['label']}'
-          .compareTo('${b['structure']}${b['label']}'));
-      return out;
+        return {
+          'unitLabel': (data['unitLabel'] ?? '').toString(),
+          'structure': (data['unitBuildingStructure'] ?? '').toString(),
+          'buildingLabel': (data['unitBuildingLabel'] ?? '').toString(),
+        };
+      }).toList();
     } catch (e) {
-      // Non-fatal: the landlord can still describe the building by hand.
-      developer.log('Compound buildings unreadable: $e',
+      // Non-fatal: the landlord can still name the unit and building by hand.
+      developer.log('Units in building unreadable: $e',
           name: 'PropertyService');
       return const [];
     }
