@@ -239,8 +239,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         Expanded(
           child: Text(
             'We couldn\'t find "$_noResultQuery" on the map. Tap the map below '
-            'to drop the pin yourself — we\'ve told our team about this area '
-            'so it can be added.',
+            'to drop the pin yourself.',
             style: AppTextStyles.caption.copyWith(color: warn, height: 1.4),
           ),
         ),
@@ -315,12 +314,29 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// never snapped back to the Lagos default.
   Future<void> _geocodeArea(String area) async {
     setState(() => _isLocatingArea = true);
+    try {
+      final anchor = await _geocodeAreaCoords(area);
+      if (!mounted || anchor == null) return;
+      setState(() => _areaAnchor = anchor);
+      // Keep the landlord's own pin; only move the camera.
+      _mapController.move(
+        anchor,
+        _selectedLocation == null ? _areaZoom : _defaultZoom,
+      );
+    } finally {
+      if (mounted) setState(() => _isLocatingArea = false);
+    }
+  }
 
+  /// Where an area sits, according to OSM. Split out from [_geocodeArea] so an
+  /// unknown-area report can carry real coordinates: an area missing from OUR
+  /// list is usually still on the map — "Maya" is — and a report with no
+  /// position left the admin guessing which LGA to file it under.
+  Future<LatLng?> _geocodeAreaCoords(String area) async {
     final state =
         widget.stateController.text.trim().isNotEmpty
             ? widget.stateController.text.trim()
             : 'Lagos';
-
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/search'
@@ -329,31 +345,18 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         '&limit=1'
         '&countrycodes=ng',
       );
-
       final response = await http.get(
         uri,
         headers: {'User-Agent': 'ClearRent/1.0 (info@verealtytech.com)'},
       );
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        if (data.isNotEmpty) {
-          final place = NominatimPlace.fromJson(data.first);
-          final anchor = LatLng(place.lat, place.lng);
-          setState(() => _areaAnchor = anchor);
-          // Keep the landlord's own pin; only move the camera.
-          _mapController.move(
-            anchor,
-            _selectedLocation == null ? _areaZoom : _defaultZoom,
-          );
-        }
-      }
+      if (response.statusCode != 200) return null;
+      final List<dynamic> data = json.decode(response.body);
+      if (data.isEmpty) return null;
+      final place = NominatimPlace.fromJson(data.first);
+      return LatLng(place.lat, place.lng);
     } catch (e) {
       debugPrint('❌ Area geocode error: $e');
-    } finally {
-      if (mounted) setState(() => _isLocatingArea = false);
+      return null;
     }
   }
 
@@ -499,13 +502,16 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                   ? widget.cityController.text
                   : null,
           onSelected: _onAreaSelected,
-          // The ONLY source of unknown-area reports. Carries the pin if one is
-          // down, so admin can place the area on a map when deciding its LGA.
-          onAreaNotFound: (name) => widget.onUnknownAreaDetected?.call(
-            name,
-            _selectedLocation?.latitude,
-            _selectedLocation?.longitude,
-          ),
+          // The ONLY source of unknown-area reports. Coordinates come from the
+          // landlord's own pin when one is down — it IS in the area they are
+          // reporting — and otherwise from geocoding the area name, because
+          // missing from our list does not mean missing from the map.
+          onAreaNotFound: (name) async {
+            final at =
+                _selectedLocation ?? await _geocodeAreaCoords(name);
+            widget.onUnknownAreaDetected
+                ?.call(name, at?.latitude, at?.longitude);
+          },
         ),
         if (_isLocatingArea)
           Padding(
