@@ -4379,6 +4379,8 @@ export {
   revokeCaretaker,
 } from "./caretaker_ops";
 
+export {lookupTenantByPhone} from "./tenancy_link_ops";
+
 export {inspectionLifecycleSweep} from "./inspection_lifecycle_ops";
 
 export {rentalInterestStrandSweep} from "./rent_interest_ops";

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
 import '../shared/models/tenancy_link_model.dart';
@@ -16,66 +17,41 @@ class TenancyLinkService {
   // LANDLORD SIDE
   // ─────────────────────────────────────────────
 
-  /// Search tenants by name (for landlord to find and link)
-  /// Only returns users with accountType == 'tenant'
-  Future<List<TenantSearchResult>> searchTenantsByName(String query) async {
-    if (query.trim().length < 2) return [];
+  /// Resolve a phone number to the tenant the landlord wants to link.
+  ///
+  /// Replaces a client-side name search that ran an UNBOUNDED query over every
+  /// tenant user document and filtered on the device — that shipped each
+  /// tenant's nin, phone, email and income to whoever opened the sheet, and let
+  /// a two-letter query enumerate people by name. The lookup now happens in
+  /// `lookupTenantByPhone`, which checks the caller owns the property before it
+  /// reads anything and returns only the three fields this sheet renders.
+  ///
+  /// Returns the candidate, or throws with a user-facing message.
+  Future<TenantSearchResult> lookupTenantByPhone({
+    required String phone,
+    required String propertyId,
+  }) async {
     try {
-      final q = query.trim().toLowerCase();
-
-      // First try the indexed prefix search (works for users registered after fullNameLower was added)
-      final indexedSnap = await _firestore
-          .collection('users')
-          .where('accountType', isEqualTo: 'tenant')
-          .where('fullNameLower', isGreaterThanOrEqualTo: q)
-          .where('fullNameLower', isLessThan: '${q}z')
-          .limit(20)
-          .get();
-
-      // Also do a client-side filtered fetch for users who don't have fullNameLower yet
-      final allTenantsSnap = await _firestore
-          .collection('users')
-          .where('accountType', isEqualTo: 'tenant')
-          .get();
-
-      // Merge results, deduplicate by doc id
-      final seen = <String>{};
-      final merged = <QueryDocumentSnapshot>[];
-
-      for (final doc in [...indexedSnap.docs, ...allTenantsSnap.docs]) {
-        if (seen.add(doc.id)) merged.add(doc);
-      }
-
-      // Client-side filter on the merged set
-      final results = merged.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final name = (data['fullName'] ?? '').toString().toLowerCase();
-        return name.contains(q);
-      }).map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        // Backfill fullNameLower if missing (fire-and-forget)
-        if (data['fullNameLower'] == null) {
-          doc.reference.update({'fullNameLower': (data['fullName'] ?? '').toString().toLowerCase()});
-        }
-        return TenantSearchResult(
-          userId: doc.id,
-          fullName: data['fullName'] ?? '',
-          isVerified: data['verificationStatus'] == 'verified',
-          profileImageUrl: data['profileImageUrl'],
-        );
-      }).toList();
-
-      developer.log('✅ searchTenantsByName: found ${results.length} for "$query"',
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('lookupTenantByPhone');
+      final res = await callable.call<Map<String, dynamic>>({
+        'phone': phone,
+        'propertyId': propertyId,
+      });
+      final data = Map<String, dynamic>.from(res.data);
+      return TenantSearchResult(
+        userId: data['tenantId'] as String,
+        fullName: (data['tenantName'] as String?) ?? '',
+        isVerified: data['isVerified'] == true,
+        profileImageUrl: null,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('lookupTenantByPhone failed: ${e.code}',
           name: 'TenancyLinkService');
-      return results;
-    } catch (e) {
-      developer.log('❌ searchTenantsByName error: $e', name: 'TenancyLinkService');
-      return [];
+      throw Exception(e.message ?? 'Could not look up that number.');
     }
   }
 
-  /// Landlord sends a link request to a tenant for a specific property.
-  /// rentDueDay and rentAmount are set here — captured as baseline.
   Future<bool> sendLinkRequest({
     required String propertyId,
     required String propertyTitle,

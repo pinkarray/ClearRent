@@ -90,14 +90,19 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       // On a compound the SITE structure says only "in a compound" — the
       // building the tenant is actually renting in is on the unit, because one
       // C of O can cover a duplex and a bungalow side by side.
+      // `unitDescriptor` has ALREADY said "in a storey building" whenever the
+      // unit carries its own structure — and on every non-compound site that
+      // value is copied straight from the site, so naming it again here
+      // printed the same phrase twice. Only add what the unit line lacks:
+      // the building NAME for an entitled viewer, and the site structure
+      // only when the unit had none of its own.
       final own = widget.property.unitBuildingDescriptor;
-      final structure = own.isNotEmpty ? own : b.structureLabel;
       if (_isOwner || _addressUnlocked) {
-        parts.add(
-          structure.isEmpty ? 'in ${b.name}' : 'in ${b.name} ($structure)',
-        );
-      } else if (structure.isNotEmpty) {
-        parts.add('in a ${structure.toLowerCase()}');
+        parts.add(own.isEmpty && b.structureLabel.isNotEmpty
+            ? 'in ${b.name} (${b.structureLabel})'
+            : 'in ${b.name}');
+      } else if (own.isEmpty && b.structureLabel.isNotEmpty) {
+        parts.add('in a ${b.structureLabel.toLowerCase()}');
       }
     }
     return parts.join(' · ');
@@ -4321,6 +4326,7 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
   bool _isSearching = false;
   bool _isSending = false;
   String? _sendingUserId;
+  String? _error;
 
   @override
   void dispose() {
@@ -4328,17 +4334,31 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
     super.dispose();
   }
 
-  Future<void> _search(String query) async {
-    if (query.trim().length < 2) {
-      setState(() => _results = []);
-      return;
-    }
-    setState(() => _isSearching = true);
-    final results = await widget.tenancyLinkService.searchTenantsByName(query);
-    if (mounted) {
+  /// Looks the tenant up by phone. Deliberately NOT a name search any more:
+  /// the old one queried every tenant document and filtered on the device.
+  Future<void> _lookup() async {
+    final phone = _searchController.text.trim();
+    if (phone.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+      _error = null;
+      _results = [];
+    });
+    try {
+      final match = await widget.tenancyLinkService.lookupTenantByPhone(
+        phone: phone,
+        propertyId: widget.property.id,
+      );
+      if (!mounted) return;
       setState(() {
-        _results = results;
+        _results = [match];
         _isSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSearching = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }
@@ -4441,22 +4461,26 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
             Text('Link Existing Tenant', style: AppTextStyles.h4),
             const SizedBox(height: 4),
             Text(
-              'Search for tenants already registered on ClearRent.',
+              'Enter their phone number. They must already have a ClearRent '
+              'account, and they confirm the link before anything is shared.',
               style: AppTextStyles.caption.copyWith(
                 color: AppColors.textSecondary,
               ),
             ),
             const SizedBox(height: 20),
 
-            // Search field
+            // Phone lookup. Not a name search: resolving a number the landlord
+            // already knows can't be used to browse the user base.
             TextField(
               controller: _searchController,
               autofocus: true,
-              onChanged: _search,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _lookup(),
               decoration: InputDecoration(
-                hintText: 'Search by name...',
+                hintText: '080...',
                 prefixIcon: Icon(
-                  Icons.search,
+                  Icons.phone_outlined,
                   color: AppColors.textSecondary,
                 ),
                 suffixIcon:
@@ -4493,20 +4517,38 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
               ),
             ),
 
+            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSearching ? null : _lookup,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.border,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text('Find tenant',
+                    style:
+                        AppTextStyles.labelLarge.copyWith(color: Colors.white)),
+              ),
+            ),
+
             const SizedBox(height: 16),
 
             // Results
-            if (_results.isEmpty &&
-                !_isSearching &&
-                _searchController.text.length >= 2)
+            if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Center(
                   child: Text(
-                    'No tenants found with that name.',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.error),
                   ),
                 ),
               )

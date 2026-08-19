@@ -60,7 +60,7 @@ const LOOKUP_WINDOW_MS = 60 * 60 * 1000;
  * @param {string} raw User-entered phone number, any common format.
  * @return {string | null} Local form, or null when it isn't a valid NG mobile.
  */
-function normalizeNigerianPhone(raw: string): string | null {
+export function normalizeNigerianPhone(raw: string): string | null {
   const digits = raw.replace(/[\s\-()+]/g, "");
   if (!/^\d+$/.test(digits)) return null;
 
