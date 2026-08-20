@@ -1461,15 +1461,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ],
                 ),
               ),
-            ] else if (r.canMarkComplete)
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  text: 'Mark as Completed',
-                  onPressed: _isLoading ? null : _markComplete,
-                  isLoading: _isLoading,
-                ),
-              ),
+            ],
           ],
 
           // Agent contact section (when agent is handling)
