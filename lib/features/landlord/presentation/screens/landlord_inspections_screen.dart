@@ -1231,243 +1231,245 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             const SizedBox(height: 16),
 
             // Show arrival status
-            if (!r.handlerArrived) ...[
-              // Landlord hasn't arrived yet show arrival button
-              if (r.tenantArrived) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withAlpha(26),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.person_pin_circle,
-                        size: 18,
-                        color: AppColors.info,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${r.tenantName} has arrived and is waiting!',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.info,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ] else if (r.tenantOnWay) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withAlpha(26),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.directions_walk,
-                        size: 18,
-                        color: AppColors.info,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${r.tenantName} is on the way.',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.info,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              // A landlord who lives in the unit is already there, so being
-              // asked to say "I'm on my way" and then "I've arrived" is
-              // nonsense. One confirmation covers both — the tenant still
-              // needs to know someone is ready to receive them.
-              // ...and only until they confirm it. Without the arrived check
-              // this branch matched forever, and since the chain is else-if,
-              // a resident handler never reached the met/complete cascade
-              // below — so they could never confirm the meeting, never
-              // complete the inspection, and never be credited the handler
-              // fee that completion pays.
-              if (r.handlerIsResident && !r.handlerArrived) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isArrivalLoading ? null : _markReadyAtHome,
-                    icon: _isArrivalLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.home_outlined, size: 18),
-                    label: Text(_isArrivalLoading
-                        ? 'Confirming...'
-                        : 'I\'m at home and ready'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ] else if (r.canHandlerMarkOnWay) ...[
-                AppButton(
-                  text: 'I\'m on my way',
-                  onPressed: _markOnWay,
-                ),
-              // markHandlerArrived does NOT clear handlerOnWay, so without
-              // the arrived check this branch also matched forever and every
-              // landlord-handled inspection — not just a resident's — stalled
-              // on "I've Arrived" with the cascade below out of reach.
-              ] else if (r.handlerOnWay && !r.handlerArrived) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isArrivalLoading ? null : _markArrived,
-                    icon: _isArrivalLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.location_on, size: 18),
-                    label: Text(
-                      _isArrivalLoading
-                          ? 'Confirming...'
-                          : 'I\'ve Arrived at Property',
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ),
-              // Only once they are actually here: as a bare else this drew
-              // "You're here" before the handler had said any such thing.
-              ] else if (r.handlerArrived) ...[
+            // Every state of the visit, not just the part before the handler
+            // arrives. This was wrapped in if (!r.handlerArrived), so the
+            // moment they confirmed arrival the whole section — the
+            // met-and-complete cascade included — vanished, leaving only
+            // Cancel & Refund and no way to finish the inspection.
+            if (r.tenantArrived) ...[
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: AppColors.success.withAlpha(26),
+                  color: AppColors.info.withAlpha(26),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.success.withAlpha(77)),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      Icons.check_circle,
+                      Icons.person_pin_circle,
                       size: 18,
-                      color: AppColors.success,
+                      color: AppColors.info,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        !r.tenantArrived
-                            ? 'You\'re here. Waiting for tenant...'
-                            : r.met
-                                ? 'Inspection in progress'
-                                : 'Both arrived - ready to inspect!',
+                        '${r.tenantName} has arrived and is waiting!',
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.success,
+                          color: AppColors.info,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              // Prompt the tenant to confirm meeting. Met state
-              // unlocks Mark as Completed.
-              if (r.canHandlerMarkMet) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withAlpha(26),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 18, color: AppColors.info),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Ask the tenant to confirm they\'ve seen '
-                          'you so you can complete the inspection.',
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.info),
+            ] else if (r.tenantOnWay) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.directions_walk,
+                      size: 18,
+                      color: AppColors.info,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${r.tenantName} is on the way.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.info,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                SizedBox(
-                  width: double.infinity,
-                  child: AppButton(
-                    text: 'I\'ve met the tenant',
-                    onPressed: _markMet,
-                  ),
-                ),
-              ] else if (r.handlerAwaitingTenantMet) ...[
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withAlpha(26),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.hourglass_top,
-                          size: 18, color: AppColors.info),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Waiting for ${r.tenantName} to confirm you met. '
-                          'You can complete once they do.',
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ] else if (r.canMarkComplete)
-                SizedBox(
-                  width: double.infinity,
-                  child: AppButton(
-                    text: 'Mark as Completed',
-                    onPressed: _isLoading ? null : _markComplete,
-                    isLoading: _isLoading,
-                  ),
-                ),
+              ),
             ],
+            // A landlord who lives in the unit is already there, so being
+            // asked to say "I'm on my way" and then "I've arrived" is
+            // nonsense. One confirmation covers both — the tenant still
+            // needs to know someone is ready to receive them.
+            // ...and only until they confirm it. Without the arrived check
+            // this branch matched forever, and since the chain is else-if,
+            // a resident handler never reached the met/complete cascade
+            // below — so they could never confirm the meeting, never
+            // complete the inspection, and never be credited the handler
+            // fee that completion pays.
+            if (r.handlerIsResident && !r.handlerArrived) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isArrivalLoading ? null : _markReadyAtHome,
+                  icon: _isArrivalLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.home_outlined, size: 18),
+                  label: Text(_isArrivalLoading
+                      ? 'Confirming...'
+                      : 'I\'m at home and ready'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ] else if (r.canHandlerMarkOnWay) ...[
+              AppButton(
+                text: 'I\'m on my way',
+                onPressed: _markOnWay,
+              ),
+            // markHandlerArrived does NOT clear handlerOnWay, so without
+            // the arrived check this branch also matched forever and every
+            // landlord-handled inspection — not just a resident's — stalled
+            // on "I've Arrived" with the cascade below out of reach.
+            ] else if (r.handlerOnWay && !r.handlerArrived) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isArrivalLoading ? null : _markArrived,
+                  icon: _isArrivalLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.location_on, size: 18),
+                  label: Text(
+                    _isArrivalLoading
+                        ? 'Confirming...'
+                        : 'I\'ve Arrived at Property',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            // Only once they are actually here: as a bare else this drew
+            // "You're here" before the handler had said any such thing.
+            ] else if (r.handlerArrived) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: AppColors.success.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.success.withAlpha(77)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    size: 18,
+                    color: AppColors.success,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      !r.tenantArrived
+                          ? 'You\'re here. Waiting for tenant...'
+                          : r.met
+                              ? 'Inspection in progress'
+                              : 'Both arrived - ready to inspect!',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Prompt the tenant to confirm meeting. Met state
+            // unlocks Mark as Completed.
+            if (r.canHandlerMarkMet) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 18, color: AppColors.info),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ask the tenant to confirm they\'ve seen '
+                        'you so you can complete the inspection.',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.info),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  text: 'I\'ve met the tenant',
+                  onPressed: _markMet,
+                ),
+              ),
+            ] else if (r.handlerAwaitingTenantMet) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withAlpha(26),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.hourglass_top,
+                        size: 18, color: AppColors.info),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Waiting for ${r.tenantName} to confirm you met. '
+                        'You can complete once they do.',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.info),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (r.canMarkComplete)
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  text: 'Mark as Completed',
+                  onPressed: _isLoading ? null : _markComplete,
+                  isLoading: _isLoading,
+                ),
+              ),
           ],
 
           // Agent contact section (when agent is handling)
