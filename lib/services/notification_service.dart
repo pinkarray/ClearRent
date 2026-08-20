@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -247,10 +248,18 @@ class NotificationService {
 
   Future<void> _handleInitialMessage() async {
     final initial = await _fcm.getInitialMessage();
-    if (initial != null) {
-      AppLogger.i('Tap from terminated state', name: 'NotificationService');
+    if (initial == null) return;
+    AppLogger.i('Tap from terminated state', name: 'NotificationService');
+    // Deferred to after the first frame ON PURPOSE. init() is awaited in
+    // main() BEFORE runApp, so navigating here happened while the router had
+    // no widget tree: the deep-link target became the ONLY page in the stack,
+    // the app opened straight onto it with no home beneath, and Back had
+    // nowhere to pop to — the screen was a dead end. Waiting for the first
+    // frame lets the router settle on its normal start route first, so the
+    // push below lands on top of a real stack.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleNotificationTap(initial.data);
-    }
+    });
   }
 
   void _listenToBackgroundTaps() {
