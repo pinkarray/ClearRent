@@ -377,6 +377,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _cityController.dispose();
     _stateController.dispose();
     _unitLabelController.dispose();
+    _caretakerPhoneController.dispose();
     super.dispose();
   }
 
@@ -2381,8 +2382,18 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  /// Owned by the State, not by the sheet. Disposing it the moment the
+  /// sheet's future completed tore it down while the exit animation was still
+  /// rebuilding the sheet's children, so the TextFormField inside touched a
+  /// disposed controller — "A TextEditingController was used after being
+  /// disposed", followed by the _dependents assertion and a runaway overflow
+  /// from the error widget. Its lifetime now matches the screen's.
+  final TextEditingController _caretakerPhoneController =
+      TextEditingController();
+
   Future<void> _showInviteCaretakerSheet() async {
-    final phoneController = TextEditingController();
+    final phoneController = _caretakerPhoneController;
+    phoneController.clear();
     bool applyToBuilding = false;
     bool sending = false;
 
@@ -2486,7 +2497,6 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ),
       ),
     );
-    phoneController.dispose();
   }
 
   /// Returns null on success, or the message to show.
