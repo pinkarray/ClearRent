@@ -342,11 +342,16 @@ class InspectionRequest {
     return DateTime.now().isAfter(cutoff);
   }
 
+  /// You cannot be on your way to somewhere you have already reached. The
+  /// arrived check matters because the two clients disagree: web has no
+  /// on-my-way step at all, so a tenant who marks arrived there never sets
+  /// [tenantOnWay], and the app then offered them "I'm on my way" while they
+  /// were standing at the property having already confirmed the meeting.
   bool get canTenantMarkOnWay =>
-      isConfirmed && !tenantOnWay && isWithinOnWayWindow;
+      isConfirmed && !tenantOnWay && !tenantArrived && isWithinOnWayWindow;
 
   bool get canHandlerMarkOnWay =>
-      isConfirmed && !handlerOnWay && isWithinOnWayWindow;
+      isConfirmed && !handlerOnWay && !handlerArrived && isWithinOnWayWindow;
 
   /// The handler is already at the property because they live in it.
   ///

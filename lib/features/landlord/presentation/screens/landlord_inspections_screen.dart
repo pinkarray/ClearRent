@@ -1294,7 +1294,13 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               // asked to say "I'm on my way" and then "I've arrived" is
               // nonsense. One confirmation covers both — the tenant still
               // needs to know someone is ready to receive them.
-              if (r.handlerIsResident) ...[
+              // ...and only until they confirm it. Without the arrived check
+              // this branch matched forever, and since the chain is else-if,
+              // a resident handler never reached the met/complete cascade
+              // below — so they could never confirm the meeting, never
+              // complete the inspection, and never be credited the handler
+              // fee that completion pays.
+              if (r.handlerIsResident && !r.handlerArrived) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -1327,7 +1333,11 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   text: 'I\'m on my way',
                   onPressed: _markOnWay,
                 ),
-              ] else if (r.handlerOnWay) ...[
+              // markHandlerArrived does NOT clear handlerOnWay, so without
+              // the arrived check this branch also matched forever and every
+              // landlord-handled inspection — not just a resident's — stalled
+              // on "I've Arrived" with the cascade below out of reach.
+              ] else if (r.handlerOnWay && !r.handlerArrived) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -1357,8 +1367,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     ),
                   ),
                 ),
-              ] else ...[
-              // Landlord arrived — show status + met/complete cascade
+              // Only once they are actually here: as a bare else this drew
+              // "You're here" before the handler had said any such thing.
+              ] else if (r.handlerArrived) ...[
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
