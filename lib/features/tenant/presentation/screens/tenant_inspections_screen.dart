@@ -1519,6 +1519,19 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
   }
 
+  @override
+  void didUpdateWidget(covariant TenantInspectionOutcomeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The parent's StreamBuilder rebuilds this card IN PLACE the moment the
+    // handler completes the inspection, and initState does not run again on a
+    // rebuild — so the interest subscription that initState sets up was never
+    // started for a card first built while the visit was still approved. The
+    // decision box only appeared after leaving the screen and coming back,
+    // which destroyed and recreated the widget. _loadRentalInterest already
+    // returns early if it is subscribed, so this is safe to call repeatedly.
+    if (widget.request.isCompleted) _loadRentalInterest();
+  }
+
   /// Live-subscribe to this inspection's rental interest so the card reacts to
   /// state changes on its own — the landlord accepting flips the interest to
   /// `accepted`, and the card shows "Review Agreement" without the tenant
