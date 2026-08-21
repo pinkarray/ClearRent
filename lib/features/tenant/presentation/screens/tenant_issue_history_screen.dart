@@ -846,7 +846,13 @@ class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
     await _update(
       {
         'status': 'in_progress',
-        'tenantDisputeReason': controller.text.trim(),
+        // `disputeReason` is what the landlord's screen reads
+        // (`landlord_issues_screen.dart:761`). This wrote
+        // `tenantDisputeReason`, so a dispute raised HERE never surfaced the
+        // reason — the landlord just saw the issue reopen. The other two
+        // dispute paths (tenant home, rental dashboard) always wrote the
+        // correct name, which is why this stayed hidden.
+        'disputeReason': controller.text.trim(),
       },
       'Sent back to your landlord.',
       AppColors.info,

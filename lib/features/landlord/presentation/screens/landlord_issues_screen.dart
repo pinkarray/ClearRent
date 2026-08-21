@@ -758,7 +758,12 @@ class _IssueCardState extends State<_IssueCard> {
           ],
 
           // Dispute reason
-          if (widget.data['disputeReason'] != null &&
+          // Fall back to the legacy field: disputes raised from web or from the
+          // tenant's issue-history screen were stored as `tenantDisputeReason`
+          // before both were aligned, and those issues are still open.
+          if ((widget.data['disputeReason'] ??
+                      widget.data['tenantDisputeReason']) !=
+                  null &&
               widget.currentStatus == 'in_progress') ...[
             const SizedBox(height: 10),
             Container(
@@ -778,7 +783,7 @@ class _IssueCardState extends State<_IssueCard> {
                 ]),
                 const SizedBox(height: 4),
                 Text(
-                  '"${widget.data['disputeReason']}"',
+                  '"${widget.data['disputeReason'] ?? widget.data['tenantDisputeReason']}"',
                   style: AppTextStyles.caption.copyWith(
                       color: AppColors.error, fontStyle: FontStyle.italic, height: 1.4),
                 ),
