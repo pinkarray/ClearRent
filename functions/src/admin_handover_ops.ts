@@ -281,7 +281,10 @@ export const adminSetListingSuspension = onCall(
         body: suspend ?
           `You cannot publish new listings. ${reason}` :
           `You can publish listings again. ${reason}`,
-        payload: {route: "/landlord/properties"},
+        // /landlord/properties is not a registered GoRoute — the landlord's
+        // properties live on their home screen. The unregistered path put the
+        // tap on go_router's error page (there is no errorBuilder).
+        payload: {route: "/landlord/home"},
       },
     );
 
