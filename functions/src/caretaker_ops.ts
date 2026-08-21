@@ -99,7 +99,7 @@ export function normalizeNigerianPhone(raw: string): string | null {
  * @param {string} caretakerName Their display name.
  * @return {Promise<void>}
  */
-async function openCaretakerThread(
+export async function openCaretakerThread(
   propertyId: string,
   caretakerId: string,
   caretakerName: string,
@@ -166,7 +166,12 @@ async function openCaretakerThread(
   );
   await ref.update({removedParticipants: FieldValue.delete()});
 
-  await writeNotificationOnce(`caretaker_thread_${ref.id}_${Date.now()}`, {
+  // Deterministic key, NOT Date.now(): this used to run once, at invite-accept,
+  // so a unique key was harmless. It is now also called from the occupancy
+  // triggers, which fire whenever a rental's occupying-ness changes — a
+  // per-call key would send the tenant a fresh "your landlord appointed a
+  // caretaker" on every one of those.
+  await writeNotificationOnce(`caretaker_thread_${ref.id}`, {
     userId: tenantId,
     type: "caretaker_assigned",
     title: "Your landlord appointed a caretaker",

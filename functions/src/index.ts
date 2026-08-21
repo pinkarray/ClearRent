@@ -27,6 +27,7 @@ import {
   writeNotificationOnce,
 } from "./notification_helpers";
 import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
+import {openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
 
 initializeApp();
@@ -4104,6 +4105,53 @@ export const onTenancyLinkOccupancyChange = onDocumentUpdated(
   },
 );
 
+/**
+ * Open the caretaker thread for a unit that has just become occupied.
+ *
+ * `openCaretakerThread` is also called when an invitation is accepted, but it
+ * bails there if no one lives in the unit yet — and nothing ever re-ran it. A
+ * landlord who appoints a caretaker for a VACANT unit (the common case: you
+ * arrange cover before or between tenancies) therefore never got a thread at
+ * all, so the caretaker, tenant and landlord had nowhere to talk. Verified
+ * against prod on 2026-08-21: zero `caretaker_*` conversations had ever
+ * existed.
+ *
+ * Idempotent by construction — the conversation id is deterministic and the
+ * write merges, so if the accept path already opened the thread this is a
+ * no-op.
+ *
+ * @param {string} propertyId The unit that just became occupied.
+ * @return {Promise<void>}
+ */
+async function openCaretakerThreadIfAppointed(
+  propertyId: string,
+): Promise<void> {
+  try {
+    const prop = await getFirestore()
+      .collection("properties")
+      .doc(propertyId)
+      .get();
+    const caretakerId = prop.get("caretakerId") as string | undefined;
+    if (!caretakerId) return;
+
+    const user = await getFirestore()
+      .collection("users")
+      .doc(caretakerId)
+      .get();
+    await openCaretakerThread(
+      propertyId,
+      caretakerId,
+      (user.get("fullName") as string | undefined) ?? "Your caretaker",
+    );
+  } catch (err) {
+    // Never fail the occupancy recompute for a messaging thread.
+    logger.error("Caretaker thread open failed", {
+      propertyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export const onActiveRentalCreatedOccupancy = onDocumentCreated(
   "active_rentals/{rentalId}",
   async (event) => {
@@ -4111,6 +4159,9 @@ export const onActiveRentalCreatedOccupancy = onDocumentCreated(
     if (!snap) return;
     const propertyId = snap.data().propertyId as string | undefined;
     if (!propertyId) return;
+    // A rental is born `pending_payment`, which is already an occupying
+    // status — so the tenant exists from creation and the thread can open now.
+    await openCaretakerThreadIfAppointed(propertyId);
     try {
       await recomputePropertyOccupancy(propertyId);
     } catch (err) {
@@ -4176,6 +4227,13 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
     if (wasOccupying === isOccupying) return;
 
     const propertyId = after.propertyId as string | undefined;
+
+    // Becoming occupied is the other moment a caretaker thread can open: the
+    // invitation may have been accepted while the unit stood empty, and that
+    // path gave up rather than scheduling anything to retry.
+    if (isOccupying && propertyId) {
+      await openCaretakerThreadIfAppointed(propertyId);
+    }
 
     // A tenancy that ended through the move-out flow leaves the PROPERTY
     // gated. The tenant is free either way — their side is over — but the unit
