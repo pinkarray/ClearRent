@@ -112,6 +112,11 @@ export const adminReviewPropertyDoc = onCall(callableOptions, async (request) =>
     ...(reason !== null && {paymentNote: reason}),
   });
 
+  // Reviewing the document IS the work the `property_created` alert asked for,
+  // so close it here rather than leaving an admin to dismiss by hand a queue
+  // item they have just finished. Never fail the review over the queue.
+  await resolveAdminAlertsForTarget(propertyId, adminUid).catch(() => 0);
+
   return {success: true, auditLogId};
 });
 

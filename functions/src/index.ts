@@ -26,7 +26,11 @@ import {
   writeActivityOnce,
   writeNotificationOnce,
 } from "./notification_helpers";
-import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
+import {
+  writeAdminAlert,
+  upsertAdminAlert,
+  resolveAdminAlertsForTarget,
+} from "./admin_alerts";
 import {openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
 
@@ -905,6 +909,15 @@ export const onIssueUpdated = onDocumentUpdated(
           },
         );
       }
+    }
+
+    // A resolved issue is finished work: close the `issue_reported` and
+    // `issue_fix_disputed` alerts it raised, instead of leaving them in the
+    // queue for an admin to dismiss by hand. Both carry targetId == issueId.
+    // "system" as resolvedBy because no admin touched it — the tenant closing
+    // the loop is what completed it.
+    if (to === "resolved") {
+      await resolveAdminAlertsForTarget(issueId, "system").catch(() => 0);
     }
 
     logger.info("Issue-updated notification queued", {issueId, from, to});
