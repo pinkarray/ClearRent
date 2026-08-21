@@ -24,11 +24,15 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, Timestamp} from "firebase-admin/firestore";
-import {writeNotificationOnce} from "./notification_helpers";
+import {caretakerFor, writeNotificationOnce} from "./notification_helpers";
 import {upsertAdminAlert} from "./admin_alerts";
 
 const TENANT_ISSUES_ROUTE = "/tenant/issue-history";
 const LANDLORD_ISSUES_ROUTE = "/landlord/issues";
+// A caretaker keeps their own accountType, so the landlord issues screen
+// (which queries by landlordId) would render empty for them. Property health,
+// reached from here, is their equivalent workbench.
+const CARETAKER_ROUTE = "/caretaker/properties";
 
 // Pending-confirmation tab on LandlordIssuesScreen (0=Open,1=In Progress,
 // 2=Pending, 3=Resolved).
@@ -124,6 +128,36 @@ export const issuePendingConfirmationReminders = onSchedule(
                 },
               },
             )
+          ) {
+            sent++;
+          }
+        }
+
+        // The caretaker is who would actually chase the tenant, so the
+        // unconfirmed-fix nudge reaches them too. Read only at stage >= 7, so
+        // the sweep does not take a property read per issue every day.
+        if (stage >= 7) {
+          const caretakerId = await caretakerFor(propertyId);
+          if (
+            caretakerId &&
+            caretakerId !== landlordId &&
+            caretakerId !== tenantId &&
+            (await writeNotificationOnce(
+              `issue_${doc.id}_pending_d${stage}_${caretakerId}`,
+              {
+                userId: caretakerId,
+                type: "issue_pending_reminder",
+                title: "Fix still unconfirmed",
+                body:
+                  `The tenant hasn't confirmed the ${category} fix at ` +
+                  `${propertyTitle} after ${days} days.`,
+                payload: {
+                  route: CARETAKER_ROUTE,
+                  issueId: doc.id,
+                  ...(propertyId ? {propertyId} : {}),
+                },
+              },
+            ))
           ) {
             sent++;
           }

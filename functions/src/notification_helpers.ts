@@ -100,3 +100,34 @@ export async function writeActivityOnce(
     throw err;
   }
 }
+
+/**
+ * The caretaker appointed to a property, if any.
+ *
+ * `properties.caretakerId` is written only by the caretaker callables, so its
+ * presence already means the invitee accepted. Returns null on a missing or
+ * unreadable property — a notification is never worth failing a trigger for.
+ *
+ * Lives here because both the issue trigger and the reminder sweep need it,
+ * and a caretaker who hears about a new issue but not its reminders is worse
+ * than one who hears about neither.
+ *
+ * @param {string} propertyId The property in question.
+ * @return {Promise<string|null>} The caretaker's uid, or null.
+ */
+export async function caretakerFor(
+  propertyId: string,
+): Promise<string | null> {
+  if (!propertyId) return null;
+  try {
+    const snap = await getFirestore()
+      .collection("properties")
+      .doc(propertyId)
+      .get();
+    const id = snap.get("caretakerId") as string | undefined;
+    return id && id.length > 0 ? id : null;
+  } catch (err) {
+    logger.warn("Could not read caretakerId", {propertyId, err});
+    return null;
+  }
+}

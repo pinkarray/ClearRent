@@ -22,6 +22,7 @@ import {getMessaging} from "firebase-admin/messaging";
 import {createHash, createHmac, timingSafeEqual} from "node:crypto";
 import {getAuth} from "firebase-admin/auth";
 import {
+  caretakerFor,
   writeActivityOnce,
   writeNotificationOnce,
 } from "./notification_helpers";
@@ -752,9 +753,34 @@ export const onIssueCreated = onDocumentCreated(
       meta: {category, propertyTitle},
     });
 
+    // The caretaker is the day-to-day responder and has full triage on the
+    // property-health screen, yet heard nothing until now. Sent ALONGSIDE the
+    // landlord, never instead of them — the owner stays informed.
+    //
+    // Their deep link is /caretaker/properties, not /landlord/issues: a
+    // caretaker keeps their own accountType (often tenant), and the landlord
+    // issues screen queries by landlordId, so it would render empty for them.
+    const caretakerId = await caretakerFor(propertyId);
+    if (caretakerId && caretakerId !== landlordId && caretakerId !== data.tenantId) {
+      await writeNotificationOnce(
+        `issue_${event.params.issueId}_${caretakerId}`,
+        {
+          userId: caretakerId,
+          type: "issue_reported",
+          title: "New issue reported",
+          body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+          payload: {
+            route: "/caretaker/properties",
+            ...(propertyId ? {propertyId} : {}),
+          },
+        },
+      );
+    }
+
     logger.info("Issue-reported notification queued", {
       issueId: event.params.issueId,
       landlordId,
+      caretakerId: caretakerId ?? null,
     });
   },
 );
@@ -853,6 +879,33 @@ export const onIssueUpdated = onDocumentUpdated(
       `issue_${issueId}_${from}_${to}_${userId}`,
       {userId, type: "issue_updated", title, body, payload},
     );
+
+    // Mirror to the caretaker on the LANDLORD-directed transitions only. Both
+    // of those (a disputed fix, a confirmed one) are driven by the tenant and
+    // land on the person who has to act next — which, where one is appointed,
+    // is the caretaker. The tenant-directed messages stay between the tenant
+    // and their landlord.
+    if (userId === landlordId) {
+      const caretakerId = await caretakerFor(propertyId);
+      if (caretakerId && caretakerId !== landlordId && caretakerId !== tenantId) {
+        await writeNotificationOnce(
+          `issue_${issueId}_${from}_${to}_${caretakerId}`,
+          {
+            userId: caretakerId,
+            type: "issue_updated",
+            title,
+            body,
+            // initialTab indexes the landlord issues screen; the caretaker
+            // lands on their own workbench instead, where it means nothing.
+            payload: {
+              route: "/caretaker/properties",
+              ...(propertyId ? {propertyId} : {}),
+            },
+          },
+        );
+      }
+    }
+
     logger.info("Issue-updated notification queued", {issueId, from, to});
   },
 );
