@@ -89,13 +89,20 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   List<TenancyLinkModel> _linkedTenants = [];
   bool _isLoadingLinkedTenants = true;
 
-  // Stats (will be real later)
+  // Summed from the properties themselves. These used to count rows in
+  // `_recentActivities`, which is a FEED capped at 20 and trimmed to as few as
+  // 5 — so "Total Views" could never exceed the size of a dashboard card, and
+  // showed 4 for a landlord with nine listings. `viewCount` and `inquiryCount`
+  // are the fields that actually accumulate, and they are already on every
+  // property this screen has loaded.
+  //
+  // Reading them here also decouples the stats from the activity feed, which
+  // now merges in notification-backed entries — those would otherwise have
+  // been miscounted as inquiries.
   int get _totalViews =>
-      _recentActivities
-          .where((a) => a.type == ActivityType.propertyViewed)
-          .length;
+      _myProperties.fold(0, (running, p) => running + p.viewCount);
   int get _totalInquiries =>
-      _recentActivities.where((a) => a.type == ActivityType.inquiry).length;
+      _myProperties.fold(0, (running, p) => running + p.inquiryCount);
   double get _totalEarnings => 0; // Will come from payments later
 
   @override
@@ -721,7 +728,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                       _DashStat(
                         icon: Icons.visibility_outlined,
                         label: 'Total Views',
-                        value: _isLoadingActivities ? '...' : '$_totalViews',
+                        value: _isLoadingProperties ? '...' : '$_totalViews',
                         color: AppColors.info,
                         onTap: () => context.push('/landlord/activities'),
                       ),
@@ -736,7 +743,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                         icon: Icons.chat_bubble_outline,
                         label: 'Inquiries',
                         value:
-                            _isLoadingActivities ? '...' : '$_totalInquiries',
+                            _isLoadingProperties ? '...' : '$_totalInquiries',
                         color: AppColors.warning,
                         onTap: () => context.push('/landlord/activities'),
                       ),
