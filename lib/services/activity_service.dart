@@ -203,9 +203,34 @@ class ActivityService {
   }
 
   /// All activities for the current landlord (one-time fetch).
+  ///
+  /// Merged from BOTH logs. `activities` is written ad hoc by whichever client
+  /// screen remembered to — nine types in all. `notifications` is written
+  /// centrally by the Cloud Functions and carries nineteen landlord-facing
+  /// types, sixteen of which never reached this feed: a tenant requesting an
+  /// inspection, rent interest paid, an agreement finalising, a caretaker
+  /// accepting, a listing suspended.
+  ///
+  /// That gap is structural. Every event added since this screen was built went
+  /// through the functions and skipped it, and would keep doing so. Reading
+  /// both is the only version that stays complete.
+  ///
+  /// `activities` still earns its place: property VIEWS belong in a feed and
+  /// must never be a push.
   Future<List<ActivityModel>> getAllActivities() async {
+    if (_currentUserId == null) return [];
+    final results = await Future.wait([
+      _ownActivities(),
+      _activitiesFromNotifications(),
+    ]);
+    final merged = [...results[0], ...results[1]]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
+  }
+
+  /// The `activities` collection alone.
+  Future<List<ActivityModel>> _ownActivities() async {
     try {
-      if (_currentUserId == null) return [];
       final snap = await _activitiesRef
           .where('landlordId', isEqualTo: _currentUserId)
           .orderBy('createdAt', descending: true)
@@ -213,6 +238,78 @@ class ActivityService {
       return _mapDocs(snap.docs);
     } catch (e) {
       AppLogger.e('getAllActivities failed', error: e, name: _tag);
+      return [];
+    }
+  }
+
+  /// Notification types that belong in the feed, mapped to the nearest
+  /// [ActivityType] so the existing tap-routing and icons keep working.
+  ///
+  /// Anything absent from this map is deliberately NOT in the feed — chat
+  /// messages and reminders addressed to the tenant would only be noise here.
+  static const Map<String, ActivityType> _notificationFeedTypes = {
+    'inspection_request': ActivityType.inspectionRequest,
+    'inspection_arrival': ActivityType.inspectionRequest,
+    'issue_reported': ActivityType.issueReported,
+    'issue_updated': ActivityType.issueReported,
+    'issue_pending_reminder': ActivityType.issueReported,
+    'rental_interest_paid': ActivityType.payment,
+    'rental_accept_reminder': ActivityType.inquiry,
+    'rental_expired': ActivityType.inquiry,
+    'agreement_finalized': ActivityType.payment,
+    'caretaker_accepted': ActivityType.inquiry,
+    'caretaker_declined': ActivityType.inquiry,
+    'agent_declined': ActivityType.inquiry,
+    'agent_removed': ActivityType.inquiry,
+    'handover_closed': ActivityType.moveoutCompleted,
+    'handover_resolved': ActivityType.moveoutCompleted,
+    'handover_condition_reminder': ActivityType.moveoutRequested,
+    'moveout_requested': ActivityType.moveoutRequested,
+    'moveout_auto_confirmed': ActivityType.moveoutCompleted,
+    'moveout_pending_reminder': ActivityType.moveoutRequested,
+    'listing_suspension': ActivityType.propertyAdded,
+  };
+
+  /// This user's notifications, rendered as feed entries.
+  ///
+  /// Notifications are per-USER (`userId`), not per-landlord, so this returns
+  /// only what was addressed to the signed-in account either way.
+  Future<List<ActivityModel>> _activitiesFromNotifications() async {
+    try {
+      final snap = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+
+      final out = <ActivityModel>[];
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final mapped = _notificationFeedTypes[data['type'] as String? ?? ''];
+        if (mapped == null) continue;
+
+        final created = (data['createdAt'] as Timestamp?)?.toDate();
+        if (created == null) continue;
+
+        final payload =
+            (data['payload'] as Map<String, dynamic>?) ?? const {};
+
+        out.add(ActivityModel(
+          id: doc.id,
+          landlordId: _currentUserId!,
+          type: mapped,
+          title: (data['title'] as String?) ?? '',
+          subtitle: (data['body'] as String?) ?? '',
+          propertyId: payload['propertyId'] as String?,
+          relatedId: payload['issueId'] as String?,
+          isRead: data['read'] == true,
+          createdAt: created,
+        ));
+      }
+      return out;
+    } catch (e) {
+      // A feed missing half its entries is better than a feed that fails.
+      AppLogger.e('notification-backed activities failed',
+          error: e, name: _tag);
       return [];
     }
   }
@@ -247,9 +344,27 @@ class ActivityService {
     }
   }
 
+  /// Mark one feed entry read, in whichever collection it came from.
+  ///
+  /// The feed is merged, so an id here may name a `notifications` doc rather
+  /// than an `activities` one. Updating the wrong collection silently failed
+  /// and the entry stayed bold forever.
+  ///
+  /// The two use different field names on purpose: `activities` has `isRead`,
+  /// `notifications` has `read` + `readAt`, and the notification update rule
+  /// allowlists exactly those two — sending `isRead` there rejects the whole
+  /// write.
   Future<void> markAsRead(String activityId) async {
     try {
-      await _activitiesRef.doc(activityId).update({'isRead': true});
+      final ref = _activitiesRef.doc(activityId);
+      if ((await ref.get()).exists) {
+        await ref.update({'isRead': true});
+        return;
+      }
+      await _firestore.collection('notifications').doc(activityId).update({
+        'read': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       AppLogger.e('markAsRead failed', error: e, name: _tag);
     }
