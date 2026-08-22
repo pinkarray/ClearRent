@@ -1841,7 +1841,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
               child: ElevatedButton.icon(
                 onPressed: () => _showRatingDialog(),
                 icon: const Icon(Icons.star, size: 20),
-                label: const Text('Rate Your Agent'),
+                label: Text('Rate your ${r.handlerRole}'),
                 style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.warning,
                     foregroundColor: Colors.white,

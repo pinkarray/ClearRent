@@ -246,6 +246,28 @@ class NotificationService {
 
   // ─── Tap handling (3 paths converge here) ─────────────────────────────────
 
+  /// The last tap acted on, and when.
+  ///
+  /// The three paths above are NOT mutually exclusive: a cold start can deliver
+  /// the same tap through both `getInitialMessage()` and `onMessageOpenedApp`,
+  /// and each one pushed the target again. That is why Back had to be pressed
+  /// several times to escape a screen opened from one notification.
+  String? _lastTapKey;
+  DateTime? _lastTapAt;
+
+  /// Same notification, twice, within a moment — one physical tap.
+  bool _isDuplicateTap(String key) {
+    final at = _lastTapAt;
+    if (_lastTapKey == key &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(seconds: 5)) {
+      return true;
+    }
+    _lastTapKey = key;
+    _lastTapAt = DateTime.now();
+    return false;
+  }
+
   Future<void> _handleInitialMessage() async {
     final initial = await _fcm.getInitialMessage();
     if (initial == null) return;
@@ -296,6 +318,17 @@ class NotificationService {
     final route = data['route'] as String?;
     if (route == null) return;
 
+    // One tap must move the stack once, whichever path delivered it.
+    final identityKey = _suppressionKeyByRoute[route];
+    final tapKey = identityKey == null
+        ? route
+        : '$route#${data[identityKey] ?? ''}';
+    if (_isDuplicateTap(tapKey)) {
+      AppLogger.i('Duplicate notification tap ignored',
+          name: 'NotificationService');
+      return;
+    }
+
     try {
       // Pass the entire data map as `extra` so target screens can
       // pluck whatever fields they need. FCM values are all strings,
@@ -320,6 +353,16 @@ class NotificationService {
       if (route == '/chat' && conversationId is String && conversationId.isNotEmpty) {
         target = '/chat?conversationId=${Uri.encodeComponent(conversationId)}';
       }
+      // Already looking at it. push() does not care, and would stack a second
+      // identical screen on top of the first — tap two inspection notices
+      // while on the inspections screen and Back needs three presses to get
+      // home. Nothing to navigate to when you are already there.
+      if (_isOnTargetScreen(data)) {
+        AppLogger.i('Already on notification target; not stacking',
+            name: 'NotificationService');
+        return;
+      }
+
       appRouter.push(target, extra: extra);
     } catch (e) {
       AppLogger.e('Failed to navigate to notification target',

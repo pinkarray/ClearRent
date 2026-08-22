@@ -333,6 +333,14 @@ class InspectionRequest {
       : agentId != null && agentId!.isNotEmpty;
   bool get bothArrived => tenantArrived && handlerArrived;
 
+  /// What to call whoever conducted the visit, in the tenant's words.
+  ///
+  /// The rating dialog already resolved this inline; the BUTTON that opens it
+  /// said "Rate Your Agent" regardless, so a landlord who showed you round was
+  /// rated as "your agent". When caretaker-handled inspections land
+  /// (`inspectionHandler == 'caretaker'`), this is the one place to extend.
+  String get handlerRole => isAgentHandled ? 'agent' : 'landlord';
+
   // On-the-way helpers
   /// True if current time is within 2 hours of the scheduled slot.
   /// Mirror of isWithinRescheduleWindow — reschedule is allowed
