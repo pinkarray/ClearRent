@@ -1085,6 +1085,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             _buildRentDueBanner(),
             _buildHandoverBanner(),
             _buildTodaysInspectionBanner(),
+            _buildUnratedInspectionBanner(),
             // And the same trap a fourth time. Caretaking is the one role that
             // has nothing to do with whether you rent somewhere — renting a
             // flat is exactly why you might be on the premises to look after
@@ -2579,6 +2580,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           if (pendingLinks.isNotEmpty) _buildPendingLinksBanner(pendingLinks),
           _buildRentDueBanner(),
           _buildTodaysInspectionBanner(),
+          _buildUnratedInspectionBanner(),
           if (_verificationStatus != VerificationStatus.verified)
             _buildVerificationPrompt(),
           if (!_hasBankDetails &&
@@ -2766,6 +2768,98 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// lightweight counterpart to the agent's "Today's Inspections" section. A
   /// tenant typically has a single booking, so this stays a one-line banner
   /// rather than a card list. Only renders on the inspection day itself.
+  /// "You visited it — now say how it went."
+  ///
+  /// Rating is not a courtesy: it is what confirms the visit happened, and it
+  /// is the gate on BOTH the handler's ₦7,000 and the tenant's own decision box
+  /// on that property. A tenant who does not know that simply stops, and the
+  /// whole thing stalls with nobody aware anything is waiting — the handler is
+  /// unpaid and the tenant thinks renting is unavailable.
+  ///
+  /// The inspections screen already pulls them to History when something is
+  /// unrated; this is the half that was missing, for a tenant who never opens
+  /// that screen at all.
+  Widget _buildUnratedInspectionBanner() {
+    return StreamBuilder<List<InspectionRequest>>(
+      stream: _inspectionsStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final unrated = snapshot.data!
+            .where((r) => r.isCompleted && !r.tenantRated)
+            .toList();
+        if (unrated.isEmpty) return const SizedBox.shrink();
+        final r = unrated.first;
+        final more = unrated.length - 1;
+
+        return GestureDetector(
+          // Tab 2 is History, where the rating lives. The screen would pick it
+          // anyway, but saying so keeps the banner honest if that logic moves.
+          onTap: () => context.push(
+            '/tenant/inspections',
+            extra: {'initialTab': 2},
+          ),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withAlpha(13),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withAlpha(77)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withAlpha(26),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.star_outline,
+                    size: 18,
+                    color: AppColors.warning,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        more > 0
+                            ? 'Rate ${unrated.length} visits to continue'
+                            : 'Rate your visit to continue',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.warning,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        more > 0
+                            ? 'Rating confirms each visit happened. It unlocks '
+                                'your decision on those properties.'
+                            : '${r.propertyTitle}. Rating confirms the visit '
+                                'happened - it unlocks your decision on this '
+                                'property and pays your handler.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: AppColors.warning,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildTodaysInspectionBanner() {
     return StreamBuilder<List<InspectionRequest>>(
       stream: _inspectionsStream,
