@@ -102,6 +102,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final ActiveRentalService _activeRentalService;
   late final TenancyLinkService _tenancyLinkService;
   late final RentalInterestService _rentalInterestService;
+  /// Built ONCE, like [_inspectionsStream]. A stream created inside build()
+  /// re-subscribes on every rebuild, so the StreamBuilder drops back to
+  /// `hasData == false` and the banner vanishes — which is exactly what
+  /// happened on returning from browse. Same rule the caretaker banner
+  /// documents (`caretaker_banner.dart:35`).
+  late final Stream<List<RentalInterest>> _interestsStream;
   final AgreementAccessService _agreementAccess = AgreementAccessService();
   final InspectionService _inspectionService = InspectionService();
   StreamSubscription<ActiveRental?>? _activeRentalSub;
@@ -197,6 +203,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _activeRentalService = ActiveRentalService();
     _tenancyLinkService = TenancyLinkService();
     _rentalInterestService = RentalInterestService();
+    _interestsStream = _rentalInterestService.streamTenantInterests();
     _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
     _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
     _inspectionsStream = _inspectionService.getTenantRequests();
@@ -1089,9 +1096,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             _buildRentDueBanner(),
             _buildHandoverBanner(),
             _buildTodaysInspectionBanner(),
-            _buildUnratedInspectionBanner(),
-          _buildUndecidedInspectionBanner(),
-            _buildUndecidedInspectionBanner(),
+            _buildInspectionNextStepBanner(),
             // And the same trap a fourth time. Caretaking is the one role that
             // has nothing to do with whether you rent somewhere — renting a
             // flat is exactly why you might be on the premises to look after
@@ -2586,7 +2591,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           if (pendingLinks.isNotEmpty) _buildPendingLinksBanner(pendingLinks),
           _buildRentDueBanner(),
           _buildTodaysInspectionBanner(),
-          _buildUnratedInspectionBanner(),
+          _buildInspectionNextStepBanner(),
           if (_verificationStatus != VerificationStatus.verified)
             _buildVerificationPrompt(),
           if (!_hasBankDetails &&
@@ -2774,197 +2779,128 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// lightweight counterpart to the agent's "Today's Inspections" section. A
   /// tenant typically has a single booking, so this stays a one-line banner
   /// rather than a card list. Only renders on the inspection day itself.
-  /// "You visited it — now say how it went."
+  /// The inspection outcome's next step — ONE banner, never two.
   ///
-  /// Rating is not a courtesy: it is what confirms the visit happened, and it
-  /// is the gate on BOTH the handler's ₦7,000 and the tenant's own decision box
-  /// on that property. A tenant who does not know that simply stops, and the
-  /// whole thing stalls with nobody aware anything is waiting — the handler is
-  /// unpaid and the tenant thinks renting is unavailable.
+  /// The chain is: visit → rate → decide. Rating confirms the visit happened,
+  /// which is what secures the handler's fee AND unlocks the decision box on
+  /// that property; the decision is what tells the landlord whether anyone
+  /// wants the place. Either step going quiet strands both parties.
   ///
-  /// The inspections screen already pulls them to History when something is
-  /// unrated; this is the half that was missing, for a tenant who never opens
-  /// that screen at all.
-  Widget _buildUnratedInspectionBanner() {
+  /// Rating wins when both are outstanding, because it is the prerequisite —
+  /// asking someone to decide on a place they have not yet rated is asking for
+  /// a step they cannot take.
+  Widget _buildInspectionNextStepBanner() {
     return StreamBuilder<List<InspectionRequest>>(
       stream: _inspectionsStream,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final unrated = snapshot.data!
-            .where((r) => r.isCompleted && !r.tenantRated)
-            .toList();
-        if (unrated.isEmpty) return const SizedBox.shrink();
-        final r = unrated.first;
-        final more = unrated.length - 1;
+      builder: (context, inspectionSnap) {
+        if (!inspectionSnap.hasData) return const SizedBox.shrink();
+        final completed =
+            inspectionSnap.data!.where((r) => r.isCompleted).toList();
 
-        return GestureDetector(
-          // Tab 2 is History, where the rating lives. The screen would pick it
-          // anyway, but saying so keeps the banner honest if that logic moves.
-          onTap: () => context.push(
-            '/tenant/inspections',
-            extra: {'initialTab': 2},
-          ),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.warning.withAlpha(13),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.warning.withAlpha(77)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withAlpha(26),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.star_outline,
-                    size: 18,
-                    color: AppColors.warning,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        more > 0
-                            ? 'Rate ${unrated.length} visits to continue'
-                            : 'Rate your visit to continue',
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: AppColors.warning,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        more > 0
-                            ? 'Rating confirms each visit happened. It unlocks '
-                                'your decision on those properties.'
-                            : '${r.propertyTitle}. Rating confirms the visit '
-                                'happened - it unlocks your decision on this '
-                                'property and pays your handler.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right,
-                  color: AppColors.warning,
-                ),
-              ],
-            ),
-          ),
+        final unrated = completed.where((r) => !r.tenantRated).toList();
+        if (unrated.isNotEmpty) {
+          final more = unrated.length - 1;
+          return _inspectionBanner(
+            icon: Icons.star_outline,
+            colour: AppColors.warning,
+            title: more > 0
+                ? 'Rate ${unrated.length} visits to continue'
+                : 'Rate your visit to continue',
+            body: more > 0
+                ? 'Rating confirms each visit happened. It unlocks your '
+                    'decision on those properties.'
+                : '${unrated.first.propertyTitle}. Rating confirms the visit '
+                    'happened - it unlocks your decision on this property and '
+                    'pays your handler.',
+          );
+        }
+
+        final rated = completed.where((r) => r.tenantRated).toList();
+        if (rated.isEmpty) return const SizedBox.shrink();
+
+        return StreamBuilder<List<RentalInterest>>(
+          stream: _interestsStream,
+          builder: (context, interestSnap) {
+            // Until the interests land, assume everything is decided. Showing
+            // the banner first and withdrawing it reads as a glitch, and this
+            // banner's whole job is to be trusted.
+            if (!interestSnap.hasData) return const SizedBox.shrink();
+            final decided =
+                interestSnap.data!.map((i) => i.inspectionRequestId).toSet();
+            final undecided =
+                rated.where((r) => !decided.contains(r.id)).toList();
+            if (undecided.isEmpty) return const SizedBox.shrink();
+
+            final more = undecided.length - 1;
+            return _inspectionBanner(
+              icon: Icons.help_outline,
+              colour: AppColors.primary,
+              title: more > 0
+                  ? 'Do you want any of these ${undecided.length} places?'
+                  : 'Do you want this place?',
+              body: more > 0
+                  ? 'You have visited and rated them. Tell the landlords '
+                      'whether you want to rent.'
+                  : '${undecided.first.propertyTitle}. You have visited and '
+                      'rated it - tell the landlord whether you want to rent it.',
+            );
+          },
         );
       },
     );
   }
 
-  /// "You rated it — now say whether you want it."
-  ///
-  /// Rating unlocks the decision box on that property, and there the trail
-  /// went cold: nothing told a tenant a decision was waiting, so a visit they
-  /// paid for, attended and rated could sit unanswered indefinitely. The
-  /// landlord meanwhile has no idea whether anyone wants the place.
-  ///
-  /// Pairs with [_buildUnratedInspectionBanner] — that one gets them to rate,
-  /// this one gets them to decide. Between them the inspection outcome always
-  /// names its next step instead of going quiet.
-  Widget _buildUndecidedInspectionBanner() {
-    return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionsStream,
-      builder: (context, inspectionSnap) {
-        if (!inspectionSnap.hasData) return const SizedBox.shrink();
-        final rated = inspectionSnap.data!
-            .where((r) => r.isCompleted && r.tenantRated)
-            .toList();
-        if (rated.isEmpty) return const SizedBox.shrink();
-
-        return StreamBuilder<List<RentalInterest>>(
-          stream: _rentalInterestService.streamTenantInterests(),
-          builder: (context, interestSnap) {
-            // Until the interests land, assume every rated visit is decided —
-            // a banner that appears and then vanishes reads as a glitch.
-            if (!interestSnap.hasData) return const SizedBox.shrink();
-            final decided = interestSnap.data!
-                .map((i) => i.inspectionRequestId)
-                .toSet();
-            final undecided =
-                rated.where((r) => !decided.contains(r.id)).toList();
-            if (undecided.isEmpty) return const SizedBox.shrink();
-
-            final r = undecided.first;
-            final more = undecided.length - 1;
-
-            return GestureDetector(
-              onTap: () => context.push(
-                '/tenant/inspections',
-                extra: {'initialTab': 2},
+  /// Shared chrome for the two states above, so they cannot drift apart.
+  Widget _inspectionBanner({
+    required IconData icon,
+    required Color colour,
+    required String title,
+    required String body,
+  }) {
+    return GestureDetector(
+      // Tab 2 is History, where both the rating and the decision box live.
+      onTap: () =>
+          context.push('/tenant/inspections', extra: {'initialTab': 2}),
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colour.withAlpha(13),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: colour.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colour.withAlpha(26),
+                shape: BoxShape.circle,
               ),
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withAlpha(13),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primary.withAlpha(77)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withAlpha(26),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.help_outline,
-                        size: 18,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            more > 0
-                                ? 'Do you want any of these ${undecided.length} places?'
-                                : 'Do you want this place?',
-                            style: AppTextStyles.labelMedium.copyWith(
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            more > 0
-                                ? 'You have visited and rated them. Tell the '
-                                    'landlords whether you want to rent.'
-                                : '${r.propertyTitle}. You have visited and '
-                                    'rated it - tell the landlord whether you '
-                                    'want to rent it.',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.chevron_right, color: AppColors.primary),
-                  ],
-                ),
+              child: Icon(icon, size: 18, color: colour),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTextStyles.labelMedium.copyWith(color: colour),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    body,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
               ),
-            );
-          },
-        );
-      },
+            ),
+            Icon(Icons.chevron_right, color: colour),
+          ],
+        ),
+      ),
     );
   }
 
