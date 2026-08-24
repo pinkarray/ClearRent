@@ -102,18 +102,30 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final ActiveRentalService _activeRentalService;
   late final TenancyLinkService _tenancyLinkService;
   late final RentalInterestService _rentalInterestService;
-  /// Built ONCE, like [_inspectionsStream]. A stream created inside build()
-  /// re-subscribes on every rebuild, so the StreamBuilder drops back to
-  /// `hasData == false` and the banner vanishes — which is exactly what
-  /// happened on returning from browse. Same rule the caretaker banner
-  /// documents (`caretaker_banner.dart:35`).
-  late final Stream<List<RentalInterest>> _interestsStream;
   final AgreementAccessService _agreementAccess = AgreementAccessService();
   final InspectionService _inspectionService = InspectionService();
   StreamSubscription<ActiveRental?>? _activeRentalSub;
+
+  // The inspection banner reads these, NOT a StreamBuilder.
+  //
+  // The banner is mounted on two surfaces (the tenancy dashboard and the
+  // browse home) and only one is in the tree at a time. With a shared stream
+  // instance, moving between them cancelled one subscription and started
+  // another — and a single-subscription stream cannot be listened to twice,
+  // so the second mount silently got an error the `hasData` check rendered as
+  // nothing. That is why the banner vanished on the way to browse and never
+  // came back on the way home.
+  //
+  // One subscription for the life of the screen, held in State, is the same
+  // pattern the rentals and handover streams above already use.
+  StreamSubscription<List<InspectionRequest>>? _inspectionsSub;
+  StreamSubscription<List<RentalInterest>>? _interestsSub;
+  List<InspectionRequest> _inspections = const [];
+  List<RentalInterest> _interests = const [];
+  bool _inspectionsLoaded = false;
+  bool _interestsLoaded = false;
   // Approved inspections for the tenant — powers the "inspection today" banner
   // on the home tab. Created once in initState (see cached-streams note below).
-  late final Stream<List<InspectionRequest>> _inspectionsStream;
 
   // Cached streams for the home body. Created ONCE in initState — the many
   // init-time setState() calls (profile, saved, unread, properties, rental
@@ -203,10 +215,32 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _activeRentalService = ActiveRentalService();
     _tenancyLinkService = TenancyLinkService();
     _rentalInterestService = RentalInterestService();
-    _interestsStream = _rentalInterestService.streamTenantInterests();
+    _interestsSub = _rentalInterestService.streamTenantInterests().listen(
+      (rows) {
+        if (!mounted) return;
+        setState(() {
+          _interests = rows;
+          _interestsLoaded = true;
+        });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _interestsLoaded = true);
+      },
+    );
     _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
     _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
-    _inspectionsStream = _inspectionService.getTenantRequests();
+    _inspectionsSub = _inspectionService.getTenantRequests().listen(
+      (rows) {
+        if (!mounted) return;
+        setState(() {
+          _inspections = rows;
+          _inspectionsLoaded = true;
+        });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _inspectionsLoaded = true);
+      },
+    );
     _openHandoversSub =
         _activeRentalService.streamTenantOpenHandovers().listen((rows) {
       if (mounted) setState(() => _openHandovers = rows);
@@ -254,6 +288,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   @override
   void dispose() {
     _activeRentalSub?.cancel();
+    _inspectionsSub?.cancel();
+    _interestsSub?.cancel();
     _tenantRentalsSub?.cancel();
     _openHandoversSub?.cancel();
     _searchController.dispose();
@@ -2773,20 +2809,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  /// Compact reminder shown on the day of an approved inspection — the tenant's
-  /// lightweight counterpart to the agent's "Today's Inspections" section. A
-  /// tenant typically has a single booking, so this stays a one-line banner
-  /// rather than a card list. Only renders on the inspection day itself.
-  /// The inspection outcome's next step — ONE banner, never two.
-  ///
-  /// The chain is: visit → rate → decide. Rating confirms the visit happened,
-  /// which is what secures the handler's fee AND unlocks the decision box on
-  /// that property; the decision is what tells the landlord whether anyone
-  /// wants the place. Either step going quiet strands both parties.
-  ///
-  /// Rating wins when both are outstanding, because it is the prerequisite —
-  /// asking someone to decide on a place they have not yet rated is asking for
-  /// a step they cannot take.
   /// The one inspection banner. Three states, highest priority first.
   ///
   ///  1. An inspection TODAY — time-critical, someone is expecting them.
@@ -2794,105 +2816,88 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   ///     the handler's fee and unlocks the decision on that property.
   ///  3. Rated but no decision — the landlord is waiting to hear.
   ///
-  /// ONE StreamBuilder on [_inspectionsStream], not three. Two separate
-  /// builders were listening to the same stream instance; a second listen on a
-  /// non-broadcast stream errors, and a StreamBuilder that only checks
-  /// `hasData` renders an error as nothing — which is why the banner kept
-  /// vanishing. Sharing one subscription removes the failure mode rather than
-  /// papering over it with asBroadcastStream(), which would break again the
-  /// moment every listener detached on a tab change.
+  /// Reads [_inspections] and [_interests], which are kept current by
+  /// subscriptions held for the life of this screen. It used to be a
+  /// StreamBuilder over a shared stream, which broke in two visible ways: the
+  /// banner never appeared on the browse home, and it did not come back after
+  /// returning to the dashboard. Both were the same cause — the banner is
+  /// mounted on two surfaces, moving between them cancels one subscription and
+  /// opens another, and a single-subscription stream cannot be listened to
+  /// twice. `hasData` then rendered that error as nothing at all.
   Widget _buildInspectionBanner() {
-    return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionsStream,
-      builder: (context, inspectionSnap) {
-        if (!inspectionSnap.hasData) return const SizedBox.shrink();
-        final all = inspectionSnap.data!;
+    if (!_inspectionsLoaded) return const SizedBox.shrink();
 
-        // 1 — happening today
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final todays = all.where((r) {
-          final d = r.requestedDate;
-          return r.isApproved &&
-              DateTime(d.year, d.month, d.day).isAtSameMomentAs(today);
-        }).toList()
-          ..sort((a, b) =>
-              a.requestedTimeSlot.compareTo(b.requestedTimeSlot));
-        if (todays.isNotEmpty) {
-          final r = todays.first;
-          final more = todays.length - 1;
-          return _inspectionBanner(
-            icon: Icons.event_available_outlined,
-            colour: AppColors.primary,
-            title: 'Inspection today · ${r.requestedTimeDisplay}',
-            body: more > 0
-                ? '${r.propertyTitle}, and $more more today.'
-                : r.propertyTitle,
-          );
-        }
+    // 1 — happening today
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todays = _inspections.where((r) {
+      final d = r.requestedDate;
+      return r.isApproved &&
+          DateTime(d.year, d.month, d.day).isAtSameMomentAs(today);
+    }).toList()
+      ..sort((a, b) => a.requestedTimeSlot.compareTo(b.requestedTimeSlot));
+    if (todays.isNotEmpty) {
+      final r = todays.first;
+      final more = todays.length - 1;
+      return _inspectionBanner(
+        icon: Icons.event_available_outlined,
+        colour: AppColors.primary,
+        title: 'Inspection today · ${r.requestedTimeDisplay}',
+        body: more > 0
+            ? '${r.propertyTitle}, and $more more today.'
+            : r.propertyTitle,
+      );
+    }
 
-        final completed = all.where((r) => r.isCompleted).toList();
+    final completed = _inspections.where((r) => r.isCompleted).toList();
 
-        // 2 — visited but not rated
-        final unrated = completed.where((r) => !r.tenantRated).toList();
-        if (unrated.isNotEmpty) {
-          final more = unrated.length - 1;
-          return _inspectionBanner(
-            icon: Icons.star_outline,
-            colour: AppColors.warning,
-            title: more > 0
-                ? 'Rate ${unrated.length} visits to continue'
-                : 'Rate your visit to continue',
-            body: more > 0
-                ? 'Rating confirms each visit happened. It unlocks your '
-                    'decision on those properties.'
-                : '${unrated.first.propertyTitle}. Rating confirms the visit '
-                    'happened - it unlocks your decision on this property and '
-                    'pays your handler.',
-          );
-        }
+    // 2 — visited but not rated
+    final unrated = completed.where((r) => !r.tenantRated).toList();
+    if (unrated.isNotEmpty) {
+      final more = unrated.length - 1;
+      return _inspectionBanner(
+        icon: Icons.star_outline,
+        colour: AppColors.warning,
+        title: more > 0
+            ? 'Rate ${unrated.length} visits to continue'
+            : 'Rate your visit to continue',
+        body: more > 0
+            ? 'Rating confirms each visit happened. It unlocks your decision '
+                'on those properties.'
+            : '${unrated.first.propertyTitle}. Rating confirms the visit '
+                'happened - it unlocks your decision on this property and '
+                'pays your handler.',
+      );
+    }
 
-        // 3 — rated, still undecided. `tenantPassed` IS a decision ("I'll Keep
-        // Looking"), it just writes a flag on the inspection instead of a
-        // rental_interest — so it has to be excluded here or the banner nags
-        // about a property the tenant has already turned down.
-        final rated = completed
-            .where((r) => r.tenantRated && !r.tenantPassed)
-            .toList();
-        if (rated.isEmpty) return const SizedBox.shrink();
+    // 3 — rated, still undecided. `tenantPassed` IS a decision ("I'll Keep
+    // Looking"); it writes a flag on the inspection rather than a
+    // rental_interest, so it must be excluded or the banner nags about a
+    // property the tenant has already turned down.
+    if (!_interestsLoaded) return const SizedBox.shrink();
+    final decided = _interests.map((i) => i.inspectionRequestId).toSet();
+    final undecided = completed
+        .where((r) => r.tenantRated && !r.tenantPassed)
+        .where((r) => !decided.contains(r.id))
+        .toList();
+    if (undecided.isEmpty) return const SizedBox.shrink();
 
-        return StreamBuilder<List<RentalInterest>>(
-          stream: _interestsStream,
-          builder: (context, interestSnap) {
-            // Until the interests land, assume everything is decided. Showing
-            // the banner and then withdrawing it reads as a glitch.
-            if (!interestSnap.hasData) return const SizedBox.shrink();
-            final decided =
-                interestSnap.data!.map((i) => i.inspectionRequestId).toSet();
-            final undecided =
-                rated.where((r) => !decided.contains(r.id)).toList();
-            if (undecided.isEmpty) return const SizedBox.shrink();
-
-            final more = undecided.length - 1;
-            return _inspectionBanner(
-              icon: Icons.help_outline,
-              colour: AppColors.primary,
-              title: more > 0
-                  ? 'Do you want any of these ${undecided.length} places?'
-                  : 'Do you want this place?',
-              body: more > 0
-                  ? 'You have visited and rated them. Tell the landlords '
-                      'whether you want to rent.'
-                  : '${undecided.first.propertyTitle}. You have visited and '
-                      'rated it - tell the landlord whether you want to rent it.',
-            );
-          },
-        );
-      },
+    final more = undecided.length - 1;
+    return _inspectionBanner(
+      icon: Icons.help_outline,
+      colour: AppColors.primary,
+      title: more > 0
+          ? 'Do you want any of these ${undecided.length} places?'
+          : 'Do you want this place?',
+      body: more > 0
+          ? 'You have visited and rated them. Tell the landlords whether you '
+              'want to rent.'
+          : '${undecided.first.propertyTitle}. You have visited and rated it - '
+              'tell the landlord whether you want to rent it.',
     );
   }
 
-  /// Shared chrome for every state above, so they cannot drift apart.
+
   Widget _inspectionBanner({
     required IconData icon,
     required Color colour,
