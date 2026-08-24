@@ -1095,8 +1095,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // for it, and never be told to pay for it. Money before scheduling.
             _buildRentDueBanner(),
             _buildHandoverBanner(),
-            _buildTodaysInspectionBanner(),
-            _buildInspectionNextStepBanner(),
+            _buildInspectionBanner(),
             // And the same trap a fourth time. Caretaking is the one role that
             // has nothing to do with whether you rent somewhere — renting a
             // flat is exactly why you might be on the premises to look after
@@ -2590,8 +2589,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           // Pending link requests banner — replaces the old route-based banner
           if (pendingLinks.isNotEmpty) _buildPendingLinksBanner(pendingLinks),
           _buildRentDueBanner(),
-          _buildTodaysInspectionBanner(),
-          _buildInspectionNextStepBanner(),
+          _buildInspectionBanner(),
           if (_verificationStatus != VerificationStatus.verified)
             _buildVerificationPrompt(),
           if (!_hasBankDetails &&
@@ -2789,14 +2787,53 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// Rating wins when both are outstanding, because it is the prerequisite —
   /// asking someone to decide on a place they have not yet rated is asking for
   /// a step they cannot take.
-  Widget _buildInspectionNextStepBanner() {
+  /// The one inspection banner. Three states, highest priority first.
+  ///
+  ///  1. An inspection TODAY — time-critical, someone is expecting them.
+  ///  2. A visit not yet rated — rating confirms it happened, which secures
+  ///     the handler's fee and unlocks the decision on that property.
+  ///  3. Rated but no decision — the landlord is waiting to hear.
+  ///
+  /// ONE StreamBuilder on [_inspectionsStream], not three. Two separate
+  /// builders were listening to the same stream instance; a second listen on a
+  /// non-broadcast stream errors, and a StreamBuilder that only checks
+  /// `hasData` renders an error as nothing — which is why the banner kept
+  /// vanishing. Sharing one subscription removes the failure mode rather than
+  /// papering over it with asBroadcastStream(), which would break again the
+  /// moment every listener detached on a tab change.
+  Widget _buildInspectionBanner() {
     return StreamBuilder<List<InspectionRequest>>(
       stream: _inspectionsStream,
       builder: (context, inspectionSnap) {
         if (!inspectionSnap.hasData) return const SizedBox.shrink();
-        final completed =
-            inspectionSnap.data!.where((r) => r.isCompleted).toList();
+        final all = inspectionSnap.data!;
 
+        // 1 — happening today
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final todays = all.where((r) {
+          final d = r.requestedDate;
+          return r.isApproved &&
+              DateTime(d.year, d.month, d.day).isAtSameMomentAs(today);
+        }).toList()
+          ..sort((a, b) =>
+              a.requestedTimeSlot.compareTo(b.requestedTimeSlot));
+        if (todays.isNotEmpty) {
+          final r = todays.first;
+          final more = todays.length - 1;
+          return _inspectionBanner(
+            icon: Icons.event_available_outlined,
+            colour: AppColors.primary,
+            title: 'Inspection today · ${r.requestedTimeDisplay}',
+            body: more > 0
+                ? '${r.propertyTitle}, and $more more today.'
+                : r.propertyTitle,
+          );
+        }
+
+        final completed = all.where((r) => r.isCompleted).toList();
+
+        // 2 — visited but not rated
         final unrated = completed.where((r) => !r.tenantRated).toList();
         if (unrated.isNotEmpty) {
           final more = unrated.length - 1;
@@ -2815,15 +2852,20 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           );
         }
 
-        final rated = completed.where((r) => r.tenantRated).toList();
+        // 3 — rated, still undecided. `tenantPassed` IS a decision ("I'll Keep
+        // Looking"), it just writes a flag on the inspection instead of a
+        // rental_interest — so it has to be excluded here or the banner nags
+        // about a property the tenant has already turned down.
+        final rated = completed
+            .where((r) => r.tenantRated && !r.tenantPassed)
+            .toList();
         if (rated.isEmpty) return const SizedBox.shrink();
 
         return StreamBuilder<List<RentalInterest>>(
           stream: _interestsStream,
           builder: (context, interestSnap) {
             // Until the interests land, assume everything is decided. Showing
-            // the banner first and withdrawing it reads as a glitch, and this
-            // banner's whole job is to be trusted.
+            // the banner and then withdrawing it reads as a glitch.
             if (!interestSnap.hasData) return const SizedBox.shrink();
             final decided =
                 interestSnap.data!.map((i) => i.inspectionRequestId).toSet();
@@ -2850,7 +2892,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  /// Shared chrome for the two states above, so they cannot drift apart.
+  /// Shared chrome for every state above, so they cannot drift apart.
   Widget _inspectionBanner({
     required IconData icon,
     required Color colour,
@@ -2904,88 +2946,6 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  Widget _buildTodaysInspectionBanner() {
-    return StreamBuilder<List<InspectionRequest>>(
-      stream: _inspectionsStream,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox.shrink();
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final todays =
-            snapshot.data!.where((r) {
-                final day = DateTime(
-                  r.requestedDate.year,
-                  r.requestedDate.month,
-                  r.requestedDate.day,
-                );
-                return r.isApproved && day.isAtSameMomentAs(today);
-              }).toList()
-              ..sort(
-                (a, b) => a.requestedTimeSlot.compareTo(b.requestedTimeSlot),
-              );
-        if (todays.isEmpty) return const SizedBox.shrink();
-        final r = todays.first;
-        final more = todays.length - 1;
-
-        return GestureDetector(
-          onTap: () => context.push('/tenant/inspections'),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(13),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withAlpha(77)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withAlpha(26),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.event_available_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Inspection today · ${r.requestedTimeDisplay}',
-                        style: AppTextStyles.labelMedium.copyWith(
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        more > 0
-                            ? '${r.propertyTitle} +$more more'
-                            : r.propertyTitle,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.chevron_right, color: AppColors.primary, size: 20),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// Compact banner shown above property list when there are pending link requests
   Widget _buildPendingLinksBanner(List<TenancyLinkModel> links) {
     final count = links.length;
     return GestureDetector(
