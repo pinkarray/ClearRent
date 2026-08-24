@@ -197,6 +197,26 @@ export const adminDailyDigestEmail = onSchedule(
       (a.severity === "critical" ? 0 : 1) - (b.severity === "critical" ? 0 : 1)
     );
 
+    // Nothing outstanding, nothing booked, nothing happened — so say nothing.
+    // A daily mail that reports an empty day trains the reader to stop opening
+    // it, which is the opposite of what a digest is for: the ones that DO
+    // matter should stand out by arriving at all.
+    //
+    // Deliberately requires all four to be empty. A quiet day that still has
+    // an inspection booked is worth sending, because that inspection is
+    // someone's appointment.
+    if (
+      outstanding.length === 0 &&
+      today.length === 0 &&
+      later.length === 0 &&
+      byType.size === 0
+    ) {
+      logger.info("Admin digest skipped — nothing to report", {
+        day: todayKey,
+      });
+      return;
+    }
+
     const html = `
 <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;
   max-width:600px;margin:0 auto;color:#1A1A2E">
