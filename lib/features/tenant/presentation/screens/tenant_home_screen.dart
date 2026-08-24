@@ -10,12 +10,14 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/models/tenancy_link_model.dart';
+import '../../../../shared/models/rental_interest_model.dart';
 import '../../../property/presentation/widgets/property_card.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/saved_properties_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/rental_interest_service.dart';
 import '../../../../services/verification_service.dart';
 import '../../../../services/tenancy_link_service.dart';
 import '../../../../services/agreement_access_service.dart';
@@ -99,6 +101,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   late final PropertyService _propertyService;
   late final ActiveRentalService _activeRentalService;
   late final TenancyLinkService _tenancyLinkService;
+  late final RentalInterestService _rentalInterestService;
   final AgreementAccessService _agreementAccess = AgreementAccessService();
   final InspectionService _inspectionService = InspectionService();
   StreamSubscription<ActiveRental?>? _activeRentalSub;
@@ -193,6 +196,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _propertyService = PropertyService();
     _activeRentalService = ActiveRentalService();
     _tenancyLinkService = TenancyLinkService();
+    _rentalInterestService = RentalInterestService();
     _activeLinkStream = _tenancyLinkService.tenantActiveLinkStream();
     _pendingLinksStream = _tenancyLinkService.tenantPendingLinksStream();
     _inspectionsStream = _inspectionService.getTenantRequests();
@@ -1086,6 +1090,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             _buildHandoverBanner(),
             _buildTodaysInspectionBanner(),
             _buildUnratedInspectionBanner(),
+          _buildUndecidedInspectionBanner(),
+            _buildUndecidedInspectionBanner(),
             // And the same trap a fourth time. Caretaking is the one role that
             // has nothing to do with whether you rent somewhere — renting a
             // flat is exactly why you might be on the premises to look after
@@ -2855,6 +2861,108 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+
+  /// "You rated it — now say whether you want it."
+  ///
+  /// Rating unlocks the decision box on that property, and there the trail
+  /// went cold: nothing told a tenant a decision was waiting, so a visit they
+  /// paid for, attended and rated could sit unanswered indefinitely. The
+  /// landlord meanwhile has no idea whether anyone wants the place.
+  ///
+  /// Pairs with [_buildUnratedInspectionBanner] — that one gets them to rate,
+  /// this one gets them to decide. Between them the inspection outcome always
+  /// names its next step instead of going quiet.
+  Widget _buildUndecidedInspectionBanner() {
+    return StreamBuilder<List<InspectionRequest>>(
+      stream: _inspectionsStream,
+      builder: (context, inspectionSnap) {
+        if (!inspectionSnap.hasData) return const SizedBox.shrink();
+        final rated = inspectionSnap.data!
+            .where((r) => r.isCompleted && r.tenantRated)
+            .toList();
+        if (rated.isEmpty) return const SizedBox.shrink();
+
+        return StreamBuilder<List<RentalInterest>>(
+          stream: _rentalInterestService.streamTenantInterests(),
+          builder: (context, interestSnap) {
+            // Until the interests land, assume every rated visit is decided —
+            // a banner that appears and then vanishes reads as a glitch.
+            if (!interestSnap.hasData) return const SizedBox.shrink();
+            final decided = interestSnap.data!
+                .map((i) => i.inspectionRequestId)
+                .toSet();
+            final undecided =
+                rated.where((r) => !decided.contains(r.id)).toList();
+            if (undecided.isEmpty) return const SizedBox.shrink();
+
+            final r = undecided.first;
+            final more = undecided.length - 1;
+
+            return GestureDetector(
+              onTap: () => context.push(
+                '/tenant/inspections',
+                extra: {'initialTab': 2},
+              ),
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withAlpha(13),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primary.withAlpha(77)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withAlpha(26),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.help_outline,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            more > 0
+                                ? 'Do you want any of these ${undecided.length} places?'
+                                : 'Do you want this place?',
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            more > 0
+                                ? 'You have visited and rated them. Tell the '
+                                    'landlords whether you want to rent.'
+                                : '${r.propertyTitle}. You have visited and '
+                                    'rated it - tell the landlord whether you '
+                                    'want to rent it.',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: AppColors.primary),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
