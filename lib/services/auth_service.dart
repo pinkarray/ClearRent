@@ -466,7 +466,38 @@ class AuthService {
   }
 
   // Get user profile from Firestore
-  Future<Map<String, dynamic>?> getUserProfile() async {
+  /// The signed-in user's own profile document, briefly cached.
+  ///
+  /// This is read on almost every screen — 12 call sites, plus
+  /// `VerificationService.getVerificationStatus()` reads the SAME document
+  /// again — so opening a property cost at least two round trips for data that
+  /// cannot have changed since the last screen. That is what made every
+  /// property open show a spinner, even one opened moments earlier.
+  ///
+  /// A short TTL rather than an indefinite cache: the profile CAN change from
+  /// outside the app (an admin approving verification is the one that matters),
+  /// so this must go stale on its own. Thirty seconds kills the
+  /// back-and-forth-while-browsing reads without holding a wrong answer for
+  /// long enough to confuse anyone.
+  ///
+  /// Pass `forceRefresh` after anything that writes the profile, and call
+  /// [invalidateProfileCache] on sign-out — a cached profile surviving into
+  /// the next account would show one user another's details.
+  static Map<String, dynamic>? _profileCache;
+  static String? _profileCacheUid;
+  static DateTime? _profileCachedAt;
+  static const Duration _profileCacheTtl = Duration(seconds: 30);
+
+  /// Drop the cached profile. Called on sign-out and after profile writes.
+  static void invalidateProfileCache() {
+    _profileCache = null;
+    _profileCacheUid = null;
+    _profileCachedAt = null;
+  }
+
+  Future<Map<String, dynamic>?> getUserProfile({
+    bool forceRefresh = false,
+  }) async {
     try {
       if (currentUser == null) {
         developer.log(
@@ -476,8 +507,20 @@ class AuthService {
         return null;
       }
 
-      final doc =
-          await _firestore.collection('users').doc(currentUser!.uid).get();
+      final uid = currentUser!.uid;
+      final cachedAt = _profileCachedAt;
+      if (!forceRefresh &&
+          _profileCache != null &&
+          _profileCacheUid == uid &&
+          cachedAt != null &&
+          DateTime.now().difference(cachedAt) < _profileCacheTtl) {
+        return _profileCache;
+      }
+
+      final doc = await _firestore.collection('users').doc(uid).get();
+      _profileCache = doc.data();
+      _profileCacheUid = uid;
+      _profileCachedAt = DateTime.now();
       return doc.data();
     } catch (e) {
       developer.log(
@@ -700,6 +743,8 @@ class AuthService {
           .doc(currentUser!.uid)
           .update(updates);
 
+      // The cache now describes the document as it was BEFORE this write.
+      invalidateProfileCache();
       developer.log('✅ Profile updated successfully', name: 'AuthService');
       return true;
     } catch (e) {
@@ -873,6 +918,9 @@ class AuthService {
           name: 'AuthService',
         );
       }
+      // Before anything else can read it: a profile cached under the previous
+      // account would otherwise be handed to whoever signs in next.
+      invalidateProfileCache();
       await _auth.signOut();
       developer.log('✅ Signed out successfully', name: 'AuthService');
     } catch (e) {
