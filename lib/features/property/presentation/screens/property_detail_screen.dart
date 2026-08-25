@@ -1047,8 +1047,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 slivers: [
                   SliverToBoxAdapter(child: _buildImageCarousel(property)),
 
-                  // Video preview (muted autoplay, 60s)
-                  if (_videoInitialized && _videoController != null)
+                  // Video preview (muted autoplay, 60s).
+                  //
+                  // Keyed off the URL rather than the controller: the card used
+                  // to appear only once the video had finished initialising, so
+                  // it materialised mid-scroll and shoved the page down. Now the
+                  // slot is held from first paint and fills in place.
+                  if (_hasVideo)
                     SliverToBoxAdapter(
                       child: _buildVideoPreview(),
                     ),
@@ -3573,7 +3578,110 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
   }
 
+  /// Whether this listing has a video at all — known before the player is ready.
+  bool get _hasVideo {
+    final url = widget.property.videoUrl;
+    return url != null && url.isNotEmpty;
+  }
+
+  /// The card's shell, so the loading and loaded states are the same object in
+  /// the same place and only the body swaps.
+  Widget _buildVideoShell({required Widget body, required Widget footer}) {
+    return GestureDetector(
+      onTap: _videoInitialized ? _openFullscreenVideo : null,
+      child: Container(
+        // Was fromLTRB(20, 0, 20, 0) — flush against the carousel above and the
+        // details below, which is what made it read as dropped in rather than
+        // placed.
+        margin: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.videocam_outlined,
+                        size: 18, color: Colors.white70),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Video Tour',
+                      style:
+                          AppTextStyles.labelMedium.copyWith(color: Colors.white),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(26),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _videoMuted ? Icons.volume_off : Icons.volume_up,
+                            size: 14,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _videoInitialized ? 'Tap to expand' : 'Loading',
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              body,
+              footer,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVideoPreview() {
+    // Not ready yet: hold the slot at a conventional 16:9 so the page doesn't
+    // jump when the real frame arrives.
+    if (!_videoInitialized || _videoController == null) {
+      return _buildVideoShell(
+        body: const AspectRatio(
+          aspectRatio: 16 / 9,
+          child: ColoredBox(
+            color: Color(0xFF111111),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white24),
+                ),
+              ),
+            ),
+          ),
+        ),
+        footer: const SizedBox(height: 12),
+      );
+    }
+
     final controller = _videoController!;
     final totalDuration = controller.value.duration;
     final previewEnd = totalDuration > _previewDuration ? _previewDuration : totalDuration;
@@ -3581,67 +3689,18 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         ? (_videoPosition.inMilliseconds / previewEnd.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
 
-    return GestureDetector(
-      onTap: _openFullscreenVideo,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.videocam_outlined, size: 18, color: Colors.white70),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Video Tour',
-                    style: AppTextStyles.labelMedium.copyWith(color: Colors.white),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(26),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _videoMuted ? Icons.volume_off : Icons.volume_up,
-                          size: 14,
-                          color: Colors.white70,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Tap to expand',
-                          style: AppTextStyles.caption.copyWith(
-                            color: Colors.white70,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Video
-            ClipRRect(
-              child: AspectRatio(
-                aspectRatio: controller.value.aspectRatio,
-                child: VideoPlayer(controller),
-              ),
-            ),
-
-            // Progress bar
-            Padding(
+    return _buildVideoShell(
+      // No rounding: the frame is an interior element, with the header above
+      // and the controls below, so its corners never reach the card's.
+      body: AspectRatio(
+        aspectRatio: controller.value.aspectRatio,
+        child: VideoPlayer(controller),
+      ),
+      footer: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Progress bar
+          Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(2),
@@ -3696,8 +3755,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
