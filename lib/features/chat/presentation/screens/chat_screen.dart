@@ -64,6 +64,12 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isCurrentUserVerified = false;
   bool _isOtherPartyVerified = false;
   bool _isCheckingVerification = true;
+  // The verification read didn't land — as opposed to landing and saying "no".
+  // Both flags above default to false, so a failed lookup used to be
+  // indistinguishable from an unverified account, and the UI stated the latter
+  // as fact ("the other party hasn't completed verification yet") about
+  // somebody who may well be verified.
+  bool _verificationCheckFailed = false;
   
   // Call permission
   bool _otherPartyAllowsCalls = false;
@@ -132,6 +138,9 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
+    // Cleared on every run so a successful re-check drops the warning.
+    _verificationCheckFailed = false;
+
     try {
       // Check current user's verification using existing method (no parameter)
       final currentUserStatus = await _verificationService.getVerificationStatus();
@@ -177,14 +186,20 @@ class _ChatScreenState extends State<ChatScreen> {
           final otherPartyData = otherPartyDoc.data();
           final otherPartyStatus = otherPartyData?['verificationStatus'] ?? 'none';
           _isOtherPartyVerified = otherPartyStatus == 'verified';
-          
+
           // Check call permission (landlords can opt-in)
           _otherPartyAllowsCalls = otherPartyData?['allowsCalls'] ?? false;
           _otherPartyPhone = otherPartyData?['phone'];
+        } else {
+          // `.get()` falls back to the local cache when the server can't be
+          // reached, so a party on an existing conversation coming back
+          // missing means the read failed, not that they have no account.
+          _verificationCheckFailed = true;
         }
       }
     } catch (e) {
       debugPrint('❌ Error checking verification: $e');
+      _verificationCheckFailed = true;
     }
 
     if (mounted) {
@@ -598,6 +613,12 @@ class _ChatScreenState extends State<ChatScreen> {
           context.push('/tenant/verification');
         }
       };
+    } else if (_verificationCheckFailed) {
+      message =
+          'Couldn\'t check account details just now. Check your connection '
+          'and reopen this chat.';
+      actionText = 'OK';
+      onAction = () => Navigator.pop(context);
     } else if (!_isOtherPartyVerified) {
       message = 'The other party hasn\'t completed verification yet. Messaging will be available once they\'re verified.';
       actionText = 'OK';
@@ -922,6 +943,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_isCurrentUserVerified) {
       message = 'Complete verification to send messages';
       icon = Icons.warning_amber_rounded;
+      color = AppColors.warning;
+    } else if (_verificationCheckFailed) {
+      message = 'Couldn\'t check account details — reopen this chat to retry';
+      icon = Icons.wifi_off_rounded;
       color = AppColors.warning;
     } else if (!_isOtherPartyVerified) {
       message = 'Waiting for the other party to complete verification';

@@ -229,9 +229,23 @@ class InspectionService {
 
   // ============ VERIFICATION CHECK ============
 
-  Future<bool> _isUserVerified(String userId) async {
+  /// Whether [userId] is verified, or NULL when we could not find out.
+  ///
+  /// The three-state return is the point. This used to return `false` both for
+  /// "checked, not verified" and for "the read failed" — and a bare `.get()`
+  /// defaults to `Source.serverAndCache`, so on a poor connection it quietly
+  /// falls back to the local cache. A cold or pre-verification cache then
+  /// reported a verified account as unverified, and the caller stated that to
+  /// the user as fact. For the landlord/agent checks it was worse: a blip on
+  /// the tenant's phone told them the OWNER of the property wasn't verified.
+  ///
+  /// Callers must treat null as "ask again later", never as "no".
+  Future<bool?> _isUserVerified(String userId) async {
     try {
       final userDoc = await _firestore.collection('users').doc(userId).get();
+      // A missing document is genuinely "not verified" — the account has no
+      // profile at all. An absent FIELD on a present doc is the same. Only a
+      // failed read is unknown.
       if (!userDoc.exists) return false;
 
       final userData = userDoc.data();
@@ -242,7 +256,7 @@ class InspectionService {
         'Error checking verification: $e',
         name: 'InspectionService',
       );
-      return false;
+      return null;
     }
   }
 
@@ -266,8 +280,26 @@ class InspectionService {
         return null;
       }
 
-      final tenantDoc =
-          await _firestore.collection('users').doc(_currentUserId).get();
+      // Read the caller's own profile. `.get()` falls back to the local cache
+      // when the server is unreachable, so a missing document here means "the
+      // read didn't land", not "this account is unverified" — the account is
+      // signed in, so it certainly exists. Reporting that as unverified told
+      // verified testers their account wasn't, and sent them to a verification
+      // screen that then showed them verified.
+      final DocumentSnapshot<Map<String, dynamic>> tenantDoc;
+      try {
+        tenantDoc =
+            await _firestore.collection('users').doc(_currentUserId).get();
+      } catch (e) {
+        developer.log('⚠️ Could not read own profile: $e',
+            name: 'InspectionService');
+        return 'check_failed';
+      }
+      if (!tenantDoc.exists) {
+        developer.log('⚠️ Own profile unavailable (cache miss)',
+            name: 'InspectionService');
+        return 'check_failed';
+      }
       final tenantData = tenantDoc.data();
 
       final tenantVerificationStatus =
@@ -278,6 +310,11 @@ class InspectionService {
       }
 
       final landlordVerified = await _isUserVerified(property.landlordId);
+      if (landlordVerified == null) {
+        developer.log('⚠️ Could not check landlord verification',
+            name: 'InspectionService');
+        return 'check_failed';
+      }
       if (!landlordVerified) {
         developer.log('❌ Landlord not verified', name: 'InspectionService');
         return 'landlord_not_verified';
@@ -325,10 +362,16 @@ class InspectionService {
 
       if (isAgentHandled) {
         final agentVerified = await _isUserVerified(property.assignedAgentId!);
+        if (agentVerified == null) {
+          developer.log('⚠️ Could not check agent verification',
+              name: 'InspectionService');
+          return 'check_failed';
+        }
         if (!agentVerified) {
           developer.log('❌ Agent not verified', name: 'InspectionService');
           return 'agent_not_verified';
         }
+
 
         final agentDoc =
             await _firestore

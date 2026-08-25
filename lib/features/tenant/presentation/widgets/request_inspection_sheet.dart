@@ -215,6 +215,12 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       'not_verified': 'Your account isn\'t verified yet.',
       'landlord_not_verified': 'This property\'s owner isn\'t verified yet.',
       'agent_not_verified': 'The assigned agent isn\'t verified yet.',
+      // Distinct from the three above on purpose: we could not reach the
+      // server to check, which is not the same as a failed check. Saying
+      // "not verified" here told verified users their account wasn't.
+      'check_failed':
+          'Couldn\'t confirm account details. Check your connection and '
+              'try again.',
       'property_not_ready': 'This property isn\'t ready for inspections yet.',
       'already_pending':
           'You already have a pending request for this property.',
