@@ -17,7 +17,11 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {defineSecret} from "firebase-functions/params";
 import {getPricing} from "./pricing";
+import {verifyAndConsumeReference} from "./payment_verify";
+
+const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 interface CreateRentalInterestInput {
   inspectionRequestId?: unknown;
@@ -254,7 +258,11 @@ interface RecordRentPaymentInput {
  * exactly as for the other client-confirmed payment types.
  */
 export const recordRentPayment = onCall(
-  {timeoutSeconds: 30, enforceAppCheck: true},
+  {
+    secrets: [paystackSecret],
+    timeoutSeconds: 30,
+    enforceAppCheck: true,
+  },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Sign in required.");
@@ -269,13 +277,20 @@ export const recordRentPayment = onCall(
         "rentalInterestId must be a non-empty string.",
       );
     }
-    let paymentReference: string | null = null;
+    // The reference is now REQUIRED and is checked against Paystack below.
+    // It used to be optional and unverified — passing nothing at all marked
+    // the rent paid, flipped the tenancy to active and created the
+    // landlord/agent payout rows, with no money having moved.
     if (
-      typeof data.paymentReference === "string" &&
-      data.paymentReference.trim().length > 0
+      typeof data.paymentReference !== "string" ||
+      data.paymentReference.trim().length === 0
     ) {
-      paymentReference = data.paymentReference.trim();
+      throw new HttpsError(
+        "invalid-argument",
+        "paymentReference must be a non-empty string.",
+      );
     }
+    const paymentReference = data.paymentReference.trim();
 
     const db = getFirestore();
     const interestRef = db.collection("rental_interests").doc(interestId);
@@ -295,6 +310,38 @@ export const recordRentPayment = onCall(
       );
     }
     const rentalRef = rentalQuery.docs[0].ref;
+
+    // ── Prove the money moved, before anything is granted ────────────────
+    //
+    // Read the interest once up front for the caller check and the amount.
+    // The transaction below re-reads and re-validates everything; this pass
+    // exists so we don't spend a Paystack round trip on a stranger, and so an
+    // already-paid tenancy returns without consuming a reference twice.
+    const preSnap = await interestRef.get();
+    const pre = preSnap.data();
+    if (!pre) {
+      throw new HttpsError("not-found", "Rental interest not found.");
+    }
+    if (pre.tenantId !== uid) {
+      throw new HttpsError(
+        "permission-denied",
+        "Only the tenant on this rental can pay it.",
+      );
+    }
+    if (pre.status !== "rent_paid") {
+      // `paymentAmount` is server-computed at interest creation and immutable
+      // afterwards, so it is the honest figure to hold the charge against.
+      const expected =
+        typeof pre.paymentAmount === "number" ? pre.paymentAmount : 0;
+      await verifyAndConsumeReference({
+        reference: paymentReference,
+        secret: paystackSecret.value(),
+        expectedAmount: expected,
+        purpose: "rent",
+        purposeId: interestId,
+        uid,
+      });
+    }
 
     const result = await db.runTransaction(async (tx) => {
       const iSnap = await tx.get(interestRef);

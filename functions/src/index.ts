@@ -33,6 +33,7 @@ import {
 } from "./admin_alerts";
 import {openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
+import {assertAdmin} from "./admin_helpers";
 
 initializeApp();
 setGlobalOptions({maxInstances: 10, region: "us-central1"});
@@ -3139,9 +3140,21 @@ export const refundPayment = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Sign in required.");
-    }
+    // ADMIN ONLY. This used to require nothing but a signed-in caller: no
+    // check that the reference belonged to them, no amount check, no lookup
+    // against `payments`. Since `verificationPaymentReference` sits on the
+    // user document — readable by any authenticated account — anyone could
+    // read a stranger's reference and reverse their charge. It also let a
+    // tenant refund their own inspection fee after the inspection had been
+    // conducted, because nothing revokes the entitlement on refund.
+    //
+    // Admin-only rather than owner-scoped because a refund is a decision, not
+    // a self-service action: who is owed money back is settled on the admin
+    // Refunds queue. No client calls this — the mobile `initiateRefund`
+    // wrapper has no call sites — so nothing legitimate loses access.
+    assertAdmin(request.auth);
+    // assertAdmin throws when auth is absent, but it isn't a type guard.
+    const callerUid = request.auth!.uid;
     const data = request.data as RefundPaymentInput;
     const reference = data.reference;
     if (typeof reference !== "string" || reference.trim().length === 0) {
@@ -3175,13 +3188,13 @@ export const refundPayment = onCall(
       logger.warn("Paystack refund non-OK", {
         status: resp.status,
         message: body.message,
-        uid: request.auth.uid,
+        uid: callerUid,
       });
       return {success: false, error: body.message ?? "Refund failed."};
     } catch (err) {
       logger.error("Paystack refund failed", {
         error: err instanceof Error ? err.message : String(err),
-        uid: request.auth.uid,
+        uid: callerUid,
       });
       throw new HttpsError(
         "internal",
@@ -3909,11 +3922,36 @@ export const creditInspectionEarnings = onDocumentUpdated(
       return;
     }
 
+    // A payout must be backed by a charge. The handler fee is OUR share of the
+    // inspection fee the tenant paid, so crediting it on an inspection nobody
+    // paid for mints money: a fee-free request ('not_required') that is walked
+    // to 'completed' credited the full handler fee against no revenue at all.
+    // Rules now stop a client fabricating the state machine, but this is the
+    // economic control and it belongs on the side that moves the money.
+    const paymentStatus = after.paymentStatus as string | undefined;
+    if (paymentStatus !== "paid") {
+      logger.warn("Inspection completed without a paid fee — no credit", {
+        requestId,
+        paymentStatus,
+      });
+      return;
+    }
+
     // Determine handler. Agent if assigned, else landlord (self-handled).
     const agentId = after.agentId as string | null | undefined;
     const landlordId = after.landlordId as string | undefined;
     const handlerId = agentId ?? landlordId;
     const handlerIsAgent = !!agentId;
+
+    // Self-dealing guard, mirroring the create rule: an account that is both
+    // the tenant and the handler is not two parties meeting.
+    if (handlerId && after.tenantId === handlerId) {
+      logger.error("Inspection tenant and handler are the same account", {
+        requestId,
+        handlerId,
+      });
+      return;
+    }
 
     if (!handlerId) {
       logger.error("Inspection completed but no handler", {

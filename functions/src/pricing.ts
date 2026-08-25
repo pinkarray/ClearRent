@@ -302,13 +302,26 @@ export async function resolveServerAmount(
       return isRenewal ? fee.renewal : fee.initial;
     }
 
-    // Unknown role — fall through to the caller's amount rather than blocking
-    // a legitimate payment on a malformed profile.
-    logger.warn("Verification payment with unknown accountType", {
+    // Unknown role THROWS rather than returning null, for the same reason the
+    // "rent" branch above does. null means "no server figure", and both
+    // consumers treat that as permission to skip the check:
+    // initializePayment charges `serverAmount ?? amount` (the caller's own
+    // number) and verification_ops skips its underpayment comparison on a null
+    // expectation. `accountType` lives on the user document and is not in the
+    // users update blocklist, so it is self-writable — which turned "malformed
+    // profile" into a self-service discount: clear or misspell the field, then
+    // initialize a ₦100 verification payment and have it accepted in full.
+    //
+    // A genuinely malformed profile now gets a clear error instead of a
+    // mispriced charge, which is the better failure.
+    logger.error("Verification payment with unknown accountType", {
       uid,
       accountType,
     });
-    return null;
+    throw new HttpsError(
+      "failed-precondition",
+      "Your account type is not set. Contact support.",
+    );
   }
 
   return null;

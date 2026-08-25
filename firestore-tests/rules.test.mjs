@@ -1868,3 +1868,243 @@ test("caretaker attests readiness on an agent-handled unit — denied", async ()
     })
   );
 });
+
+// ─── Agreement paths confined to the writer's own Storage folder ─────────────
+//
+// getSignedAgreementUrl signs whatever string these fields hold, using ADMIN
+// credentials. So an arbitrary path here was a read of ANY object in the
+// bucket — NIN slips, C of O, another tenancy's agreement. Uploads are already
+// uid-scoped by storage.rules; these prove Firestore now agrees.
+
+test("landlord attaches an agreement from their own folder — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      agreementUrl: `agreements/${LANDLORD}/agreement_123.pdf`,
+      agreementUploadedAt: serverTimestamp(),
+      agreementStatus: "pending_review",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant uploads their signed copy from their own folder — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
+      tenantSignedUrl: `agreements/${TENANT}/agreement_456.pdf`,
+      executedAgreementUrl: `agreements/${TENANT}/agreement_456.pdf`,
+      tenantSignedAt: serverTimestamp(),
+      agreementStatus: "finalized",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("revision clears the signed copies to null — allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      agreementUrl: `agreements/${LANDLORD}/agreement_789.pdf`,
+      tenantSignedUrl: null,
+      executedAgreementUrl: null,
+      agreementStatus: "pending_review",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord points the agreement at another user's folder — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      agreementUrl: `agreements/${OTHER}/agreement_123.pdf`,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord points the agreement at a NIN slip — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      agreementUrl: `verification/${OTHER}/nin/1723456789`,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant points the executed copy at an ownership doc — denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
+      executedAgreementUrl: `ownership/${OTHER}/cofo_1723456789.jpg`,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("unrelated update on a legacy Cloudinary agreement — allowed", async () => {
+  // Legacy rows hold public http URLs. Re-checking those on every write would
+  // deny move-outs and handovers that never touch the agreement.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "active_rentals/ar_legacy"), {
+      tenantId: TENANT, landlordId: LANDLORD, propertyId: "prop1",
+      agreementUrl: "https://res.cloudinary.com/x/agreement.pdf",
+      status: "active", hasPaymentReminder: false,
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "active_rentals/ar_legacy"), {
+      hasPaymentReminder: true,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("forged tenancy_link naming another user's file — denied", async () => {
+  // The whole C1 chain in one write: create a link you control that points at
+  // somebody else's document, then have the callable sign it for you.
+  await assertFails(
+    setDoc(doc(otherDb(), "tenancy_links/tl_forged"), {
+      landlordId: OTHER,
+      tenantId: TENANT,
+      propertyId: "prop1",
+      status: "pending",
+      agreementUrl: `verification/${TENANT}/nin/1723456789`,
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord creates a tenancy_link with their own agreement — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "tenancy_links/tl_new"), {
+      landlordId: LANDLORD,
+      tenantId: TENANT,
+      propertyId: "prop1",
+      status: "pending",
+      agreementUrl: `agreements/${LANDLORD}/agreement_123.pdf`,
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+// ─── inspection_requests create: enter the state machine at the start ────────
+//
+// Create used to constrain nothing about the document, so a client could start
+// at whatever state it liked and every transition guard below was moot.
+
+async function seedBookableProperty() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, "properties/prop_book"), {
+      landlordId: LANDLORD, title: "Bookable", rent: 500000,
+      agentFee: 0, cautionDeposit: 0, maxTenants: 1,
+      isVerified: true, isAvailable: true, currentTenantsCount: 0,
+      handoverPending: false, ownershipDocStatus: "verified",
+      inspectionHandler: "self", readyForInspections: true,
+    });
+    await setDoc(doc(db, "users/" + TENANT), {
+      verificationStatus: "verified", hasBankDetails: true,
+    });
+    await setDoc(doc(db, "users/" + OTHER), {
+      verificationStatus: "verified", hasBankDetails: true,
+    });
+    await setDoc(doc(db, "users/" + LANDLORD), {
+      verificationStatus: "verified", hasBankDetails: true,
+    });
+  });
+}
+
+const bookingDoc = (overrides) => ({
+  tenantId: TENANT,
+  landlordId: LANDLORD,
+  agentId: null,
+  propertyId: "prop_book",
+  status: "pending",
+  paymentStatus: "unpaid",
+  totalFee: 10000,
+  requestedDate: Timestamp.fromDate(new Date(Date.now() + 86400000)),
+  tenantArrived: false,
+  handlerArrived: false,
+  paidAt: null,
+  paymentVerifiedAt: null,
+  createdAt: serverTimestamp(),
+  ...overrides,
+});
+
+test("tenant books an inspection normally — allowed", async () => {
+  await seedBookableProperty();
+  await assertSucceeds(
+    setDoc(doc(tenantDb(), "inspection_requests/ir_new"), bookingDoc({}))
+  );
+});
+
+test("booking on someone else's behalf — denied", async () => {
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(otherDb(), "inspection_requests/ir_spoof"),
+      bookingDoc({ tenantId: TENANT })
+    )
+  );
+});
+
+test("booking created already approved — denied", async () => {
+  // Skipping straight to approved is what let confirmInspectionPayment reveal
+  // any property's exact address with no handler involved.
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(tenantDb(), "inspection_requests/ir_approved"),
+      bookingDoc({ status: "approved" })
+    )
+  );
+});
+
+test("booking created with both parties already met — denied", async () => {
+  // The earnings-minting shape: pre-set the confirm flags, then one update to
+  // completed passes Row 6 and fires creditInspectionEarnings.
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(tenantDb(), "inspection_requests/ir_met"),
+      bookingDoc({
+        status: "approved",
+        tenantConfirmedMet: true,
+        handlerConfirmedMet: true,
+      })
+    )
+  );
+});
+
+test("booking created already paid — denied", async () => {
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(tenantDb(), "inspection_requests/ir_paid"),
+      bookingDoc({ paymentStatus: "paid" })
+    )
+  );
+});
+
+test("booking your own listing (tenant is also the handler) — denied", async () => {
+  // One account as both parties walks the whole chain legitimately and
+  // collects the handler fee for a visit that never happened.
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(landlordDb(), "inspection_requests/ir_self"),
+      bookingDoc({ tenantId: LANDLORD, landlordId: LANDLORD })
+    )
+  );
+});
+
+// ─── payment_references ledger is client-invisible ───────────────────────────
+
+test("client reads the spent-reference ledger — denied", async () => {
+  await assertFails(getDoc(doc(tenantDb(), "payment_references/ref_123")));
+});
+
+test("client pre-spends a reference in the ledger — denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "payment_references/ref_123"), {
+      purpose: "rent", purposeId: "ri1", uid: TENANT,
+    })
+  );
+});

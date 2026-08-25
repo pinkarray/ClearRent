@@ -15,14 +15,22 @@
  * "approved" (handler accepted) and not already paid. Idempotent: a replay
  * after it's already paid is a no-op.
  *
- * Note (parity with recordRentPayment): this does not itself re-verify the
- * transaction with Paystack — the HMAC-verified paystackWebhook remains the
- * gateway-authoritative reconciler for the payments record.
+ * The reference IS re-verified with Paystack here (parity with
+ * recordRentPayment). It previously was not: the reference was stored as free
+ * text, so calling this with a junk string marked the inspection paid and
+ * revealed the exact address for nothing. The webhook remains the
+ * gateway-authoritative reconciler for the payments record; it is not a gate,
+ * because it arrives after the entitlement has already been handed over.
  */
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {defineSecret} from "firebase-functions/params";
+import {getPricing} from "./pricing";
+import {verifyAndConsumeReference} from "./payment_verify";
+
+const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 interface ConfirmInspectionPaymentInput {
   requestId?: unknown;
@@ -30,7 +38,11 @@ interface ConfirmInspectionPaymentInput {
 }
 
 export const confirmInspectionPayment = onCall(
-  {timeoutSeconds: 30, enforceAppCheck: true},
+  {
+    secrets: [paystackSecret],
+    timeoutSeconds: 30,
+    enforceAppCheck: true,
+  },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Sign in required.");
@@ -47,13 +59,17 @@ export const confirmInspectionPayment = onCall(
     }
     const requestId = rawId.trim();
 
-    let paymentReference: string | null = null;
+    // Required and verified — see the header note.
     if (
-      typeof data.paymentReference === "string" &&
-      data.paymentReference.trim().length > 0
+      typeof data.paymentReference !== "string" ||
+      data.paymentReference.trim().length === 0
     ) {
-      paymentReference = data.paymentReference.trim();
+      throw new HttpsError(
+        "invalid-argument",
+        "paymentReference must be a non-empty string.",
+      );
     }
+    const paymentReference = data.paymentReference.trim();
 
     const db = getFirestore();
     const ref = db.collection("inspection_requests").doc(requestId);
@@ -81,6 +97,18 @@ export const confirmInspectionPayment = onCall(
         "This inspection isn't approved yet.",
       );
     }
+
+    // The fee comes from config/pricing — the same document the handler payout
+    // is derived from — never from the client.
+    const expectedFee = (await getPricing()).inspection.total;
+    await verifyAndConsumeReference({
+      reference: paymentReference,
+      secret: paystackSecret.value(),
+      expectedAmount: expectedFee,
+      purpose: "inspection",
+      purposeId: requestId,
+      uid,
+    });
 
     const propertyId = insp.propertyId as string | undefined;
 

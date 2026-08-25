@@ -121,6 +121,48 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     return {url: agreementUrl};
   }
 
+  // The stored value is checked rather than trusted, exactly as
+  // getConditionMediaUrl checks the path it is handed. This signs with ADMIN
+  // credentials, so without this an `agreementUrl` pointing at
+  // `verification/{someone}/nin/…` or `ownership/{someone}/…` would be signed
+  // and returned — every Storage rule bypassed. firestore.rules now also
+  // confines the field to the writer's own folder; this is the second lock,
+  // and it is the one that covers rows written before that rule existed.
+  const segments = agreementUrl.split("/");
+  if (
+    segments.length !== 3 ||
+    segments[0] !== "agreements" ||
+    segments[1].length === 0 ||
+    segments[2].length === 0
+  ) {
+    logger.error("Agreement field holds a non-agreement path", {
+      collection, docId, which, uid,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "That document is not available.",
+    );
+  }
+
+  // The uploader named in the path must be a party to THIS tenancy. The
+  // landlord uploads the original (or their agent does, via the property
+  // template) and the tenant uploads the signed copy, so a path naming anyone
+  // else is a crafted one.
+  const uploaderId = segments[1];
+  if (
+    uploaderId !== doc.landlordId &&
+    uploaderId !== doc.tenantId &&
+    uploaderId !== doc.agentId
+  ) {
+    logger.error("Agreement path names a non-party uploader", {
+      collection, docId, which, uid,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "That document is not available.",
+    );
+  }
+
   // Private Storage path — mint a short-lived signed URL.
   try {
     const [url] = await getStorage()

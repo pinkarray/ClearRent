@@ -47,6 +47,53 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
     }
 
+    // A tenancy may only point at an agreement file inside the WRITER'S OWN
+    // Storage folder. storage.rules already forces every upload under the
+    // uploader's uid, so this makes the two agree: you can only reference a
+    // document you actually uploaded.
+    //
+    // These were previously arbitrary strings, and getSignedAgreementUrl signs
+    // whatever it finds there using ADMIN credentials. So any user could point
+    // a tenancy they control at ANY object in the bucket — a NIN slip, a C of
+    // O, another tenancy's agreement, admin payout proof — and have the
+    // callable hand back the bytes. Storage rules never entered into it.
+    //
+    // null passes: clearing the signed copies is how a revision asks for a
+    // fresh signature.
+    //
+    // Declared HERE, at the document root, because active_rentals AND
+    // tenancy_links both call it. A helper called outside the block that
+    // declares it compiles with only a warning and then denies at runtime.
+    function ownAgreementPath(v) {
+      return v == null
+        || (v is string
+            && v.matches('^agreements/' + request.auth.uid + '/[^/]+$'));
+    }
+
+    // Every agreement field on a doc being CREATED.
+    function agreementPathsOwnedOnCreate() {
+      return ownAgreementPath(request.resource.data.get('agreementUrl', null))
+        && ownAgreementPath(request.resource.data.get('tenantSignedUrl', null))
+        && ownAgreementPath(
+             request.resource.data.get('executedAgreementUrl', null));
+    }
+
+    // Same, but only for the fields this update actually TOUCHES. Legacy rows
+    // hold public Cloudinary http URLs; re-checking those on every unrelated
+    // write (a move-out, a handover stage) would deny updates that never went
+    // near the agreement.
+    function agreementPathsOwnedOnUpdate() {
+      return (!changed(['agreementUrl'])
+              || ownAgreementPath(
+                   request.resource.data.get('agreementUrl', null)))
+        && (!changed(['tenantSignedUrl'])
+              || ownAgreementPath(
+                   request.resource.data.get('tenantSignedUrl', null)))
+        && (!changed(['executedAgreementUrl'])
+              || ownAgreementPath(
+                   request.resource.data.get('executedAgreementUrl', null)));
+    }
+
     // Verification gate for the CALLER. Mirrors the client's messaging gate
     // (ConversationService._isUserVerified) so an unverified user can't bypass
     // the app UI and inject messages directly. Reads users/{uid}; guarded with
@@ -87,6 +134,15 @@ service cloud.firestore {
 
     // Internal — locked. Only Cloud Functions (admin SDK) write here.
     match /_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+
+    // Spent Paystack references (payment_verify.ts). This is what stops one
+    // successful charge being replayed across several rentals or renewals, so
+    // a client must not be able to read it (to discover live references),
+    // create rows in it (to pre-spend someone else's reference), or delete
+    // them (to re-spend its own). Admin SDK only.
+    match /payment_references/{reference} {
       allow read, write: if false;
     }
 
@@ -948,8 +1004,52 @@ service cloud.firestore {
 
       // ─── Create / read / list / delete ───────────────────────
 
+      // Create was previously auth + bank-details + property-ready and NOTHING
+      // about the document's contents. Every rule below is a TRANSITION guard,
+      // so an unconstrained create let a client skip straight to whatever state
+      // it liked and the transition guards never ran. Two things fell out of
+      // that:
+      //
+      //   • Booking as somebody else, or starting at status 'approved' with
+      //     `tenantConfirmedMet`/`handlerConfirmedMet` already true — then one
+      //     update to 'completed' passes [Row 6] and fires
+      //     creditInspectionEarnings. Repeat per document to mint the handler
+      //     fee at will.
+      //   • Starting at 'approved' and calling confirmInspectionPayment, which
+      //     checks only tenantId + status — both of which the caller had just
+      //     written — to reveal any property's exact address.
+      //
+      // A booking therefore starts where a booking actually starts: made by the
+      // tenant themselves, awaiting the handler, unpaid, with none of the
+      // progress flags the later rows and the payout CF read.
       allow create: if request.auth != null && actorHasBankDetails()
-        && propertyIsReady();
+        && propertyIsReady()
+        && request.resource.data.tenantId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.get('paymentStatus', '')
+             in ['unpaid', 'not_required']
+        // Nobody inspects their own listing. Naming yourself as both the
+        // tenant and the handler lets one account walk the entire chain
+        // legitimately — approve, arrive, confirm, complete — and collect the
+        // handler fee for a visit that never happened. The clients write these
+        // keys explicitly (often as null), so this constrains VALUES rather
+        // than checking for absence.
+        && request.resource.data.tenantId
+             != request.resource.data.get('landlordId', '')
+        && request.resource.data.tenantId
+             != request.resource.data.get('agentId', '')
+        // Start at the start: none of the progress the later rows and the
+        // payout CF read may be pre-set.
+        && request.resource.data.get('tenantArrived', false) == false
+        && request.resource.data.get('handlerArrived', false) == false
+        && request.resource.data.get('tenantConfirmedMet', false) == false
+        && request.resource.data.get('handlerConfirmedMet', false) == false
+        && request.resource.data.get('completedAt', null) == null
+        && request.resource.data.get('paidAt', null) == null
+        && request.resource.data.get('paymentVerifiedAt', null) == null
+        && request.resource.data.get('locationRevealedAt', null) == null
+        && request.resource.data.get('earningsCredited', false) == false
+        && request.resource.data.get('tenantRated', false) == false;
       
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
@@ -1293,7 +1393,11 @@ service cloud.firestore {
         && request.resource.data.rentalInterestId is string
         && exists(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId))
         && get(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId)).data.landlordId == request.auth.uid
-        && get(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId)).data.status in ['payment_verified', 'accepted'];
+        && get(/databases/$(database)/documents/rental_interests/$(request.resource.data.rentalInterestId)).data.status in ['payment_verified', 'accepted']
+        // An agreement attached at creation must be the creator's own upload.
+        // The property-template copy runs on the admin SDK, which bypasses
+        // this, so an agent-uploaded template still attaches normally.
+        && agreementPathsOwnedOnCreate();
 
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
@@ -1342,6 +1446,8 @@ service cloud.firestore {
           !changed(['moveOutAcknowledgedAt'])
           || resource.data.landlordId == request.auth.uid
         )
+        // An agreement path written here must live in the writer's own folder.
+        && agreementPathsOwnedOnUpdate()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'agreementUrl', 'agreementUploadedAt', 'agreementStatus',
               'tenantDisputeReason', 'tenantAcceptedAt', 'landlordFinalizedAt',
@@ -1657,8 +1763,13 @@ service cloud.firestore {
     }
 
     match /tenancy_links/{linkId} {
-      allow create: if request.auth != null &&
-        request.resource.data.landlordId == request.auth.uid;
+      // The landlord may attach an agreement as they send the link request,
+      // but only one they uploaded themselves — create is otherwise
+      // unconstrained, which made this doc a way to name ANY storage object
+      // and have getSignedAgreementUrl sign it.
+      allow create: if request.auth != null
+        && request.resource.data.landlordId == request.auth.uid
+        && agreementPathsOwnedOnCreate();
 
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
