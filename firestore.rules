@@ -70,6 +70,69 @@ service cloud.firestore {
             && v.matches('^agreements/' + request.auth.uid + '/[^/]+$'));
     }
 
+    // The title document (C of O / deed). Same invariant as ownAgreementPath
+    // and for the same reason: nothing validated the uid segment, so an owner
+    // could copy another landlord's `ownershipDocUrl` — readable off any
+    // property doc — onto their own listing and have an admin approve their
+    // listing against somebody else's genuine title.
+    //
+    // Declared at the document root: properties AND buildings both call it.
+    function ownOwnershipDoc(v) {
+      return v == null
+        || (v is string
+            && v.matches('^ownership/' + request.auth.uid + '/[^/]+$'));
+    }
+
+    // One identity document. Paths are `verification/{uid}/{docType}/{version}`,
+    // or `verification/{uid}/{docType}` on records predating the versioned
+    // scheme — both shapes are accepted, the uid segment is what matters.
+    function ownVerificationDoc(v) {
+      return v == null
+        || (v is string
+            && v.matches(
+                 '^verification/' + request.auth.uid + '/[^/]+(/[^/]+)?$'));
+    }
+
+    // The whole `verificationDocs` map on a user document.
+    //
+    // This is the worse half of the substitution bug. The field was a
+    // client-written map of Storage paths that an ADMIN later opens to decide
+    // whether to verify the account — so pointing it at another user's real
+    // NIN slip put a genuine identity document in front of a reviewer as
+    // evidence for the wrong person's application. Identity fraud with our own
+    // review process as the instrument.
+    //
+    // Keys are enumerated rather than iterated because rules have no way to
+    // assert a predicate over every value of a map. These are all six written
+    // by verification_service.dart and by the web's SECOND_DOCUMENT table,
+    // across the tenant, landlord and agent flows.
+    //
+    // hasOnly() is load-bearing, not belt-and-braces: without it an unlisted
+    // key (`verificationDocs.anything`) would carry a path that no clause
+    // below inspects, which is the same hole one level down.
+    function ownVerificationDocs() {
+      return !('verificationDocs' in request.resource.data)
+        || (
+          request.resource.data.verificationDocs is map
+          && request.resource.data.verificationDocs.keys().hasOnly([
+               'nin', 'utilityBill', 'proofOfIncome',
+               'proofOfAddress', 'guarantorId', 'experienceProof',
+             ])
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('nin', null))
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('utilityBill', null))
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('proofOfIncome', null))
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('proofOfAddress', null))
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('guarantorId', null))
+          && ownVerificationDoc(
+               request.resource.data.verificationDocs.get('experienceProof', null))
+        );
+    }
+
     // Every agreement field on a doc being CREATED.
     function agreementPathsOwnedOnCreate() {
       return ownAgreementPath(request.resource.data.get('agreementUrl', null))
@@ -184,7 +247,9 @@ service cloud.firestore {
         && request.resource.data.get('isVerified', false) == false
         && request.resource.data.get('pendingEarnings', 0) == 0
         && request.resource.data.get('paidEarnings', 0) == 0
-        && !('verificationExempt' in request.resource.data);
+        && !('verificationExempt' in request.resource.data)
+        // Identity documents must be the caller's own uploads.
+        && ownVerificationDocs();
 
       // Owner self-update, EXCEPT server-authoritative fields:
       //  - verificationStatus may be set to a non-approved value (e.g.
@@ -210,7 +275,11 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['isVerified'])
           || request.resource.data.isVerified == false
-        );
+        )
+        // Identity documents must be the caller's own uploads. Guarded on the
+        // field CHANGING so records written before this rule — and any legacy
+        // Cloudinary URLs among them — don't deny unrelated profile edits.
+        && (!changed(['verificationDocs']) || ownVerificationDocs());
 
       // Admin can update any user doc (approve/reject verification, etc.).
       allow update: if isAdmin();
@@ -419,6 +488,9 @@ service cloud.firestore {
                 && !request.resource.data.keys().hasAny(['ownershipDocUrl', 'ownershipDocType']))
             : request.resource.data.get('ownershipDocStatus', 'none') != 'inherited'
         )
+        // The title document must be the caller's own upload, not a path
+        // copied off another landlord's listing.
+        && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         && meetsMinRent();
 
       // Update: owner can edit own listing, but cannot reassign
@@ -517,6 +589,13 @@ service cloud.firestore {
           !changed(['ownershipDocType'])
           || resource.data.get('ownershipDocStatus', 'none') != 'verified'
           || changed(['ownershipDocUrl'])
+        )
+        // A newly-attached title document must be the caller's own upload.
+        // Guarded on the field changing so legacy Cloudinary URLs on existing
+        // listings don't deny unrelated edits.
+        && (
+          !changed(['ownershipDocUrl'])
+          || ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         )
         && (
           (resource.data.get('currentTenantsCount', 0) <= 0)
@@ -679,7 +758,10 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.landlordId == request.auth.uid
         && (request.resource.data.ownershipDocStatus == 'none'
-            || request.resource.data.ownershipDocStatus == 'pending');
+            || request.resource.data.ownershipDocStatus == 'pending')
+        // The shared title document must be the caller's own upload — this one
+        // covers every unit that later inherits from the building.
+        && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null));
 
       // Readable by any authenticated user — a prospective tenant viewing a
       // unit needs the building's doc status for the inspection gate (mirrors
@@ -731,6 +813,13 @@ service cloud.firestore {
           || resource.data.get('ownershipDocStatus', 'none') != 'verified'
           || request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['ownershipDocUrl'])
+        )
+        // A newly-attached title document must be the caller's own upload.
+        // Guarded on the field changing so legacy Cloudinary URLs on existing
+        // buildings don't deny unrelated edits.
+        && (
+          !changed(['ownershipDocUrl'])
+          || ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         );
 
       // No client deletes — a building may have units; admin SDK handles cleanup.

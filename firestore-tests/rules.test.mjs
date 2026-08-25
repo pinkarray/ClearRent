@@ -477,8 +477,11 @@ test("creating a building pre-verified — denied", async () => {
 
 test("owner re-uploads building doc (status → pending) — allowed", async () => {
   await assertSucceeds(
+    // A private Storage path under the owner's own uid. This used to be an
+    // http URL; owners may no longer attach one, because an external URL can
+    // be re-pointed after an admin has approved what it served.
     updateDoc(doc(landlordDb(), "buildings/b1"), {
-      ownershipDocUrl: "https://example.com/revised.jpg",
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_revised.jpg`,
       ownershipDocStatus: "pending",
       updatedAt: serverTimestamp(),
     })
@@ -638,7 +641,7 @@ test("owner re-uploads their property doc (status → pending) — allowed", asy
   });
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "properties/p_reup"), {
-      ownershipDocUrl: "https://example.com/new.jpg",
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_new.jpg`,
       ownershipDocStatus: "pending",
       isAvailable: false,
       updatedAt: serverTimestamp(),
@@ -2105,6 +2108,287 @@ test("client pre-spends a reference in the ledger — denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "payment_references/ref_123"), {
       purpose: "rent", purposeId: "ri1", uid: TENANT,
+    })
+  );
+});
+
+// ─── Document substitution: title deeds and identity documents ───────────────
+//
+// `ownershipDocUrl` and the `verificationDocs` map were client-written Storage
+// paths that nothing checked the uid segment of. An admin later OPENS them to
+// decide whether to approve a listing or verify an account — so pointing them
+// at another user's genuine document put real evidence in front of a reviewer
+// as backing for the wrong person. `properties` is readable by any authed
+// user, so the paths to copy were free.
+
+test("landlord attaches their own C of O — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "properties/p_owndoc"), {
+      landlordId: LANDLORD,
+      title: "Own Doc Flat",
+      rent: 500000,
+      agentFee: 0,
+      cautionDeposit: 0,
+      maxTenants: 1,
+      isVerified: false,
+      isAvailable: true,
+      currentTenantsCount: 0,
+      handoverPending: false,
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_1723456789.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "pending",
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord attaches ANOTHER owner's C of O — denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_stolendoc"), {
+      landlordId: LANDLORD,
+      title: "Stolen Doc Flat",
+      rent: 500000,
+      agentFee: 0,
+      cautionDeposit: 0,
+      maxTenants: 1,
+      isVerified: false,
+      isAvailable: true,
+      currentTenantsCount: 0,
+      handoverPending: false,
+      ownershipDocUrl: `ownership/${OTHER}/cofo_1723456789.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "pending",
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("owner swaps in another owner's C of O by edit — denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_edit"), {
+      landlordId: LANDLORD,
+      title: "Edit Flat",
+      rent: 500000,
+      agentFee: 0,
+      cautionDeposit: 0,
+      maxTenants: 1,
+      isVerified: false,
+      isAvailable: true,
+      currentTenantsCount: 0,
+      handoverPending: false,
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_1.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "pending",
+    });
+  });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_edit"), {
+      ownershipDocUrl: `ownership/${OTHER}/cofo_2.jpg`,
+      ownershipDocStatus: "pending",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("owner re-uploads their own C of O by edit — allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_edit2"), {
+      landlordId: LANDLORD,
+      title: "Edit Flat",
+      rent: 500000,
+      agentFee: 0,
+      cautionDeposit: 0,
+      maxTenants: 1,
+      isVerified: false,
+      isAvailable: true,
+      currentTenantsCount: 0,
+      handoverPending: false,
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_1.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "rejected",
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_edit2"), {
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_2.jpg`,
+      ownershipDocStatus: "pending",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("editing a legacy Cloudinary-doc listing without touching the doc — allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_legacydoc"), {
+      landlordId: LANDLORD,
+      title: "Legacy Flat",
+      rent: 500000,
+      agentFee: 0,
+      cautionDeposit: 0,
+      maxTenants: 1,
+      isVerified: false,
+      isAvailable: true,
+      currentTenantsCount: 0,
+      handoverPending: false,
+      ownershipDocUrl: "https://res.cloudinary.com/x/cofo.jpg",
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "verified",
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_legacydoc"), {
+      title: "Legacy Flat Renamed",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("building created with another owner's C of O — denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "buildings/b_stolen"), {
+      landlordId: LANDLORD,
+      name: "Stolen Doc Court",
+      address: "1 Somewhere",
+      ownershipDocUrl: `ownership/${OTHER}/cofo_1723456789.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "pending",
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("building created with the owner's own C of O — allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "buildings/b_own"), {
+      landlordId: LANDLORD,
+      name: "Own Doc Court",
+      address: "1 Somewhere",
+      ownershipDocUrl: `ownership/${LANDLORD}/cofo_1723456789.jpg`,
+      ownershipDocType: "c_of_o",
+      ownershipDocStatus: "pending",
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("building doc swapped for another owner's by edit — denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "buildings/b1"), {
+      ownershipDocUrl: `ownership/${OTHER}/cofo_9.jpg`,
+      ownershipDocStatus: "pending",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+// ─── verificationDocs: the identity half ────────────────────────────────────
+
+// The shared fixture seeds LANDLORD and OTHER but not TENANT, and an update
+// to a document that does not exist fails for that reason rather than on rules.
+async function seedTenantProfile() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users/" + TENANT), {
+      fullName: "Tenant One",
+      verificationStatus: "none",
+    });
+  });
+}
+
+test("user submits their own identity documents — allowed", async () => {
+  await seedTenantProfile();
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationStatus: "pending",
+      verificationDocs: {
+        nin: `verification/${TENANT}/nin/1723456789`,
+        proofOfAddress: `verification/${TENANT}/proof_of_address/1723456789`,
+        guarantorId: `verification/${TENANT}/guarantor_id/1723456789`,
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("user points their NIN at another person's slip — denied", async () => {
+  await seedTenantProfile();
+  // The identity-fraud shape: an admin reviewing this application would be
+  // shown a real NIN slip belonging to someone else.
+  await assertFails(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationStatus: "pending",
+      verificationDocs: {
+        nin: `verification/${OTHER}/nin/1723456789`,
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("user smuggles one foreign doc among their own — denied", async () => {
+  await seedTenantProfile();
+  await assertFails(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationStatus: "pending",
+      verificationDocs: {
+        nin: `verification/${TENANT}/nin/1723456789`,
+        guarantorId: `verification/${OTHER}/guarantor_id/1723456789`,
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("user points a doc at an ownership path — denied", async () => {
+  await seedTenantProfile();
+  await assertFails(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationDocs: {
+        nin: `ownership/${OTHER}/cofo_1723456789.jpg`,
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("legacy un-versioned verification path of one's own — allowed", async () => {
+  await seedTenantProfile();
+  // Records predating the timestamped scheme are `verification/{uid}/{docType}`.
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationDocs: {
+        nin: `verification/${TENANT}/nin`,
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("unrelated profile edit leaves verificationDocs untouched — allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users/" + TENANT), {
+      verificationStatus: "verified",
+      verificationDocs: { nin: "https://res.cloudinary.com/x/nin.jpg" },
+      fullName: "Tenant One",
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      fullName: "Tenant Renamed",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("user smuggles a foreign path under an unlisted key — denied", async () => {
+  // Without the key allowlist this path is carried by a key no clause checks.
+  await seedTenantProfile();
+  await assertFails(
+    updateDoc(doc(tenantDb(), "users/" + TENANT), {
+      verificationDocs: {
+        nin: `verification/${TENANT}/nin/1723456789`,
+        extraDoc: `verification/${OTHER}/nin/1723456789`,
+      },
+      updatedAt: serverTimestamp(),
     })
   );
 });
