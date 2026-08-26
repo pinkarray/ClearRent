@@ -430,11 +430,24 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     // upload leaves behind, and before the reference was persisted up front it
     // was unrecoverable.
     final data = _verificationData;
+    final neverSubmitted =
+        data == null || data.status == VerificationStatus.none;
     final orphanedPaid = !_isFreeReapply &&
         data != null &&
         data.paymentStatus == 'paid' &&
         (data.paymentReference?.isNotEmpty ?? false) &&
         data.status == VerificationStatus.none;
+
+    // Second line of defence. The user document above is written by the client
+    // right after checkout and can be lost; `payments` is written server-side
+    // by the Paystack webhook and survives the app dying. Only consulted when
+    // nothing has been submitted, so a completed application can never be
+    // mistaken for an unused paid slot.
+    ({String reference, double amount})? recovered;
+    if (!_isFreeReapply && !orphanedPaid && neverSubmitted) {
+      recovered = await _verificationService.findUnconsumedVerificationPayment();
+      if (!mounted) return;
+    }
 
     if (_isFreeReapply) {
       paymentReference = _priorPaymentReference ?? 'free_reapply';
@@ -444,6 +457,11 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           name: 'VerificationCenter');
       paymentReference = data.paymentReference!;
       paymentAmount = data.paymentAmount;
+    } else if (recovered != null) {
+      AppLogger.i('Recovered an unconsumed payment from the payments ledger',
+          name: 'VerificationCenter');
+      paymentReference = recovered.reference;
+      paymentAmount = recovered.amount;
     } else {
       AppLogger.i('About to launch Paystack checkout for $_verificationFeeLabel', name: 'VerificationCenter');
       final paymentResult = await PaystackCheckoutScreen.launch(

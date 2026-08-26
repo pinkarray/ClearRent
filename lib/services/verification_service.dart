@@ -262,6 +262,64 @@ class VerificationService {
     }
   }
 
+  /// A verification payment this user made that no submission ever consumed.
+  ///
+  /// The user document is the primary record of a paid slot, but writing it is
+  /// a single best-effort call made at the riskiest moment — just back from an
+  /// external checkout, on a device that may be under pressure. If THAT write
+  /// is the only thing standing between a user and their money, the safety net
+  /// has a hole in it.
+  ///
+  /// `payments/{reference}` does not have that problem: the paystackWebhook CF
+  /// writes it server-side from Paystack's own callback, so it exists whether
+  /// or not this app was alive afterwards. Checking here means recovery no
+  /// longer depends on the client having survived the round trip.
+  ///
+  /// Returns (reference, amount), or null when there is nothing to reuse.
+  Future<({String reference, double amount})?>
+      findUnconsumedVerificationPayment() async {
+    if (_currentUserId == null) return null;
+    try {
+      // Two equality filters only — no orderBy, so this needs no composite
+      // index. The set is tiny (one user's verification payments), so the
+      // newest is picked in Dart.
+      final snap = await _firestore
+          .collection('payments')
+          .where('userId', isEqualTo: _currentUserId)
+          .where('type', isEqualTo: 'verification')
+          .limit(20)
+          .get();
+
+      final candidates = snap.docs.where((d) {
+        final status = d.data()['status'] as String?;
+        // 'docs_upload_failed' is written by recordPayment on exactly this
+        // failure; 'completed'/'success' cover a charge whose follow-up never
+        // ran at all (app killed before anything was recorded).
+        return status == 'docs_upload_failed' ||
+            status == 'completed' ||
+            status == 'success';
+      }).toList();
+      if (candidates.isEmpty) return null;
+
+      candidates.sort((a, b) {
+        final at = a.data()['createdAt'];
+        final bt = b.data()['createdAt'];
+        if (at is Timestamp && bt is Timestamp) return bt.compareTo(at);
+        return 0;
+      });
+
+      final top = candidates.first.data();
+      final ref = top['reference'] as String?;
+      if (ref == null || ref.isEmpty) return null;
+      final amt = (top['amount'] as num?)?.toDouble() ?? 0;
+      return (reference: ref, amount: amt);
+    } catch (e) {
+      developer.log('⚠️ Could not check for an unconsumed payment: $e',
+          name: 'VerificationService');
+      return null;
+    }
+  }
+
   // ============ UPLOAD DOCUMENT ============
 
   /// Why the most recent [_uploadDocument] call failed, if it did.

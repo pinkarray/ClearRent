@@ -2392,3 +2392,30 @@ test("user smuggles a foreign path under an unlisted key — denied", async () =
     })
   );
 });
+
+test("tenant lists own verification payments (userId + type) — allowed", async () => {
+  // The exact query findUnconsumedVerificationPayment() runs. A list rule is
+  // evaluated against the QUERY's constraints, so userId must stay pinned by
+  // equality even with a second filter alongside it.
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(tenantDb(), "payments"),
+        where("userId", "==", TENANT),
+        where("type", "==", "verification")
+      )
+    )
+  );
+});
+
+test("tenant lists ANOTHER user's verification payments — denied", async () => {
+  await assertFails(
+    getDocs(
+      query(
+        collection(tenantDb(), "payments"),
+        where("userId", "==", OTHER),
+        where("type", "==", "verification")
+      )
+    )
+  );
+});
