@@ -30,7 +30,8 @@ class EmailVerificationBanner extends StatefulWidget {
       _EmailVerificationBannerState();
 }
 
-class _EmailVerificationBannerState extends State<EmailVerificationBanner> {
+class _EmailVerificationBannerState extends State<EmailVerificationBanner>
+    with WidgetsBindingObserver {
   bool _dismissed = false;
   bool _sending = false;
   bool _checking = true;
@@ -40,7 +41,26 @@ class _EmailVerificationBannerState extends State<EmailVerificationBanner> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Confirming the email means LEAVING the app — the link opens in a mail
+  /// client or browser. Checking only on initState meant coming back to the
+  /// same banner still telling you to do the thing you had just done, which
+  /// reads as broken. Re-checking on resume is what makes it disappear by
+  /// itself, at the exact moment it should.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_verified) {
+      _refresh();
+    }
   }
 
   /// `emailVerified` is cached on the client, so a user who confirmed on
