@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../core/utils/app_logger.dart';
@@ -65,6 +68,110 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   void initState() {
     super.initState();
     _loadUserDataAndVerificationStatus();
+    _restoreDraft();
+    // Typing is saved as it happens, so leaving the app mid-form loses nothing.
+    for (final c in [
+      _ninNumberController,
+      _guarantorNameController,
+      _guarantorPhoneController,
+      _guarantorAddressController,
+    ]) {
+      c.addListener(_saveDraft);
+    }
+  }
+
+  // ── Draft persistence ──────────────────────────────────────────────────
+  //
+  // Verification asks for a NIN, a guarantor's full details and several
+  // documents — things people routinely leave the app to go and find. Losing
+  // the half-filled form on return meant starting over, and the documents are
+  // the slow part.
+  //
+  // Only the picked file PATHS are stored, not the bytes: the files now live in
+  // the app's documents directory, so they outlive backgrounding and the paths
+  // stay valid. Scoped per uid so two accounts on one device can't inherit each
+  // other's draft, and cleared the moment a submission succeeds.
+
+  String? get _draftKey =>
+      _authService.currentUser == null
+          ? null
+          : 'verification_draft_${_authService.currentUser!.uid}';
+
+  Future<void> _saveDraft() async {
+    final key = _draftKey;
+    if (key == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        key,
+        jsonEncode({
+          'nin': _ninNumberController.text,
+          'guarantorName': _guarantorNameController.text,
+          'guarantorPhone': _guarantorPhoneController.text,
+          'guarantorAddress': _guarantorAddressController.text,
+          'ninFile': _ninFile?.path,
+          'utilityBillFile': _utilityBillFile?.path,
+          'proofOfIncomeFile': _proofOfIncomeFile?.path,
+          'proofOfAddressFile': _proofOfAddressFile?.path,
+          'guarantorIdFile': _guarantorIdFile?.path,
+          'experienceProofFile': _experienceProofFile?.path,
+        }),
+      );
+    } catch (e) {
+      // A draft is a convenience; never let it break the form.
+      AppLogger.w('Could not save verification draft: $e',
+          name: 'VerificationCenter');
+    }
+  }
+
+  /// Re-hydrate a file field, but only if the file is still on disk — a path
+  /// whose file has gone would otherwise show as an uploaded document and then
+  /// fail at submit.
+  File? _restoreFile(String? path) {
+    if (path == null || path.isEmpty) return null;
+    final f = File(path);
+    return f.existsSync() ? f : null;
+  }
+
+  Future<void> _restoreDraft() async {
+    final key = _draftKey;
+    if (key == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) return;
+      final d = jsonDecode(raw) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _ninNumberController.text = (d['nin'] as String?) ?? '';
+        _guarantorNameController.text = (d['guarantorName'] as String?) ?? '';
+        _guarantorPhoneController.text = (d['guarantorPhone'] as String?) ?? '';
+        _guarantorAddressController.text =
+            (d['guarantorAddress'] as String?) ?? '';
+        _ninFile = _restoreFile(d['ninFile'] as String?);
+        _utilityBillFile = _restoreFile(d['utilityBillFile'] as String?);
+        _proofOfIncomeFile = _restoreFile(d['proofOfIncomeFile'] as String?);
+        _proofOfAddressFile = _restoreFile(d['proofOfAddressFile'] as String?);
+        _guarantorIdFile = _restoreFile(d['guarantorIdFile'] as String?);
+        _experienceProofFile =
+            _restoreFile(d['experienceProofFile'] as String?);
+      });
+    } catch (e) {
+      AppLogger.w('Could not restore verification draft: $e',
+          name: 'VerificationCenter');
+    }
+  }
+
+  Future<void> _clearDraft() async {
+    final key = _draftKey;
+    if (key == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    } catch (_) {
+      // Nothing to do — a stale draft is harmless, and every file field is
+      // dropped on restore if the file is gone.
+    }
   }
 
   @override
@@ -157,9 +264,22 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         // Materialise bytes first — this resolves cloud-backed URIs
         // (Google Photos, etc.) before we touch the file path.
         final bytes = await image.readAsBytes();
-        final tempDir = Directory.systemTemp;
+        // The app's DOCUMENTS directory, not systemTemp.
+        //
+        // systemTemp maps to the cache directory on Android, which the system
+        // reclaims whenever it wants space — including while the app sits in
+        // the background during the Paystack checkout. Documents are picked
+        // BEFORE payment and uploaded AFTER it, so the file could be gone by
+        // the time the upload ran. That surfaced as "failed to upload one or
+        // more documents" the instant a payment succeeded, with the money
+        // already taken. Documents survive backgrounding.
+        final docsDir = await getApplicationDocumentsDirectory();
+        final destDir = Directory('${docsDir.path}/verification_docs');
+        if (!await destDir.exists()) {
+          await destDir.create(recursive: true);
+        }
         final tempFile = File(
-          '${tempDir.path}/clearrent_doc_${type}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          '${destDir.path}/clearrent_doc_${type}_${DateTime.now().millisecondsSinceEpoch}.jpg',
         );
         await tempFile.writeAsBytes(bytes);
 
@@ -173,6 +293,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             case 'experienceProof': _experienceProofFile = tempFile; break;
           }
         });
+        // Picking is the slow part of this form — save it straight away.
+        await _saveDraft();
       }
     } catch (e, stack) {
       AppLogger.e('Error picking image: $e', error: e, name: 'VerificationCenter');
@@ -276,9 +398,27 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     late final String paymentReference;
     late final double paymentAmount;
 
+    // A charge that was taken but whose submission never completed — the
+    // reference is on the user document while verificationStatus never left
+    // 'none'. The slot is paid for and unused, so collecting the fee again
+    // would charge twice for one application. This is the state a failed
+    // upload leaves behind, and before the reference was persisted up front it
+    // was unrecoverable.
+    final data = _verificationData;
+    final orphanedPaid = !_isFreeReapply &&
+        data != null &&
+        data.paymentStatus == 'paid' &&
+        (data.paymentReference?.isNotEmpty ?? false) &&
+        data.status == VerificationStatus.none;
+
     if (_isFreeReapply) {
       paymentReference = _priorPaymentReference ?? 'free_reapply';
       paymentAmount = _priorPaymentAmount;
+    } else if (orphanedPaid) {
+      AppLogger.i('Reusing an unconsumed paid verification reference',
+          name: 'VerificationCenter');
+      paymentReference = data.paymentReference!;
+      paymentAmount = data.paymentAmount;
     } else {
       AppLogger.i('About to launch Paystack checkout for $_verificationFeeLabel', name: 'VerificationCenter');
       final paymentResult = await PaystackCheckoutScreen.launch(
@@ -299,6 +439,14 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       }
       paymentReference = paymentResult.reference;
       paymentAmount = paymentResult.amountPaid ?? _verificationFee;
+
+      // Persist the charge immediately, before the uploads. If anything below
+      // fails, the user still has a paid reference on their document and the
+      // reuse check above lets them retry without being charged twice.
+      await _verificationService.recordPaidVerificationReference(
+        reference: paymentReference,
+        amount: paymentAmount,
+      );
     }
 
     // Step 2: Payment resolved — now submit verification docs
@@ -363,6 +511,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
     if (result.success && _isFreeReapply) {
       _isFreeReapply = false; // consumed
+    }
+
+    // The form is submitted — the draft has served its purpose. Left in place
+    // on failure, which is exactly when the user needs it again.
+    if (result.success) {
+      await _clearDraft();
     }
 
     setState(() => _isSubmitting = false);
@@ -1136,7 +1290,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           subtitle: 'Upload a clear photo of your physical or digital NIN slip',
           whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
           icon: Icons.badge_outlined, file: _ninFile,
-          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+          onTap: () => _pickDocument('nin'), onRemove: () { setState(() => _ninFile = null); _saveDraft(); },
         ),
         const SizedBox(height: 16),
       ],
@@ -1145,7 +1299,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         subtitle: 'Electricity (PHCN), Water, or Waste bill from the last 3 months',
         whatWeNeed: 'Bill must show your name and a property address to confirm you\'re a real landlord.',
         icon: Icons.receipt_long_outlined, file: _utilityBillFile,
-        onTap: () => _pickDocument('utilityBill'), onRemove: () => setState(() => _utilityBillFile = null),
+        onTap: () => _pickDocument('utilityBill'), onRemove: () { setState(() => _utilityBillFile = null); _saveDraft(); },
       ),
     ];
   }
@@ -1160,7 +1314,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           subtitle: 'Upload a clear photo of your physical or digital NIN slip',
           whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
           icon: Icons.badge_outlined, file: _ninFile,
-          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+          onTap: () => _pickDocument('nin'), onRemove: () { setState(() => _ninFile = null); _saveDraft(); },
         ),
         const SizedBox(height: 16),
       ],
@@ -1169,7 +1323,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         subtitle: 'Employment letter, Bank statement, or Recent pay slip',
         whatWeNeed: 'Document should show your name, employer/bank, and indicate stable income.',
         icon: Icons.account_balance_outlined, file: _proofOfIncomeFile,
-        onTap: () => _pickDocument('proofOfIncome'), onRemove: () => setState(() => _proofOfIncomeFile = null),
+        onTap: () => _pickDocument('proofOfIncome'), onRemove: () { setState(() => _proofOfIncomeFile = null); _saveDraft(); },
       ),
     ];
   }
@@ -1184,7 +1338,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           subtitle: 'Upload a clear photo of your physical or digital NIN slip',
           whatWeNeed: 'We need to see your full name, photo, and NIN number clearly.',
           icon: Icons.badge_outlined, file: _ninFile,
-          onTap: () => _pickDocument('nin'), onRemove: () => setState(() => _ninFile = null),
+          onTap: () => _pickDocument('nin'), onRemove: () { setState(() => _ninFile = null); _saveDraft(); },
         ),
         const SizedBox(height: 16),
       ],
@@ -1193,7 +1347,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         subtitle: 'Utility bill or Bank statement showing your residential address',
         whatWeNeed: 'Document must show your name and current home address.',
         icon: Icons.home_outlined, file: _proofOfAddressFile,
-        onTap: () => _pickDocument('proofOfAddress'), onRemove: () => setState(() => _proofOfAddressFile = null),
+        onTap: () => _pickDocument('proofOfAddress'), onRemove: () { setState(() => _proofOfAddressFile = null); _saveDraft(); },
       ),
       const SizedBox(height: 24),
       _buildGuarantorSection(),
@@ -1203,7 +1357,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         subtitle: 'Reference letter, Previous work ID, or Testimonial',
         whatWeNeed: 'Any document showing your experience in property/real estate.',
         icon: Icons.workspace_premium_outlined, file: _experienceProofFile,
-        onTap: () => _pickDocument('experienceProof'), onRemove: () => setState(() => _experienceProofFile = null),
+        onTap: () => _pickDocument('experienceProof'), onRemove: () { setState(() => _experienceProofFile = null); _saveDraft(); },
         isOptional: true,
       ),
     ];
@@ -1275,7 +1429,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             title: 'Guarantor\'s ID', subtitle: 'Photo of your guarantor\'s NIN or Government ID',
             whatWeNeed: 'Clear photo showing their name and photo.',
             icon: Icons.badge_outlined, file: _guarantorIdFile,
-            onTap: () => _pickDocument('guarantorId'), onRemove: () => setState(() => _guarantorIdFile = null),
+            onTap: () => _pickDocument('guarantorId'), onRemove: () { setState(() => _guarantorIdFile = null); _saveDraft(); },
             compact: true,
           ),
         ],

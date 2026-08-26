@@ -231,7 +231,58 @@ class VerificationService {
         .map((doc) => VerificationData.fromMap(doc.data()));
   }
 
+  /// Record a successful charge BEFORE the documents are uploaded.
+  ///
+  /// The submit flow is pick → pay → upload → write. Everything, including the
+  /// payment reference, used to be written in that final step — so an upload
+  /// failure discarded the reference for a charge that had already gone
+  /// through. The user was left with no application, no record of paying, and
+  /// no route back: the free-reapply path reads `verificationPaymentReference`
+  /// off this document, and it had never been written.
+  ///
+  /// Deliberately does NOT touch `verificationStatus`: this is a paid slot, not
+  /// a submission, and it must not appear in the admin review queue until the
+  /// documents actually land.
+  Future<void> recordPaidVerificationReference({
+    required String reference,
+    required double amount,
+  }) async {
+    if (_currentUserId == null) return;
+    try {
+      await _firestore.collection('users').doc(_currentUserId).set({
+        'verificationPaymentReference': reference,
+        'verificationPaymentAmount': amount,
+        'verificationPaymentStatus': 'paid',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Best-effort: never block a submission that can still succeed.
+      developer.log('⚠️ Could not record paid reference: $e',
+          name: 'VerificationService');
+    }
+  }
+
   // ============ UPLOAD DOCUMENT ============
+
+  /// Why the most recent [_uploadDocument] call failed, if it did.
+  ///
+  /// Release builds log NOTHING — `AppLogger` and `developer.log` are both
+  /// gated on kDebugMode and there is no Crashlytics — so a failed upload
+  /// reached the user as a bare "Failed to upload one or more documents" with
+  /// the actual cause discarded. That left a tester who had already PAID with
+  /// an error nobody could act on.
+  ///
+  /// Storage's own error code (`unauthorized`, `retry-limit-exceeded`,
+  /// `quota-exceeded`, `object-not-found`, …) is short, carries no personal
+  /// data, and usually names the problem outright — so it is carried into the
+  /// message the user can read back to us.
+  String? _lastUploadError;
+
+  /// The upload failure message, naming the cause when we know it.
+  String get _uploadFailureMessage => _lastUploadError == null ?
+      'Failed to upload one or more documents' :
+      'Failed to upload one or more documents ($_lastUploadError)';
+
   Future<String?> _uploadDocument(File file, String folder) async {
     try {
       developer.log('📤 Uploading to $folder...', name: 'VerificationService');
@@ -244,7 +295,16 @@ class VerificationService {
       await ref.putFile(file);
       developer.log('✅ Upload successful: $path', name: 'VerificationService');
       return path;
+    } on FirebaseException catch (e) {
+      // Storage's own code — the one piece of this that survives to release.
+      _lastUploadError = e.code;
+      developer.log('❌ Upload failed: ${e.code} ${e.message}',
+          name: 'VerificationService', error: e);
+      return null;
     } catch (e) {
+      // Anything else: a missing temp file (the picker's cache evicted on a
+      // low-storage device) surfaces here as a FileSystemException.
+      _lastUploadError = e.runtimeType.toString();
       developer.log('❌ Upload failed: $e', name: 'VerificationService', error: e);
       return null;
     }
@@ -305,7 +365,7 @@ class VerificationService {
       final utilityBillUrl = await _uploadDocument(utilityBillFile, 'utility_bill');
 
       if (ninUrl == null || utilityBillUrl == null) {
-        return VerificationResult(success: false, error: 'Failed to upload one or more documents');
+        return VerificationResult(success: false, error: _uploadFailureMessage);
       }
 
       await _firestore.collection('users').doc(_currentUserId).update({
@@ -364,7 +424,7 @@ class VerificationService {
       final proofOfIncomeUrl = await _uploadDocument(proofOfIncomeFile, 'proof_of_income');
 
       if (ninUrl == null || proofOfIncomeUrl == null) {
-        return VerificationResult(success: false, error: 'Failed to upload one or more documents');
+        return VerificationResult(success: false, error: _uploadFailureMessage);
       }
 
       await _firestore.collection('users').doc(_currentUserId).update({
@@ -429,7 +489,7 @@ class VerificationService {
       final guarantorIdUrl = await _uploadDocument(guarantorIdFile, 'guarantor_id');
 
       if (ninUrl == null || proofOfAddressUrl == null || guarantorIdUrl == null) {
-        return VerificationResult(success: false, error: 'Failed to upload one or more documents');
+        return VerificationResult(success: false, error: _uploadFailureMessage);
       }
 
       String? experienceProofUrl;
