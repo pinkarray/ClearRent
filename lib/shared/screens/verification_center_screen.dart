@@ -14,6 +14,7 @@ import '../../services/verification_service.dart';
 import '../../services/pricing_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/paystack_service.dart';
+import '../widgets/top_alert.dart';
 import 'paystack_checkout_screen.dart';
 
 class VerificationCenterScreen extends StatefulWidget {
@@ -390,6 +391,41 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     return nin.length == 11 && RegExp(r'^\d{11}$').hasMatch(nin);
   }
 
+  /// The first requirement still outstanding, named.
+  ///
+  /// [_allRequiredDocsUploaded] answers yes/no, which is all the button needs
+  /// but no help at all to someone staring at a refused submit on a long form.
+  /// Ordered to match the fields as they appear, so the answer is the first
+  /// gap the user would scroll to.
+  String? _firstMissingRequirement() {
+    if (!_isRenewal) {
+      if (!_isNinNumberValid) return 'Enter your 11-digit NIN number';
+      if (_ninFile == null) return 'Add a photo of your NIN slip';
+    }
+    switch (_accountType) {
+      case 'landlord':
+        if (_utilityBillFile == null) return 'Add a utility bill';
+        break;
+      case 'tenant':
+        if (_proofOfIncomeFile == null) return 'Add your proof of income';
+        break;
+      case 'agent':
+        if (_proofOfAddressFile == null) return 'Add your proof of address';
+        if (_guarantorIdFile == null) return "Add your guarantor's ID";
+        if (_guarantorNameController.text.trim().isEmpty) {
+          return "Enter your guarantor's name";
+        }
+        if (_guarantorPhoneController.text.trim().isEmpty) {
+          return "Enter your guarantor's phone number";
+        }
+        if (_guarantorAddressController.text.trim().isEmpty) {
+          return "Enter your guarantor's address";
+        }
+        break;
+    }
+    return null;
+  }
+
   bool get _allRequiredDocsUploaded {
     // All roles require a valid NIN number + NIN slip photo — except a
     // renewal, where the NIN is already on file and not re-collected.
@@ -413,7 +449,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   Future<void> _payAndSubmitVerification() async {
     if (!_allRequiredDocsUploaded) {
-      _showError('Please upload all required documents first');
+      _showError(_firstMissingRequirement() ??
+          'Please complete all required fields first');
       return;
     }
 
@@ -574,9 +611,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating,
-    ));
+    // Top of the screen, not the bottom: this form scrolls, and the reason a
+    // submit was refused is usually about a field far above the button.
+    TopAlert.show(context, message);
   }
 
   void _showSuccess(String message) {

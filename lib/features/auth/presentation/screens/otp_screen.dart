@@ -211,10 +211,58 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _onOtpChanged(int index, String value) {
+    // A pasted code, an autofill suggestion, or a keyboard that commits the
+    // whole SMS at once all arrive as several characters in ONE box. Spread
+    // them across the row instead of dropping all but the first.
+    if (value.length > 1) {
+      _applyWholeCode(value);
+      return;
+    }
+
     if (value.isNotEmpty && index < 5) {
       _focusNodes[index + 1].requestFocus();
     }
 
+    if (_otp.length == 6) {
+      _verifyOtp();
+    }
+  }
+
+  /// Pull the code out of the clipboard.
+  Future<void> _pasteCode() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text ?? '';
+    if (!mounted) return;
+    final digits = text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No code found on your clipboard'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    _applyWholeCode(digits);
+  }
+
+  /// Fill the boxes from a whole code, however it arrived.
+  ///
+  /// Non-digits are stripped, so a code copied with surrounding text from the
+  /// SMS ("Your code is 123456") still works — that is exactly how someone
+  /// copying from their messages tends to select it.
+  void _applyWholeCode(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return;
+
+    for (var i = 0; i < _controllers.length; i++) {
+      _controllers[i].text = i < digits.length ? digits[i] : '';
+    }
+
+    final landing = digits.length >= _controllers.length
+        ? _controllers.length - 1
+        : digits.length;
+    _focusNodes[landing.clamp(0, _controllers.length - 1)].requestFocus();
+
+    setState(() {});
     if (_otp.length == 6) {
       _verifyOtp();
     }
@@ -316,7 +364,14 @@ class _OtpScreenState extends State<OtpScreen> {
                         focusNode: _focusNodes[index],
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
-                        maxLength: 1,
+                        // NO maxLength. It capped input at one character, so a
+                        // pasted or autofilled six-digit code was truncated to
+                        // its first digit before onChanged ever saw it — which
+                        // is why pasting silently did nothing and the code had
+                        // to be memorised from the SMS and typed back in.
+                        // _onOtpChanged spreads anything longer across the
+                        // boxes and leaves one digit here.
+                        autofillHints: const [AutofillHints.oneTimeCode],
                         style: AppTextStyles.h3,
                         decoration: InputDecoration(
                           counterText: '',
@@ -341,6 +396,9 @@ class _OtpScreenState extends State<OtpScreen> {
                         ),
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
+                          // Bounds a paste to the length of the code; the
+                          // handler then distributes it across the boxes.
+                          LengthLimitingTextInputFormatter(6),
                         ],
                         onChanged: (value) => _onOtpChanged(index, value),
                       ),
@@ -349,7 +407,22 @@ class _OtpScreenState extends State<OtpScreen> {
                 }),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 12),
+
+              // One-tap paste. Auto-retrieval only fires once the app is
+              // reviewed on Play (the SMS carries no app hash before then), so
+              // until that lands this is the difference between copying the
+              // code and memorising it.
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  onPressed: _pasteCode,
+                  icon: const Icon(Icons.content_paste_rounded, size: 18),
+                  label: const Text('Paste code'),
+                ),
+              ),
+
+              const SizedBox(height: 20),
 
               // Verify button
               AppButton(

@@ -21,6 +21,7 @@ import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
 import '../../../../shared/widgets/caretaker_banner.dart';
+import '../../../../shared/widgets/email_verification_banner.dart';
 import 'agent_discover_properties_screen.dart';
 
 class AgentHomeScreen extends StatefulWidget {
@@ -421,6 +422,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         ),
         // A caretaker can be any accountType — see CaretakerInviteBanner.
         const SliverToBoxAdapter(child: CaretakerBanner()),
+        const SliverToBoxAdapter(child: EmailVerificationBanner()),
         SliverToBoxAdapter(child: _buildStatsSection()),
         SliverToBoxAdapter(child: _buildTodaysInspectionsSection()),
         SliverToBoxAdapter(child: _buildPaymentConfirmationSection()),

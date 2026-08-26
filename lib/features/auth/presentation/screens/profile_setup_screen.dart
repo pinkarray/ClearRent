@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../services/property_service.dart';
 import '../../../../shared/widgets/area_dropdown.dart';
+import '../../../../shared/widgets/top_alert.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   final String accountType;
@@ -186,8 +187,18 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) return 'Please enter your email address';
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(value)) return 'Please enter a valid email address';
+    // The TLD was capped at 4 characters, which refused real addresses —
+    // .online, .email, .store, .agency, and .africa among them. A user with a
+    // perfectly good address was told it was invalid and could go no further.
+    // Also rejects a leading/trailing dot and doubled dots, which the previous
+    // pattern allowed through.
+    final emailRegex =
+        RegExp(r'^[\w!#$%&*+/=?^`{|}~-]+(\.[\w!#$%&*+/=?^`{|}~-]+)*'
+            r'@([\w-]+\.)+[A-Za-z]{2,}$');
+    final trimmed = value.trim();
+    if (!emailRegex.hasMatch(trimmed)) {
+      return 'Please enter a valid email address';
+    }
     return null;
   }
 
@@ -257,31 +268,57 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     );
   }
 
+  /// Refuse the submit and say why, at the top of the screen.
+  ///
+  /// Every path out of validation used to be a bare `return` or an inline
+  /// message rendered next to the field — which on this form is usually
+  /// scrolled out of sight. The button looked dead and the user had to hunt.
+  void _rejectSubmit(String reason) {
+    setState(() => _errorMessage = reason);
+    TopAlert.show(context, reason);
+  }
+
+  /// The first thing wrong with the form, in the order the fields appear.
+  ///
+  /// `FormState.validate()` only answers yes/no, so the validators are run
+  /// again here to recover the actual message. Ordered top-to-bottom so the
+  /// reported problem is the first one the user would reach.
+  String? _firstFieldError() {
+    return _validateName(_nameController.text) ??
+        _validateEmail(_emailController.text) ??
+        _validatePassword(_passwordController.text) ??
+        _validateConfirmPassword(_confirmPasswordController.text);
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      _rejectSubmit(
+          _firstFieldError() ?? 'Please check the highlighted fields.');
+      return;
+    }
 
     if (_isAgent) {
       if (_selectedBaseLocation == null) {
-        setState(() => _errorMessage = 'Please select your base location');
+        _rejectSubmit('Please select your base location');
         return;
       }
       if (_selectedServiceAreas.isEmpty) {
-        setState(() => _errorMessage = 'Please select at least one service area');
+        _rejectSubmit('Please select at least one service area');
         return;
       }
     }
 
     if (_isTenant) {
       if (_occupationController.text.trim().isEmpty) {
-        setState(() => _errorMessage = 'Please enter your occupation');
+        _rejectSubmit('Please enter your occupation');
         return;
       }
       if (_selectedWorkMode == null) {
-        setState(() => _errorMessage = 'Please select how you work');
+        _rejectSubmit('Please select how you work');
         return;
       }
       if ((_selectedWorkMode == 'commute' || _selectedWorkMode == 'hybrid') && _selectedWorkplaceArea == null) {
-        setState(() => _errorMessage = 'Please select your workplace area');
+        _rejectSubmit('Please select your workplace area');
         return;
       }
     }

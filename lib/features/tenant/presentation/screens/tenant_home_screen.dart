@@ -36,6 +36,7 @@ import '../widgets/linked_rent_due_card.dart';
 import '../../../../shared/models/tenant_rental.dart';
 import '../../../../shared/widgets/announcements_banner.dart';
 import '../../../../shared/widgets/caretaker_banner.dart';
+import '../../../../shared/widgets/email_verification_banner.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
@@ -1139,6 +1140,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // the tenant most likely to BE a caretaker was the one person who
             // could never see the invitation.
             const CaretakerBanner(),
+            const EmailVerificationBanner(),
             Expanded(
               child: MultiRentalDashboard(
                 rentals: _tenantRentals,
