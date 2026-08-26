@@ -31,6 +31,10 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   VerificationData? _verificationData;
   StreamSubscription<VerificationData>? _verificationSub;
   String _accountType = 'landlord';
+  /// Whether [_accountType] came from the user's profile rather than the
+  /// initialiser above. False means we do not know the role — never render a
+  /// role-specific form on a guess.
+  bool _accountTypeResolved = false;
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -208,16 +212,37 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _verificationData?.isRenewal == true;
 
   Future<void> _loadUserDataAndVerificationStatus() async {
-    final profile = await _authService.getUserProfile();
+    var profile = await _authService.getUserProfile();
+    var resolvedType = profile == null ? null : profile['accountType'];
+
+    // A missing accountType is usually a STALE CACHE, not a missing value:
+    // getUserProfile() memoises for a TTL, and on a fresh signup that cache is
+    // often populated before profile setup has written the role. Re-read past
+    // the cache once before concluding anything.
+    if (resolvedType == null || (resolvedType as String).isEmpty) {
+      profile = await _authService.getUserProfile(forceRefresh: true);
+      resolvedType = profile == null ? null : profile['accountType'];
+    }
+
+    // Whatever remains is genuinely unknown — an offline read, a permission
+    // error, or a document not written yet. `_accountType` used to keep its
+    // 'landlord' initialiser in that case, so an agent was shown the landlord
+    // form and asked for the wrong documents at the wrong price. A role we
+    // could not read is not a landlord; it is unknown, and must not be guessed.
+    if (mounted && (resolvedType == null || (resolvedType as String).isEmpty)) {
+      setState(() => _accountTypeResolved = false);
+    }
     if (profile != null && mounted) {
       setState(() {
-        _accountType = profile['accountType'] ?? 'landlord';
+        _accountTypeResolved =
+            resolvedType is String && resolvedType.isNotEmpty;
+        _accountType = _accountTypeResolved ? resolvedType as String : _accountType;
         // The SAME signal the server prices on (resolveServerAmount reads
         // verifiedAt). Deriving the displayed fee from the renewal FORM state
         // instead would let the two disagree — and the disagreement the user
         // would notice is being quoted the renewal price and charged the
         // first-time one.
-        _everVerified = profile['verifiedAt'] != null;
+        _everVerified = profile!['verifiedAt'] != null;
       });
     }
 
@@ -560,7 +585,49 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : _buildContent(),
+          : (_accountTypeResolved
+              ? _buildContent()
+              : _buildRoleUnknownState()),
+    );
+  }
+
+  /// Shown when the account type could not be read.
+  ///
+  /// The alternative is worse than an error: the form is role-specific — it
+  /// decides which documents are demanded and which fee is quoted — so
+  /// defaulting silently means asking an agent for a landlord's utility bill
+  /// and charging them the landlord price.
+  Widget _buildRoleUnknownState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off_rounded, size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: 16),
+            Text('We could not load your account details',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.h4),
+            const SizedBox(height: 8),
+            Text(
+              'Check your connection and try again — verification asks for '
+              'different documents depending on your account type.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                setState(() => _isLoading = true);
+                _loadUserDataAndVerificationStatus();
+              },
+              child: const Text('Try again'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
