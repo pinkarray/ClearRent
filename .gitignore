@@ -70,3 +70,6 @@ key.properties
 
 # Gradle build output
 android/build/
+
+# Local agent notes - machine paths and internal architecture detail.
+CLAUDE.md
