@@ -11,10 +11,15 @@
  * callers there.)
  */
 
-import {onDocumentCreated, onDocumentUpdated}
+import {onDocumentCreated, onDocumentUpdated, onDocumentWritten}
   from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
-import {writeAdminAlert, upsertAdminAlert} from "./admin_alerts";
+import {
+  writeAdminAlert,
+  writeAdminAlertOnce,
+  upsertAdminAlert,
+  resolveAdminAlertsForTarget,
+} from "./admin_alerts";
 
 /**
  * A landlord filed a rent-change request (rent_review_requests/{id}). It sits
@@ -78,8 +83,13 @@ export const onUserProfileUpdated = onDocumentUpdated(
     const emailBefore = (before.email as string | undefined) ?? "";
     const emailAfter = (after.email as string | undefined) ?? "";
 
-    const nameChanged = nameBefore !== nameAfter;
-    const emailChanged = emailBefore !== emailAfter;
+    // A blank → value transition is onboarding filling the field in for the
+    // first time, not somebody rewriting their identity. The users doc is
+    // created empty by the profile-draft autosave, so EVERY sign-up used to
+    // raise a warning reading `name "" → "Ada"` — noise on the one alert type
+    // that exists to catch account takeovers.
+    const nameChanged = Boolean(nameBefore) && nameBefore !== nameAfter;
+    const emailChanged = Boolean(emailBefore) && emailBefore !== emailAfter;
     if (!nameChanged && !emailChanged) return;
 
     const uid = event.params.uid;
@@ -112,22 +122,37 @@ export const onUserProfileUpdated = onDocumentUpdated(
 /**
  * A new account finished onboarding.
  *
- * Fires on the users doc create, which the client writes at the end of profile
- * setup — so this is "a real person joined", not "someone opened the app".
+ * NOT on doc create. The users doc is created the moment profile setup
+ * autosaves its first draft (saveProfileDraft, a merge write of nothing but
+ * `profileDraft`), so creation fires before anyone has said who they are or
+ * what kind of account they want — which is how the feed filled up with "New
+ * unknown signed up / Someone created a unknown account". The admin is told
+ * once the doc can actually answer both questions.
+ *
+ * Deterministic id, so the several later writes that also satisfy the guard
+ * (the doc is rewritten for ratings, verification, FCM tokens, …) cannot fan
+ * out a second sign-up alert for the same person.
+ *
  * Info severity: nothing is blocked on the admin, it is pipeline awareness.
+ * `onVerificationDecided` closes it once the account has been through review.
  */
-export const onUserSignedUp = onDocumentCreated(
+export const onUserSignedUp = onDocumentWritten(
   "users/{uid}",
   async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-    const d = snap.data();
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after) return; // deleted
+
+    const named = (d: Record<string, unknown> | undefined) =>
+      Boolean(d?.fullName) && Boolean(d?.accountType);
+    // Only the transition into "we know who this is".
+    if (named(before) || !named(after)) return;
 
     const uid = event.params.uid;
-    const accountType = (d.accountType as string | undefined) ?? "unknown";
-    const fullName = (d.fullName as string | undefined) ?? "Someone";
+    const accountType = after.accountType as string;
+    const fullName = after.fullName as string;
 
-    await writeAdminAlert({
+    await writeAdminAlertOnce(`signup_${uid}`, {
       type: "user_signed_up",
       severity: "info",
       title: `New ${accountType} signed up`,
@@ -137,8 +162,8 @@ export const onUserSignedUp = onDocumentCreated(
       actors: {tenantId: uid},
       meta: {
         accountType,
-        phone: (d.phone as string | undefined) ?? "",
-        email: (d.email as string | undefined) ?? "",
+        phone: (after.phone as string | undefined) ?? "",
+        email: (after.email as string | undefined) ?? "",
       },
     });
     logger.info("New-user admin alert raised", {uid, accountType});
@@ -195,6 +220,45 @@ export const onVerificationSubmitted = onDocumentUpdated(
       },
     });
     logger.info("Verification-submitted admin alert raised", {uid});
+  },
+);
+
+/**
+ * The other end of `onVerificationSubmitted`: a human made the call.
+ *
+ * Both alerts a normal account raises — "New X signed up" and "Verification
+ * waiting for review" — describe a pipeline that ends at this decision, so
+ * this closes them instead of leaving an admin to hand-dismiss two notices
+ * about someone they just finished verifying.
+ *
+ * A rejection closes the review notice too: the review HAPPENED, and its
+ * outcome lives on the user doc. It leaves the sign-up alert alone, because
+ * that account is still an open question. Nothing else on the uid is touched —
+ * an identity-change warning is a fraud signal, not verification's to clear.
+ */
+export const onVerificationDecided = onDocumentUpdated(
+  "users/{uid}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const wasPending =
+      (before.verificationStatus as string | undefined) === "pending";
+    const status = (after.verificationStatus as string | undefined) ?? "";
+    if (!wasPending) return;
+    if (status !== "verified" && status !== "rejected") return;
+
+    const uid = event.params.uid;
+    const types = status === "verified" ?
+      ["verification_submitted", "user_signed_up"] :
+      ["verification_submitted"];
+    const closed = await resolveAdminAlertsForTarget(uid, "system", types);
+    logger.info("Verification decision closed admin alerts", {
+      uid,
+      status,
+      closed,
+    });
   },
 );
 

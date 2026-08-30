@@ -78,6 +78,7 @@ export {
   onUserProfileUpdated,
   onUserSignedUp,
   onVerificationSubmitted,
+  onVerificationDecided,
   onInspectionCompleted,
   onRentalInterestCreated,
   onPropertyCreated,

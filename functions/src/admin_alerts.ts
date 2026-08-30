@@ -146,13 +146,23 @@ export async function upsertAdminAlert(
  * admin resolves the underlying case (e.g. an inspection dispute) so the
  * dashboard queue doesn't keep showing it.
  *
+ * `types` narrows that to specific alert types, for targets that carry several
+ * unrelated alerts at once. A user doc is the case in point: verifying someone
+ * settles their sign-up and verification notices, but must NOT quietly close
+ * the identity-change warning sitting on the same uid.
+ *
+ * The type filter is applied in memory — a third equality clause would be free
+ * in Firestore, but this keeps the query identical for both callers.
+ *
  * @param {string} targetId The alerts' targetId (e.g. the inspection id).
  * @param {string} resolvedBy Admin uid that resolved it.
+ * @param {string[]} types Optional allow-list of alert types to close.
  * @return {Promise<number>} How many alerts were closed.
  */
 export async function resolveAdminAlertsForTarget(
   targetId: string,
   resolvedBy: string,
+  types?: string[],
 ): Promise<number> {
   const db = getFirestore();
   const snap = await db
@@ -162,8 +172,13 @@ export async function resolveAdminAlertsForTarget(
     .get();
   if (snap.empty) return 0;
 
+  const docs = types ?
+    snap.docs.filter((d) => types.includes(d.get("type"))) :
+    snap.docs;
+  if (docs.length === 0) return 0;
+
   const batch = db.batch();
-  for (const doc of snap.docs) {
+  for (const doc of docs) {
     batch.update(doc.ref, {
       status: "resolved",
       resolvedBy,
@@ -171,5 +186,5 @@ export async function resolveAdminAlertsForTarget(
     });
   }
   await batch.commit();
-  return snap.size;
+  return docs.length;
 }
