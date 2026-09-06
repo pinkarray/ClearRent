@@ -622,7 +622,7 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
   }
 
   /// Select (or clear) every area across all currently-filtered groups.
-  /// Mirrors _selectAllInCluster's behaviour of ignoring maxSelections.
+  /// Mirrors _toggleSelectAllInCluster's behaviour of ignoring maxSelections.
   void _toggleSelectAll() {
     final allFilteredAreas = <String>[
       for (final g in _filteredGroups) ...(g['areas'] as List<String>),
@@ -641,10 +641,23 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
     });
   }
 
-  void _selectAllInCluster(List<String> areas) {
+  /// True when every area shown under this LGA header is already selected —
+  /// drives both the label and what tapping it does.
+  bool _clusterFullySelected(List<String> areas) =>
+      areas.isNotEmpty && areas.every(_selected.contains);
+
+  /// Toggle every area under one LGA header. It used to only ever ADD, with a
+  /// label permanently reading "Select all", so tapping it was a one-way door:
+  /// the only way back was unticking each area by hand.
+  void _toggleSelectAllInCluster(List<String> areas) {
+    final allSelected = _clusterFullySelected(areas);
     setState(() {
-      for (final area in areas) {
-        if (!_selected.contains(area)) _selected.add(area);
+      if (allSelected) {
+        _selected.removeWhere(areas.contains);
+      } else {
+        for (final area in areas) {
+          if (!_selected.contains(area)) _selected.add(area);
+        }
       }
     });
   }
@@ -758,9 +771,11 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
                           ),
                           const Spacer(),
                           GestureDetector(
-                            onTap: () => _selectAllInCluster(areas),
+                            onTap: () => _toggleSelectAllInCluster(areas),
                             child: Text(
-                              'Select all',
+                              _clusterFullySelected(areas)
+                                  ? 'Clear all'
+                                  : 'Select all',
                               style: AppTextStyles.caption.copyWith(
                                 color: AppColors.textSecondary,
                               ),
