@@ -3328,8 +3328,21 @@ async function reconcilePaystackCharge(
     if (!snap.exists) {
       // The client never recorded this charge. Create the record so no real
       // payment goes untracked, and flag it for admin to finish the flow.
+      //
+      // The purpose ids are carried over from the charge metadata, not just
+      // userId/paymentType. Without them an orphaned charge could not be tied
+      // back to WHAT it paid for, and resolveServerAmount could not tell that
+      // this rental had already been charged — which is exactly how the same
+      // rent got paid twice: the client died after the charge, nothing flipped
+      // rentPaymentStatus, and the next initialize saw an unpaid rental.
+      const purposeIds: Record<string, string> = {};
+      for (const key of ["rentalInterestId", "propertyId", "requestId"]) {
+        const v = (meta as Record<string, unknown>)[key];
+        if (typeof v === "string" && v.length > 0) purposeIds[key] = v;
+      }
       tx.set(ref, {
         ...authoritative,
+        ...purposeIds,
         userId,
         userEmail: email,
         type: paymentType,

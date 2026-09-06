@@ -131,6 +131,43 @@ export async function getPricing(): Promise<PricingConfig> {
 }
 
 /**
+ * Has a successful charge for this exact purpose already gone through?
+ *
+ * Every other precondition in [resolveServerAmount] reads state that only the
+ * CLIENT's follow-up write produces — rentPaymentStatus, the request's paid
+ * flag. When the app dies between the charge and that write, all of them still
+ * say "unpaid" and the next initialize is waved through, so the same thing gets
+ * charged twice. This reads the CHARGE instead, which is recorded either by the
+ * client or, when the client never got there, by paystackWebhook.
+ *
+ * Equality filters only, so no composite index is required.
+ *
+ * NOTE: this is only as good as the webhook actually being registered in the
+ * Paystack dashboard (Settings → API Keys & Webhooks, for BOTH test and live).
+ * Without that registration an abandoned charge leaves no record anywhere and
+ * nothing here can see it.
+ *
+ * @param {string} type The payment type, as stored on the payments doc.
+ * @param {string} field The purpose field to match on.
+ * @param {string} id The purpose id.
+ * @return {Promise<string|null>} The existing reference, or null.
+ */
+async function existingSuccessfulCharge(
+  type: string,
+  field: string,
+  id: string,
+): Promise<string | null> {
+  const snap = await getFirestore()
+    .collection("payments")
+    .where(field, "==", id)
+    .where("type", "==", type)
+    .where("status", "==", "completed")
+    .limit(1)
+    .get();
+  return snap.empty ? null : snap.docs[0].id;
+}
+
+/**
  * The authoritative amount (in Naira) for a payment.
  *
  * Fixed-price types come from the schedule. Rent comes from the frozen
@@ -161,7 +198,36 @@ export async function resolveServerAmount(
   const pricing = await getPricing();
 
   if (type === "listing") return pricing.listing;
-  if (type === "inspection") return pricing.inspection.total;
+  if (type === "inspection") {
+    // Same double-charge protection as rent. The inspection fee is smaller but
+    // the failure mode is identical: charge succeeds, app dies before
+    // confirmInspectionPayment runs, request still reads unpaid, tenant pays
+    // again.
+    const requestId = typeof metadata?.requestId === "string" ?
+      metadata.requestId :
+      null;
+    if (requestId) {
+      const prior = await existingSuccessfulCharge(
+        "inspection",
+        "requestId",
+        requestId,
+      );
+      if (prior !== null) {
+        logger.error("Second inspection charge blocked", {
+          uid,
+          requestId,
+          existingReference: prior,
+        });
+        throw new HttpsError(
+          "failed-precondition",
+          "We've already received the fee for this inspection. It is being " +
+            "confirmed — please contact support if it does not unlock " +
+            "shortly. You have not been charged again.",
+        );
+      }
+    }
+    return pricing.inspection.total;
+  }
 
   if (type === "rent") {
     // Rent THROWS on every failure mode instead of returning null. A null here
@@ -222,6 +288,39 @@ export async function resolveServerAmount(
       throw new HttpsError(
         "failed-precondition",
         "Rent for this rental has already been paid.",
+      );
+    }
+
+    // A successful rent charge already exists for this rental, even though the
+    // rental is not marked paid.
+    //
+    // This is the case the check above CANNOT see, and it is how the same rent
+    // was charged twice: the money moved at Paystack, then the app died before
+    // recordRentPayment ran, so rentPaymentStatus stayed "pending" and the next
+    // initialize was waved straight through. Every other guard here reads state
+    // that only the CLIENT's follow-up write produces; this one reads the
+    // charge itself, which either the client or paystackWebhook records.
+    //
+    // Equality filters only, so no composite index is required.
+    const priorCharge = await existingSuccessfulCharge(
+      "rent",
+      "rentalInterestId",
+      interestId,
+    );
+    if (priorCharge !== null) {
+      logger.error("Second rent charge blocked — one already succeeded", {
+        uid,
+        interestId,
+        existingReference: priorCharge,
+      });
+      // Worded as "received", not "refused": the tenant HAS paid. Telling them
+      // it failed would send them looking for another way to pay the very
+      // thing they are being protected from paying twice.
+      throw new HttpsError(
+        "failed-precondition",
+        "We've already received a rent payment for this property. It is " +
+          "being confirmed — please contact support if your tenancy has not " +
+          "activated shortly. You have not been charged again.",
       );
     }
     // Slot hold: rent is only payable while the rental is holding the slot
