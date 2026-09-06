@@ -49,8 +49,20 @@ export const createRentalInterest = onCall(
 
     const db = getFirestore();
 
-    // Idempotent: one interest per inspection. The old client path did the
-    // same check, and a double-tap must not mint a second interest.
+    // Idempotent: one interest per inspection.
+    //
+    // This query is only the FAST PATH, and it is only sound for interests
+    // created before the deterministic id below — it cannot make the create
+    // safe on its own. Two concurrent calls both read an empty result and both
+    // proceeded, which is exactly how one tenant ended up with two interests
+    // on the same inspection 53ms apart, two payable rentals, and two rent
+    // charges. Every downstream guard keys on the interest id, so from the
+    // server's point of view both charges were legitimate.
+    //
+    // A transaction would NOT close this: Firestore locks the documents a
+    // query RETURNS, and an empty result returns none, so both transactions
+    // would still see "nothing there". Document-level `.create()` on a
+    // DETERMINISTIC id is the primitive that actually serialises it.
     const existing = await db
       .collection("rental_interests")
       .where("inspectionRequestId", "==", inspectionRequestId)
@@ -186,44 +198,65 @@ export const createRentalInterest = onCall(
     // sent on. Derived, never asserted, so it cannot exceed the money held.
     const clearrentEarnings = paymentAmount - landlordPayout - agentPayout;
 
-    const ref = await db.collection("rental_interests").add({
-      inspectionRequestId,
-      propertyId: insp.propertyId,
-      tenantId: insp.tenantId,
-      landlordId: insp.landlordId,
-      agentId: insp.agentId ?? null,
-      propertyTitle: insp.propertyTitle ?? null,
-      propertyImage: insp.propertyImage ?? null,
-      propertyAddress: insp.propertyAddress ?? null,
-      tenantName: insp.tenantName ?? null,
-      landlordName: insp.landlordName ?? null,
-      agentName: insp.agentName ?? null,
-      // Pay-after-accept: the interest is created UNPAID and waits for the
-      // landlord to pick one applicant. Payment is unlocked only once that
-      // applicant is accepted AND the tenancy agreement is finalized, so only
-      // the committed tenant ever pays (was "pending_payment", which charged
-      // every applicant up front and refunded the losers).
-      status: "pending_acceptance",
-      paymentAmount,
-      rentAmount,
-      agentFee,
-      tenantDealFee: dealFee,
-      // The fee ACTUALLY taken, not the headline one, so admin can see when a
-      // party's proceeds could not cover it.
-      landlordDealFee,
-      agentDealFee,
-      landlordPayout,
-      agentPayout,
-      clearrentEarnings,
-      paymentReceiptUrl: null,
-      paymentUploadedAt: null,
-      paymentVerifiedAt: null,
-      paymentVerifiedBy: null,
-      paymentRejectionReason: null,
-      acceptedAt: null,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    // Derived from the inspection, so a second concurrent call collides on the
+    // document id instead of racing a query. The `ri_` prefix keeps it from
+    // ever colliding with a legacy auto-id in this collection.
+    const interestId = `ri_${inspectionRequestId}`;
+    const ref = db.collection("rental_interests").doc(interestId);
+    try {
+      await ref.create({
+        inspectionRequestId,
+        propertyId: insp.propertyId,
+        tenantId: insp.tenantId,
+        landlordId: insp.landlordId,
+        agentId: insp.agentId ?? null,
+        propertyTitle: insp.propertyTitle ?? null,
+        propertyImage: insp.propertyImage ?? null,
+        propertyAddress: insp.propertyAddress ?? null,
+        tenantName: insp.tenantName ?? null,
+        landlordName: insp.landlordName ?? null,
+        agentName: insp.agentName ?? null,
+        // Pay-after-accept: the interest is created UNPAID and waits for the
+        // landlord to pick one applicant. Payment is unlocked only once that
+        // applicant is accepted AND the tenancy agreement is finalized, so only
+        // the committed tenant ever pays (was "pending_payment", which charged
+        // every applicant up front and refunded the losers).
+        status: "pending_acceptance",
+        paymentAmount,
+        rentAmount,
+        agentFee,
+        tenantDealFee: dealFee,
+        // The fee ACTUALLY taken, not the headline one, so admin can see when a
+        // party's proceeds could not cover it.
+        landlordDealFee,
+        agentDealFee,
+        landlordPayout,
+        agentPayout,
+        clearrentEarnings,
+        paymentReceiptUrl: null,
+        paymentUploadedAt: null,
+        paymentVerifiedAt: null,
+        paymentVerifiedBy: null,
+        paymentRejectionReason: null,
+        acceptedAt: null,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (err) {
+      // ALREADY_EXISTS (gRPC 6) means a concurrent call won the race and this
+      // one lost it — which is precisely the outcome we want. Return THEIR
+      // interest instead of minting a second one. Any other failure is real.
+      const code = (err as {code?: number | string} | null)?.code;
+      if (code === 6 || code === "already-exists") {
+        logger.info("Concurrent rental interest collapsed onto one doc", {
+          uid,
+          inspectionRequestId,
+          interestId,
+        });
+        return {interestId, created: false};
+      }
+      throw err;
+    }
 
     logger.info("Rental interest created server-side", {
       interestId: ref.id,
