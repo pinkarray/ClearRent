@@ -6,6 +6,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../core/utils/app_logger.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/paystack_service.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 
 class BankDetailsScreen extends StatefulWidget {
   final bool isOnboarding;
@@ -289,7 +290,8 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
               const Divider(height: 1),
               Expanded(
                 child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: EdgeInsets.only(
+                      top: 8, bottom: 8 + sheetBottomInset(context)),
                   itemCount: filtered.length,
                   itemBuilder: (ctx, index) {
                     final bank = filtered[index];

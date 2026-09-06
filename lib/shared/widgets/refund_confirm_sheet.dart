@@ -86,7 +86,7 @@ class _RefundConfirmSheetState extends State<RefundConfirmSheet> {
     final mediaQuery = MediaQuery.of(context);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: (mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom)),
       child: Container(
         constraints: BoxConstraints(
           maxHeight: mediaQuery.size.height * 0.9,

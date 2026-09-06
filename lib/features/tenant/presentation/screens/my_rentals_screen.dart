@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -717,7 +718,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          bottom: sheetBottomInset(sheetCtx),
         ),
         child: Container(
           decoration: BoxDecoration(

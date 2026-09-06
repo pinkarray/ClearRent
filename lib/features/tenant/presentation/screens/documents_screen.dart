@@ -17,6 +17,7 @@ import '../../../../services/tenancy_link_service.dart';
 import '../../../../services/agreement_access_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../core/utils/app_logger.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 
 /// Shows tenant's documents: tenancy agreements and payment history.
 class DocumentsScreen extends StatefulWidget {
@@ -1109,7 +1110,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           color: AppColors.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+        padding: EdgeInsets.fromLTRB(24, 12, 24, 32 + sheetBottomInset(ctx)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

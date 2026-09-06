@@ -188,7 +188,7 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
         widget.isCounter ? 'Counter-propose' : 'Propose Reschedule';
 
     return Padding(
-      padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: (mediaQuery.viewInsets.bottom + mediaQuery.padding.bottom)),
       child: Container(
         constraints: BoxConstraints(
           maxHeight: mediaQuery.size.height * 0.9,

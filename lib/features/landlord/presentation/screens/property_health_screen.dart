@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -403,7 +404,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              bottom: sheetBottomInset(ctx)),
           child: Container(
             decoration: BoxDecoration(
               color: AppColors.surface,

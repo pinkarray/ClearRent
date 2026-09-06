@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -246,7 +247,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = sheetBottomInset(context);
 
     return Container(
       constraints: BoxConstraints(

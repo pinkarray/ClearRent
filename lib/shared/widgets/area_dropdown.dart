@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../core/utils/inspection_pricing.dart';
+import '../utils/sheet_insets.dart';
 
 /// A searchable dropdown that lists all Lagos areas from InspectionPricing,
 /// grouped by transport cluster. Used across all roles:
@@ -482,7 +483,8 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
             child: _filteredGroups.isEmpty && _searchQuery.trim().isNotEmpty
                 ? _buildNotFound()
                 : ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.only(
+                  left: 20, right: 20, bottom: sheetBottomInset(context)),
               itemCount: _filteredGroups.length,
               itemBuilder: (context, groupIndex) {
                 final group = _filteredGroups[groupIndex];
@@ -729,7 +731,8 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
           // List
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.only(
+                  left: 20, right: 20, bottom: sheetBottomInset(context)),
               itemCount: _filteredGroups.length,
               itemBuilder: (context, groupIndex) {
                 final group = _filteredGroups[groupIndex];

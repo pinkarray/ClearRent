@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -4529,7 +4530,7 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+        bottom: sheetBottomInset(context),
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
@@ -4821,7 +4822,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: sheetBottomInset(context)),
       child: Container(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
         decoration: BoxDecoration(

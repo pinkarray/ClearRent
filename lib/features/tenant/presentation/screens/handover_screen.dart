@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -667,7 +668,7 @@ class _SettleSheetState extends State<_SettleSheet> {
         left: 20,
         right: 20,
         top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        bottom: sheetBottomInset(context) + 20,
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text('Settle the caution deposit', style: AppTextStyles.labelLarge),

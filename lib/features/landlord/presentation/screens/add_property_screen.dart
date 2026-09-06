@@ -26,6 +26,7 @@ import '../../../../services/agent_service.dart';
 import '../../../../services/property_draft_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -5773,11 +5774,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                             Expanded(
                               child: ListView.separated(
                                 controller: scrollController,
-                                padding: const EdgeInsets.fromLTRB(
+                                padding: EdgeInsets.fromLTRB(
                                   20,
                                   8,
                                   20,
-                                  20,
+                                  20 + sheetBottomInset(context),
                                 ),
                                 itemCount: agents.length,
                                 separatorBuilder:

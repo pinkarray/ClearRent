@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -2410,7 +2411,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             left: 20,
             right: 20,
             top: 20,
-            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
+            bottom: sheetBottomInset(sheetCtx) + 20,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

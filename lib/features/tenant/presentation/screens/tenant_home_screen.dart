@@ -40,6 +40,7 @@ import '../../../../shared/widgets/email_verification_banner.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 
 // Derived from the one vocabulary in PropertyModel. This list used to be its
 // own invention — 'self_contain', 'room_and_parlour', 'studio' and 'mansion'
@@ -1736,7 +1737,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
               color: AppColors.surface,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+            padding: EdgeInsets.fromLTRB(
+                24, 16, 24, 40 + sheetBottomInset(context)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,

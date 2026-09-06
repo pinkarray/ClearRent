@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/sheet_insets.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 import '../../services/property_service.dart';
@@ -66,7 +67,7 @@ class _PropertyReadinessSheetState extends State<PropertyReadinessSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomPadding = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = sheetBottomInset(context);
     final items = PropertyService.readinessChecklistItems;
 
     return Container(

@@ -28,6 +28,7 @@ import '../../../../shared/widgets/verification_badge.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
+import '../../../../shared/utils/sheet_insets.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
   /// Bottom-nav tab to open on. 0 Dashboard · 1 Properties · 2 Messages ·
@@ -2409,7 +2410,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+        padding: EdgeInsets.fromLTRB(24, 16, 24, 40 + sheetBottomInset(context)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

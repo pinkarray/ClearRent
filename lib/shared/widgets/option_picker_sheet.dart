@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/sheet_insets.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 
@@ -28,7 +29,7 @@ Future<void> showOptionPicker(
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setSheetState) => Padding(
         // Lift the sheet above the keyboard when the search field is focused.
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.only(bottom: sheetBottomInset(ctx)),
         child: Container(
           height: MediaQuery.of(ctx).size.height * 0.6,
           decoration: BoxDecoration(
