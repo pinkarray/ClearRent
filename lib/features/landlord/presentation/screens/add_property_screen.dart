@@ -1926,7 +1926,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   child: TextButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
-                      context.push('/landlord/edit-property/$propertyId');
+                      // pushReplacement, not push. A bare push left THIS
+                      // screen underneath with the form still filled in, so
+                      // Back out of the caretaker section landed the landlord
+                      // back on a live Publish button and they could publish
+                      // the same unit a second time. Replacing swaps
+                      // add-property for edit-property, leaving landlord home
+                      // (this screen is only ever reached by pushing from it)
+                      // as what Back returns to.
+                      //
+                      // Deliberately not go()-then-push(): go() routes through
+                      // an async parse, so the push can append to the stack
+                      // that go() is still replacing.
+                      context.pushReplacement(
+                          '/landlord/edit-property/$propertyId?section=caretaker');
                     },
                     icon: Icon(Icons.person_add_alt_1_outlined,
                         size: 18, color: AppColors.primary),

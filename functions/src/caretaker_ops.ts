@@ -473,7 +473,11 @@ export const inviteCaretaker = onCall(callableOptions, async (request) => {
     caretakerId,
     unitCount,
   });
-  return {success: true, inviteId: inviteRef.id, caretakerName};
+  // caretakerId comes back so the app can open the landlord↔caretaker chat
+  // straight away. It is not a new disclosure: the invite document the
+  // landlord just created carries it and they can read their own invites.
+  // Reading it from there instead would race the server echo.
+  return {success: true, inviteId: inviteRef.id, caretakerId, caretakerName};
 });
 
 export const respondToCaretakerInvite = onCall(

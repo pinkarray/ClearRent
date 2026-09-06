@@ -296,8 +296,11 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/landlord/edit-property/:id',
+      // `section` rides the QUERY STRING, not `extra`, so it survives the app
+      // being restored — same reason /chat reads conversationId that way.
       builder: (context, state) => EditPropertyLoaderScreen(
         propertyId: state.pathParameters['id']!,
+        focusSection: state.uri.queryParameters['section'],
       ),
     ),
     GoRoute(

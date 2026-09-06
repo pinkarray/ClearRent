@@ -16,6 +16,7 @@ import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../shared/widgets/description_prompts.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/caretaker_service.dart';
+import '../../../../services/conversation_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -57,9 +58,18 @@ class ThousandsSeparatorInputFormatter extends TextInputFormatter {
 class EditPropertyScreen extends StatefulWidget {
   final PropertyModel property;
 
+  /// A section to scroll to on open, e.g. 'caretaker'.
+  ///
+  /// This screen is long, and the publish-success dialog sends the landlord
+  /// here specifically to appoint a caretaker — dropping them at the top with
+  /// no indication the section exists several screens down made the button
+  /// look like it had done nothing.
+  final String? focusSection;
+
   const EditPropertyScreen({
     super.key,
     required this.property,
+    this.focusSection,
   });
 
   @override
@@ -140,14 +150,47 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   /// flight — and the second attempt is rejected with "you already have a
   /// caretaker invite waiting", which reads like a bug rather than the truth.
   CaretakerInvite? _pendingInvite;
+  StreamSubscription<List<CaretakerInvite>>? _caretakerInvitesSub;
+  final GlobalKey _caretakerSectionKey = GlobalKey();
 
-  Future<void> _loadCaretakerState() async {
-    final invites = await _caretakerService.invitesForLandlord().first;
-    if (!mounted) return;
-    setState(() {
-      _pendingInvite = invites
-          .where((i) => i.isPending && i.propertyIds.contains(widget.property.id))
-          .firstOrNull;
+  /// Bring the requested section into view once there is a frame to scroll.
+  ///
+  /// Deferred to after the first frame because the key has no context until
+  /// the subtree is laid out, and `alignment: 0.1` leaves the section heading
+  /// just below the app bar rather than jammed against it.
+  void _revealFocusSection() {
+    if (widget.focusSection != 'caretaker') return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _caretakerSectionKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+        alignment: 0.1,
+      );
+    });
+  }
+
+  /// LIVE, not a one-shot `.first`.
+  ///
+  /// The invite document is written by a Cloud Function, so there is no local
+  /// latency compensation: the first emission of the query right after sending
+  /// is very often the pre-invite cache, and the "waiting for them to accept"
+  /// card simply never appeared. The landlord was then looking at an
+  /// unchanged "Invite a caretaker" button, concluded nothing had happened,
+  /// and invited again. A subscription picks up the server echo whenever it
+  /// lands, and also reflects acceptance without reopening the screen.
+  void _watchCaretakerState() {
+    _caretakerInvitesSub?.cancel();
+    _caretakerInvitesSub =
+        _caretakerService.invitesForLandlord().listen((invites) {
+      if (!mounted) return;
+      setState(() {
+        _pendingInvite = invites
+            .where((i) => i.isPending && i.propertyIds.contains(widget.property.id))
+            .firstOrNull;
+      });
     });
   }
 
@@ -245,7 +288,8 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _inspectionHandler = p.inspectionHandler;
     _caretakerId = p.caretakerId;
     _caretakerName = p.caretakerName;
-    _loadCaretakerState();
+    _watchCaretakerState();
+    _revealFocusSection();
     _includeAgentFee = p.agentFee > 0; // Derive from existing data
     _cautionDepositRefundable = p.cautionDepositRefundable;
     
@@ -379,6 +423,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _stateController.dispose();
     _unitLabelController.dispose();
     _caretakerPhoneController.dispose();
+    _caretakerInvitesSub?.cancel();
     super.dispose();
   }
 
@@ -2071,7 +2116,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           ),
 
           const SizedBox(height: 20),
-          _buildCaretakerSection(),
+          KeyedSubtree(key: _caretakerSectionKey, child: _buildCaretakerSection()),
 
           // Agent assignment section (only shown when 'agent' is selected)
           if (_inspectionHandler == 'agent') ...[
@@ -2251,6 +2296,19 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                     ],
                   ),
                 ),
+                // Chasing an unanswered invitation is the action a landlord
+                // actually wants here. Without it the only button was
+                // Withdraw, so "they haven't replied yet" had no outlet
+                // except sending the invite again.
+                IconButton(
+                  tooltip: 'Message ${_pendingInvite!.caretakerName}',
+                  onPressed: () => _messageCaretaker(
+                    _pendingInvite!.caretakerId,
+                    fallbackName: _pendingInvite!.caretakerName,
+                  ),
+                  icon: Icon(Icons.chat_bubble_outline,
+                      size: 20, color: AppColors.primary),
+                ),
                 TextButton(
                   onPressed: _withdrawInvite,
                   style: TextButton.styleFrom(foregroundColor: AppColors.error),
@@ -2280,6 +2338,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                     _caretakerName ?? 'Your caretaker',
                     style: AppTextStyles.labelMedium,
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Message ${_caretakerName ?? 'your caretaker'}',
+                  onPressed: () => _messageCaretaker(
+                    _caretakerId,
+                    fallbackName: _caretakerName ?? 'your caretaker',
+                  ),
+                  icon: Icon(Icons.chat_bubble_outline,
+                      size: 20, color: AppColors.primary),
                 ),
                 TextButton(
                   onPressed: _removeCaretaker,
@@ -2460,29 +2527,33 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                       ? null
                       : () async {
                           setSheetState(() => sending = true);
-                          final error = await _sendCaretakerInvite(
+                          final result = await _sendCaretakerInvite(
                             phoneController.text.trim(),
                             applyToBuilding,
                           );
                           if (!sheetCtx.mounted) return;
                           setSheetState(() => sending = false);
-                          if (error == null) {
-                            Navigator.pop(sheetCtx);
-                            // Reflect the invite we just sent, so the section
-                            // shows "waiting for them to accept" instead of
-                            // offering to invite all over again.
-                            unawaited(_loadCaretakerState());
+                          if (result.error != null) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(result.error!),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                            return;
                           }
+                          Navigator.pop(sheetCtx);
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(error ??
-                                  'Invitation sent. They\'ll appear here once '
-                                      'they accept.'),
-                              backgroundColor:
-                                  error != null ? AppColors.error : null,
-                            ),
-                          );
+                          // A dialog, not a snackbar. The old snackbar named
+                          // nobody and was gone in seconds, so a landlord who
+                          // glanced away had nothing telling them the
+                          // invitation had reached the person they meant —
+                          // and sent another one. The pending card behind it
+                          // is driven by a live subscription now, so it is
+                          // there when this is dismissed.
+                          await _showInviteSentDialog(
+                              result.name!, result.caretakerId);
                         },
                   child: sending
                       ? const SizedBox(
@@ -2500,16 +2571,23 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
-  /// Returns null on success, or the message to show.
+  /// Returns the error to show, or the invited person's NAME on success.
+  ///
+  /// The name comes back because the confirmation has to say WHO was invited.
+  /// A bare "Invitation sent" left the landlord unable to tell it had reached
+  /// the person they meant, which is half of why they ended up inviting twice.
   ///
   /// Two steps on purpose: resolve the number to a NAME and make the landlord
   /// confirm it, then send. A single mistyped digit otherwise appoints a real
   /// stranger to a tenant's issues and message thread, and they could accept.
-  Future<String?> _sendCaretakerInvite(
+  Future<({String? error, String? name, String? caretakerId})>
+      _sendCaretakerInvite(
     String phone,
     bool applyToBuilding,
   ) async {
-    if (phone.isEmpty) return 'Enter their phone number.';
+    if (phone.isEmpty) {
+      return (error: 'Enter their phone number.', name: null, caretakerId: null);
+    }
 
     var propertyIds = [widget.property.id];
     final buildingId = widget.property.buildingId;
@@ -2538,11 +2616,17 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         propertyIds: propertyIds,
       );
     } on CaretakerLookupException catch (e) {
-      return e.message;
+      return (error: e.message, name: null, caretakerId: null);
     }
 
     // Step 2 — the landlord confirms the NAME, not the digits.
-    if (!mounted) return 'Could not continue. Please try again.';
+    if (!mounted) {
+      return (
+        error: 'Could not continue. Please try again.',
+        name: null,
+        caretakerId: null,
+      );
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2568,13 +2652,105 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ],
       ),
     );
-    if (confirmed != true) return 'Invitation not sent.';
+    if (confirmed != true) {
+      return (error: 'Invitation not sent.', name: null, caretakerId: null);
+    }
 
-    return _caretakerService.invite(
+    final sent = await _caretakerService.invite(
       phone: phone,
       propertyIds: propertyIds,
       buildingId: applyToBuilding ? buildingId : null,
     );
+    return (
+      error: sent.error,
+      name: sent.error == null ? candidateName : null,
+      caretakerId: sent.caretakerId,
+    );
+  }
+
+  /// Confirms the invitation went out, by name, and offers to message them.
+  ///
+  /// Acceptance is someone else's action and can take days. Until it happens
+  /// the landlord's only signal used to be a four-second snackbar, so the
+  /// obvious recovery was to invite again — which the callable then rejects
+  /// with "you already have a caretaker invite waiting", reading like a bug.
+  Future<void> _showInviteSentDialog(String name, String? caretakerId) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Invitation sent'),
+        content: Text(
+          'We have asked $name to manage this property. They will show up '
+          'here as your caretaker once they accept — you do not need to '
+          'invite them again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _messageCaretaker(
+                caretakerId ?? _pendingInvite?.caretakerId,
+                fallbackName: name,
+              );
+            },
+            child: Text('Message $name'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Open the landlord↔caretaker thread.
+  ///
+  /// Works before acceptance as well as after: the thread carries no tenant
+  /// and no property, so it does not touch anything the caretaker is not
+  /// entitled to see. It is how the landlord chases an unanswered invitation
+  /// instead of re-sending it.
+  Future<void> _messageCaretaker(String? caretakerId,
+      {required String fallbackName}) async {
+    final landlordId = widget.property.landlordId;
+    if (caretakerId == null || caretakerId.isEmpty) {
+      _showCaretakerSnack('Could not open a chat with $fallbackName yet. '
+          'Try again in a moment.');
+      return;
+    }
+    // Resolve the messenger BEFORE the await — this screen can rebuild
+    // underneath, and `mounted` alone does not keep an inherited widget
+    // reachable (the crash in the caretaker screens was exactly this).
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final conversationId =
+        await ConversationService().getOrCreateCaretakerConversation(
+      landlordId: landlordId,
+      caretakerId: caretakerId,
+    );
+    if (!mounted) return;
+    if (conversationId == null) {
+      // Deliberately does NOT say "they are not verified".
+      // ConversationService._isUserVerified still collapses a FAILED read into
+      // false, so a flaky connection would otherwise make the app state a
+      // falsehood about someone else's account. State the requirement; don't
+      // claim they failed it.
+      messenger.showSnackBar(SnackBar(
+        content: Text('Could not open a chat with $fallbackName right now. '
+            'Messaging needs a verified account on both sides — check your '
+            'connection and try again.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+    // Query string, not a path segment: /chat reads conversationId from the
+    // query so it survives app restoration, and `extra` is cosmetic only.
+    router.push('/chat?conversationId=$conversationId');
+  }
+
+  void _showCaretakerSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildAgentAssignmentSection() {

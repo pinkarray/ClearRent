@@ -1106,6 +1106,102 @@ class ConversationService {
     }
   }
 
+  /// Get or create the landlord↔caretaker thread (no property).
+  ///
+  /// Deliberately NOT per property, and deliberately NOT the three-party
+  /// caretaker thread. That one is opened server-side on ACCEPTANCE and
+  /// carries the tenant, because a caretaker cannot discover who the tenant
+  /// is; this one exists from the moment an invitation is sent, so the
+  /// landlord can say "I've added you, please accept" instead of re-sending
+  /// the invite when nothing seems to happen. An invitation can also cover
+  /// every unit in a building, so keying it to one property would fragment the
+  /// same conversation across units.
+  ///
+  /// Mirrors [getOrCreateAgentPitchConversation] — the existing precedent for
+  /// a person-to-person thread with no property attached. Three equality
+  /// filters and no orderBy, so it needs no composite index.
+  Future<String?> getOrCreateCaretakerConversation({
+    required String landlordId,
+    required String caretakerId,
+  }) async {
+    if (landlordId.isEmpty || caretakerId.isEmpty) {
+      developer.log(
+        '❌ Cannot create caretaker conversation: missing IDs (landlord=$landlordId, caretaker=$caretakerId)',
+        name: 'ConversationService',
+      );
+      return null;
+    }
+
+    try {
+      // Both must be verified — the same gate every other thread applies, and
+      // the invite itself already refuses an unverified invitee.
+      if (!await _isUserVerified(landlordId)) {
+        developer.log('❌ Landlord not verified', name: 'ConversationService');
+        return null;
+      }
+      if (!await _isUserVerified(caretakerId)) {
+        developer.log('❌ Caretaker not verified', name: 'ConversationService');
+        return null;
+      }
+
+      final existingQuery = await _firestore
+          .collection('conversations')
+          .where('landlordId', isEqualTo: landlordId)
+          .where('caretakerId', isEqualTo: caretakerId)
+          .where('conversationType', isEqualTo: 'caretaker_direct')
+          .limit(1)
+          .get();
+
+      if (existingQuery.docs.isNotEmpty) {
+        return existingQuery.docs.first.id;
+      }
+
+      final landlordDoc = await _firestore.collection('users').doc(landlordId).get();
+      final caretakerDoc = await _firestore.collection('users').doc(caretakerId).get();
+      final landlordData = landlordDoc.data();
+      final caretakerData = caretakerDoc.data();
+
+      if (landlordData == null || caretakerData == null) {
+        developer.log('❌ Could not find user data', name: 'ConversationService');
+        return null;
+      }
+
+      final docRef = await _firestore.collection('conversations').add({
+        'propertyId': '',
+        'propertyTitle': 'Caretaking',
+        'propertyImage': '',
+        'landlordId': landlordId,
+        'landlordName': landlordData['fullName'] ?? 'Landlord',
+        'tenantId': '',
+        'tenantName': '',
+        'agentId': '',
+        'agentName': '',
+        'caretakerId': caretakerId,
+        'caretakerName': caretakerData['fullName'] ?? 'Caretaker',
+        'participants': [landlordId, caretakerId],
+        'lastMessage': '',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': '',
+        'unreadCounts': {landlordId: 0, caretakerId: 0},
+        'conversationType': 'caretaker_direct',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      developer.log(
+        '✅ Created caretaker conversation: ${docRef.id}',
+        name: 'ConversationService',
+      );
+      return docRef.id;
+    } catch (e) {
+      developer.log(
+        '❌ Error getting/creating caretaker conversation: $e',
+        name: 'ConversationService',
+      );
+      return null;
+    }
+  }
+
   /// Send a verification reminder notification to an unverified user.
   Future<bool> sendVerificationReminder({
     required String adminId,
@@ -1328,14 +1424,25 @@ class ConversationData {
     // Return the counterpart's name — never the current user's own name.
     // Mirrors the other-party precedence used in chat_screen.dart.
     if (currentUserId == landlordId) {
-      // Landlord sees the tenant if there is one, else the agent.
+      // Landlord sees the tenant if there is one, else the caretaker, else the
+      // agent. The caretaker step is what makes the landlord↔caretaker thread
+      // (no tenant, no agent) show a name instead of 'Unknown'.
       if (tenantName.isNotEmpty) return tenantName;
+      if (caretakerName != null && caretakerName!.isNotEmpty) {
+        return caretakerName!;
+      }
       return (agentName != null && agentName!.isNotEmpty)
           ? agentName!
           : 'Unknown';
     }
     if (currentUserId == agentId) {
       // Agent sees the tenant if there is one, else the landlord.
+      if (tenantName.isNotEmpty) return tenantName;
+      return landlordName.isNotEmpty ? landlordName : 'Unknown';
+    }
+    if (caretakerId != null && currentUserId == caretakerId) {
+      // Caretaker sees the tenant they manage for, else the landlord who
+      // appointed them — which is the only counterpart before acceptance.
       if (tenantName.isNotEmpty) return tenantName;
       return landlordName.isNotEmpty ? landlordName : 'Unknown';
     }

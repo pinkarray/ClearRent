@@ -155,12 +155,17 @@ class _ChatScreenState extends State<ChatScreen> {
         // caretaker when one is on the thread, otherwise the landlord.
         otherPartyId = hasCaretaker ? caretakerId : _conversation!.landlordId;
       } else if (hasCaretaker && _currentUserId == caretakerId) {
-        // The caretaker is here to deal with the tenant.
-        otherPartyId = _conversation!.tenantId;
+        // The caretaker is here to deal with the tenant — except on the
+        // landlord↔caretaker thread, which has no tenant on it at all.
+        otherPartyId = _conversation!.tenantId.isNotEmpty
+            ? _conversation!.tenantId
+            : _conversation!.landlordId;
       } else if (_currentUserId == _conversation!.landlordId) {
-        // Landlord's other party: tenant if present, otherwise agent
+        // Landlord's other party: tenant if present, else caretaker, else agent
         if (_conversation!.tenantId.isNotEmpty) {
           otherPartyId = _conversation!.tenantId;
+        } else if (hasCaretaker) {
+          otherPartyId = caretakerId;
         } else if (_conversation!.agentId != null && _conversation!.agentId!.isNotEmpty) {
           otherPartyId = _conversation!.agentId;
         }
@@ -726,8 +731,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final hasAgent = c.agentId != null && c.agentId!.isNotEmpty;
       final hasCaretaker = c.caretakerId != null && c.caretakerId!.isNotEmpty;
       if (_currentUserId == c.landlordId) {
-        // Landlord's counterpart: tenant if present, else agent.
-        otherPersonRole = hasTenant ? 'Tenant' : (hasAgent ? 'Agent' : 'User');
+        // Landlord's counterpart: tenant if present, else caretaker, else
+        // agent. Without the caretaker step the landlord↔caretaker thread was
+        // labelled a bare 'User'.
+        otherPersonRole = hasTenant
+            ? 'Tenant'
+            : (hasCaretaker ? 'Caretaker' : (hasAgent ? 'Agent' : 'User'));
       } else if (_currentUserId == c.agentId) {
         // Agent's counterpart: tenant if present, else landlord.
         otherPersonRole = hasTenant ? 'Tenant' : 'Landlord';

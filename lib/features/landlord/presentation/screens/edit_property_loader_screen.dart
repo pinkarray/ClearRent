@@ -16,7 +16,14 @@ import 'edit_property_screen.dart';
 class EditPropertyLoaderScreen extends StatelessWidget {
   final String propertyId;
 
-  const EditPropertyLoaderScreen({super.key, required this.propertyId});
+  /// Forwarded to [EditPropertyScreen] — see its `focusSection`.
+  final String? focusSection;
+
+  const EditPropertyLoaderScreen({
+    super.key,
+    required this.propertyId,
+    this.focusSection,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +52,10 @@ class EditPropertyLoaderScreen extends StatelessWidget {
             ),
           );
         }
-        return EditPropertyScreen(property: property);
+        return EditPropertyScreen(
+          property: property,
+          focusSection: focusSection,
+        );
       },
     );
   }

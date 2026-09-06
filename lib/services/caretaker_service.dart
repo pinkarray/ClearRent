@@ -104,23 +104,41 @@ class CaretakerService {
   /// One invite covers many units so a building assignment is a single act on
   /// both sides — and so revoking it later has one document to close rather
   /// than a unit's worth of orphans.
-  Future<String?> invite({
+  /// Returns the error to show, or the invitee's uid on success.
+  ///
+  /// The uid lets the caller open the landlord↔caretaker chat immediately.
+  /// Reading it back off `caretaker_invites` instead would race the server
+  /// echo — the document is written by this function, so the client has no
+  /// latency compensation for it. Null on an older deployment that doesn't
+  /// return the field yet; callers must treat it as optional.
+  Future<({String? error, String? caretakerId})> invite({
     required String phone,
     required List<String> propertyIds,
     String? buildingId,
   }) async {
     try {
-      await _functions.httpsCallable('inviteCaretaker').call<Map<String, dynamic>>({
+      final result = await _functions
+          .httpsCallable('inviteCaretaker')
+          .call<Map<String, dynamic>>({
         'phone': phone,
         'propertyIds': propertyIds,
         if (buildingId != null) 'buildingId': buildingId,
       });
-      return null;
+      return (
+        error: null,
+        caretakerId: result.data['caretakerId'] as String?,
+      );
     } on FirebaseFunctionsException catch (e) {
-      return e.message ?? 'Could not send that invite. Please try again.';
+      return (
+        error: e.message ?? 'Could not send that invite. Please try again.',
+        caretakerId: null,
+      );
     } catch (e) {
       developer.log('❌ inviteCaretaker failed: $e', name: 'CaretakerService');
-      return 'Could not send that invite. Please try again.';
+      return (
+        error: 'Could not send that invite. Please try again.',
+        caretakerId: null,
+      );
     }
   }
 
