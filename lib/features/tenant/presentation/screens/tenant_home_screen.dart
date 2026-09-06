@@ -204,6 +204,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   bool _isLoadingProfile = true;
 
   VerificationStatus _verificationStatus = VerificationStatus.none;
+  StreamSubscription? _profileSub;
   bool _hasBankDetails = false;
 
   @override
@@ -258,6 +259,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       }
     });
     _loadUserProfile();
+    _listenToProfile();
     _loadSavedProperties();
     _loadUnreadCount();
     _loadProperties();
@@ -294,6 +296,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     _interestsSub?.cancel();
     _tenantRentalsSub?.cancel();
     _openHandoversSub?.cancel();
+    _profileSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -302,34 +305,65 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   Future<void> _loadVerificationStatus() => _loadUserProfile();
 
+  /// Keep the profile live for as long as this screen is on screen.
+  ///
+  /// `verificationStatus` is written by an ADMIN approving the submission, so
+  /// it changes while the tenant is sitting here and no amount of re-reading
+  /// on navigation can be relied on to catch it. A one-shot read left the
+  /// banner saying "pending" after the account had been approved, and only an
+  /// app restart cleared it, because getUserProfile() memoises for a TTL and
+  /// the reload on return was served from that cache. The landlord home screen
+  /// has always listened; this is the same thing.
+  void _listenToProfile() {
+    final uid = _authService.currentUserId;
+    if (uid == null) return;
+    _profileSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted || !doc.exists) return;
+      _applyProfile(doc.data()!);
+    });
+  }
+
+  /// Push a profile map into screen state. Shared so the listener and the
+  /// one-shot load cannot drift into disagreeing about how a status is read.
+  void _applyProfile(Map<String, dynamic> profile) {
+    // Parse verification status directly from Firestore, the same field admin sets
+    final status = profile['verificationStatus'] as String? ?? 'none';
+    final isVerified = profile['isVerified'] == true;
+    VerificationStatus verStatus;
+    if (status == 'verified' || isVerified) {
+      verStatus = VerificationStatus.verified;
+    } else if (status == 'pending') {
+      verStatus = VerificationStatus.pending;
+    } else if (status == 'rejected') {
+      verStatus = VerificationStatus.rejected;
+    } else if (status == 'expired') {
+      verStatus = VerificationStatus.expired;
+    } else {
+      verStatus = VerificationStatus.none;
+    }
+    setState(() {
+      _userName = profile['fullName'] ?? 'Tenant';
+      _profileImageUrl = profile['profileImageUrl'];
+      _verificationStatus = verStatus;
+      _isLoadingProfile = false;
+      // Track bank details, C1: moved to the locked private/bank
+      // subcollection; the user doc only carries this non-sensitive flag.
+      _hasBankDetails = profile['hasBankDetails'] == true;
+    });
+  }
+
   Future<void> _loadUserProfile() async {
     try {
-      final profile = await _authService.getUserProfile();
+      // forceRefresh: this is only ever called because something just changed,
+      // and the memoised copy would otherwise overwrite the listener's fresh
+      // value with a stale one.
+      final profile = await _authService.getUserProfile(forceRefresh: true);
       if (profile != null && mounted) {
-        // Parse verification status directly from Firestore — same field admin sets
-        final status = profile['verificationStatus'] as String? ?? 'none';
-        final isVerified = profile['isVerified'] == true;
-        VerificationStatus verStatus;
-        if (status == 'verified' || isVerified) {
-          verStatus = VerificationStatus.verified;
-        } else if (status == 'pending') {
-          verStatus = VerificationStatus.pending;
-        } else if (status == 'rejected') {
-          verStatus = VerificationStatus.rejected;
-        } else if (status == 'expired') {
-          verStatus = VerificationStatus.expired;
-        } else {
-          verStatus = VerificationStatus.none;
-        }
-        setState(() {
-          _userName = profile['fullName'] ?? 'Tenant';
-          _profileImageUrl = profile['profileImageUrl'];
-          _verificationStatus = verStatus;
-          _isLoadingProfile = false;
-          // Track bank details — C1: moved to the locked private/bank
-          // subcollection; the user doc only carries this non-sensitive flag.
-          _hasBankDetails = profile['hasBankDetails'] == true;
-        });
+        _applyProfile(profile);
       } else {
         if (mounted) {
           setState(() {
