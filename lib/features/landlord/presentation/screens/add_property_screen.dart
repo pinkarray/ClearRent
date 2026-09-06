@@ -237,7 +237,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   // Ownership document
   File? _ownershipDocFile;
-  String? _ownershipDocType; // 'c_of_o' | 'deed' | 'other'
+  String? _ownershipDocType;
+
 
   // Building / compound grouping. When [_isInBuilding] the unit inherits a
   // building's shared ownership doc instead of uploading its own:
