@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/constants/ownership_doc_types.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -636,18 +637,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       widget.property.ownershipDocStatus == 'verified' && !_isGrouped;
 
   /// Human label for a stored ownership-doc type value.
-  String _docTypeLabel(String? type) {
-    switch (type) {
-      case 'c_of_o':
-        return 'C of O';
-      case 'deed':
-        return 'Deed of Assignment';
-      case 'other':
-        return 'other document';
-      default:
-        return 'document';
-    }
-  }
+  String _docTypeLabel(String? type) => OwnershipDocTypes.label(type);
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).clearSnackBars();
@@ -2907,12 +2897,34 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
+          runSpacing: 8,
           children: [
-            _DocTypeChip(label: 'C of O', value: 'c_of_o', selected: _ownershipDocType == 'c_of_o', onTap: () => setState(() { _ownershipDocType = 'c_of_o'; _hasChanges = true; })),
-            _DocTypeChip(label: 'Deed of Assignment', value: 'deed', selected: _ownershipDocType == 'deed', onTap: () => setState(() { _ownershipDocType = 'deed'; _hasChanges = true; })),
-            _DocTypeChip(label: 'Other', value: 'other', selected: _ownershipDocType == 'other', onTap: () => setState(() { _ownershipDocType = 'other'; _hasChanges = true; })),
+            for (final t in OwnershipDocTypes.all)
+              _DocTypeChip(
+                label: t.label,
+                value: t.value,
+                selected: _ownershipDocType == t.value,
+                onTap: () => setState(() {
+                  _ownershipDocType = t.value;
+                  _hasChanges = true;
+                }),
+              ),
           ],
         ),
+        // Chips alone said nothing about what any option meant. The edit
+        // screen keeps the compact layout — the landlord already chose once —
+        // but spells out whichever one is currently selected.
+        if (_ownershipDocType != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            OwnershipDocTypes.all
+                .firstWhere((t) => t.value == _ownershipDocType,
+                    orElse: () => OwnershipDocTypes.all.last)
+                .description,
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
+          ),
+        ],
 
         // Once approved, the label is tied to the file the admin actually
         // reviewed — say so up front rather than failing on save.

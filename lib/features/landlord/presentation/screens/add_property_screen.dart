@@ -12,6 +12,7 @@ import '../../../../shared/widgets/description_prompts.dart';
 import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/constants/ownership_doc_types.dart';
 import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -5281,19 +5282,26 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       Row(children: [
         Text(title, style: AppTextStyles.h4),
         const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: AppColors.error.withAlpha(26),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text('Required',
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.error,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              )),
-        ),
+        // "Required" is a PROMPT, not a label: it tells the landlord what is
+        // still missing. Once the document is attached it has nothing left to
+        // say, and leaving it up read as an unmet requirement on a step they
+        // had already completed. It comes back if the document is removed.
+        if (_ownershipDocFile == null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.error.withAlpha(26),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text('Required',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.error,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                )),
+          )
+        else
+          Icon(Icons.check_circle, size: 16, color: AppColors.success),
       ]),
       const SizedBox(height: 4),
       Text(desc,
@@ -5319,42 +5327,38 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Doc type chips
+          // Doc type.
+          //
+          // Was three bare chips — "C of O" / "Deed of Assignment" / "Other" —
+          // with no default and nothing saying what any of them meant, so a
+          // landlord who did not already know the vocabulary could not tell
+          // which one described the paper in their hand. Deliberately still no
+          // DEFAULT: this is a claim about a legal document, and a
+          // pre-selected answer both misstates it and stops admin telling a
+          // real choice from an untouched one.
           Text('Document Type', style: AppTextStyles.labelMedium),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [
-              _DocTypeChip(
-                label: 'C of O',
-                value: 'c_of_o',
-                selected: _ownershipDocType == 'c_of_o',
-                onTap: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  setState(() => _ownershipDocType = 'c_of_o');
-                },
-              ),
-              _DocTypeChip(
-                label: 'Deed of Assignment',
-                value: 'deed',
-                selected: _ownershipDocType == 'deed',
-                onTap: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  setState(() => _ownershipDocType = 'deed');
-                },
-              ),
-              _DocTypeChip(
-                label: 'Other',
-                value: 'other',
-                selected: _ownershipDocType == 'other',
-                onTap: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  setState(() => _ownershipDocType = 'other');
-                },
-              ),
-            ],
+          const SizedBox(height: 4),
+          Text(
+            'Which document are you uploading? Pick the closest match - our '
+            'team reviews it either way.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary, height: 1.5),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          ...OwnershipDocTypes.all.expand((t) => [
+                _buildLettingChoiceCard(
+                  label: t.label,
+                  subtitle: t.description,
+                  icon: Icons.description_outlined,
+                  selected: _ownershipDocType == t.value,
+                  onTap: () {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    setState(() => _ownershipDocType = t.value);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ]),
+          const SizedBox(height: 8),
 
           if (hasDoc) ...[
             Container(
@@ -6933,39 +6937,3 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 }
 
-class _DocTypeChip extends StatelessWidget {
-  final String label, value;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _DocTypeChip({
-    required this.label,
-    required this.value,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withAlpha(26) : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: AppTextStyles.labelSmall.copyWith(
-            color: selected ? AppColors.primary : AppColors.textSecondary,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-}
