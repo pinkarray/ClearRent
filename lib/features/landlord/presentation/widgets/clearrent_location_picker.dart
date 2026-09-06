@@ -91,8 +91,15 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   bool _isLocatingArea = false;
 
   /// Street address the last reverse-geocode proposed, awaiting accept/dismiss.
-  /// Only set when the address field already has text.
+  /// Only set when the address field already has text. Shown verbatim, because
+  /// it is quoted back as what the MAP says.
   String? _addressSuggestion;
+
+  /// What accepting that suggestion should actually write — the proposal with
+  /// the house number the landlord typed folded back in. Held separately from
+  /// [_addressSuggestion] so the prompt can quote the map honestly while the
+  /// value applied keeps the part the map never knew.
+  String? _addressSuggestionValue;
 
   static const LatLng _defaultLocation = LatLng(6.5244, 3.3792);
   static const double _defaultZoom = 15.0;
@@ -261,6 +268,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       _suggestions = [];
       _noResultQuery = null;
       _addressSuggestion = null;
+      _addressSuggestionValue = null;
       if (!_areaExplicitlySet) {
         _geocodedRawCity = place.city;
         _areaMatchedFromPin = matched != null;
@@ -404,12 +412,22 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
             _areaMatchedFromPin = matched != null;
             if (matched != null) widget.cityController.text = matched;
           }
-          _addressSuggestion =
-              (currentAddress.isEmpty ||
-                      proposed.isEmpty ||
-                      proposed == currentAddress)
-                  ? null
-                  : proposed;
+          // Compare what the pin proposes against what the landlord typed
+          // ONCE THE HOUSE NUMBER IS PUT BACK. OSM matches a street, not a
+          // building, so "16 Oduduwa Street" and a pin on "Oduduwa Street" are
+          // the same place — asking which to keep is asking about a difference
+          // the landlord cannot resolve and did not create. Only a genuinely
+          // different street is worth a question.
+          final reconciled = _keepTypedHouseNumber(currentAddress, place);
+          final sameStreet = _normalisedAddress(reconciled) ==
+              _normalisedAddress(currentAddress);
+          _addressSuggestion = (currentAddress.isEmpty ||
+                  proposed.isEmpty ||
+                  sameStreet)
+              ? null
+              : proposed;
+          _addressSuggestionValue =
+              _addressSuggestion == null ? null : reconciled;
         });
 
         if (currentAddress.isEmpty && proposed.isNotEmpty) {
@@ -439,13 +457,25 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   }
 
   void _acceptAddressSuggestion() {
-    final suggestion = _addressSuggestion;
+    // The RECONCILED value, not the raw proposal: accepting the map's street
+    // should not also throw away the house number, which is the one part of
+    // the address the map could never have supplied.
+    final suggestion = _addressSuggestionValue ?? _addressSuggestion;
     if (suggestion == null) return;
     _suppressSearch = true;
     widget.addressController.text = suggestion;
     _suppressSearch = false;
-    setState(() => _addressSuggestion = null);
+    setState(() {
+      _addressSuggestion = null;
+      _addressSuggestionValue = null;
+    });
   }
+
+  /// Case- and punctuation-insensitive form, so "Oduduwa Street" and
+  /// "oduduwa  street," compare equal. Deliberately does NOT expand
+  /// abbreviations — "St" vs "Street" is a real difference worth asking about.
+  String _normalisedAddress(String v) =>
+      v.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
 
   /// Straight-line km between the selected area and the pin, or null when
   /// either is missing.
@@ -686,7 +716,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                     ),
                     const SizedBox(width: 16),
                     GestureDetector(
-                      onTap: () => setState(() => _addressSuggestion = null),
+                      onTap: () => setState(() {
+                        _addressSuggestion = null;
+                        _addressSuggestionValue = null;
+                      }),
                       child: Text(
                         'Keep mine',
                         style: AppTextStyles.caption.copyWith(
