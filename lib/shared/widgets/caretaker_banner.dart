@@ -150,7 +150,7 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
     // collided with the header row, touching the avatar and the bell whenever
     // the verification / bank / not-bookable prompts above it were absent.
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: const EdgeInsets.only(top: 12),
       child: GestureDetector(
         onTap: () => context.push('/caretaker/properties'),
         child: Container(

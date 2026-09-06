@@ -1140,8 +1140,16 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             // another one — yet the banner lived only on the browse home, so
             // the tenant most likely to BE a caretaker was the one person who
             // could never see the invitation.
-            const CaretakerBanner(),
-            const EmailVerificationBanner(),
+            // The 20 inset is supplied HERE: this Column is full-width, and
+            // CaretakerBanner is horizontally neutral like AnnouncementsBanner.
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: CaretakerBanner(),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20),
+              child: EmailVerificationBanner(),
+            ),
             Expanded(
               child: MultiRentalDashboard(
                 rentals: _tenantRentals,
@@ -2567,7 +2575,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
           // A caretaker can be any accountType, so the invitation prompt sits
           // beside the announcements banner in every shell. Renders nothing
           // when there is no pending invite.
-          const CaretakerBanner(),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: CaretakerBanner(),
+          ),
           // Back to dashboard banner when browsing from rental dashboard
           if (_browsingFromDashboard && _activeRental != null)
             GestureDetector(

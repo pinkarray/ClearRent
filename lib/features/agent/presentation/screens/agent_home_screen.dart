@@ -421,8 +421,18 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
           ),
         ),
         // A caretaker can be any accountType — see CaretakerInviteBanner.
-        const SliverToBoxAdapter(child: CaretakerBanner()),
-        const SliverToBoxAdapter(child: EmailVerificationBanner()),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: CaretakerBanner(),
+          ),
+        ),
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: EmailVerificationBanner(),
+          ),
+        ),
         SliverToBoxAdapter(child: _buildStatsSection()),
         SliverToBoxAdapter(child: _buildTodaysInspectionsSection()),
         SliverToBoxAdapter(child: _buildPaymentConfirmationSection()),

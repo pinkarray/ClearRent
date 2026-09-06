@@ -116,7 +116,11 @@ class _EmailVerificationBannerState extends State<EmailVerificationBanner>
     if (_checking || _verified || _dismissed) return const SizedBox.shrink();
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      // Horizontally neutral; the screen supplies the inset. Same reason as
+      // CaretakerBanner: the landlord dashboard's scroll view already insets
+      // every child by 20, so a self-padded banner rendered at 40 and sat
+      // narrower than the cards around it.
+      margin: const EdgeInsets.fromLTRB(0, 12, 0, 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.warning.withAlpha(26),
