@@ -36,6 +36,11 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   /// initialiser above. False means we do not know the role — never render a
   /// role-specific form on a guess.
   bool _accountTypeResolved = false;
+  /// The profile read has finished, whatever it returned. Separate from
+  /// [_isLoading] (which tracks the verification stream) because the two now
+  /// run concurrently and the body needs BOTH before it can decide what to
+  /// show.
+  bool _profileLoaded = false;
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -213,6 +218,15 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _verificationData?.isRenewal == true;
 
   Future<void> _loadUserDataAndVerificationStatus() async {
+    // Three INDEPENDENT reads that used to run strictly in sequence — the
+    // profile (sometimes twice), then the remote fee schedule, then the first
+    // event of the verification stream — so the spinner lasted the SUM of
+    // them, which is where the 7-10 second wait came from. Nothing here feeds
+    // anything else, so they run together and the screen lands on the slowest
+    // one instead of all of them.
+    final pricingFuture = PricingService().load();
+    _listenToVerificationStatus();
+
     var profile = await _authService.getUserProfile();
     var resolvedType = profile == null ? null : profile['accountType'];
 
@@ -247,13 +261,26 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       });
     }
 
+    // The profile read is done, however it went. The body must not render
+    // until this is true, or a fast verification stream would clear
+    // `_isLoading` first and flash the "we could not load your account
+    // details" state at someone whose profile was simply still in flight.
+    if (mounted) setState(() => _profileLoaded = true);
+
     // Remote fee schedule — falls back to the compiled-in values on failure,
     // so the fee panel always renders something sane.
-    final pricing = await PricingService().load();
+    final pricing = await pricingFuture;
     if (mounted) setState(() => _pricing = pricing);
+  }
 
-    // Listen to verification status in real-time so admin approval
-    // is reflected immediately without leaving and returning.
+  /// Listen to verification status in real-time so admin approval is
+  /// reflected immediately without leaving and returning.
+  ///
+  /// Cancels any previous subscription first: this runs again on "Try again"
+  /// and after a submit, and re-assigning the field would otherwise strand the
+  /// old listener still writing to this State.
+  void _listenToVerificationStatus() {
+    _verificationSub?.cancel();
     _verificationSub = _verificationService.streamVerificationStatus().listen(
       (data) {
         if (mounted) {
@@ -634,11 +661,20 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.pop(),
         ),
-        title: Text('Verification Center - ${_getUserTypeLabel()}',
+        // The role is appended ONLY once it has actually been read. The title
+        // renders outside the loading gate, so while the profile read was in
+        // flight it announced "Verification Center - Landlord" off the bare
+        // `_accountType` initialiser, then silently corrected itself to Tenant
+        // seconds later. Same guess the body was fixed for; this half was
+        // missed because it sits above the spinner rather than under it.
+        title: Text(
+            _accountTypeResolved
+                ? 'Verification Center - ${_getUserTypeLabel()}'
+                : 'Verification Center',
             style: AppTextStyles.h4.copyWith(color: AppColors.textPrimary)),
         centerTitle: true,
       ),
-      body: _isLoading
+      body: (_isLoading || !_profileLoaded)
           ? Center(child: CircularProgressIndicator(color: AppColors.primary))
           : (_accountTypeResolved
               ? _buildContent()
@@ -675,7 +711,10 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             const SizedBox(height: 24),
             ElevatedButton(
               onPressed: () {
-                setState(() => _isLoading = true);
+                setState(() {
+                  _isLoading = true;
+                  _profileLoaded = false;
+                });
                 _loadUserDataAndVerificationStatus();
               },
               child: const Text('Try again'),
