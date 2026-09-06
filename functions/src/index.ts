@@ -4591,6 +4591,7 @@ export {rentalInterestStrandSweep} from "./rent_interest_ops";
 
 export {
   adminReviewPropertyDoc,
+  adminMarkIdentityReviewed,
   adminResolveInspection,
 } from "./admin_review_ops";
 

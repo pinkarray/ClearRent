@@ -233,3 +233,53 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
 
   return {success: true, auditLogId};
 });
+
+// ── Identity-change review ───────────────────────────────────────────────────
+
+/**
+ * Record that an admin actually LOOKED at a self-service name/email change.
+ *
+ * `profile_identity_change` is the one alert type with no observable
+ * completion: a user renames themselves, an admin is meant to eyeball it for
+ * account takeover, and nothing anywhere records that they did. So it sat in
+ * the queue until someone pressed Dismiss — which writes no audit entry, so
+ * "was this reviewed?" had no answer afterwards, and the row read as clutter
+ * rather than the fraud control it is.
+ *
+ * This makes the human judgement the completion signal, and writes it down.
+ * It is the ONLY thing that closes this alert type; the hygiene sweep
+ * deliberately has no rule for it, because there is nothing to infer.
+ */
+export const adminMarkIdentityReviewed = onCall(
+  callableOptions,
+  async (request) => {
+    assertAdmin(request.auth);
+    const adminUid = request.auth!.uid;
+    const raw = (request.data ?? {}) as {uid?: unknown; note?: unknown};
+    const uid = reqString(raw.uid, "uid");
+    const note =
+      typeof raw.note === "string" && raw.note.trim().length > 0 ?
+        raw.note.trim() :
+        null;
+
+    const auditLogId = await writeAuditLog({
+      actorId: adminUid,
+      action: "admin_identity_change_reviewed",
+      targetCollection: "users",
+      targetId: uid,
+      amount: 0,
+      paymentReference: "identity_review",
+      ...(note !== null && {paymentNote: note}),
+    });
+
+    // Only this type. A user doc can carry a sign-up or verification notice at
+    // the same time, and those are closed by their own decision — clearing
+    // them here would hide someone still waiting to be verified.
+    const closed = await resolveAdminAlertsForTarget(
+      uid, adminUid, ["profile_identity_change"],
+    ).catch(() => 0);
+
+    logger.info("Identity change marked reviewed", {uid, adminUid, closed});
+    return {success: true, auditLogId, closed};
+  },
+);
