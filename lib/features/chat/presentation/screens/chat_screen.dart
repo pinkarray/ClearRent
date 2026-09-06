@@ -1012,8 +1012,16 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildPropertyCard() {
     final propertyTitle = widget.propertyTitle ?? _conversation?.propertyTitle ?? 'Property';
     final propertyImage = widget.propertyImage ?? _conversation?.propertyImage ?? '';
+    // Read off the conversation, never off `widget`: a shared property message
+    // is already tappable through _openSharedProperty, and this card is the
+    // one place naming the property the whole thread is about that was not.
+    //
+    // Empty for the threads that genuinely have no property behind them: the
+    // agent pitch thread and the landlord/caretaker thread both store ''. They
+    // keep the card as a plain label rather than a link that goes nowhere.
+    final propertyId = _conversation?.propertyId ?? '';
 
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1058,7 +1066,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Property inquiry',
+                  propertyId.isEmpty ? 'Property inquiry' : 'View this listing',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.primary,
                   ),
@@ -1066,8 +1074,16 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
+          if (propertyId.isNotEmpty)
+            Icon(Icons.chevron_right, color: AppColors.textHint),
         ],
       ),
+    );
+
+    if (propertyId.isEmpty) return card;
+    return GestureDetector(
+      onTap: () => _openSharedProperty(propertyId),
+      child: card,
     );
   }
 
