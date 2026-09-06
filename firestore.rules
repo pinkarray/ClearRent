@@ -697,6 +697,13 @@ service cloud.firestore {
           .data.get('assignedAgentId', '') == request.auth.uid;
       }
 
+      // NOTE: the sitting tenant is covered by the SAME reveals/{uid} grant as
+      // an inspecting tenant — recordRentPayment writes one on the admin SDK
+      // when the rent clears. Deliberately not a rule that reads the caller's
+      // own user doc: `users` is guarded by a DENYLIST, not a hasOnly
+      // allowlist, so `currentPropertyId` is client-writable and any rule
+      // keyed on it could be forged to open any property's exact address.
+
       // The landlord's blank tenancy agreement for this unit, uploaded ahead of
       // any tenant so acceptance can attach it automatically.
       //

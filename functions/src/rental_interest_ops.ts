@@ -455,6 +455,45 @@ export const recordRentPayment = onCall(
       return {alreadyRecorded: false};
     });
 
+    // Grant the exact-location reveal to the tenant who now LIVES here.
+    //
+    // Until now the only thing that ever wrote a reveal was
+    // confirmInspectionPayment, so a tenant's access to their own street
+    // address depended on the inspection that got them the place — and a
+    // tenant who never inspected, or whose request was cleaned up, could not
+    // find their own home on the map. Same grant, same rule, no new surface.
+    //
+    // Best-effort and outside the transaction, exactly as the inspection one
+    // is: a failed grant must not undo a recorded rent payment. Idempotent
+    // via merge, so the replay path re-asserts it harmlessly.
+    const revealPropertyId =
+      (rentalQuery.docs[0].get("propertyId") as string | undefined) ??
+      (pre.propertyId as string | undefined) ??
+      null;
+    if (revealPropertyId) {
+      try {
+        await db
+          .collection("properties")
+          .doc(revealPropertyId)
+          .collection("reveals")
+          .doc(uid)
+          .set(
+            {
+              revealedAt: FieldValue.serverTimestamp(),
+              interestId,
+              grantedBy: "system_rent_payment",
+            },
+            {merge: true},
+          );
+      } catch (err) {
+        logger.error("recordRentPayment: reveal grant failed", {
+          interestId,
+          uid,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     logger.info("Rent payment recorded server-side", {
       interestId,
       uid,

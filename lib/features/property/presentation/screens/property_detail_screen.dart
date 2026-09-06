@@ -138,6 +138,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   StreamSubscription<List<InspectionRequest>>? _inspectionSub;
   // Address gate: false = approximate (LGA/city/state), true = exact street.
   bool _addressUnlocked = false;
+  /// This viewer is the sitting tenant of THIS property.
+  ///
+  /// Held separately from [_addressUnlocked] because the inspection stream
+  /// recomputes that on every emission and would otherwise overwrite the
+  /// tenancy-derived unlock the moment an inspection changed underneath it.
+  bool _sittingTenantUnlock = false;
   // Exact street address, loaded from the property's gated `private/location`
   // subdoc only when the viewer is entitled (owner, or a tenant whose
   // inspection was approved). Null until loaded / when not entitled.
@@ -182,6 +188,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         _tenancyLinkService.propertyTenantsStream(widget.property.id);
     _determineUserContext();
     _unlockAddressForOwner();
+    _unlockAddressForSittingTenant();
     _subscribeMyInspection();
     _checkVerificationStatus();
     _checkIfLinkedToThisProperty();
@@ -423,9 +430,19 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       // once on mount. A tenant sitting on this screen while the handler
       // approves their request — which is exactly when they are watching it —
       // saw nothing change until they left and came back.
-      final unlocked =
-          mine.any((r) => r.isApproved || r.isCompleted) &&
-              !mine.any((r) => r.tenantPassed);
+      //
+      // Keyed on PAID, not approved. `confirmInspectionPayment` writes the
+      // reveals/{uid} grant the moment the fee clears, so the server already
+      // considers a paying tenant entitled; gating the client on approval as
+      // well meant someone who had paid was refused an address the rules
+      // would happily have served them.
+      //
+      // `_sittingTenantUnlock` is ORed in separately: a tenant who has moved
+      // in must be able to find their own home regardless of what happened to
+      // the inspection that got them there.
+      final unlocked = (mine.any((r) => r.isPaid) &&
+              !mine.any((r) => r.tenantPassed)) ||
+          _sittingTenantUnlock;
       final justUnlocked = unlocked && !_addressUnlocked;
 
       setState(() {
@@ -470,6 +487,27 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   /// Compares uids directly rather than reading `_isOwner`, which is assigned
   /// after an await inside [_determineUserContext] and is still false when
   /// this runs from initState.
+  /// A tenant living here always sees their own address.
+  ///
+  /// Nothing granted this before: the gate was derived purely from inspection
+  /// requests, so a tenant's access to the place they had moved into rested on
+  /// an old inspection record still existing and still saying the right thing.
+  /// `currentPropertyId` is written by recordRentPayment and lives on the
+  /// user's own document, so this needs no extra permission.
+  Future<void> _unlockAddressForSittingTenant() async {
+    final uid = _authService.currentUser?.uid;
+    if (uid == null) return;
+    final profile = await _authService.getUserProfile();
+    if (!mounted) return;
+    if (profile == null) return;
+    if (profile['currentPropertyId'] != widget.property.id) return;
+    setState(() {
+      _sittingTenantUnlock = true;
+      _addressUnlocked = true;
+    });
+    await _loadExactAddressIfEntitled();
+  }
+
   Future<void> _unlockAddressForOwner() async {
     if (widget.property.landlordId != _authService.currentUser?.uid) return;
     if (!mounted) return;
