@@ -795,6 +795,111 @@ export const markRefundPaid = onCall(
 );
 
 // ============================================================
+// 4b. Paystack refund — clears refundRequired on payments/{reference}.
+//
+// A charge that must be given BACK to the payer is not the same animal as a
+// `refunds/{id}` doc. Those are inspection refunds: ClearRent owes a tenant
+// money and an admin sends it by bank transfer, which is why they carry a
+// beneficiaryBank. A duplicate CARD charge is reversed in the Paystack
+// dashboard, back to the card that paid — no bank details are involved and no
+// transfer is made.
+//
+// So the flag lived on the payment (`refundRequired: true`) and NOTHING read
+// it. ₦25,000 owed on CR_RENT_1788185837890_a56e9097 sat invisible for a day
+// because the only refund queue in the dashboard reads a different collection.
+// This callable is the other half of making it visible: it records that the
+// Paystack refund was actually done, with the same immutable audit entry every
+// other money action gets.
+//
+// Deliberately does NOT move money — nothing here can. It marks what a human
+// already did in Paystack.
+// ============================================================
+export const markPaymentRefunded = onCall(
+  callableOptions,
+  async (request) => {
+    assertAdmin(request.auth);
+    const input = validateInput(request.data);
+    const adminUid = request.auth!.uid;
+
+    const db = getFirestore();
+    const ref = db.collection("payments").doc(input.docId);
+
+    const amount = await db.runTransaction<number>(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw new HttpsError(
+          "not-found",
+          `payments/${input.docId} not found.`,
+        );
+      }
+      const data = snap.data()!;
+      // Boolean flag rather than a status string, so guardStatusTransition
+      // doesn't apply. Both directions matter: a payment nobody flagged must
+      // not be markable, and one already refunded must not be marked twice.
+      if (data.refundRequired !== true) {
+        throw new HttpsError(
+          "failed-precondition",
+          data.refundedAt ?
+            "This payment has already been marked refunded." :
+            "This payment is not flagged as needing a refund.",
+        );
+      }
+      const amt = readAmount(data, "amount");
+
+      tx.update(ref, {
+        refundRequired: false,
+        refundedAt: FieldValue.serverTimestamp(),
+        refundedBy: adminUid,
+        refundReference: input.paymentReference,
+        refundNote: input.paymentNote,
+      });
+
+      return amt;
+    });
+
+    const auditLogId = await writeAuditLog({
+      actorId: adminUid,
+      action: "mark_payment_refunded",
+      targetCollection: "payments",
+      targetId: input.docId,
+      amount,
+      paymentReference: input.paymentReference,
+      ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
+    });
+
+    // Money given BACK is not money owed to a landlord. The rent_payment alert
+    // for this reference says "₦X is owed to the landlord" — leave it standing
+    // and an admin working the payout queue can pay out against a charge that
+    // was reversed. This is the one alert that must not wait for the hourly
+    // hygiene sweep, so it is closed here, by its deterministic id.
+    // Best-effort: the refund is already recorded and must not be undone by a
+    // failure to tidy the queue.
+    try {
+      const alertRef = db.collection("admin_alerts")
+        .doc(`rentpay_${input.docId}`);
+      const alertSnap = await alertRef.get();
+      if (alertSnap.exists && alertSnap.get("status") === "open") {
+        await alertRef.update({
+          status: "resolved",
+          resolvedBy: adminUid,
+          resolvedAt: FieldValue.serverTimestamp(),
+        });
+        logger.info("Closed payout-due alert for refunded charge", {
+          reference: input.docId,
+        });
+      }
+    } catch (err) {
+      logger.error("Could not close payout-due alert after refund", {
+        reference: input.docId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return {success: true, auditLogId};
+  },
+);
+
+// ============================================================
 // Rent-payout post-commit side-effect helper.
 //
 // Shared by markRentLandlordPayoutPaid + markRentAgentCommissionPaid.
