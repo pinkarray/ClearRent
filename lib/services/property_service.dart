@@ -76,6 +76,25 @@ class PropertyService {
 
   // ============ CREATE ============
 
+  /// The file extension of [file], taken from its NAME.
+  ///
+  /// It used to be taken from the whole path: `path.contains('.')` then
+  /// `path.split('.').last`. On Android the cache path carries the package id
+  /// (`com.verealtytech.clearrent`), so the `contains` test is ALWAYS true and
+  /// the split returns everything after the last dot anywhere in the path. For
+  /// a picked file whose name has no extension that is
+  /// `clearrent/cache/file_picker/<id>/<name>` — slashes and all — which turns
+  /// a one-segment object name into several. `ownership/{uid}/{docId}` and
+  /// `agreements/{uid}/{docId}` each match a SINGLE segment, so such an upload
+  /// matched no rule at all, fell through to the catch-all deny, and came back
+  /// as a bare `403 Permission denied` that looks nothing like a naming bug.
+  static String _extensionOf(File file) {
+    final name = file.path.split('/').last;
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return 'jpg';
+    return name.substring(dot + 1);
+  }
+
   /// Upload an ownership document (C of O / deed) to PRIVATE Firebase Storage,
   /// mirroring how verification documents are handled. Returns the storage
   /// PATH (not a public URL) — the admin streams the bytes through an
@@ -85,15 +104,16 @@ class PropertyService {
     final uid = _currentUserId;
     if (uid == null) return null;
     try {
-      final ext =
-          file.path.contains('.') ? file.path.split('.').last : 'jpg';
-      final path =
-          'ownership/$uid/cofo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final path = 'ownership/$uid/'
+          'cofo_${DateTime.now().millisecondsSinceEpoch}.${_extensionOf(file)}';
       await FirebaseStorage.instance.ref(path).putFile(file);
       developer.log('✅ Ownership doc uploaded: $path', name: 'PropertyService');
       return path;
     } catch (e) {
-      developer.log('❌ uploadOwnershipDoc failed: $e', name: 'PropertyService');
+      // The path is part of the diagnosis: a Storage 403 is either the rules
+      // refusing this caller or the object name not matching any rule at all.
+      developer.log('❌ uploadOwnershipDoc failed for ${file.path}: $e',
+          name: 'PropertyService');
       return null;
     }
   }
@@ -107,15 +127,15 @@ class PropertyService {
     final uid = _currentUserId;
     if (uid == null) return null;
     try {
-      final ext =
-          file.path.contains('.') ? file.path.split('.').last : 'jpg';
-      final path =
-          'agreements/$uid/agreement_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final path = 'agreements/$uid/'
+          'agreement_${DateTime.now().millisecondsSinceEpoch}.'
+          '${_extensionOf(file)}';
       await FirebaseStorage.instance.ref(path).putFile(file);
       developer.log('✅ Agreement uploaded: $path', name: 'PropertyService');
       return path;
     } catch (e) {
-      developer.log('❌ uploadAgreementDoc failed: $e', name: 'PropertyService');
+      developer.log('❌ uploadAgreementDoc failed for ${file.path}: $e',
+          name: 'PropertyService');
       return null;
     }
   }
