@@ -1131,6 +1131,10 @@ class _RentalCardState extends State<_RentalCard> {
                 if (widget.isActive) ...[
                   const SizedBox(height: 12),
                   _buildPaymentInfo(),
+                  // Sits directly under the rent figure on purpose: that is
+                  // where the landlord looks to see what has come in, and the
+                  // deposit is the part that never will.
+                  if (rental.cautionDeposit > 0) _buildDepositReminder(),
                 ],
 
                 // Only while the tenancy is live. Once a move-out is under way
@@ -1300,6 +1304,51 @@ class _RentalCardState extends State<_RentalCard> {
                   ? AppColors.error
                   : AppColors.textPrimary,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Reminds the landlord that the deposit is theirs to collect.
+  ///
+  /// ClearRent never charges it — paymentAmount is rent + agent fee + deal fee
+  /// — so the rent landing gave the landlord no signal at all that anything
+  /// else was owed. The tenant is told the same thing on their side, at
+  /// payment and on the lease, so both parties see one story.
+  Widget _buildDepositReminder() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withAlpha(13),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withAlpha(51)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.savings_outlined, size: 18, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Caution deposit to collect',
+                    style: AppTextStyles.labelSmall
+                        .copyWith(color: AppColors.warning)),
+                Text(
+                  'Collect this from your tenant directly — ClearRent does '
+                  'not charge or hold it.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textHint),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '₦${_formatAmount(rental.cautionDeposit)}',
+            style: AppTextStyles.labelMedium
+                .copyWith(color: AppColors.textPrimary),
           ),
         ],
       ),

@@ -8,7 +8,9 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/undismissible_dialog.dart';
 import '../../../../services/rental_interest_service.dart';
+import '../../../../services/property_service.dart';
 import '../../../../services/paystack_service.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
 
@@ -582,7 +584,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Total', style: AppTextStyles.labelLarge),
+              Text('You pay now', style: AppTextStyles.labelLarge),
               Text(
                 _formattedAmount,
                 style: AppTextStyles.h4.copyWith(
@@ -592,6 +594,57 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
               ),
             ],
           ),
+
+          // The caution deposit, stated but NOT charged.
+          //
+          // ClearRent deliberately never holds this money — paymentAmount is
+          // rent + agent fee + deal fee and nothing else. But until now
+          // nothing anywhere told the tenant the deposit existed or that they
+          // owed it to the landlord directly, so a tenant could complete this
+          // screen believing they had paid everything they owed. Saying the
+          // amount and saying who collects it is the whole fix.
+          if (_cautionDeposit > 0) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1),
+            ),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(13),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.warning.withAlpha(60)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Caution deposit',
+                          style: AppTextStyles.labelMedium),
+                      Text(
+                        '₦${NumberFormat('#,###').format(_cautionDeposit)}',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(fontFamily: 'Roboto'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Not included above and not collected by ClearRent. You '
+                    'pay this directly to your landlord. '
+                    '${_cautionDepositRefundable ? 'It is refundable at '
+                        'move-out if the property is left in good condition.' :
+                        'Your landlord has marked this deposit as '
+                        'non-refundable.'}',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

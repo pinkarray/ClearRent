@@ -1400,9 +1400,14 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              _rental.cautionDepositRefundable
+              // Says WHO holds it, not just whether it comes back. ClearRent
+              // never collects this — it is not part of paymentAmount — so a
+              // tenant who read only "refundable at move-out" could reasonably
+              // assume the platform was holding it for them.
+              'Paid directly to your landlord, not through ClearRent. '
+              '${_rental.cautionDepositRefundable
                   ? 'Refundable at move-out, less any agreed deductions.'
-                  : 'Non-refundable — this is not returned at move-out.',
+                  : 'Non-refundable — this is not returned at move-out.'}',
               style: AppTextStyles.caption.copyWith(
                 color: _rental.cautionDepositRefundable
                     ? AppColors.textSecondary
