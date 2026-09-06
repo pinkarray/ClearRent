@@ -7,6 +7,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/tenant_rental.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/undismissible_dialog.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/paystack_service.dart';
 import '../../../../services/pricing_service.dart';
@@ -34,6 +35,8 @@ class RenewalPaymentScreen extends StatefulWidget {
 class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   final ActiveRentalService _activeRentalService = ActiveRentalService();
   bool _isProcessing = false;
+  /// Latched once money has moved — see the note in rental_payment_screen.
+  bool _paymentSuccessful = false;
   String? _paymentReference;
 
   // Remote fee schedule (config/pricing) rather than a hardcoded constant, so
@@ -106,9 +109,12 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   }
 
   void _showSuccessDialog() {
-    showDialog(
+    setState(() {
+      _isProcessing = false;
+      _paymentSuccessful = true;
+    });
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -203,9 +209,12 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   }
 
   void _showUpdateFailureDialog() {
-    showDialog(
+    setState(() {
+      _isProcessing = false;
+      _paymentSuccessful = true;
+    });
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -325,7 +334,11 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
                 text: _isProcessing
                     ? 'Processing...'
                     : 'Pay $_formattedAmount',
-                onPressed: _isProcessing ? null : _initiatePayment,
+                // Latched: once the charge has landed this must never become
+                // live again, however the screen is returned to.
+                onPressed: (_isProcessing || _paymentSuccessful)
+                    ? null
+                    : _initiatePayment,
                 isLoading: _isProcessing,
               ),
             ),

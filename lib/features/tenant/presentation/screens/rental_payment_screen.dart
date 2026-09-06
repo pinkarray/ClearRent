@@ -34,6 +34,27 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
   bool _isProcessing = false;
   bool _paymentSuccessful = false;
   String? _paymentReference;
+  /// Shown, never charged — see the note in [_buildPaymentBreakdown].
+  /// Read from the property because `RentalInterest` does not carry it: the
+  /// interest holds only what ClearRent actually collects.
+  double _cautionDeposit = 0;
+  bool _cautionDepositRefundable = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCautionDeposit();
+  }
+
+  Future<void> _loadCautionDeposit() async {
+    final property = await PropertyService()
+        .getProperty(widget.rentalInterest.propertyId);
+    if (!mounted || property == null) return;
+    setState(() {
+      _cautionDeposit = property.cautionDeposit;
+      _cautionDepositRefundable = property.cautionDepositRefundable;
+    });
+  }
 
   double get _amount => widget.rentalInterest.paymentAmount;
 
@@ -41,7 +62,35 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
       '₦${NumberFormat('#,###').format(_amount)}';
 
   Future<void> _initiatePayment() async {
+    // Never charge twice for the same tenancy.
+    //
+    // `widget.rentalInterest` is a FROZEN snapshot handed over through
+    // go_router's `extra`, so it still says "accepted" no matter what has
+    // happened since — including a payment this very screen already took.
+    // recordRentPayment is idempotent, but it runs AFTER the money moves, so
+    // idempotency there cannot stop a second charge. This is the only check
+    // that sits in front of Paystack.
     setState(() => _isProcessing = true);
+    final fresh =
+        await _rentalInterestService.getInterestById(widget.rentalInterest.id);
+    if (!mounted) return;
+    if (fresh != null && fresh.isRentPaid) {
+      setState(() {
+        _isProcessing = false;
+        _paymentSuccessful = true;
+      });
+      _showAlreadyPaidDialog();
+      return;
+    }
+    // A read that FAILED is not a licence to charge: `fresh == null` means we
+    // could not find out, so say so rather than risk a duplicate.
+    if (fresh == null) {
+      setState(() => _isProcessing = false);
+      _showError(
+          'Could not confirm your rent status. Check your connection and try '
+          'again — this is to make sure you are never charged twice.');
+      return;
+    }
 
     try {
       final paymentResult = await PaystackCheckoutScreen.launch(
@@ -132,10 +181,44 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
     }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
+  /// The tenancy was already paid for before this screen even opened a
+  /// checkout. Reached from the pre-flight check in [_initiatePayment].
+  void _showAlreadyPaidDialog() {
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Already paid', style: AppTextStyles.h4),
+          content: Text(
+            'Your rent for ${widget.rentalInterest.propertyTitle} is already '
+            'paid — we did not charge you again.',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.go('/tenant/home', extra: {
+                  'initialTab': 0,
+                  'reset': DateTime.now().millisecondsSinceEpoch,
+                });
+              },
+              child: const Text('Go to My Home'),
+            ),
+          ],
+      ),
+    );
+  }
+
+  void _showSuccessDialog() {
+    // The charge is done and recorded, so this screen must stop behaving like
+    // a payment form: `_isProcessing` used to stay true forever here, which
+    // left the Pay button reading "Processing..." AND the app-bar back arrow
+    // disabled — a dead end whose only exit was killing the app.
+    setState(() => _isProcessing = false);
+    showUndismissibleDialog(
+      context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -241,9 +324,11 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
   }
 
   void _showUpdateFailureDialog() {
-    showDialog(
+    // Same reasoning as the success dialog: the money HAS moved, so the form
+    // must stop looking payable and the screen must stay escapable.
+    setState(() => _isProcessing = false);
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -316,6 +401,9 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          // Disabled only while a checkout is genuinely in flight. Once the
+          // payment has landed the tenant must always be able to leave — this
+          // arrow staying dead after success is what made the screen a trap.
           onPressed: _isProcessing ? null : () => context.pop(),
         ),
         title: Text('Rental Payment', style: AppTextStyles.h4),
@@ -362,8 +450,15 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
             SizedBox(
               width: double.infinity,
               child: AppButton(
-                text: _isProcessing ? 'Processing...' : 'Pay $_formattedAmount',
-                onPressed: _isProcessing ? null : _initiatePayment,
+                text: _paymentSuccessful
+                    ? 'Paid'
+                    : (_isProcessing ? 'Processing...' : 'Pay $_formattedAmount'),
+                // `_paymentSuccessful` is a SEPARATE latch from
+                // `_isProcessing`: the spinner has to clear so the screen can
+                // be left, but the button must never become payable again.
+                onPressed: (_isProcessing || _paymentSuccessful)
+                    ? null
+                    : _initiatePayment,
                 isLoading: _isProcessing,
               ),
             ),

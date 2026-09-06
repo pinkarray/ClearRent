@@ -6,6 +6,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/inspection_request_model.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/undismissible_dialog.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../services/paystack_service.dart';
 import '../../../../services/auth_service.dart';
@@ -45,6 +46,10 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   ];
 
   bool _isProcessing = false;
+  /// Latched once money has moved. Separate from [_isProcessing] so the
+  /// spinner can clear (letting the tenant leave) without the pay button
+  /// ever becoming live again.
+  bool _paymentSuccessful = false;
   String? _paymentReference;
 
   double get _totalFee => widget.request.totalFee;
@@ -195,9 +200,11 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   }
 
   void _showConfirmFailureDialog({String? error}) {
-    showDialog(
+    // The charge landed even though confirmation did not — same reasoning as
+    // the success dialog: stop looking payable, stay escapable.
+    _paymentSuccessful = true;
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -310,9 +317,16 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   }
 
   void _showSuccessDialog() {
-    showDialog(
+    // Clear the spinner so the screen can be left: `_isProcessing` gates BOTH
+    // the pay button and the app-bar back arrow, and leaving it true after a
+    // completed charge turns this into a dead end. `_paymentSuccessful` is the
+    // latch that keeps the button unpayable.
+    setState(() {
+      _isProcessing = false;
+      _paymentSuccessful = true;
+    });
+    showUndismissibleDialog(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
@@ -462,7 +476,11 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
             const SizedBox(height: 32),
             AppButton(
               text: 'Pay ₦${NumberFormat('#,###').format(_totalFee)}',
-              onPressed: _isProcessing ? null : _initiatePayment,
+              // Latched: once the charge has landed this must never become
+              // live again, however the screen is returned to.
+              onPressed: (_isProcessing || _paymentSuccessful)
+                  ? null
+                  : _initiatePayment,
               isLoading: _isProcessing,
             ),
             const SizedBox(height: 16),
