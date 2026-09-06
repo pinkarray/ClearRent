@@ -107,11 +107,43 @@ class _AgentDiscoverPropertiesScreenState
     _showLoadingDialog('Starting conversation...');
     try {
       final conversationId = await _conversationService.getOrCreateAgentPitchConversation(landlordId: property.landlordId, agentId: agentId);
+      // Read alongside the conversation, not on screen load: it is one document
+      // and it is only ever needed here, behind the dialog that is already up.
+      final agentDoc = await _firestore.collection('users').doc(agentId).get();
       if (!mounted) return; Navigator.pop(context);
       if (conversationId != null) {
-        context.push('/chat', extra: { 'conversationId': conversationId, 'propertyTitle': 'Pitch: ${property.title}', 'propertyImage': property.images.isNotEmpty ? property.images.first : null });
+        context.push('/chat', extra: { 'conversationId': conversationId, 'propertyTitle': 'Pitch: ${property.title}', 'propertyImage': property.images.isNotEmpty ? property.images.first : null, 'suggestions': _pitchSuggestions(property, agentDoc.data()) });
       } else { _showSnackBar('Could not start conversation. Make sure both accounts are verified.', isError: true); }
     } catch (e) { if (mounted) Navigator.pop(context); _showSnackBar('Something went wrong.', isError: true); }
+  }
+
+  /// Openers for the pitch thread, shown as chips while it is still empty.
+  ///
+  /// The pitch thread is per LANDLORD, not per property, so it is reused for
+  /// every listing the agent pitches to the same person, which is exactly why
+  /// the opener has to name the property the agent came from. Tapping a chip
+  /// fills the composer; ChatScreen never sends one.
+  ///
+  /// Each line is something the landlord can check rather than a claim about
+  /// how good the agent is. Anything the profile does not have is left out
+  /// instead of stated emptily: a brand-new agent gets the first line only.
+  List<String> _pitchSuggestions(
+    PropertyModel property,
+    Map<String, dynamic>? agent,
+  ) {
+    final base = (agent?['baseLocation'] as String?) ?? '';
+    final inspections = (agent?['totalInspections'] as num?)?.toInt() ?? 0;
+    final area = property.city;
+    return [
+      "Hello, I'm an agent on ClearRent. I'd like to handle inspections "
+          'for ${property.title}.',
+      if (base.isNotEmpty)
+        "I'm based in $base, so I can show this one at short notice."
+      else if (area.isNotEmpty)
+        'I cover $area, so I can show this one at short notice.',
+      if (inspections > 0)
+        "I've handled $inspections inspections on ClearRent so far.",
+    ];
   }
 
   // ── Tenants data ──
