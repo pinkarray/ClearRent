@@ -346,14 +346,24 @@ export async function resolveServerAmount(
   if (type === "renewal") {
     // A renewal charges the rental's own rent plus the tenant's deal fee. The
     // client sends only `sourceId`, which is either an active_rentals or a
-    // tenancy_links doc without saying which, so try both. Anything unexpected
-    // returns null and falls back to the caller's amount — no worse than now.
+    // tenancy_links doc without saying which, so try both.
+    //
+    // Every failure below THROWS. It used to return null, and null means "no
+    // server figure" - which initializePayment reads as permission to charge
+    // `serverAmount ?? amount`, i.e. whatever the caller asked for. So omitting
+    // sourceId was a self-service discount: name your own renewal price and it
+    // was taken. Exactly the hole the verification branch below was already
+    // fixed for; renewal never got the same treatment.
     const sourceId = typeof metadata?.sourceId === "string" ?
       metadata.sourceId :
       null;
     if (!sourceId) {
-      logger.warn("Renewal payment without sourceId", {uid});
-      return null;
+      logger.error("Renewal payment without sourceId", {uid});
+      throw new HttpsError(
+        "invalid-argument",
+        "We could not tell which tenancy this renewal is for. " +
+        "Reopen the rental and try again.",
+      );
     }
     const db = getFirestore();
     let snap = await db.collection("active_rentals").doc(sourceId).get();
@@ -361,20 +371,32 @@ export async function resolveServerAmount(
       snap = await db.collection("tenancy_links").doc(sourceId).get();
     }
     if (!snap.exists) {
-      logger.warn("Renewal payment for unknown sourceId", {uid, sourceId});
-      return null;
+      logger.error("Renewal payment for unknown sourceId", {uid, sourceId});
+      throw new HttpsError(
+        "not-found",
+        "That tenancy no longer exists, so it cannot be renewed.",
+      );
     }
+    // Not merely a mispricing risk: this is someone initialising a renewal
+    // against a tenancy that is not theirs. permission-denied, not a fallback.
     if (snap.get("tenantId") !== uid) {
       logger.error("Renewal payment by non-tenant of the rental", {
         uid,
         sourceId,
       });
-      return null;
+      throw new HttpsError(
+        "permission-denied",
+        "This tenancy belongs to a different tenant.",
+      );
     }
     const rent = snap.get("rentAmount");
     if (typeof rent !== "number" || !(rent > 0)) {
-      logger.warn("Renewal source has no usable rentAmount", {uid, sourceId});
-      return null;
+      logger.error("Renewal source has no usable rentAmount", {uid, sourceId});
+      throw new HttpsError(
+        "failed-precondition",
+        "This tenancy has no rent recorded, so a renewal cannot be priced. " +
+        "Contact support.",
+      );
     }
     return rent + pricing.dealFee;
   }

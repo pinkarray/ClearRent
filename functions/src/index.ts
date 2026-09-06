@@ -43,6 +43,17 @@ setGlobalOptions({maxInstances: 10, region: "us-central1"});
 // Functions that need it bind it via `secrets: [paystackSecret]`.
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
+// Every payment type resolveServerAmount knows how to price. Declared beside
+// the secret so it sits next to the callable that enforces it and the two
+// cannot drift apart unnoticed.
+const PRICED_PAYMENT_TYPES = new Set([
+  "verification",
+  "inspection",
+  "listing",
+  "rent",
+  "renewal",
+]);
+
 interface NotificationDoc {
   userId?: string;
   title?: string;
@@ -2934,6 +2945,20 @@ export const initializePayment = onCall(
         "type must be a non-empty string.",
       );
     }
+    // Allowlisted, not merely non-empty. resolveServerAmount prices the five
+    // types below and returns null for anything else, and a null server figure
+    // is charged as `serverAmount ?? amount`, i.e. the caller's own number. So
+    // an unrecognised type was a way to have any amount initialised with no
+    // server price behind it. Nothing downstream grants anything for a type it
+    // does not know, but the charge was real, and "the server decides every
+    // amount" has to hold without exceptions to be worth saying to anyone.
+    if (!PRICED_PAYMENT_TYPES.has(type)) {
+      logger.error("Payment initialise with unknown type", {uid, type});
+      throw new HttpsError(
+        "invalid-argument",
+        `'${type}' is not a payment we take.`,
+      );
+    }
 
     const reference = generatePaymentReference(type);
 
@@ -2945,9 +2970,10 @@ export const initializePayment = onCall(
         {};
 
     // Server-authoritative pricing. The client's amount is display-only and
-    // must never decide what we charge — otherwise a tampered client could pay
-    // ₦100 for verification, or ₦100 of rent. Only 'renewal' still falls back
-    // to the caller's amount; see resolveServerAmount.
+    // must never decide what we charge, or a tampered client could pay
+    // ₦100 for verification, or ₦100 of rent. Every priced type now either
+    // returns a server figure or throws, so the `?? amount` below is
+    // unreachable and remains only as a belt-and-braces default.
     const serverAmount = await resolveServerAmount(type, uid, callerMetadata);
     if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
       logger.warn("Client/server amount mismatch — charging server amount", {
