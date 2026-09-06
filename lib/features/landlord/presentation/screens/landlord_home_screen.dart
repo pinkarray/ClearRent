@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -374,6 +375,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               _myProperties = properties;
               _isLoadingProperties = false;
             });
+            _maybeShowNotBookable();
           },
           onError: (e) {
             debugPrint('❌ Properties stream error: $e');
@@ -1574,68 +1576,63 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     );
   }
 
-  Widget _buildNotBookableBanner() {
+  /// "Approved but not bookable" as an INTERRUPT rather than a banner.
+  ///
+  /// This is the one prompt on this screen that reports a silent failure: admin
+  /// approval is the moment a landlord believes they are live, and the unvetted
+  /// listing then sits taking no inspections with nothing saying so outside the
+  /// property's own page. A banner is precisely the wrong shape for something
+  /// surprising — it is the thing people scroll past. The others (verify, bank,
+  /// email) are all states the landlord already knows about, so they stay
+  /// ambient.
+  ///
+  /// Shown once per COUNT, not once ever and not every launch: re-raising it
+  /// when a further listing lands in the same state is the point, while
+  /// repeating an unchanged number every time the app opens is nagging.
+  Future<void> _maybeShowNotBookable() async {
     final count = _notBookableCount;
-    // Who has to act differs: on a self-handled listing the landlord vets it,
-    // on an agent-handled one the assigned agent does. Saying "confirm it's
-    // ready" to a landlord who can't would send them looking for a button that
-    // isn't theirs.
-    final anySelfHandled = _myProperties
-        .any((p) => p.isNotBookable && p.inspectionHandler != 'agent');
-    final noun = count == 1 ? 'property isn\'t' : 'properties aren\'t';
-    return GestureDetector(
-      onTap: () => setState(() => _currentNavIndex = 1),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.warning.withAlpha(20),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.warning.withAlpha(77)),
+    if (count == 0 || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'notBookableSeen_${_authService.currentUserId ?? ''}';
+    if (prefs.getInt(key) == count) return;
+    if (!mounted) return;
+    // Resolve navigation BEFORE the await gap the dialog introduces.
+    final router = GoRouter.of(context);
+    await prefs.setInt(key, count);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          count == 1
+              ? 'A listing is not taking inspections'
+              : '$count listings are not taking inspections',
+          style: AppTextStyles.h4,
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.warning.withAlpha(26),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.event_busy_outlined,
-                color: AppColors.warning,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$count $noun bookable',
-                    style: AppTextStyles.labelLarge.copyWith(
-                      color: AppColors.warning,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    anySelfHandled
-                        ? 'Approved, but tenants can\'t book an inspection '
-                            'until you confirm it\'s ready to show'
-                        : 'Approved, but your agent still has to vet it '
-                            'before tenants can book',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.warning.withAlpha(204),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: AppColors.warning),
-          ],
+        content: Text(
+          count == 1
+              ? 'It has been approved, but it still needs to be vetted before '
+                  'tenants can book an inspection. Nothing is wrong with it - '
+                  'it just is not visible for booking yet.'
+              : 'They have been approved, but they still need to be vetted '
+                  'before tenants can book inspections.',
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.textSecondary),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              router.go('/landlord/home?tab=1');
+            },
+            child: const Text('View listings'),
+          ),
+        ],
       ),
     );
   }

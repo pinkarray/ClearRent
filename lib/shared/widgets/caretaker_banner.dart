@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
@@ -49,6 +50,13 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
         if (pending.isNotEmpty) {
           final invite = pending.first;
           final count = invite.propertyIds.length;
+          // An invitation is the one state here that someone else is WAITING
+          // on, and it is answerable in a single tap — so it is raised once as
+          // a dialog rather than left as a banner to be scrolled past. The
+          // banner stays underneath as the fallback: if the prompt is
+          // dismissed, or was already shown, the invitation is still visible
+          // and still actionable.
+          _maybePromptInvite(invite);
           return _shell(
             icon: Icons.handyman_outlined,
             title: 'Caretaker invitation',
@@ -78,12 +86,69 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
     );
   }
 
+  /// Raise a pending invitation once, as a dialog.
+  ///
+  /// Keyed on the INVITE ID, so a second invitation later still prompts while
+  /// the same one never nags twice. Called from build(), so it is guarded twice
+  /// over: `_prompted` stops the same frame re-entering, and the stored id
+  /// survives a restart.
+  bool _prompting = false;
+  Future<void> _maybePromptInvite(CaretakerInvite invite) async {
+    if (_prompting) return;
+    _prompting = true;
+    final prefs = await SharedPreferences.getInstance();
+    const key = 'caretakerInvitePrompted';
+    if (prefs.getString(key) == invite.id) return;
+    if (!mounted) return;
+    await prefs.setString(key, invite.id);
+    if (!mounted) return;
+    final router = GoRouter.of(context);
+    final count = invite.propertyIds.length;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Caretaker invitation', style: AppTextStyles.h4),
+        content: Text(
+          '${invite.landlordName} wants you to manage '
+          '${count == 1 ? (invite.propertyTitles.isNotEmpty ? invite.propertyTitles.first : 'their property') : '$count units'}. '
+          'You can accept or decline.',
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Later'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              router.push('/caretaker/properties');
+            },
+            child: const Text('View invitation'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _shell({
     required IconData icon,
     required String title,
     required String subtitle,
     required bool emphasised,
   }) {
+    // Horizontally NEUTRAL on purpose — the screen supplies the inset, exactly
+    // as it already does for AnnouncementsBanner.
+    //
+    // This used to pad itself 20 on each side, which is correct in the tenant
+    // and agent shells (their parents are full-width) but wrong on the
+    // landlord dashboard, whose scroll view ALREADY insets every child by 20 —
+    // so the banner rendered at 40 and sat visibly narrower than every card
+    // around it. The top 12 replaces a bottom 12: with no leading gap it
+    // collided with the header row, touching the avatar and the bell whenever
+    // the verification / bank / not-bookable prompts above it were absent.
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: GestureDetector(
