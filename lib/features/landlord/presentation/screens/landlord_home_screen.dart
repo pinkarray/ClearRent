@@ -670,37 +670,37 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ],
             ),
 
-            // Verification prompt
+            // EXACTLY ONE action banner, in priority order.
+            //
+            // These used to be independent `if`s, so a new landlord could face
+            // four stacked prompts before any dashboard content — which is what
+            // made the top of this screen feel cramped, and made every
+            // individual prompt easier to scroll past. One ask at a time.
+            //
+            // Email is last and needs no condition of its own: the banner
+            // decides internally whether the address is unconfirmed and renders
+            // nothing when it isn't, so putting it in the final `else` both
+            // caps the stack and keeps it the lowest-priority nag.
             if (_verificationStatus != VerificationStatus.verified) ...[
               const SizedBox(height: 16),
               _buildVerificationPrompt(),
-            ],
-            // Payout account prompt. Held back until verified so a brand-new
-            // landlord sees one call to action at a time, matching the agent
-            // home screen.
-            if (!_hasBankDetails &&
-                !_isLoadingProfile &&
-                _verificationStatus == VerificationStatus.verified) ...[
+            ] else if (!_hasBankDetails && !_isLoadingProfile) ...[
               const SizedBox(height: 16),
               _buildBankDetailsBanner(),
-            ],
-            // Approved but unbookable listings. Admin approval is the moment a
-            // landlord thinks they are live, and it is exactly when the vetting
-            // step goes unnoticed — the property sits taking no inspections and
-            // nothing says so outside the property's own page.
-            if (_notBookableCount > 0) ...[
-              const SizedBox(height: 16),
-              _buildNotBookableBanner(),
-            ],
+            ] else
+              const EmailVerificationBanner(),
+
             // Announcements
             AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
               accountType: 'landlord',
               notificationsRoute: '/notifications',
             ),
-            // A landlord can be someone else's caretaker too.
+            // A landlord can be someone else's caretaker too. This is the only
+            // way in to caretaker work, so it is NOT part of the capped stack —
+            // hiding it behind a priority rule is how it became unreachable
+            // twice before.
             const CaretakerBanner(),
-            const EmailVerificationBanner(),
             const SizedBox(height: 8),
 
             const SizedBox(height: 24),
