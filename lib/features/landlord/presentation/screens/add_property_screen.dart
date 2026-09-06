@@ -4291,31 +4291,42 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         ),
         child: Column(
           children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: isEnabled ? AppColors.primary : AppColors.textHint,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    name,
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color:
-                          isEnabled
-                              ? AppColors.textPrimary
-                              : AppColors.textSecondary,
+            // The whole header row toggles, not just the switch. A 40px
+            // target at the far right of a full-width card is the smallest
+            // thing on the row, and the name beside it looked just as
+            // tappable — so tapping the obvious thing did nothing.
+            InkWell(
+              onTap: () => onToggle(!isEnabled),
+              borderRadius: BorderRadius.circular(8),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isEnabled ? AppColors.primary : AppColors.textHint,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color:
+                            isEnabled
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                      ),
                     ),
                   ),
-                ),
-                Switch(
-                  value: isEnabled,
-                  onChanged: onToggle,
-                  activeThumbColor: AppColors.primary,
-                ),
-              ],
+                  // Kept as the affordance — it is what tells the landlord
+                  // this row is a toggle at all — but it is no longer the
+                  // only way to hit it.
+                  Switch(
+                    value: isEnabled,
+                    onChanged: onToggle,
+                    activeThumbColor: AppColors.primary,
+                  ),
+                ],
+              ),
             ),
             if (isEnabled) ...[
               const SizedBox(height: 10),
