@@ -4605,3 +4605,4 @@ export {
 } from "./inspection_reminders_ops";
 
 export {onPropertyDeleted} from "./property_cleanup_ops";
+export {alertHygieneSweep} from "./alert_resolution";
