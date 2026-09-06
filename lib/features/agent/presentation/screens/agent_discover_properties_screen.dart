@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
@@ -25,6 +28,8 @@ class _AgentDiscoverPropertiesScreenState
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ConversationService _conversationService = ConversationService();
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
 
   int _activeTab = 0; // 0 = Properties, 1 = Tenants
 
@@ -45,6 +50,9 @@ class _AgentDiscoverPropertiesScreenState
   // Matching tenants cached per property so re-selecting one paints instantly
   // instead of showing the spinner and re-querying every time.
   final Map<String, List<Map<String, dynamic>>> _tenantsCache = {};
+  // tenantId to history label, per property. Empty when the lookup failed, so
+  // the list still renders: a missing chip is a smaller problem than no list.
+  final Map<String, Map<String, String>> _historyCache = {};
 
   @override
   void initState() {
@@ -148,6 +156,50 @@ class _AgentDiscoverPropertiesScreenState
 
   // ── Tenants data ──
 
+  /// Who has already been through this property, as tenantId to label.
+  ///
+  /// A callable, not a query. `active_rentals` is readable only by its tenant,
+  /// its landlord or an admin, and `inspection_requests` only matches an agent
+  /// on rows where they were the handler, so a landlord-handled or
+  /// previous-agent inspection is invisible from here. The server answers with
+  /// the caller's own assignment as the check.
+  ///
+  /// A failure is swallowed and NOT cached, so re-selecting the property tries
+  /// again. The labels make the list better; nothing about it depends on them,
+  /// so there is nothing here worth interrupting the agent about.
+  Future<void> _loadTenantHistory(String propertyId) async {
+    if (_historyCache.containsKey(propertyId)) return;
+    try {
+      final result = await _functions
+          .httpsCallable('getPropertyTenantHistory')
+          .call<Map<String, dynamic>>({'propertyId': propertyId});
+      final raw = (result.data['labels'] as Map?) ?? {};
+      _historyCache[propertyId] =
+          raw.map((k, v) => MapEntry(k.toString(), v.toString()));
+      if (!mounted || _selectedProperty?.id != propertyId) return;
+      setState(() {});
+    } catch (e) {
+      debugPrint('❌ Tenant history unavailable: $e');
+    }
+  }
+
+  /// The chip text for a history label, or null when there is nothing to say.
+  /// Shown rather than used to filter: an agent may well want to re-approach
+  /// someone who saw the place and passed on it.
+  static String? _historyChipLabel(String? label) {
+    switch (label) {
+      case 'renting_now':
+        return 'Renting this now';
+      case 'moved_out':
+        return 'Rented it before';
+      case 'inspected':
+        return 'Already inspected';
+      case 'was_interested':
+        return 'Booked, did not view';
+    }
+    return null;
+  }
+
   Future<void> _loadAssignedProperties() async {
     final uid = _auth.currentUser?.uid; if (uid == null) return;
     try {
@@ -170,6 +222,9 @@ class _AgentDiscoverPropertiesScreenState
       _matchingTenants = cached ?? [];
       _isLoadingTenants = cached == null;
     });
+    // Deliberately NOT awaited. The two reads are independent, and a chip is
+    // not worth holding the list for: this repaints on its own when it lands.
+    unawaited(_loadTenantHistory(property.id));
     try {
       final snap = await _firestore.collection('users').where('accountType', isEqualTo: 'tenant').where('verificationStatus', isEqualTo: 'verified').get();
       final tenants = <Map<String, dynamic>>[];
@@ -510,6 +565,9 @@ class _AgentDiscoverPropertiesScreenState
     final img = t['profileImageUrl'] as String?;
     final ms = t['maritalStatus'] as String?;
 
+    final history = _historyChipLabel(
+        _historyCache[_selectedProperty?.id]?[t['uid'] as String? ?? '']);
+
     final matchLabel = score >= 70 ? 'Strong match' : score >= 40 ? 'Good match' : 'Partial match';
     final matchColor = score >= 70 ? AppColors.success : score >= 40 ? AppColors.primary : AppColors.warning;
 
@@ -525,6 +583,22 @@ class _AgentDiscoverPropertiesScreenState
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: AppTextStyles.labelLarge), if (occ.isNotEmpty) Text(occ, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary))])),
           Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: matchColor.withAlpha(26), borderRadius: BorderRadius.circular(20)), child: Text(matchLabel, style: AppTextStyles.caption.copyWith(color: matchColor, fontWeight: FontWeight.w600))),
         ]),
+        if (history != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(6)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.history, size: 12, color: AppColors.warning),
+              const SizedBox(width: 4),
+              Text(history,
+                  style: AppTextStyles.caption.copyWith(
+                      color: AppColors.warning, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+        ],
         if (reasons.isNotEmpty) ...[const SizedBox(height: 10), Wrap(spacing: 6, runSpacing: 6, children: reasons.map((r) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(6)), child: Text(r, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)))).toList())],
         const SizedBox(height: 10),
         Row(children: [

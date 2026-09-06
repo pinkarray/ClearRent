@@ -4574,7 +4574,10 @@ export {deleteMyAccount} from "./account_ops";
 
 export {getSignedAgreementUrl, getConditionMediaUrl} from "./doc_access_ops";
 
-export {agentUnassignFromProperty} from "./agent_property_ops";
+export {
+  agentUnassignFromProperty,
+  getPropertyTenantHistory,
+} from "./agent_property_ops";
 
 export {
   lookupCaretakerCandidate,

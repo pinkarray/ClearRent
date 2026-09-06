@@ -174,3 +174,173 @@ export const agentUnassignFromProperty = onCall(
     return {success: true};
   },
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getPropertyTenantHistory: who has already been through this property.
+//
+// The agent's "matching tenants" list scores every verified tenant against a
+// listing with no idea which of them already inspected it, already rented it,
+// or already lived there and left. So the top of the list could be someone who
+// saw the place last month and passed, pitched to as though they were new.
+//
+// Hiding them would be worse than the bug: an agent may well want to
+// re-approach someone who inspected and did not commit. So this labels rather
+// than filters, and the client decides what to show.
+//
+// It has to be a callable. `active_rentals` is readable only by its tenant,
+// its landlord or an admin, and the LIST rule was deliberately narrowed (H1)
+// after it let any signed-in account enumerate every rental in the system.
+// `inspection_requests` is no better for this purpose: an agent only matches
+// rows where `agentId == uid`, so a landlord-handled or previous-agent
+// inspection is invisible to them. Widening either rule to serve a convenience
+// label would trade a real access boundary for a chip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** What a tenant's history with one property amounts to, strongest first. */
+const HISTORY_RANK = [
+  "renting_now",
+  "moved_out",
+  "inspected",
+  "was_interested",
+] as const;
+
+type HistoryLabel = (typeof HISTORY_RANK)[number];
+
+// A tenancy that is running. `expiring_soon` and `grace_locked` are the same
+// live tenancy near its end date, and `moveout_pending` is still occupied:
+// the tenant has given notice but the landlord has not confirmed handover.
+const LIVING_THERE_STATUSES = [
+  "active",
+  "expiring_soon",
+  "grace_locked",
+  "moveout_pending",
+];
+
+// A tenancy that ran and finished. See the `terminated` note below: that one
+// is ambiguous and is handled on its own.
+const ENDED_STATUSES = ["ended_by_tenant", "ended_by_landlord"];
+
+// An inspection that actually put the tenant in front of the property.
+// `awaitingOutcome` counts: the visit happened, only the verdict is missing.
+const VISITED_STATUSES = ["completed", "awaitingOutcome"];
+
+// Booked, then it came to nothing. Worth surfacing separately from a real
+// visit: the tenant showed interest in THIS property but never saw it, so an
+// agent re-approaching them is offering something new rather than repeating
+// something they already turned down.
+const INTERESTED_STATUSES = [
+  "cancelled",
+  "declined",
+  "declinedByAgent",
+  "expiredUnapproved",
+  "refunded",
+];
+
+/**
+ * Keep only the strongest label a tenant has earned.
+ *
+ * A tenant can hold several at once (they inspected, then rented, then moved
+ * out) and the agent only needs the one describing where they stand now.
+ *
+ * @param {Map<string, HistoryLabel>} into Accumulator, tenantId to label.
+ * @param {string} tenantId The tenant.
+ * @param {HistoryLabel} label The label just derived.
+ * @return {void}
+ */
+function keepStrongest(
+  into: Map<string, HistoryLabel>,
+  tenantId: string,
+  label: HistoryLabel,
+): void {
+  const existing = into.get(tenantId);
+  if (existing === undefined ||
+      HISTORY_RANK.indexOf(label) < HISTORY_RANK.indexOf(existing)) {
+    into.set(tenantId, label);
+  }
+}
+
+export const getPropertyTenantHistory = onCall(
+  callableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "You must be signed in.");
+    }
+    const uid = request.auth.uid;
+    const data = (request.data ?? {}) as {propertyId?: string};
+    const propertyId = (data.propertyId ?? "").trim();
+    if (!propertyId) {
+      throw new HttpsError("invalid-argument", "propertyId is required.");
+    }
+
+    const db = getFirestore();
+    const snap = await db.collection("properties").doc(propertyId).get();
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Property not found.");
+    }
+    // The assigned agent ONLY. Not the landlord (they have their own screens
+    // and their own read access) and not any agent who happens to ask: this
+    // returns who has been through someone's property, which is exactly the
+    // enumeration the rules refuse.
+    if (snap.get("assignedAgentId") !== uid) {
+      throw new HttpsError(
+        "permission-denied",
+        "You are not the assigned agent for this property.",
+      );
+    }
+
+    // Both are single-field equality queries, so neither needs a composite
+    // index, and the status filtering happens in code for the same reason.
+    const [inspections, rentals] = await Promise.all([
+      db.collection("inspection_requests")
+        .where("propertyId", "==", propertyId).get(),
+      db.collection("active_rentals")
+        .where("propertyId", "==", propertyId).get(),
+    ]);
+
+    const labels = new Map<string, HistoryLabel>();
+
+    for (const doc of inspections.docs) {
+      const tenantId = doc.get("tenantId");
+      if (typeof tenantId !== "string" || tenantId.length === 0) continue;
+      const status = doc.get("status");
+      if (VISITED_STATUSES.includes(status)) {
+        keepStrongest(labels, tenantId, "inspected");
+      } else if (INTERESTED_STATUSES.includes(status)) {
+        keepStrongest(labels, tenantId, "was_interested");
+      }
+      // Anything still in flight (pending, approved, awaiting payment) is
+      // deliberately unlabelled: that tenant is mid-deal on this property and
+      // the agent is already dealing with them.
+    }
+
+    for (const doc of rentals.docs) {
+      const tenantId = doc.get("tenantId");
+      if (typeof tenantId !== "string" || tenantId.length === 0) continue;
+      const status = doc.get("status");
+      if (LIVING_THERE_STATUSES.includes(status)) {
+        keepStrongest(labels, tenantId, "renting_now");
+      } else if (status === "terminated") {
+        // "terminated" covers two opposite things. An early termination ended
+        // a real tenancy; the strand sweep uses the SAME status to release a
+        // slot whose accept lapsed unpaid, and that tenant never moved in, was
+        // never charged, and never even held keys. Only the endReason tells
+        // them apart, so nothing here may fall back to a catch-all.
+        if (doc.get("endReason") !== "accept_lapsed_unpaid") {
+          keepStrongest(labels, tenantId, "moved_out");
+        }
+      } else if (ENDED_STATUSES.includes(status)) {
+        keepStrongest(labels, tenantId, "moved_out");
+      }
+      // "pending_payment" is a rental that has not begun: the slot is held
+      // and the rent is unpaid, so it says nothing about having lived here.
+      // Anything unrecognised is left alone too, rather than guessed at.
+    }
+
+    logger.info("Property tenant history served", {
+      propertyId,
+      uid,
+      labelled: labels.size,
+    });
+    return {labels: Object.fromEntries(labels)};
+  },
+);
