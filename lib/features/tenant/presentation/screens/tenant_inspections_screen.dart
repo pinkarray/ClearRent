@@ -813,11 +813,17 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   @override
   void initState() {
     super.initState();
-    // Only worth a read on the day itself, and only once the fee is paid —
-    // that is what entitles the tenant to the pin in the first place.
-    if (widget.request.isPaid && _isToday(widget.request.requestedDate)) {
-      _loadPin();
-    }
+    // Paid is the whole condition. It used to also require the inspection to
+    // be TODAY, which meant a tenant planning the journey the night before —
+    // the moment a map is actually useful — got nothing. Payment is already
+    // what the SERVER treats as the reveal trigger (confirmInspectionPayment
+    // writes reveals/{uid}), so gating the client on the date made the two
+    // disagree for no benefit.
+    //
+    // Turning up early buys nothing: "on my way", arrival and complete all sit
+    // behind the 2h window, so the slot still governs the inspection. The card
+    // says so next to the map.
+    if (widget.request.isPaid) _loadPin();
   }
 
   @override
@@ -831,7 +837,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     if (oldWidget.request.isPaid && oldWidget.request.id == widget.request.id) {
       return;
     }
-    if (_isToday(widget.request.requestedDate)) _loadPin();
+    _loadPin();
   }
 
   Future<void> _loadPin() async {
@@ -864,6 +870,13 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   bool _isTomorrow(DateTime d) {
     final t = DateTime.now().add(const Duration(days: 1));
     return d.year == t.year && d.month == t.month && d.day == t.day;
+  }
+
+  /// "tomorrow" / "on 6 Sep" — enough for the tenant to place the visit
+  /// without repeating the full date card above.
+  String _dateLabel(DateTime d) {
+    if (_isTomorrow(d)) return 'tomorrow';
+    return 'on ${d.day} ${_monthAbbr(d.month)}';
   }
 
   String _monthAbbr(int m) =>
@@ -1156,7 +1169,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               Icons.phone, AppColors.success, _callHandler, false),
         ]),
 
-        // Where to actually go, on the day itself.
+        // Where to actually go.
         //
         // The same pin is already on the property detail screen after payment,
         // but this card is where the arrival happens — "I'm on my way", then
@@ -1164,9 +1177,14 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         // the tenant leave this card to find the map, then come back to press
         // the button, is the one moment they cannot afford that detour.
         //
+        // No longer restricted to the day itself: working out how to get
+        // somewhere is something people do the night before, and that is
+        // precisely when this was blank. The slot still governs the
+        // inspection — see the notice below — the map only governs the route.
+        //
         // Only rendered once the pin actually resolved: an entitlement failure
         // returns null, and an empty map box would be worse than none.
-        if (today && _latitude != null && _longitude != null) ...[
+        if (_latitude != null && _longitude != null) ...[
           const SizedBox(height: 16),
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
@@ -1177,6 +1195,35 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               height: 150,
             ),
           ),
+          // Shown whenever the visit is NOT today. The address is for planning
+          // the trip; turning up outside the slot means no handler, and
+          // nothing the tenant does there can be recorded — arrival and
+          // completion both sit behind the 2h window.
+          if (!today) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(13),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.warning.withAlpha(51))),
+              child: Row(children: [
+                Icon(Icons.schedule, size: 20, color: AppColors.warning),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'This is for planning your journey. Your inspection is '
+                    '${_dateLabel(widget.request.requestedDate)}'
+                    '${widget.request.requestedTimeDisplay.isEmpty ? '' : ', ${widget.request.requestedTimeDisplay}'}'
+                    ' — please do not go before then, nobody will be there '
+                    'to let you in.',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.warning),
+                  ),
+                ),
+              ]),
+            ),
+          ],
         ],
 
         // Tip for today
