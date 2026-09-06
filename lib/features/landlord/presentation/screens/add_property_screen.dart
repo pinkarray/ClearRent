@@ -1490,6 +1490,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         final uploadedUrl =
             await _propertyService.uploadOwnershipDoc(_ownershipDocFile!);
 
+        // A failed upload must STOP the publish.
+        //
+        // uploadOwnershipDoc swallows its exception and returns null, and
+        // nothing here checked it — so a hiccup produced a live listing with
+        // ownershipDocType set, ownershipDocUrl missing, and
+        // ownershipDocStatus 'pending': queued for an admin review with no
+        // document to review, and no hint to the landlord that the one file
+        // the listing legally depends on never arrived. The building branch
+        // immediately below has always aborted on null; this is the same
+        // failure and deserves the same treatment.
+        if (uploadedUrl == null) {
+          if (mounted) {
+            Navigator.pop(context); // Close progress dialog
+            _showError(
+              'Your ownership document could not be uploaded. Check your '
+              'connection and try again — the listing has not been published.',
+            );
+          }
+          setState(() => _isPublishing = false);
+          return;
+        }
+
         if (_creatingNewBuilding) {
           _updateUploadProgress('Creating building...');
           buildingId = await _buildingService.createBuilding(

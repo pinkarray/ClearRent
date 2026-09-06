@@ -678,15 +678,32 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       String? finalDocUrl = _ownershipDocUrl;
       if (_newOwnershipDocFile != null) {
         setState(() => _isUploadingDoc = true);
+        String? path;
         try {
           // Private Storage (not Cloudinary) — C of O is sensitive PII.
-          final path =
+          path =
               await _propertyService.uploadOwnershipDoc(_newOwnershipDocFile!);
-          if (path != null) finalDocUrl = path;
         } catch (e) {
           debugPrint('⚠️ Doc upload failed: $e');
         }
         if (mounted) setState(() => _isUploadingDoc = false);
+        // A failed upload must STOP the save.
+        //
+        // This used to fall through on null — keeping the OLD url (often none
+        // at all) while the update below still stamped ownershipDocStatus
+        // 'pending'. The landlord was told the listing saved, went back, and
+        // found the document simply absent, with the listing queued for a
+        // review that had nothing to review. Seen for real as a Storage 403.
+        if (path == null) {
+          if (!mounted) return;
+          setState(() => _isSaving = false);
+          _showError(
+            'Your ownership document could not be uploaded, so nothing was '
+            'saved. Check your connection and try again.',
+          );
+          return;
+        }
+        finalDocUrl = path;
       }
 
       // Prepare updates
