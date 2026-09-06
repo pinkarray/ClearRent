@@ -67,25 +67,31 @@ class InspectionPricing {
   // ══════════════════════════════════════════════
 
   /// All Lagos LGAs used in the system.
+  ///
+  /// Order is DISPLAY order — [getAreasGroupedByLGA] walks this list, so it is
+  /// what every area picker opens on. Busiest rental markets first: a landlord
+  /// or tenant in Ikeja or Lekki should not scroll. Nothing computes off the
+  /// order (only membership, via [applyRemoteAreas] and [allLGAs]), so it is
+  /// safe to re-rank.
   static const List<String> lgas = [
-    'ikorodu',
-    'kosofe',
-    'shomolu',
     'ikeja',
-    'ojodu_lcda',
-    'agege',
-    'ifako_ijaiye',
-    'alimosho',
-    'oshodi_isolo',
-    'mushin',
-    'surulere',
-    'yaba_mainland',
     'eti_osa',
     'lagos_island',
-    'apapa',
+    'surulere',
+    'yaba_mainland',
+    'kosofe',
+    'oshodi_isolo',
+    'alimosho',
+    'ojodu_lcda',
+    'shomolu',
+    'agege',
+    'ifako_ijaiye',
+    'mushin',
     'amuwo_odofin',
-    'ojo',
+    'apapa',
     'ajeromi_ifelodun',
+    'ojo',
+    'ikorodu',
     'obafemi_owode',
   ];
 
@@ -345,7 +351,7 @@ class InspectionPricing {
     'kosofe': 'Kosofe LGA',
     'shomolu': 'Shomolu LGA',
     'ikeja': 'Ikeja LGA',
-    'ojodu_lcda': 'Ojodu LCDA',
+    'ojodu_lcda': 'Ojodu LGA',
     'agege': 'Agege LGA',
     'ifako_ijaiye': 'Ifako-Ijaiye LGA',
     'alimosho': 'Alimosho LGA',
