@@ -132,25 +132,46 @@ class _AgentDiscoverPropertiesScreenState
   /// the opener has to name the property the agent came from. Tapping a chip
   /// fills the composer; ChatScreen never sends one.
   ///
-  /// Each line is something the landlord can check rather than a claim about
-  /// how good the agent is. Anything the profile does not have is left out
-  /// instead of stated emptily: a brand-new agent gets the first line only.
+  /// Each line is something the landlord can CHECK, drawn only from what the
+  /// agent's own profile actually says. Nothing here may assert something the
+  /// profile cannot back: an earlier version said "I cover {area}" using the
+  /// PROPERTY's area, which the agent may not serve at all, so tapping it made
+  /// them open with a claim that was not theirs to make.
+  ///
+  /// The first and last lines are unconditional, so even an agent with a
+  /// completely empty profile gets an opener and a closing question. Tapping
+  /// fills the composer; the agent edits it before it sends.
   List<String> _pitchSuggestions(
     PropertyModel property,
     Map<String, dynamic>? agent,
   ) {
     final base = (agent?['baseLocation'] as String?) ?? '';
     final inspections = (agent?['totalInspections'] as num?)?.toInt() ?? 0;
+    final rating = (agent?['rating'] as num?)?.toDouble() ?? 0;
+    final ratings = (agent?['totalRatings'] as num?)?.toInt() ?? 0;
+    final serviceAreas = ((agent?['serviceAreas'] as List?) ?? const [])
+        .map((a) => a.toString())
+        .toList();
     final area = property.city;
+    // Only claim coverage when the agent's OWN service areas say so.
+    final coversThisArea = area.isNotEmpty &&
+        serviceAreas.any((a) => a.toLowerCase() == area.toLowerCase());
+
     return [
       "Hello, I'm an agent on ClearRent. I'd like to handle inspections "
           'for ${property.title}.',
-      if (base.isNotEmpty)
-        "I'm based in $base, so I can show this one at short notice."
-      else if (area.isNotEmpty)
-        'I cover $area, so I can show this one at short notice.',
+      if (coversThisArea)
+        '$area is one of my service areas, so I can show this one at short '
+            'notice.'
+      else if (base.isNotEmpty)
+        "I'm based in $base and I can get to this one easily.",
       if (inspections > 0)
         "I've handled $inspections inspections on ClearRent so far.",
+      if (ratings > 0)
+        'My rating from ${ratings == 1 ? '1 tenant' : '$ratings tenants'} is '
+            '${rating.toStringAsFixed(1)} out of 5.',
+      'Would you like me to take over inspections for this property? Happy to '
+          'answer any questions first.',
     ];
   }
 
