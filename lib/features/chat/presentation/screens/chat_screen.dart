@@ -1592,43 +1592,52 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Tappable openers for an empty thread. Fills the input rather than
   /// sending — the user stays the author and can edit before it goes.
   Widget _buildSuggestionChips() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: widget.suggestions!.map((suggestion) {
-          return GestureDetector(
-            onTap: () {
-              _messageController.text = suggestion;
-              _messageController.selection = TextSelection.fromPosition(
-                TextPosition(offset: suggestion.length),
-              );
-            },
-            child: Container(
-              // A Wrap hands each child UNBOUNDED width, and nothing here used
-              // to cap it, so a chip longer than the screen ran off the edge
-              // and painted the overflow stripes. Callers are asked to keep
-              // openers to one line, but the layout must not depend on them
-              // getting that right.
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width - 64,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.primary.withAlpha(77)),
-              ),
-              child: Text(
-                suggestion,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.primary,
+    // Full width on purpose. The parent Column defaults to
+    // CrossAxisAlignment.center, so without this the block shrank to its own
+    // content and sat centred, which read as a margin down the left edge.
+    // Wrap already aligns children to the start; it just had no width to
+    // align them within. The 16 matches the message list's own padding.
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Wrap(
+          alignment: WrapAlignment.start,
+          spacing: 8,
+          runSpacing: 8,
+          children: widget.suggestions!.map((suggestion) {
+            return GestureDetector(
+              onTap: () {
+                _messageController.text = suggestion;
+                _messageController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: suggestion.length),
+                );
+              },
+              child: Container(
+                // A Wrap hands each child UNBOUNDED width, and nothing here used
+                // to cap it, so a chip longer than the screen ran off the edge
+                // and painted the overflow stripes. Callers are asked to keep
+                // openers to one line, but the layout must not depend on them
+                // getting that right.
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width - 64,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.primary.withAlpha(77)),
+                ),
+                child: Text(
+                  suggestion,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
