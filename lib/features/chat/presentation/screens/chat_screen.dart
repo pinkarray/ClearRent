@@ -1606,6 +1606,14 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             },
             child: Container(
+              // A Wrap hands each child UNBOUNDED width, and nothing here used
+              // to cap it, so a chip longer than the screen ran off the edge
+              // and painted the overflow stripes. Callers are asked to keep
+              // openers to one line, but the layout must not depend on them
+              // getting that right.
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width - 64,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.surface,
