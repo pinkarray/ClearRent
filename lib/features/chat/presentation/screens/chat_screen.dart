@@ -66,6 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
       _conversationService.getMessagesStream(widget.conversationId);
 
   ConversationData? _conversation;
+  // A property fetch or its detail screen is in flight. Blocks re-entry so
+  // repeated taps cannot stack detail screens, and drives the spinner that
+  // makes the first tap visibly register on a slow connection.
+  bool _openingProperty = false;
   List<MessageData> _messages = [];
   bool _isLoading = true;
   String _currentUserName = '';
@@ -1092,7 +1096,16 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           if (propertyId.isNotEmpty)
-            Icon(Icons.chevron_right, color: AppColors.textHint),
+            _openingProperty
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : Icon(Icons.chevron_right, color: AppColors.textHint),
         ],
       ),
     );
@@ -1540,26 +1553,42 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Fetch the shared property and open its detail screen. Only navigates
   /// if the property still exists — the /property-detail route casts
   /// state.extra as a non-null PropertyModel, so pushing null would crash.
+  ///
+  /// Guarded against re-entry, because tapping the card four times used to
+  /// open four detail screens that had to be dismissed one at a time.
+  ///
+  /// The `await` on the push is the part that actually fixes it. Guarding only
+  /// the fetch is not enough: Firestore serves a cached property immediately,
+  /// so the guard would open and close within one frame and every tap would
+  /// still get its own push. `push` completes when the pushed route is POPPED,
+  /// so awaiting it holds the flag for as long as the detail screen is up.
   Future<void> _openSharedProperty(String propertyId) async {
+    if (_openingProperty) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
 
-    final property = await _propertyService.getProperty(propertyId);
+    setState(() => _openingProperty = true);
+    try {
+      final property = await _propertyService.getProperty(propertyId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (property == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('This property is no longer available'),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-      return;
+      if (property == null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Text('This property is no longer available'),
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        return;
+      }
+
+      await router.push('/property-detail', extra: property);
+    } finally {
+      if (mounted) setState(() => _openingProperty = false);
     }
-
-    router.push('/property-detail', extra: property);
   }
 
   /// Open the property picker so the user can share a listing into this
