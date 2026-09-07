@@ -1625,9 +1625,16 @@ class _ChatScreenState extends State<ChatScreen> {
           children: widget.suggestions!.map((suggestion) {
             return GestureDetector(
               onTap: () {
-                _messageController.text = suggestion;
+                // APPEND, never replace. These are separate sentences and a
+                // sender may well want two or three of them, so taking a
+                // second one used to silently delete the first. Joined with a
+                // space so the result still reads as one message.
+                final existing = _messageController.text.trimRight();
+                final combined =
+                    existing.isEmpty ? suggestion : '$existing $suggestion';
+                _messageController.text = combined;
                 _messageController.selection = TextSelection.fromPosition(
-                  TextPosition(offset: suggestion.length),
+                  TextPosition(offset: combined.length),
                 );
               },
               child: Container(
