@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/area_dropdown.dart';
 
 class AgentServiceAreasScreen extends StatefulWidget {
   const AgentServiceAreasScreen({super.key});
@@ -125,6 +126,13 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
     try {
       await _firestore.collection('users').doc(userId).update({
         'serviceAreas': _selectedAreas,
+        // Saved from here too. It was captured once at sign-up and then had no
+        // edit path anywhere in the app, so an agent who moved kept a stale
+        // one and an agent who skipped it at sign-up had none and no way to
+        // add it. The rules already permit the write: the users update rule is
+        // a denylist covering earnings, ratings and verification, and this is
+        // not on it.
+        if (_baseLocation.isNotEmpty) 'baseLocation': _baseLocation,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -253,44 +261,38 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
                         ),
                       ),
 
-                      // Base location
-                      if (_baseLocation.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withAlpha(26),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withAlpha(51),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(Icons.home, color: AppColors.primary, size: 18),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Base Location',
-                                      style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
-                                    ),
-                                    Text(_baseLocation, style: AppTextStyles.labelMedium),
-                                  ],
-                                ),
-                              ),
-                              if (!_selectedAreas.contains(_baseLocation))
-                                TextButton(
-                                  onPressed: () => _toggleArea(_baseLocation),
-                                  child: const Text('Add'),
-                                ),
-                            ],
+                      // Base location.
+                      //
+                      // A real picker, not a read-only card. This is the ONLY
+                      // place it can be changed: it is captured once during
+                      // sign-up and nothing else in the app writes it, so an
+                      // agent who moved was stuck and an agent who skipped it
+                      // had no way back.
+                      //
+                      // Constrained to the known area list because landlords
+                      // see it when choosing a handler. It carries no money:
+                      // pricing is flat now, transportFee is 0, so moving your
+                      // base cannot inflate a fee. Hence no evidence needed.
+                      const SizedBox(height: 12),
+                      AreaDropdown(
+                        selectedArea:
+                            _baseLocation.isEmpty ? null : _baseLocation,
+                        label: 'Base location',
+                        hint: 'Select where you work from',
+                        helperText:
+                            'Where you work from. Landlords see this when '
+                            'choosing who handles their property.',
+                        onSelected: (value) =>
+                            setState(() => _baseLocation = value),
+                      ),
+                      if (_baseLocation.isNotEmpty &&
+                          !_selectedAreas.contains(_baseLocation)) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => _toggleArea(_baseLocation),
+                            child: Text('Add $_baseLocation to my service areas'),
                           ),
                         ),
                       ],
