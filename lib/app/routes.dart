@@ -492,6 +492,7 @@ final appRouter = GoRouter(
 
         return ChatScreen(
           conversationId: conversationId,
+          propertyId: extra?['propertyId'] as String?,
           propertyTitle: extra?['propertyTitle'] as String?,
           propertyImage: extra?['propertyImage'] as String?,
           initialDraft: extra?['initialDraft'] as String?,

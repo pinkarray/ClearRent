@@ -120,7 +120,7 @@ class _AgentDiscoverPropertiesScreenState
       final agentDoc = await _firestore.collection('users').doc(agentId).get();
       if (!mounted) return; Navigator.pop(context);
       if (conversationId != null) {
-        context.push('/chat', extra: { 'conversationId': conversationId, 'propertyTitle': 'Pitch: ${property.title}', 'propertyImage': property.images.isNotEmpty ? property.images.first : null, 'suggestions': _pitchSuggestions(property, agentDoc.data()) });
+        context.push('/chat', extra: { 'conversationId': conversationId, 'propertyId': property.id, 'propertyTitle': 'Pitch: ${property.title}', 'propertyImage': property.images.isNotEmpty ? property.images.first : null, 'suggestions': _pitchSuggestions(property, agentDoc.data()) });
       } else { _showSnackBar('Could not start conversation. Make sure both accounts are verified.', isError: true); }
     } catch (e) { if (mounted) Navigator.pop(context); _showSnackBar('Something went wrong.', isError: true); }
   }

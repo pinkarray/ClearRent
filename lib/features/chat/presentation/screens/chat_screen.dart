@@ -14,6 +14,17 @@ import '../../../../shared/models/property_model.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
+
+  /// The property this screen was opened FROM, for threads whose conversation
+  /// document stores none.
+  ///
+  /// The agent pitch thread is per landlord, so it holds no propertyId, but
+  /// the agent always arrives at it from one specific listing and the header
+  /// is titled after it. Without this the header named a property and then
+  /// refused to open it, which is worse than a card that never offered.
+  /// Absent when the thread is reached from the message list, and the header
+  /// correctly goes inert again rather than opening the wrong listing.
+  final String? propertyId;
   final String? propertyTitle;
   final String? propertyImage;
   /// Optional pre-filled message text. The user can edit or discard before
@@ -30,6 +41,7 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.conversationId,
+    this.propertyId,
     this.propertyTitle,
     this.propertyImage,
     this.initialDraft,
@@ -1019,7 +1031,12 @@ class _ChatScreenState extends State<ChatScreen> {
     // Empty for the threads that genuinely have no property behind them: the
     // agent pitch thread and the landlord/caretaker thread both store ''. They
     // keep the card as a plain label rather than a link that goes nowhere.
-    final propertyId = _conversation?.propertyId ?? '';
+    // The conversation's own id wins; `widget.propertyId` only fills in for
+    // threads that store none, which today means the agent pitch thread.
+    final conversationPropertyId = _conversation?.propertyId ?? '';
+    final propertyId = conversationPropertyId.isNotEmpty
+        ? conversationPropertyId
+        : (widget.propertyId ?? '');
 
     final card = Container(
       margin: const EdgeInsets.all(16),
