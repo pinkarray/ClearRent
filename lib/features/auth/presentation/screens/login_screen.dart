@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/strings.dart';
@@ -20,6 +22,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
+  // Same addresses the About and Settings screens link to.
+  static const String _privacyUrl = 'https://www.verealtytech.com/privacy';
+  static const String _termsUrl = 'https://www.verealtytech.com/terms';
+
+  // Tap targets for the two policy links below the form. Held as fields
+  // because a TapGestureRecognizer owns resources and has to be disposed;
+  // building one inline in build() leaks a recognizer per rebuild.
+  late final TapGestureRecognizer _termsRecognizer;
+  late final TapGestureRecognizer _privacyRecognizer;
   late TabController _tabController;
 
   // Email tab controllers
@@ -52,6 +63,10 @@ class _LoginScreenState extends State<LoginScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _termsRecognizer = TapGestureRecognizer()
+      ..onTap = () => _launchPolicy(_termsUrl);
+    _privacyRecognizer = TapGestureRecognizer()
+      ..onTap = () => _launchPolicy(_privacyUrl);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       setState(() => _errorMessage = null);
@@ -107,7 +122,36 @@ class _LoginScreenState extends State<LoginScreen>
     _passwordController.dispose();
     _phoneController.dispose();
     _phonePasswordController.dispose();
+    _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
     super.dispose();
+  }
+
+  /// Open Terms or Privacy in the browser.
+  ///
+  /// Both spans were already styled as links, in the primary colour and
+  /// semi-bold, but carried no recognizer at all, so they were coloured text
+  /// that did nothing. This is the one screen where the user is being asked to
+  /// agree to them, so it is the one place they have to be readable.
+  Future<void> _launchPolicy(String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var launched = false;
+    try {
+      launched = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      launched = false;
+    }
+    if (launched || !mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Could not open link'),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // ============ VALIDATION ============
@@ -838,17 +882,23 @@ class _LoginScreenState extends State<LoginScreen>
                     children: [
                       TextSpan(
                         text: 'Terms of Service',
+                        recognizer: _termsRecognizer,
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.primary,
                         ),
                       ),
                       const TextSpan(text: ' and '),
                       TextSpan(
                         text: 'Privacy Policy',
+                        recognizer: _privacyRecognizer,
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.primary,
                         ),
                       ),
                     ],
