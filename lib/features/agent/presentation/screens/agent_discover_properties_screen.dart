@@ -141,6 +141,10 @@ class _AgentDiscoverPropertiesScreenState
   /// The first and last lines are unconditional, so even an agent with a
   /// completely empty profile gets an opener and a closing question. Tapping
   /// fills the composer; the agent edits it before it sends.
+  ///
+  /// Keep every line to ONE line. They render as chips in a Wrap, and a long
+  /// one used to run off the screen edge; the chip now caps its own width, but
+  /// a sentence that wraps to three lines is still a bad chip.
   List<String> _pitchSuggestions(
     PropertyModel property,
     Map<String, dynamic>? agent,
@@ -158,20 +162,16 @@ class _AgentDiscoverPropertiesScreenState
         serviceAreas.any((a) => a.toLowerCase() == area.toLowerCase());
 
     return [
-      "Hello, I'm an agent on ClearRent. I'd like to handle inspections "
-          'for ${property.title}.',
+      "Hello, I'd like to handle inspections for ${property.title}.",
       if (coversThisArea)
-        '$area is one of my service areas, so I can show this one at short '
-            'notice.'
+        '$area is one of my service areas.'
       else if (base.isNotEmpty)
-        "I'm based in $base and I can get to this one easily.",
+        "I'm based in $base, close to this one.",
       if (inspections > 0)
-        "I've handled $inspections inspections on ClearRent so far.",
+        "I've handled $inspections inspections on ClearRent.",
       if (ratings > 0)
-        'My rating from ${ratings == 1 ? '1 tenant' : '$ratings tenants'} is '
-            '${rating.toStringAsFixed(1)} out of 5.',
-      'Would you like me to take over inspections for this property? Happy to '
-          'answer any questions first.',
+        'My rating is ${rating.toStringAsFixed(1)} out of 5.',
+      'Would you like me to take this one on?',
     ];
   }
 
@@ -343,9 +343,44 @@ class _AgentDiscoverPropertiesScreenState
       );
       if (!mounted) return; Navigator.pop(context);
       if (conversation != null) {
-        context.push('/chat', extra: { 'conversationId': conversation.id, 'propertyTitle': _selectedProperty!.title, 'propertyImage': _selectedProperty!.images.isNotEmpty ? _selectedProperty!.images.first : null });
+        context.push('/chat', extra: { 'conversationId': conversation.id, 'propertyTitle': _selectedProperty!.title, 'propertyImage': _selectedProperty!.images.isNotEmpty ? _selectedProperty!.images.first : null, 'suggestions': _tenantPitchSuggestions(_selectedProperty!, tenant) });
       } else { _showSnackBar('Could not start conversation. Both parties must be verified.', isError: true); }
     } catch (e) { if (mounted) Navigator.pop(context); _showSnackBar('Something went wrong.', isError: true); }
+  }
+
+  /// Openers for the agent-to-TENANT pitch, the other half of the pitch flow.
+  ///
+  /// Cold-messaging a tenant about a specific property is a harder ask than
+  /// pitching a landlord, so these lead with why THIS property suits THIS
+  /// person, drawn from the same profile fields the match score already reads.
+  /// A claim is only made when the tenant's own profile supports it: an
+  /// unmatched preferred area or an unknown budget simply drops its line.
+  ///
+  /// One line each, same as the landlord openers.
+  List<String> _tenantPitchSuggestions(
+    PropertyModel property,
+    Map<String, dynamic> tenant,
+  ) {
+    final fullName = (tenant['fullName'] as String? ?? '').trim();
+    final firstName = fullName.isEmpty ? 'there' : fullName.split(' ').first;
+    final area = property.city;
+    final preferred = ((tenant['preferredAreas'] as List?) ?? const [])
+        .map((a) => a.toString().toLowerCase())
+        .toList();
+    final wantsThisArea =
+        area.isNotEmpty && preferred.contains(area.toLowerCase());
+    final budgetMax = (tenant['budgetMax'] as num?)?.toDouble() ?? 0;
+    final withinBudget = budgetMax > 0 && property.rent <= budgetMax;
+
+    return [
+      area.isEmpty
+          ? 'Hi $firstName, I handle ${property.title}.'
+          : 'Hi $firstName, I handle ${property.title} in $area.',
+      if (wantsThisArea) '$area is one of the areas you are looking in.',
+      if (withinBudget) 'The rent is ${property.formattedRent}, within your budget.'
+      else 'The rent is ${property.formattedRent}.',
+      'Would you like to book an inspection?',
+    ];
   }
 
   // ── Helpers ──
