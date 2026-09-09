@@ -313,8 +313,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
   Widget _buildAgreementCard(ActiveRental rental) {
     final isActive = rental.isActive;
+    // The executed copy counts on its own. A rental can carry the signed
+    // agreement without the original still being attached, and gating the whole
+    // block on `agreementUrl` alone hid the one document that actually matters.
     final hasAgreement =
-        rental.agreementUrl != null && rental.agreementUrl!.isNotEmpty;
+        (rental.agreementUrl != null && rental.agreementUrl!.isNotEmpty) ||
+            rental.hasExecutedAgreement;
 
     final agreementStatusLabel = _agreementStatusLabel(rental.agreementStatus);
     final agreementStatusColor = _agreementStatusColor(rental.agreementStatus);
@@ -439,15 +443,56 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                 ),
               ]),
             ),
+
+            // WHICH copy this is. "Finalized" alone never said whether a signed
+            // document existed, and three of the paths that set it store none
+            // (the two legacy accept routes and the admin override). A tenant
+            // about to pay a year's rent should not have to guess whether the
+            // agreement behind that word bears anybody's signature.
+            const SizedBox(height: 8),
+            Row(children: [
+              Icon(
+                rental.hasExecutedAgreement
+                    ? Icons.verified_outlined
+                    : Icons.info_outline,
+                size: 14,
+                color: rental.hasExecutedAgreement
+                    ? AppColors.success
+                    : AppColors.textHint,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  rental.hasExecutedAgreement
+                      ? 'Signed by you and your landlord. This is the copy on '
+                          'record.'
+                      : rental.isFinalizedWithoutSignature
+                          ? 'No signed copy is on record for this tenancy. Ask '
+                              'your landlord for one you can both sign.'
+                          : 'Unsigned draft from your landlord.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: rental.hasExecutedAgreement
+                        ? AppColors.success
+                        : AppColors.textHint,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ]),
             const SizedBox(height: 12),
 
             // Action buttons row
             Row(children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _viewAgreement('active_rentals', rental.id),
+                  onPressed: () => _viewAgreement(
+                    'active_rentals',
+                    rental.id,
+                    which: rental.agreementCopyToShow,
+                  ),
                   icon: const Icon(Icons.visibility_outlined, size: 16),
-                  label: const Text('View'),
+                  label:
+                      Text(rental.hasExecutedAgreement ? 'View signed' : 'View'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: BorderSide(color: AppColors.primary),
@@ -464,6 +509,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
                   onPressed: () => _shareAgreement(
                     'active_rentals', rental.id,
                     'Tenancy Agreement - ${rental.propertyTitle}',
+                    which: rental.agreementCopyToShow,
                   ),
                   icon: const Icon(Icons.share_outlined, size: 16),
                   label: const Text('Share'),
@@ -1357,10 +1403,15 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
   // Agreements are private — resolve a short-lived signed URL via the CF
   // (which authorizes the caller as a party) before opening/sharing.
-  Future<void> _viewAgreement(String collection, String docId) async {
+  Future<void> _viewAgreement(
+    String collection,
+    String docId, {
+    String which = 'original',
+  }) async {
     final url = await _agreementAccess.resolveUrl(
       collection: collection,
       docId: docId,
+      which: which,
     );
     if (!mounted) return;
     if (url != null) {
@@ -1378,11 +1429,13 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   Future<void> _shareAgreement(
     String collection,
     String docId,
-    String title,
-  ) async {
+    String title, {
+    String which = 'original',
+  }) async {
     final url = await _agreementAccess.resolveUrl(
       collection: collection,
       docId: docId,
+      which: which,
     );
     if (!mounted || url == null) return;
     await _shareDocument(url: url, title: title);

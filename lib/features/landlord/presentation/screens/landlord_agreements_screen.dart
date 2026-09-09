@@ -919,10 +919,14 @@ class _AgreementCardState extends State<_AgreementCard> {
   // Agreements are private — resolve a short-lived signed URL via the CF
   // (which authorizes this landlord as a party) before opening.
   Future<void> _viewAgreement() async {
-    if (r.agreementUrl == null) return;
+    // Show the executed copy once it exists, not the draft that was sent out
+    // before anybody signed. `_viewTenantSigned` above stays separate: that one
+    // is specifically the copy to print and counter-sign.
+    if (r.agreementUrl == null && !r.hasExecutedAgreement) return;
     final url = await _agreementAccess.resolveUrl(
       collection: 'active_rentals',
       docId: r.id,
+      which: r.agreementCopyToShow,
     );
     if (!mounted || url == null) return;
     final uri = Uri.tryParse(url);

@@ -294,6 +294,17 @@ class ActiveRental {
   /// distinguishable so the gap is visible rather than silently blessed.
   bool get isFinalizedWithoutSignature =>
       agreementStatus == AgreementStatus.finalized && !hasExecutedAgreement;
+
+  /// Which copy `getSignedAgreementUrl` should serve: the executed one once it
+  /// exists, otherwise the original.
+  ///
+  /// Every viewer used to take the callable's default, `original`, which is the
+  /// copy the landlord sent BEFORE anyone signed it. So a tenant who had signed
+  /// and uploaded their agreement was still shown the unsigned draft, with
+  /// nothing saying which of the two they were looking at. The signed copy was
+  /// stored and reachable the whole time; nothing ever asked for it.
+  String get agreementCopyToShow =>
+      hasExecutedAgreement ? 'executed' : 'original';
   bool get isAgreementPendingReview => agreementStatus == AgreementStatus.pendingReview;
   bool get isAgreementAccepted => agreementStatus == AgreementStatus.accepted;
   bool get isAgreementDisputed => agreementStatus == AgreementStatus.disputed;

@@ -1238,10 +1238,14 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   // Agreements are private — resolve a short-lived signed URL via the CF
   // (which authorizes this tenant as a party) before opening.
   Future<void> _viewAgreement() async {
-    if (_rental.agreementUrl == null) return;
+    // The executed copy is enough on its own: a signed agreement can be on
+    // record without the original draft still being attached, and bailing on a
+    // null agreementUrl hid it.
+    if (_rental.agreementUrl == null && !_rental.hasExecutedAgreement) return;
     final url = await _agreementAccess.resolveUrl(
       collection: 'active_rentals',
       docId: _rental.id,
+      which: _rental.agreementCopyToShow,
     );
     if (!mounted || url == null) return;
     final uri = Uri.tryParse(url);
