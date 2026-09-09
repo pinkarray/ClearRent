@@ -571,6 +571,16 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
   late List<String> _selected;
   late final List<Map<String, dynamic>> _groups;
 
+  /// LGA headers the user has opened. Everything starts CLOSED.
+  ///
+  /// There are 164 areas across 20 LGAs, and rendering them all flat meant
+  /// scrolling most of that list just to reach one LGA's "Select all". Closed
+  /// headers put all 20 on roughly one screen, and because select-all lives on
+  /// the header, picking or clearing a whole LGA no longer needs it opened at
+  /// all. A search overrides this and opens everything it matched, or the
+  /// results would be hidden behind a header the user never tapped.
+  final Set<String> _expandedGroups = {};
+
   @override
   void initState() {
     super.initState();
@@ -751,41 +761,79 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
                 final group = _filteredGroups[groupIndex];
                 final label = group['label'] as String;
                 final areas = group['areas'] as List<String>;
+                // A search opens whatever it matched; otherwise only what the
+                // user tapped open.
+                final expanded = _searchQuery.trim().isNotEmpty ||
+                    _expandedGroups.contains(label);
+                final chosen = areas.where(_selected.contains).length;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (groupIndex > 0) const SizedBox(height: 8),
-                    // Cluster header with select-all
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          Text(
-                            label,
-                            style: AppTextStyles.labelSmall.copyWith(
+                    // Cluster header: tap to open, select-all without opening.
+                    InkWell(
+                      onTap: () => setState(() {
+                        if (!_expandedGroups.remove(label)) {
+                          _expandedGroups.add(label);
+                        }
+                      }),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              expanded
+                                  ? Icons.keyboard_arrow_down
+                                  : Icons.keyboard_arrow_right,
+                              size: 18,
                               color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
                             ),
-                          ),
-                          const Spacer(),
-                          GestureDetector(
-                            onTap: () => _toggleSelectAllInCluster(areas),
-                            child: Text(
-                              _clusterFullySelected(areas)
-                                  ? 'Clear all'
-                                  : 'Select all',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
+                            const SizedBox(width: 4),
+                            Text(
+                              label,
+                              style: AppTextStyles.labelSmall.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            // Says what is chosen in here while it is closed,
+                            // so the count does not require opening it.
+                            Text(
+                              chosen > 0
+                                  ? '$chosen of ${areas.length}'
+                                  : '${areas.length}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: chosen > 0
+                                    ? AppColors.primary
+                                    : AppColors.textHint,
+                                fontWeight: chosen > 0
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: () => _toggleSelectAllInCluster(areas),
+                              child: Text(
+                                _clusterFullySelected(areas)
+                                    ? 'Clear all'
+                                    : 'Select all',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     // Area checkboxes
-                    ...areas.map((area) {
+                    if (expanded)
+                      ...areas.map((area) {
                       final isSelected = _selected.contains(area);
                       return InkWell(
                         onTap: () => _toggleArea(area),
