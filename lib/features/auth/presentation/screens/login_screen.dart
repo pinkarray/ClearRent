@@ -378,7 +378,10 @@ class _LoginScreenState extends State<LoginScreen>
     final fullPhone = '+234$phone';
 
     if (_isSignUp) {
-      if (kDebugMode) debugPrint('📱 Sending OTP to: $fullPhone');
+      // Unguarded: the number as we actually formatted it is the first thing
+      // worth ruling out when a sign-up fails, and a release build is where
+      // the failures we cannot reproduce happen.
+      debugPrint('📱 Sending OTP to: $fullPhone');
       final result = await _authService.sendOtp(phoneNumber: fullPhone);
 
       if (!mounted) return;

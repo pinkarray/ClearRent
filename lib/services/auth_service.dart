@@ -64,9 +64,12 @@ class AuthService {
           );
         },
         verificationFailed: (FirebaseAuthException e) {
-          developer.log(
-            '❌ Phone verification failed: ${e.code} - ${e.message}',
-          );
+          // debugPrint, not developer.log. developer.log does not reach logcat,
+          // so on a release build this code was invisible, and it is the only
+          // thing that says WHY a sign-up failed. Days went into blaming
+          // networks for what the native SDK was plainly reporting as an app
+          // verification failure, because this line never surfaced.
+          debugPrint('❌ Phone verification failed: ${e.code} - ${e.message}');
           completer.complete(
             PhoneAuthResult(
               success: false,
@@ -344,8 +347,27 @@ class AuthService {
         return 'This phone number is already linked to another account.';
       case 'provider-already-linked':
         return 'A phone number is already linked to this account.';
+      // App verification, NOT the network and not the number. Firebase checks
+      // the app is genuine with Play Integrity before it will send an SMS, and
+      // a sideloaded build or a device that cannot attest fails here. It looks
+      // identical to a delivery failure from the outside, which is exactly how
+      // it went undiagnosed: the message blamed nothing in particular, so the
+      // network got the blame.
+      case 'app-not-authorized':
+      case 'missing-client-identifier':
+      case 'captcha-check-failed':
+        return 'We could not verify this app with Google Play. Install '
+            'ClearRent from the Play Store, update Google Play services, then '
+            'try again.';
+      case 'network-request-failed':
+        return 'No connection. Check your internet and try again.';
       default:
-        return 'Phone verification failed. Please try again.';
+        // The code is deliberately shown. This branch means a failure we have
+        // not seen before, and a bare "please try again" tells the user
+        // nothing and tells support less. With the code they can report
+        // something we can act on.
+        return 'Phone verification failed ($code). Please try again, or '
+            'contact support with that code.';
     }
   }
 
