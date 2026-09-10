@@ -644,9 +644,18 @@ class AuthService {
       };
 
       // Add phone for landlords and agents (normalize to E.164)
+      //
+      // Typed, not proven. An email-first signup never receives an OTP, so this
+      // number is only a claim: it is written so the person can be FOUND and
+      // called (caretaker invites and every contact button look it up), and
+      // flagged false so nothing downstream mistakes it for evidence of
+      // ownership. The phone-OTP branch below overwrites both fields.
       if (phone != null && phone.isNotEmpty) {
         final normalized = phoneToE164(phone);
-        if (normalized != null) data['phone'] = normalized;
+        if (normalized != null) {
+          data['phone'] = normalized;
+          data['phoneVerified'] = false;
+        }
       }
 
       // If user signed in with phone, store the phone number

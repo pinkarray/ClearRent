@@ -29,6 +29,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _customAreaController = TextEditingController();
+  /// Only used by an email-first signup, which has no phone number yet.
+  final _phoneController = TextEditingController();
 
   // Tenant-specific controllers
   final _occupationController = TextEditingController();
@@ -56,6 +58,18 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   File? _profileImageFile;
   final PropertyService _profileUploadService = PropertyService();
 
+  /// This account was created with email and password, not an OTP.
+  ///
+  /// A phone signup always carries a `phoneNumber` on the Firebase user; an
+  /// email signup never does. That single fact drives everything below: such
+  /// an account ALREADY has an email and a password, so the email/password
+  /// block here is redundant and `linkEmailToPhoneAccount` would fail outright
+  /// on it. What it lacks instead is a phone number, which is how people are
+  /// found for caretaker invites and how anyone calls them, so this screen
+  /// swaps one for the other.
+  bool get _isEmailFirst =>
+      (_authService.currentUser?.phoneNumber ?? '').isEmpty;
+
   bool get _isLandlord => widget.accountType == 'landlord';
   bool get _isAgent => widget.accountType == 'agent';
   bool get _isTenant => widget.accountType == 'tenant';
@@ -64,6 +78,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   void initState() {
     super.initState();
     _authService = AuthService();
+    // An email-first account already HAS its address; prefill it so the field
+    // is not asked for twice and cannot be answered inconsistently.
+    final signedInEmail = _authService.currentUser?.email;
+    if (_isEmailFirst && signedInEmail != null && signedInEmail.isNotEmpty) {
+      _emailController.text = signedInEmail;
+    }
     _loadDraft();
 
     // Auto-save draft when text fields lose focus
@@ -172,6 +192,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _customAreaController.dispose();
+    _phoneController.dispose();
     _occupationController.dispose();
     _employerController.dispose();
     _budgetMinController.dispose();
@@ -211,6 +232,23 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) return 'Please confirm your password';
     if (value != _passwordController.text) return 'Passwords do not match';
+    return null;
+  }
+
+  /// Same rules the login screen applies, so one number cannot be accepted in
+  /// one place and rejected in the other.
+  String? _validatePhone(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your phone number';
+    }
+    final cleaned = value.replaceAll(RegExp(r'[\s\-]'), '');
+    if (!RegExp(r'^\d+$').hasMatch(cleaned)) {
+      return 'Phone number should contain only digits';
+    }
+    if (cleaned.startsWith('0')) {
+      return 'Enter your number without the leading 0 (e.g. 8012345678)';
+    }
+    if (cleaned.length != 10) return 'Enter the 10-digit number after +234';
     return null;
   }
 
@@ -284,6 +322,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   /// again here to recover the actual message. Ordered top-to-bottom so the
   /// reported problem is the first one the user would reach.
   String? _firstFieldError() {
+    if (_isEmailFirst) {
+      // No password fields on this path, and validating them would report a
+      // problem with something the user was never shown.
+      return _validateName(_nameController.text) ??
+          _validatePhone(_phoneController.text);
+    }
     return _validateName(_nameController.text) ??
         _validateEmail(_emailController.text) ??
         _validatePassword(_passwordController.text) ??
@@ -333,6 +377,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         fullName: _nameController.text.trim(),
         email: _emailController.text.trim(),
         accountType: widget.accountType,
+        // Only an email-first account supplies one here. A phone signup
+        // already has an OTP-verified number on the Firebase user, and
+        // saveUserProfile prefers that and marks it verified.
+        phone: _isEmailFirst ? _phoneController.text.trim() : null,
         baseLocation: _isAgent ? _selectedBaseLocation : null,
         serviceAreas: _isAgent ? _selectedServiceAreas : null,
         occupation: _isTenant ? _occupationController.text.trim() : null,
@@ -362,16 +410,23 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         }
       }
 
-      // Link email + password to the phone account
-      final linkResult = await _authService.linkEmailToPhoneAccount(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
+      // Link email + password to the phone account.
+      //
+      // Skipped entirely for an email-first signup: that account was CREATED
+      // with this email and password, so there is nothing to link and the call
+      // fails ("email already in use" / "provider already linked"), which would
+      // strand the user on this screen with their profile already saved.
+      if (!_isEmailFirst) {
+        final linkResult = await _authService.linkEmailToPhoneAccount(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
 
-      if (!linkResult.success) {
-        if (!mounted) return;
-        setState(() { _errorMessage = linkResult.error; _isLoading = false; });
-        return;
+        if (!linkResult.success) {
+          if (!mounted) return;
+          setState(() { _errorMessage = linkResult.error; _isLoading = false; });
+          return;
+        }
       }
     } catch (e) {
       debugPrint('❌ Profile save error: $e');
@@ -463,7 +518,48 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   validator: _validateName),
                 const SizedBox(height: 20),
 
-                // Email address
+                // Email and password, or a phone number.
+                //
+                // A phone signup arrives here with a verified number and no
+                // credentials, so it sets them. An email-first signup is the
+                // mirror image: it already has credentials and no number, so
+                // it supplies the number instead. Showing both to either would
+                // ask for something they already gave.
+                if (_isEmailFirst) ...[
+                  AppTextField(
+                    label: 'Phone Number',
+                    hint: '8012345678',
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    maxLength: 10,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    validator: _validatePhone,
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Text('🇳🇬', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 6),
+                        Text('+234',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        Container(
+                            width: 1, height: 24, color: AppColors.border),
+                      ]),
+                    )),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Landlords and agents use this to reach you about your '
+                    'rental. We could not text you a code, so please check it '
+                    'carefully.',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary, height: 1.5),
+                  ),
+                  const SizedBox(height: 20),
+                ] else ...[
+                  // Email address
                 AppTextField(
                   label: 'Email Address', hint: 'you@example.com', controller: _emailController,
                   keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next,
@@ -504,6 +600,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: AppColors.textHint),
                     onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword))),
                 const SizedBox(height: 8),
+
+                ],
 
                 // Password hint
                 Text(

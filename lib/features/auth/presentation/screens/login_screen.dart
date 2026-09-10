@@ -35,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen>
 
   // Email tab controllers
   final _emailController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _passwordController = TextEditingController();
   final _emailFormKey = GlobalKey<FormState>();
 
@@ -49,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isLoading = false;
   bool _isSignUp = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _obscurePhonePassword = true;
   String? _errorMessage;
 
@@ -122,6 +124,7 @@ class _LoginScreenState extends State<LoginScreen>
     _passwordController.dispose();
     _phoneController.dispose();
     _phonePasswordController.dispose();
+    _confirmPasswordController.dispose();
     _termsRecognizer.dispose();
     _privacyRecognizer.dispose();
     super.dispose();
@@ -166,6 +169,12 @@ class _LoginScreenState extends State<LoginScreen>
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) return 'Please enter your password';
     if (value.length < 6) return 'Password must be at least 6 characters';
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) return 'Please confirm your password';
+    if (value != _passwordController.text) return 'Passwords do not match';
     return null;
   }
 
@@ -354,6 +363,41 @@ class _LoginScreenState extends State<LoginScreen>
         _errorMessage = result.error;
       });
     }
+  }
+
+  // ============ EMAIL SIGN-UP SUBMIT ============
+
+  /// Create the account, then hand off to the normal post-auth routing.
+  ///
+  /// [_navigateAfterAuth] already sends a user with no profile to
+  /// /account-type, which is exactly where a brand-new account belongs, so
+  /// there is no separate new-user branch here.
+  Future<void> _submitEmailSignUp() async {
+    setState(() => _errorMessage = null);
+    if (!_emailFormKey.currentState!.validate()) return;
+
+    FocusScope.of(context).unfocus();
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final result = await _authService.signUp(email: email, password: password);
+    if (!mounted) return;
+
+    if (!result.success) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = result.error;
+      });
+      return;
+    }
+
+    await _biometricService.setLastUserEmail(email);
+    await _biometricService.setOnboardingCompleted();
+    if (!mounted) return;
+    await _navigateAfterAuth();
   }
 
   // ============ PHONE SUBMIT ============
@@ -772,9 +816,15 @@ class _LoginScreenState extends State<LoginScreen>
                 const SizedBox(height: 20),
               ],
 
-              // Tab bar — only shown in sign-in mode
-              // In sign-up mode, phone is the only option (OTP verification)
-              if (!_isSignUp) ...[
+              // Tab bar, shown in BOTH modes now.
+              //
+              // Sign-up used to be phone-only, on the assumption that an OTP
+              // was the way in. Firebase's SMS does not reach Glo or Airtel
+              // Nigeria (it returns Error 39 and never delivers), so that
+              // assumption locked a large part of the market out of creating
+              // an account at all. Email is the door that does not depend on
+              // a network delivering anything.
+              ...[
                 Container(
                   decoration: BoxDecoration(
                     color: AppColors.divider,
@@ -828,19 +878,17 @@ class _LoginScreenState extends State<LoginScreen>
               ],
 
               // Tab content
-              if (_isSignUp)
-                _buildSignUpPhoneTab()
-              else
-                AnimatedBuilder(
-                  animation: _tabController,
-                  builder: (context, _) {
-                    if (_tabController.index == 0) {
-                      return _buildEmailTab();
-                    } else {
-                      return _buildPhoneTab();
-                    }
-                  },
-                ),
+              AnimatedBuilder(
+                animation: _tabController,
+                builder: (context, _) {
+                  if (_tabController.index == 0) {
+                    return _isSignUp
+                        ? _buildEmailSignUpTab()
+                        : _buildEmailTab();
+                  }
+                  return _isSignUp ? _buildSignUpPhoneTab() : _buildPhoneTab();
+                },
+              ),
 
               const SizedBox(height: 24),
 
@@ -912,6 +960,94 @@ class _LoginScreenState extends State<LoginScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ============ EMAIL TAB (Sign Up) ============
+
+  /// Create an account with email and password, no SMS involved.
+  ///
+  /// Deliberately asks for the password twice. Phone sign-up sets the password
+  /// later, on the profile screen, where it already confirms it; this is the
+  /// only place an account's password is chosen with nothing else to catch a
+  /// typo, and a mistyped password on a phoneless account is unrecoverable
+  /// without email access.
+  Widget _buildEmailSignUpTab() {
+    return Form(
+      key: _emailFormKey,
+      child: Column(
+        children: [
+          AppTextField(
+            label: 'Email Address',
+            hint: 'you@example.com',
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autofillHints: const [AutofillHints.username],
+            validator: _validateEmail,
+            prefixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(Icons.email_outlined, color: AppColors.textHint),
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            label: 'Password',
+            hint: 'At least 6 characters',
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.next,
+            // `newPassword` beside `username` is what tells an autofill
+            // service this is a REGISTRATION form, so it offers to generate
+            // and save one.
+            autofillHints: const [AutofillHints.newPassword],
+            validator: _validatePassword,
+            prefixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(Icons.lock_outlined, color: AppColors.textHint),
+            ),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                color: AppColors.textHint,
+              ),
+              onPressed:
+                  () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            label: 'Confirm Password',
+            hint: 'Re-enter your password',
+            controller: _confirmPasswordController,
+            obscureText: _obscureConfirmPassword,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.newPassword],
+            validator: _validateConfirmPassword,
+            onSubmitted: (_) => _submitEmailSignUp(),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(Icons.lock_outlined, color: AppColors.textHint),
+            ),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirmPassword
+                    ? Icons.visibility_off
+                    : Icons.visibility,
+                color: AppColors.textHint,
+              ),
+              onPressed: () => setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword),
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            text: 'Create Account',
+            onPressed: _submitEmailSignUp,
+            isLoading: _isLoading,
+          ),
+        ],
       ),
     );
   }
