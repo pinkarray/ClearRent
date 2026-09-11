@@ -708,16 +708,61 @@ class _SettleSheetState extends State<_SettleSheet> {
           ),
         ],
         const SizedBox(height: 14),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final x = await ImagePicker()
-                .pickImage(source: ImageSource.gallery, imageQuality: 85);
-            if (x != null && mounted) setState(() => _proof = File(x.path));
-          },
-          icon: const Icon(Icons.receipt_long_outlined, size: 18),
-          label: Text(_proof == null
-              ? 'Attach proof of transfer'
-              : 'Proof attached'),
+        // Two words of label used to be the ONLY sign a file had been taken:
+        // same icon, same colour, same outline, no thumbnail, and no way to
+        // tell which image had been picked or to change it. It read as though
+        // the tap had done nothing. The picked receipt is now shown, which is
+        // also the only way to catch having attached the wrong screenshot.
+        Row(
+          children: [
+            if (_proof != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                // A gallery temp file can be reaped between picking and
+                // rendering, and an unconstrained ErrorWidget would burst this
+                // Row. Same failure the condition capture chips hit.
+                child: Image.file(
+                  _proof!,
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Icon(Icons.broken_image_outlined,
+                        size: 18, color: AppColors.textHint),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final x = await ImagePicker()
+                      .pickImage(source: ImageSource.gallery, imageQuality: 85);
+                  if (x != null && mounted) setState(() => _proof = File(x.path));
+                },
+                icon: Icon(
+                  _proof == null
+                      ? Icons.receipt_long_outlined
+                      : Icons.check_circle,
+                  size: 18,
+                  color: _proof == null ? null : AppColors.success,
+                ),
+                label: Text(_proof == null
+                    ? 'Attach proof of transfer'
+                    : 'Proof attached, tap to change'),
+              ),
+            ),
+            if (_proof != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18),
+                color: AppColors.textSecondary,
+                tooltip: 'Remove',
+                onPressed: () => setState(() => _proof = null),
+              ),
+          ],
         ),
         const SizedBox(height: 4),
         Text(
