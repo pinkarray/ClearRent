@@ -23,6 +23,7 @@ import '../../../../services/inspection_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/rental_interest_service.dart';
 import '../../../../services/refund_service.dart';
+import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/refund_model.dart';
 
 class TenantInspectionsScreen extends StatefulWidget {
@@ -1525,6 +1526,26 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
   // whether the property is still on the market (see build()).
   PropertyModel? _property;
 
+  /// Tenancy status behind the interest, when there is one.
+  ///
+  /// A rental_interest never leaves `rent_paid`, so the interest alone cannot
+  /// say whether the tenancy is still running. Null means unknown, which is
+  /// deliberately treated as "still live": congratulating someone whose
+  /// tenancy ended is a smaller error than telling a current tenant theirs is
+  /// over because a read failed.
+  String? _tenancyStatus;
+
+  static const _liveTenancy = {
+    'active',
+    'expiring_soon',
+    'grace_locked',
+    'moveout_pending',
+    'pending_payment',
+  };
+
+  bool get _tenancyEnded =>
+      _tenancyStatus != null && !_liveTenancy.contains(_tenancyStatus);
+
   final RefundService _refundService = RefundService();
   StreamSubscription<Refund?>? _refundSub;
   StreamSubscription<RentalInterest?>? _interestSub;
@@ -1603,6 +1624,19 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
         _isLoadingInterest = false;
         _hasCheckedInterest = true;
       });
+      // Once the rent is paid, whether the TENANCY is still running is a
+      // separate question the interest cannot answer, so ask it once here.
+      if (interest != null &&
+          interest.status == RentalInterestStatus.rentPaid &&
+          _tenancyStatus == null) {
+        ActiveRentalService()
+            .tenancyStatusForInterest(interest.id)
+            .then((status) {
+          if (mounted && status != null) {
+            setState(() => _tenancyStatus = status);
+          }
+        });
+      }
       // A loser (lost_to_other) is owed a refund tracked at
       // refunds/{interestId} — stream it so the card shows Processing → Paid.
       if (interest != null && interest.isLostToOther && _refundSub == null) {
@@ -2125,16 +2159,33 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
                 onPressed: () => context.push('/tenant/my-rentals')));
         break;
       case RentalInterestStatus.rentPaid:
-        statusColor = AppColors.success;
-        statusIcon = Icons.celebration;
-        title = 'Rental Confirmed!';
-        subtitle =
-            'Welcome to your new home! Your dashboard has been updated.';
-        action = SizedBox(
-            width: double.infinity,
-            child: AppButton(
-                text: 'Go to My Home',
-                onPressed: () => context.go('/tenant/home')));
+        // A tenancy that has ENDED still leaves the interest at rent_paid, so
+        // this branch used to welcome a former tenant to a home they had
+        // already moved out of, and offer to take them to it.
+        if (_tenancyEnded) {
+          statusColor = AppColors.textSecondary;
+          statusIcon = Icons.history;
+          title = 'Tenancy ended';
+          subtitle =
+              'You rented this property. The tenancy has since ended, and your '
+              'documents are still available.';
+          action = SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                  text: 'View documents',
+                  onPressed: () => context.push('/tenant/documents')));
+        } else {
+          statusColor = AppColors.success;
+          statusIcon = Icons.celebration;
+          title = 'Rental Confirmed!';
+          subtitle =
+              'Welcome to your new home! Your dashboard has been updated.';
+          action = SizedBox(
+              width: double.infinity,
+              child: AppButton(
+                  text: 'Go to My Home',
+                  onPressed: () => context.go('/tenant/home')));
+        }
         break;
       case RentalInterestStatus.notSelected:
         statusColor = AppColors.info;

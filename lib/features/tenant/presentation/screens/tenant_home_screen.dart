@@ -2884,11 +2884,34 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       return r.isApproved &&
           DateTime(d.year, d.month, d.day).isAtSameMomentAs(today);
     }).toList()
-      ..sort((a, b) => a.requestedTimeSlot.compareTo(b.requestedTimeSlot));
+      // Chronologically, by the slot's actual START HOUR.
+      //
+      // This compared the slot NAMES as strings, which sorts them
+      // alphabetically: afternoon, evening, late_afternoon, morning. Morning
+      // came LAST, so a tenant with a morning and an afternoon visit was shown
+      // the afternoon one and the morning one was hidden behind it, which is
+      // the visit they needed to leave for first.
+      ..sort((a, b) => InspectionService.composeScheduledDateTime(
+              a.requestedDate, a.requestedTimeSlot)
+          .compareTo(InspectionService.composeScheduledDateTime(
+              b.requestedDate, b.requestedTimeSlot)));
     if (todays.isNotEmpty) {
-      final r = todays.first;
+      // The one happening NEXT, not the first of the day. Once the morning
+      // slot has passed, the useful banner is the afternoon one; showing a
+      // visit that is already over buries the one still to come. Falls back to
+      // the last of the day when all have started, so the banner still names
+      // something real rather than vanishing.
+      final r = todays.firstWhere(
+        (i) => InspectionService.composeScheduledDateTime(
+                i.requestedDate, i.requestedTimeSlot)
+            .add(const Duration(hours: 3))
+            .isAfter(now),
+        orElse: () => todays.last,
+      );
       final more = todays.length - 1;
       return _inspectionBanner(
+        // A visit that has not happened yet lives under Upcoming.
+        tab: 1,
         icon: Icons.event_available_outlined,
         colour: AppColors.primary,
         title: 'Inspection today · ${r.requestedTimeDisplay}',
@@ -2947,7 +2970,15 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   }
 
 
+  /// [tab] is the tenant-inspections tab this banner opens: 0 Pending,
+  /// 1 Upcoming, 2 History.
+  ///
+  /// Every banner used to open History, including the one announcing a visit
+  /// happening TODAY. So the banner told you about something imminent and then
+  /// dropped you on a list of finished visits, where the thing it had just
+  /// mentioned was nowhere to be seen.
   Widget _inspectionBanner({
+    int tab = 2,
     required IconData icon,
     required Color colour,
     required String title,
@@ -2956,7 +2987,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     return GestureDetector(
       // Tab 2 is History, where both the rating and the decision box live.
       onTap: () =>
-          context.push('/tenant/inspections', extra: {'initialTab': 2}),
+          context.push('/tenant/inspections', extra: {'initialTab': tab}),
       child: Container(
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
         padding: const EdgeInsets.all(14),

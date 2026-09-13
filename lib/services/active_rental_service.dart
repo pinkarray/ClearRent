@@ -87,6 +87,37 @@ class ActiveRentalService {
     }
   }
 
+  /// The tenancy status behind [rentalInterestId], for the signed-in TENANT.
+  ///
+  /// A rental_interest stays `rent_paid` forever, so it cannot tell you whether
+  /// the tenancy is still running. History was reading the interest alone and
+  /// therefore congratulated a tenant on a home they had already moved out of,
+  /// with a live "Go to My Home" button attached.
+  ///
+  /// Null means no rental, or the read failed. Callers must treat null as
+  /// "unknown" rather than "ended".
+  ///
+  /// Filtered on tenantId because the active_rentals list rule is
+  /// per-document: an unscoped query cannot be proven safe and is denied.
+  Future<String?> tenancyStatusForInterest(String rentalInterestId) async {
+    final tenantId = _authService.currentUserId;
+    if (tenantId == null) return null;
+    try {
+      final snap = await _firestore
+          .collection('active_rentals')
+          .where('rentalInterestId', isEqualTo: rentalInterestId)
+          .where('tenantId', isEqualTo: tenantId)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      return snap.docs.first.data()['status'] as String?;
+    } catch (e) {
+      developer.log('❌ tenancyStatusForInterest failed: $e',
+          name: 'ActiveRentalService');
+      return null;
+    }
+  }
+
   /// Whether [propertyId] still has an open tenancy slot for [tenantId].
   ///
   /// One slot = one tenant: a property slot is held from the moment a tenant is

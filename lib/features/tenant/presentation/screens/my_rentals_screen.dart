@@ -860,14 +860,22 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // Centred, matching every other empty state in the app. This was
+      // start-aligned, so the icon, both lines and the button all hugged the
+      // left edge of a full-width card while the sections around it were
+      // centred, and the card read as though something had failed to load.
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
         Icon(Icons.home_outlined, size: 40, color: AppColors.textHint),
         const SizedBox(height: 12),
         Text('No active rental',
+            textAlign: TextAlign.center,
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 4),
         Text('Browse properties and find your next home!',
+            textAlign: TextAlign.center,
             style: AppTextStyles.caption
                 .copyWith(color: AppColors.textHint)),
         const SizedBox(height: 16),
