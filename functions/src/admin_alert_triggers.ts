@@ -20,6 +20,7 @@ import {
   upsertAdminAlert,
   resolveAdminAlertsForTarget,
 } from "./admin_alerts";
+import {writeNotificationOnce} from "./notification_helpers";
 
 /**
  * A landlord filed a rent-change request (rent_review_requests/{id}). It sits
@@ -355,6 +356,28 @@ export const onRentalInterestCreated = onDocumentCreated(
         status: (d.status as string | undefined) ?? "pending_acceptance",
       },
     });
+    // Tell the LANDLORD, whose turn it actually is.
+    //
+    // The alert above says "Waiting on the landlord" and goes to an admin.
+    // Nothing went to the landlord themselves, so the one person who can move
+    // this forward was the only one not told, and the tenant sat waiting on a
+    // decision nobody knew was theirs to make.
+    const landlordId = d.landlordId as string | undefined;
+    if (landlordId) {
+      await writeNotificationOnce(
+        `interest_${interestId}_created_${landlordId}`,
+        {
+          userId: landlordId,
+          type: "rental_interest",
+          title: "Someone wants to rent your property",
+          body:
+            `${tenantName} wants to rent ${propertyTitle}. ` +
+            "Review them and accept to start the tenancy.",
+          payload: {route: "/landlord/rentals"},
+        },
+      );
+    }
+
     logger.info("Rental-interest admin alert raised", {interestId});
   },
 );
