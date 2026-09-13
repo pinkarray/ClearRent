@@ -1394,6 +1394,35 @@ async function createRentalForAcceptedInterest(
       interestId,
       agreementPreattached: agreementPath.length > 0,
     });
+
+    // Nobody told the landlord the tenancy is waiting on THEM.
+    //
+    // With no agreement attached, the rental sits with agreementStatus unset,
+    // the tenant is shown nothing to sign, and the only person who can unstick
+    // it was never informed. Both sides then wait for the other, indefinitely.
+    // Seen for real: a tenancy created with no agreement and no follow-up.
+    //
+    // Two different causes reach here, so the message does not guess between
+    // them: no agreement stored on the property at all, or one stored against
+    // a DIFFERENT rent, which is deliberately treated as stale above.
+    if (!agreementPath) {
+      const landlordId = interest.landlordId as string | undefined;
+      if (landlordId) {
+        await writeNotificationOnce(
+          `interest_${interestId}_needs_agreement_${landlordId}`,
+          {
+            userId: landlordId,
+            type: "agreement_needed",
+            title: "Send the tenancy agreement",
+            body:
+              `${interest.tenantName ?? "Your new tenant"} is accepted for ` +
+              `${interest.propertyTitle ?? "your property"} and cannot sign ` +
+              "or pay until you upload the agreement.",
+            payload: {route: "/landlord/agreements"},
+          },
+        );
+      }
+    }
   } catch (err) {
     const code = (err as {code?: number | string})?.code;
     if (code === 6 || code === "already-exists") {
@@ -1431,9 +1460,14 @@ export const onRentalInterestAccepted = onDocumentUpdated(
           userId: winnerTenantId,
           type: "rental_accepted",
           title: "You got the place! 🎉",
+          // Deliberately does NOT promise an agreement is waiting. It is
+          // attached only when the landlord stored one against the property,
+          // so this used to tell a tenant to go and review a document that
+          // did not exist, and their only conclusion was that the app was
+          // broken.
           body:
             `Your application for ${propertyTitle} was accepted. ` +
-            "Next: review your tenancy agreement to complete your move-in.",
+            "Open My Rentals for the next step.",
           payload: {route: "/tenant/my-rentals"},
         },
       );
