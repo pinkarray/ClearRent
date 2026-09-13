@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
@@ -95,25 +96,80 @@ class PropertyService {
     return name.substring(dot + 1);
   }
 
+  /// Turn an upload exception into something true, reportable and readable.
+  ///
+  /// Three jobs, because a swallowed `return null` did none of them:
+  ///
+  ///   - `debugPrint`, because `developer.log` never reaches logcat, so on a
+  ///     release build the reason was invisible even with the device in hand.
+  ///   - Crashlytics, so a failure on a phone we will NEVER hold reports
+  ///     itself. Until now the only diagnosis available was "reproduce it
+  ///     here", which cannot reach the person it happened to.
+  ///   - A sentence for the user that matches what actually went wrong. A
+  ///     dropped connection is not a support ticket, and telling someone on a
+  ///     Nigerian mobile connection to contact support about their own network
+  ///     wastes their time and ours.
+  static String _reportUploadFailure(
+    Object e,
+    StackTrace st,
+    String what,
+    String path,
+  ) {
+    debugPrint('❌ $what failed for $path: $e');
+    FirebaseCrashlytics.instance.recordError(
+      e,
+      st,
+      reason: '$what failed',
+      information: ['path: $path'],
+      fatal: false,
+    );
+    if (e is FirebaseException) {
+      switch (e.code) {
+        case 'retry-limit-exceeded':
+        case 'canceled':
+        case 'unknown':
+          return 'Your connection dropped before the file finished uploading. '
+              'Try again somewhere with a stronger signal.';
+        case 'unauthenticated':
+          return 'You were signed out. Sign in again and retry.';
+        case 'unauthorized':
+          return 'This account is not allowed to upload that file. '
+              'Contact support.';
+        case 'quota-exceeded':
+          return 'Storage is temporarily unavailable. Please try again later.';
+      }
+      return 'Upload failed (${e.code}). Please try again.';
+    }
+    // Not a Storage error at all: most often the picked file was cleared by
+    // the OS between choosing it and uploading it.
+    return 'That file could not be read. Pick it again and retry.';
+  }
+
   /// Upload an ownership document (C of O / deed) to PRIVATE Firebase Storage,
   /// mirroring how verification documents are handled. Returns the storage
   /// PATH (not a public URL) — the admin streams the bytes through an
   /// authenticated route, and Storage rules restrict reads to the owner + admin.
   /// A C of O is title-level PII, so it must never live on a public URL.
-  Future<String?> uploadOwnershipDoc(File file) async {
+  /// [onError] receives a sentence fit to show the user. Optional so the
+  /// existing callers that only check for null keep working unchanged.
+  Future<String?> uploadOwnershipDoc(
+    File file, {
+    void Function(String message)? onError,
+  }) async {
     final uid = _currentUserId;
-    if (uid == null) return null;
+    if (uid == null) {
+      onError?.call('You are not signed in.');
+      return null;
+    }
+    final path = 'ownership/$uid/'
+        'cofo_${DateTime.now().millisecondsSinceEpoch}.${_extensionOf(file)}';
     try {
-      final path = 'ownership/$uid/'
-          'cofo_${DateTime.now().millisecondsSinceEpoch}.${_extensionOf(file)}';
       await FirebaseStorage.instance.ref(path).putFile(file);
       developer.log('✅ Ownership doc uploaded: $path', name: 'PropertyService');
       return path;
-    } catch (e) {
-      // The path is part of the diagnosis: a Storage 403 is either the rules
-      // refusing this caller or the object name not matching any rule at all.
-      developer.log('❌ uploadOwnershipDoc failed for ${file.path}: $e',
-          name: 'PropertyService');
+    } catch (e, st) {
+      onError?.call(
+          _reportUploadFailure(e, st, 'uploadOwnershipDoc', path));
       return null;
     }
   }
@@ -123,19 +179,27 @@ class PropertyService {
   /// Tenants read it via a short-lived signed URL from the getSignedAgreementUrl
   /// CF (storage rules can't authorize the tenant). A tenancy agreement is
   /// sensitive — it must not live on a public URL.
-  Future<String?> uploadAgreementDoc(File file) async {
+  /// [onError] receives a sentence fit to show the user. Optional so the
+  /// existing callers that only check for null keep working unchanged.
+  Future<String?> uploadAgreementDoc(
+    File file, {
+    void Function(String message)? onError,
+  }) async {
     final uid = _currentUserId;
-    if (uid == null) return null;
+    if (uid == null) {
+      onError?.call('You are not signed in.');
+      return null;
+    }
+    final path = 'agreements/$uid/'
+        'agreement_${DateTime.now().millisecondsSinceEpoch}.'
+        '${_extensionOf(file)}';
     try {
-      final path = 'agreements/$uid/'
-          'agreement_${DateTime.now().millisecondsSinceEpoch}.'
-          '${_extensionOf(file)}';
       await FirebaseStorage.instance.ref(path).putFile(file);
       developer.log('✅ Agreement uploaded: $path', name: 'PropertyService');
       return path;
-    } catch (e) {
-      developer.log('❌ uploadAgreementDoc failed for ${file.path}: $e',
-          name: 'PropertyService');
+    } catch (e, st) {
+      onError?.call(
+          _reportUploadFailure(e, st, 'uploadAgreementDoc', path));
       return null;
     }
   }

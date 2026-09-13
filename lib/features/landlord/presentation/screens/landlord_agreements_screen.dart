@@ -398,8 +398,16 @@ class _AgreementCardState extends State<_AgreementCard> {
     setState(() => _isUploading = true);
     try {
       // Private Storage (not Cloudinary) — agreements are sensitive PII.
-      final url = await _propertyService.uploadAgreementDoc(file);
-      if (url == null || url.isEmpty) throw Exception('Upload failed');
+      // The real reason, not a shrug. A dropped connection and a rules
+      // rejection used to produce the same sentence.
+      String? uploadError;
+      final url = await _propertyService.uploadAgreementDoc(
+        file,
+        onError: (m) => uploadError = m,
+      );
+      if (url == null || url.isEmpty) {
+        throw Exception(uploadError ?? 'Upload failed');
+      }
 
       bool success;
       if (isReupload) {
@@ -426,6 +434,18 @@ class _AgreementCardState extends State<_AgreementCard> {
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ));
+        } else {
+          // The file uploaded and the tenancy write was refused. This branch
+          // had NO else at all, so the button appeared to do nothing and the
+          // landlord had no reason to think anything had gone wrong.
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text(
+                'The file uploaded but we could not attach it to the tenancy. '
+                'Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
         }
       }
     } catch (e) {
@@ -433,7 +453,9 @@ class _AgreementCardState extends State<_AgreementCard> {
       if (mounted) {
         setState(() => _isUploading = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Failed to upload agreement. Please try again.'),
+          content: Text(e is Exception
+              ? e.toString().replaceFirst('Exception: ', '')
+              : 'Failed to upload agreement. Please try again.'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -538,11 +560,16 @@ class _AgreementCardState extends State<_AgreementCard> {
 
     setState(() => _isFinalizing = true);
 
-    final path = await _propertyService.uploadAgreementDoc(file);
+    String? uploadError;
+    final path = await _propertyService.uploadAgreementDoc(
+      file,
+      onError: (m) => uploadError = m,
+    );
     if (path == null || path.isEmpty) {
       if (mounted) {
         setState(() => _isFinalizing = false);
-        _toast('Could not upload that file. Please try again.', isError: true);
+        _toast(uploadError ?? 'Could not upload that file. Please try again.',
+            isError: true);
       }
       return;
     }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'core/utils/app_info.dart';
 import 'services/connectivity_service.dart';
 import 'services/notification_service.dart';
@@ -44,6 +46,31 @@ void main() async {
           : const AndroidDebugProvider(),
     );
     firebaseInitialized = true;
+
+    // Crash and error reporting.
+    //
+    // Until now there was NONE, which meant a failure on any device we were
+    // not physically holding was gone for good. That is not a small gap: an
+    // upload that failed for one person could not be told apart from a rules
+    // problem, a network drop or a bug, and the only diagnosis available was
+    // "try to reproduce it on a phone we have", which by definition cannot
+    // reach the person it happened to.
+    //
+    // Off in debug so local experiments do not pollute the console with
+    // failures nobody needs to read.
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(kReleaseMode);
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      FirebaseCrashlytics.instance.recordFlutterError(details);
+    };
+    // Errors thrown outside the Flutter frame, which FlutterError.onError
+    // never sees: async gaps, platform channel replies, isolate work.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
     await NotificationService.instance.init();
     // Heartbeat for the admin dashboard's "active now" view. Follows auth
     // state, so it needs no hook in any individual sign-in path.
