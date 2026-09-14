@@ -31,7 +31,7 @@ import {
   upsertAdminAlert,
   resolveAdminAlertsForTarget,
 } from "./admin_alerts";
-import {openCaretakerThread} from "./caretaker_ops";
+import {findUserByPhone, openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
 import {assertAdmin} from "./admin_helpers";
 
@@ -3619,20 +3619,23 @@ export const lookupEmailByPhone = onCall(
     }
 
     try {
-      const snap = await getFirestore()
-        .collection("users")
-        .where("phone", "==", phoneE164)
-        .limit(1)
-        .get();
+      const owner = await findUserByPhone(phoneE164);
 
-      if (snap.empty) {
+      if (owner === null) {
         throw new HttpsError(
           "not-found",
           "No account found with this phone number.",
         );
       }
+      if (owner === "ambiguous") {
+        throw new HttpsError(
+          "failed-precondition",
+          "More than one account uses this phone number. Sign in with your " +
+            "email instead.",
+        );
+      }
 
-      const email = snap.docs[0].data().email as unknown;
+      const email = owner.get("email") as unknown;
       if (typeof email !== "string" || email.length === 0) {
         throw new HttpsError(
           "failed-precondition",

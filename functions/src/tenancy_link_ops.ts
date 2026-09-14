@@ -1,7 +1,7 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
-import {normalizeNigerianPhone} from "./caretaker_ops";
+import {findUserByPhone, normalizeNigerianPhone} from "./caretaker_ops";
 
 const callableOptions = {enforceAppCheck: true, timeoutSeconds: 30};
 
@@ -85,18 +85,20 @@ export const lookupTenantByPhone = onCall(callableOptions, async (request) => {
     });
   });
 
-  const found = await db
-    .collection("users")
-    .where("phone", "==", phoneE164)
-    .limit(1)
-    .get();
-  if (found.empty) {
+  const doc = await findUserByPhone(phoneE164);
+  if (doc === null) {
     throw new HttpsError(
       "not-found",
       "No ClearRent account uses that number. Ask them to sign up first.",
     );
   }
-  const doc = found.docs[0];
+  if (doc === "ambiguous") {
+    throw new HttpsError(
+      "failed-precondition",
+      "More than one ClearRent account uses that number, so we can't tell " +
+        "which is your tenant. Ask them to contact support.",
+    );
+  }
   if (doc.id === uid) {
     throw new HttpsError(
       "failed-precondition",

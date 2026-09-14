@@ -737,6 +737,28 @@ class AuthService {
     }
   }
 
+  /// Whether another account already holds this phone number.
+  ///
+  /// Only a courtesy for email signups, whose number is typed and never
+  /// confirmed: it catches a mistyped digit before it lands on someone else's
+  /// number. The server is what actually guarantees a proven number wins
+  /// (findUserByPhone), so a failed read answers false rather than blocking.
+  Future<bool> isPhoneTakenByAnotherAccount(String phone) async {
+    final normalized = phoneToE164(phone);
+    if (normalized == null || currentUser == null) return false;
+    try {
+      final snap = await _firestore
+          .collection('users')
+          .where('phone', isEqualTo: normalized)
+          .limit(2)
+          .get(const GetOptions(source: Source.server));
+      return snap.docs.any((d) => d.id != currentUser!.uid);
+    } catch (e) {
+      debugPrint('isPhoneTakenByAnotherAccount failed: $e');
+      return false;
+    }
+  }
+
   // Update account type
   Future<bool> updateAccountType(String accountType) async {
     try {

@@ -80,6 +80,35 @@ export function normalizeNigerianPhone(raw: string): string | null {
 }
 
 /**
+ * Resolve which account a phone number belongs to.
+ *
+ * `users.phone` is not unique. An email signup types its number and no SMS
+ * confirms it, so it can collide with a number another account proved by OTP.
+ * Taking the first match let a typo (or a stranger) capture phone sign-in,
+ * caretaker invites and tenant links meant for the real owner. A proven number
+ * therefore always wins, and only an email signup writes `phoneVerified:
+ * false`; OTP accounts and accounts older than the flag count as proven.
+ *
+ * @param {string} phoneE164 Number in +234 form, as stored.
+ * @return {Promise<FirebaseFirestore.QueryDocumentSnapshot | null |
+ *   "ambiguous">} The owner, null when nobody has it, or "ambiguous" when
+ *   several unproven accounts claim it and none can be preferred.
+ */
+export async function findUserByPhone(
+  phoneE164: string,
+): Promise<FirebaseFirestore.QueryDocumentSnapshot | null | "ambiguous"> {
+  const snap = await getFirestore()
+    .collection("users")
+    .where("phone", "==", phoneE164)
+    .limit(10)
+    .get();
+  if (snap.empty) return null;
+  const proven = snap.docs.find((d) => d.get("phoneVerified") !== false);
+  if (proven) return proven;
+  return snap.size === 1 ? snap.docs[0] : "ambiguous";
+}
+
+/**
  * Open the three-party caretaker↔tenant thread for one unit, if it is occupied.
  *
  * Done SERVER-SIDE on acceptance, not from the app, because the caretaker has
@@ -276,19 +305,21 @@ async function resolveCandidate(
   }
 
   // ── Who is being invited ────────────────────────────────────────────────
-  const userSnap = await db
-    .collection("users")
-    .where("phone", "==", phoneE164)
-    .limit(1)
-    .get();
-  if (userSnap.empty) {
+  const caretakerDoc = await findUserByPhone(phoneE164);
+  if (caretakerDoc === null) {
     throw new HttpsError(
       "not-found",
       "Nobody on ClearRent uses that number. A caretaker has to have an " +
         "account before you can invite them.",
     );
   }
-  const caretakerDoc = userSnap.docs[0];
+  if (caretakerDoc === "ambiguous") {
+    throw new HttpsError(
+      "failed-precondition",
+      "More than one ClearRent account uses that number, so we can't tell " +
+        "who to invite. Ask your caretaker to contact support.",
+    );
+  }
   const caretakerId = caretakerDoc.id;
   const caretakerName =
     (caretakerDoc.get("fullName") as string | undefined) ?? "Your caretaker";
