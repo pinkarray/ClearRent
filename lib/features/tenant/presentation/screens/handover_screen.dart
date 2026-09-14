@@ -14,6 +14,7 @@ import '../../../../services/active_rental_service.dart';
 import '../../../../services/condition_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/models/condition_record.dart';
+import '../../../../shared/widgets/top_alert.dart';
 import '../../../../shared/widgets/condition_evidence_list.dart';
 import 'condition_capture_screen.dart';
 
@@ -780,6 +781,16 @@ class _SettleSheetState extends State<_SettleSheet> {
                   : 0.0;
               if (_withholding &&
                   (amt <= 0 || _reason.text.trim().isEmpty)) {
+                // Say why. Returning in silence made the button look dead,
+                // and the deposit stays unsettled until the landlord guesses
+                // which of the two fields is missing.
+                TopAlert.show(
+                  context,
+                  amt <= 0
+                      ? 'Enter how much you are keeping.'
+                      : 'Say why you are keeping it. Your former tenant sees '
+                          'this.',
+                );
                 return;
               }
               Navigator.pop(

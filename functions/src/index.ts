@@ -1135,11 +1135,13 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             payload: tenantRentalsRoute,
           },
         );
-        // Landlord recent-activity entry closing the loop: the tenant is out
-        // and the unit is back on the market. Written here rather than client
-        // side so the auto-confirm sweep produces it too. Deterministic id +
-        // set() keeps a trigger re-fire idempotent. `landlordId` is the only
-        // field the feed queries.
+        // Landlord recent-activity entry handing the next step over. It used
+        // to say the unit was "back on the market", which is the opposite of
+        // true: the handover is still open, so the property cannot be listed
+        // until the landlord checks it and settles the deposit. Written here
+        // rather than client side so the auto-confirm sweep produces it too.
+        // Deterministic id + set() keeps a trigger re-fire idempotent.
+        // `landlordId` is the only field the feed queries.
         if (landlordId) {
           await getFirestore()
             .collection("activities")
@@ -1150,7 +1152,8 @@ export const onActiveRentalUpdated = onDocumentUpdated(
               title: "Tenant Moved Out",
               message:
                 `${tenantName} has moved out of ${propertyTitle}. ` +
-                "The unit is freed up and back on the market.",
+                "Check the property and settle the caution deposit to list " +
+                "it again.",
               propertyId,
               rentalId,
               actorId: tenantId,

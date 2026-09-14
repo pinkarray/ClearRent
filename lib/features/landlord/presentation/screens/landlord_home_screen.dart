@@ -86,6 +86,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   // Unread message count
   int _unreadCount = 0;
   List<ActiveRental> _activeRentals = [];
+
+  /// Ended tenancies waiting on THIS landlord: check the property, then settle
+  /// the deposit. Kept apart from [_activeRentals] so the dashboard cards below
+  /// still show only live tenancies.
+  List<ActiveRental> _openHandovers = [];
   bool _isLoadingRentals = true;
 
   // Linked tenants
@@ -461,16 +466,26 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         .listen(
           (snapshot) {
             if (!mounted) return;
-            final rentals =
+            final all =
                 snapshot.docs
                     .map(
                       (doc) => ActiveRental.fromFirestore(doc.data(), doc.id),
                     )
-                    .toList()
-                    .where((r) => r.isActive || r.isExpiringSoon)
                     .toList();
+            final rentals =
+                all.where((r) => r.isActive || r.isExpiringSoon).toList();
+            // An ended tenancy is neither active nor expiring, so the filter
+            // above drops it — and with it the handover the landlord still
+            // owes. The property stays off the market and the former tenant's
+            // deposit stays unsettled, with nothing on this screen saying so.
+            final handovers = all
+                .where((r) =>
+                    r.handoverStage == 'awaiting_condition' ||
+                    r.handoverStage == 'awaiting_settlement')
+                .toList();
             setState(() {
               _activeRentals = rentals;
+              _openHandovers = handovers;
               _isLoadingRentals = false;
             });
           },
@@ -683,7 +698,12 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             // decides internally whether the address is unconfirmed and renders
             // nothing when it isn't, so putting it in the final `else` both
             // caps the stack and keeps it the lowest-priority nag.
-            if (_verificationStatus != VerificationStatus.verified) ...[
+            // A handover outranks the nags below it: the property is earning
+            // nothing until it closes and someone else's deposit is inside it.
+            if (_openHandovers.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildHandoverPrompt(_openHandovers.first),
+            ] else if (_verificationStatus != VerificationStatus.verified) ...[
               const SizedBox(height: 16),
               _buildVerificationPrompt(),
             ] else if (!_hasBankDetails && !_isLoadingProfile) ...[
@@ -1516,6 +1536,66 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               ),
             ),
             Icon(Icons.chevron_right, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The handover this landlord owes, named as the reason a property is off
+  /// the market. Same two stages the rentals screen reports, so the two
+  /// surfaces cannot disagree about whose turn it is.
+  Widget _buildHandoverPrompt(ActiveRental rental) {
+    final checking = rental.handoverStage == 'awaiting_condition';
+    return GestureDetector(
+      onTap: () => context.push('/handover/${rental.id}'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warning.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.lock_outline,
+                color: AppColors.warning,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${rental.propertyTitle} is off the market',
+                    style: AppTextStyles.labelLarge.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    checking
+                        ? 'Confirm you have checked it'
+                        : 'Settle the caution deposit',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.warning.withAlpha(204),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.warning),
           ],
         ),
       ),
