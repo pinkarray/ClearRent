@@ -105,9 +105,12 @@ class NotificationService {
         return;
       }
 
-      await _firestore.collection('users').doc(uid).update({
+      // Merge, not update: on a brand-new account this runs before the users
+      // doc exists, and update() on a missing doc is denied, so the token was
+      // lost until the next launch and the first session got no push.
+      await _firestore.collection('users').doc(uid).set({
         'fcmTokens': FieldValue.arrayUnion([token]),
-      });
+      }, SetOptions(merge: true));
 
       _trackedUid = uid;
       _trackedToken = token;
