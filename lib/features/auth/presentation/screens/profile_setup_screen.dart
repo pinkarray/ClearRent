@@ -372,6 +372,17 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
     setState(() { _isLoading = true; _errorMessage = null; });
 
+    // An email signup's number was typed, not confirmed by SMS. Stop a typo
+    // landing on someone else's number before it is saved.
+    if (_isEmailFirst &&
+        await _authService.isPhoneTakenByAnotherAccount(_phoneController.text.trim())) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _rejectSubmit('That number is already on another ClearRent account. '
+          'Please check it for a typo.');
+      return;
+    }
+
     try {
       final success = await _authService.saveUserProfile(
         fullName: _nameController.text.trim(),
@@ -601,13 +612,12 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword))),
                 const SizedBox(height: 8),
 
-                ],
-
                 // Password hint
                 Text(
                   'This password lets you sign in with email instead of OTP',
                   style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
                 const SizedBox(height: 20),
+                ],
 
                 // Agent-specific
                 if (_isAgent) ...[

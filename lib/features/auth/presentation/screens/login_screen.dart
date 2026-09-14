@@ -711,7 +711,7 @@ class _LoginScreenState extends State<LoginScreen>
               const SizedBox(height: 8),
               Text(
                 _isSignUp
-                    ? 'Sign up with your phone number to get started'
+                    ? 'Sign up with your email or phone number to get started'
                     : 'Sign in to continue to ClearRent',
                 style: AppTextStyles.bodyMedium.copyWith(
                   color: AppColors.textSecondary,
