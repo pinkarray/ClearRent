@@ -455,7 +455,8 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                   // Info text
                   Center(
                     child: Text(
-                      'You\'ll transfer payment and upload proof on the next screen',
+                      'Nothing is charged yet. Once the handler approves, you '
+                      'pay with Paystack to confirm.',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.textHint,
                       ),
@@ -572,36 +573,33 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
           ),
           const SizedBox(height: 12),
 
+          // Both rows, whoever handles it. Showing only the ₦3,000 booking fee
+          // against a ₦10,000 total left the other ₦7,000 unexplained, which
+          // is the handler's own fee.
           if (_feeBreakdown != null) ...[
-            // Agent-handled shows agent service fee; self-handled shows booking fee
-            if (isAgent)
-              _buildFeeRow('Agent Service Fee', _feeBreakdown!.agentServiceFee)
-            else
-              _buildFeeRow('Booking Fee', _feeBreakdown!.tenantServiceCharge),
+            _buildFeeRow(isAgent ? 'Agent fee' : 'Landlord fee',
+                _feeBreakdown!.agentServiceFee),
+            _buildFeeRow('ClearRent booking fee',
+                _feeBreakdown!.tenantServiceCharge),
             if (_feeBreakdown!.transportFee > 0)
               _buildFeeRow('Transport Fee', _feeBreakdown!.transportFee),
-            if (isAgent)
-              _buildFeeRow('Platform Fee', _feeBreakdown!.clearrentFee),
             const Divider(height: 16),
             _buildFeeRow('Total', _feeBreakdown!.totalFee, isTotal: true),
           ] else ...[
-            // Fallback while loading
-            if (isAgent) ...[
-              _buildFeeRow('Agent Service Fee', 10000),
-              _buildFeeRow('Transport Fee', 1000),
-              _buildFeeRow('Platform Fee', 3000),
-              const Divider(height: 16),
-              _buildFeeRow('Total', 14000, isTotal: true),
-            ] else ...[
-              _buildFeeRow('Booking Fee', 3000),
-              const Divider(height: 16),
-              _buildFeeRow('Total', 3000, isTotal: true),
-            ],
+            // Fallback while loading. Flat pricing, so the same either way.
+            _buildFeeRow(isAgent ? 'Agent fee' : 'Landlord fee',
+                InspectionPricing.handlerEarnings),
+            _buildFeeRow(
+                'ClearRent booking fee', InspectionPricing.clearrentTake),
+            const Divider(height: 16),
+            _buildFeeRow('Total', InspectionPricing.inspectionBookingFee,
+                isTotal: true),
           ],
 
           const SizedBox(height: 8),
           Text(
-            'Full refund if inspection is declined',
+            'Declined requests are never charged. If the handler does not '
+            'show up, support reviews it and refunds you.',
             style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
           ),
         ],
