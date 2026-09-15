@@ -901,13 +901,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       widget.suggestions!.isNotEmpty;
                   return Column(
                     children: [
+                      // Scrollable so the open keyboard, which leaves less
+                      // height than the empty state needs, cannot overflow it.
                       Expanded(
-                        child: GuidanceEmptyState(
-                          icon: Icons.chat_bubble_outline,
-                          title: 'Start the conversation',
-                          subtitle: _isCheckingVerification || _canSendMessages
-                              ? 'Send a message to begin chatting'
-                              : 'Both parties need to be verified to chat',
+                        child: LayoutBuilder(
+                          builder: (context, constraints) =>
+                              SingleChildScrollView(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight),
+                              child: GuidanceEmptyState(
+                                icon: Icons.chat_bubble_outline,
+                                title: 'Start the conversation',
+                                subtitle: _isCheckingVerification ||
+                                        _canSendMessages
+                                    ? 'Send a message to begin chatting'
+                                    : 'Both parties need to be verified to chat',
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       if (showSuggestions) _buildSuggestionChips(),
