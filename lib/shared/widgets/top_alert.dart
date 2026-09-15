@@ -4,20 +4,13 @@ import '../../core/constants/text_styles.dart';
 
 /// A message that drops in from the top of the screen and leaves on its own.
 ///
-/// Form validation used to fail silently from the user's point of view. The
-/// inline error renders beside the offending field, and on a long form that
-/// field is usually scrolled out of sight — so the submit button simply looked
-/// broken, and the only way to find out why was to scroll back up hunting for
-/// red text. Someone entering one name instead of two had no way of knowing
-/// that was the problem.
+/// Use this ONLY when something covers the bottom of the screen, chiefly a
+/// modal bottom sheet. A SnackBar renders behind the sheet and is never seen,
+/// which made "Record settlement" look like a dead button.
 ///
-/// This puts the reason where the user is already looking: at the top, over
-/// whatever they are on, without moving the page under them.
-///
-/// Deliberately an overlay rather than a SnackBar: a SnackBar animates up from
-/// the bottom, which is where the button they just pressed is, and on this form
-/// that is the one place the message is least likely to be read as an answer to
-/// the tap.
+/// Everywhere else a floating SnackBar is the default: it sits above the
+/// keyboard, right where the user's eyes and thumb already are. Converting
+/// ordinary forms to this overlay was tried and reverted.
 class TopAlert {
   TopAlert._();
 
