@@ -121,6 +121,13 @@ export async function findUserByPhone(
  * The landlord is a listed participant, not a hidden observer: they can read
  * AND speak, and the tenant can see they are there.
  *
+ * One thread per TENANCY, not per unit. The id used to be
+ * `caretaker_{propertyId}_{caretakerId}`, so the next tenant was unioned into
+ * the previous tenant's thread: the former tenant kept reading it and the new
+ * one inherited their history. The tenant is now part of the id. A legacy
+ * thread is still reused when it already belongs to this same tenant, so
+ * single-tenancy history survives the change.
+ *
  * Deterministic id so a retried accept doesn't open a second thread.
  *
  * @param {string} propertyId The unit.
@@ -138,29 +145,35 @@ export async function openCaretakerThread(
     .collection("active_rentals")
     .where("propertyId", "==", propertyId)
     .get();
-  const live = rentals.docs.find((d) =>
+  const live = rentals.docs.filter((d) =>
     OCCUPYING_RENTAL_STATUSES.includes(d.get("status") as string),
   );
-  if (!live) return;
-
-  const tenantId = live.get("tenantId") as string | undefined;
-  const landlordId = live.get("landlordId") as string | undefined;
-  if (!tenantId || !landlordId) return;
+  if (live.length === 0) return;
 
   const propSnap = await db.collection("properties").doc(propertyId).get();
-  const [tenantSnap, landlordSnap] = await Promise.all([
-    db.collection("users").doc(tenantId).get(),
-    db.collection("users").doc(landlordId).get(),
-  ]);
-
   const images = (propSnap.get("images") as string[] | undefined) ?? [];
-  const ref = db
+  const legacy = db
     .collection("conversations")
     .doc(`caretaker_${propertyId}_${caretakerId}`);
-  const now = Timestamp.now();
+  const legacySnap = await legacy.get();
 
-  await ref.set(
-    {
+  for (const rental of live) {
+    const tenantId = rental.get("tenantId") as string | undefined;
+    const landlordId = rental.get("landlordId") as string | undefined;
+    if (!tenantId || !landlordId) continue;
+
+    const [tenantSnap, landlordSnap] = await Promise.all([
+      db.collection("users").doc(tenantId).get(),
+      db.collection("users").doc(landlordId).get(),
+    ]);
+
+    const ref = legacySnap.exists && legacySnap.get("tenantId") === tenantId ?
+      legacy :
+      db.collection("conversations")
+        .doc(`caretaker_${propertyId}_${caretakerId}_${tenantId}`);
+    const now = Timestamp.now();
+
+    const identity = {
       id: ref.id,
       propertyId,
       propertyTitle:
@@ -176,42 +189,50 @@ export async function openCaretakerThread(
       agentName: "",
       caretakerId,
       caretakerName,
-      // arrayUnion, not a literal: a re-appointed caretaker was REMOVED from
-      // this array on revoke, and a merge write with a literal array would be
-      // fine - but the landlord and tenant may have changed nothing, so union
-      // keeps this idempotent against a retried accept either way.
-      participants: FieldValue.arrayUnion(landlordId, tenantId, caretakerId),
-      lastMessage: "",
-      lastMessageTime: now,
-      lastMessageSenderId: "",
-      unreadCounts: {[landlordId]: 0, [tenantId]: 0, [caretakerId]: 0},
-      createdAt: now,
-    },
-    // Merge so a caretaker re-appointed to the same unit rejoins the existing
-    // thread rather than losing its history - and so `removedParticipants`
-    // from a previous revoke is cleared explicitly below rather than by a
-    // blind overwrite.
-    {merge: true},
-  );
-  await ref.update({removedParticipants: FieldValue.delete()});
+    };
 
-  // Deterministic key, NOT Date.now(): this used to run once, at invite-accept,
-  // so a unique key was harmless. It is now also called from the occupancy
-  // triggers, which fire whenever a rental's occupying-ness changes - a
-  // per-call key would send the tenant a fresh "your landlord appointed a
-  // caretaker" on every one of those.
-  await writeNotificationOnce(`caretaker_thread_${ref.id}`, {
-    userId: tenantId,
-    type: "caretaker_assigned",
-    title: "Your landlord appointed a caretaker",
-    body:
-      `${caretakerName} will handle issues and maintenance for your home. ` +
-      "You can message them here - your landlord is on the thread too.",
-    // The route reads conversationId from the query string; without it the
-    // chat route renders _MissingArgsScreen, so a bare "/chat" would have
-    // dead-ended every tenant who tapped this push.
-    payload: {route: `/chat?conversationId=${ref.id}`},
-  });
+    try {
+      await ref.create({
+        ...identity,
+        participants: [landlordId, tenantId, caretakerId],
+        lastMessage: "",
+        lastMessageTime: now,
+        lastMessageSenderId: "",
+        unreadCounts: {[landlordId]: 0, [tenantId]: 0, [caretakerId]: 0},
+        createdAt: now,
+      });
+    } catch (err) {
+      // 6 = ALREADY_EXISTS. The thread is already open: refresh who is on it
+      // and leave the preview, unread counts and createdAt alone. Rewriting
+      // those on every occupancy change made a thread full of messages list
+      // as "No messages yet".
+      if ((err as {code?: number}).code !== 6) throw err;
+      await ref.update({
+        ...identity,
+        // A re-appointed caretaker was REMOVED from this array on revoke.
+        participants: FieldValue.arrayUnion(landlordId, tenantId, caretakerId),
+        removedParticipants: FieldValue.delete(),
+      });
+    }
+
+    // Deterministic key, NOT Date.now(): this used to run once, at
+    // invite-accept, so a unique key was harmless. It is now also called from
+    // the occupancy triggers, which fire whenever a rental's occupying-ness
+    // changes - a per-call key would send the tenant a fresh "your landlord
+    // appointed a caretaker" on every one of those.
+    await writeNotificationOnce(`caretaker_thread_${ref.id}`, {
+      userId: tenantId,
+      type: "caretaker_assigned",
+      title: "Your landlord appointed a caretaker",
+      body:
+        `${caretakerName} will handle issues and maintenance for your home. ` +
+        "You can message them here - your landlord is on the thread too.",
+      // The route reads conversationId from the query string; without it the
+      // chat route renders _MissingArgsScreen, so a bare "/chat" would have
+      // dead-ended every tenant who tapped this push.
+      payload: {route: `/chat?conversationId=${ref.id}`},
+    });
+  }
 }
 
 /**
