@@ -1354,6 +1354,20 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               minimumSize: const Size(double.infinity, 0),
             ),
           ),
+        ]
+        // Say why it went. A confirmed visit simply loses the button at the
+        // cutoff, and the silence reads as a bug rather than a rule.
+        else if (r.isConfirmed && !r.hasPendingReschedule) ...[
+          const SizedBox(height: 12),
+          Text(
+            r.hasReachedRescheduleCap
+                ? 'This visit has been moved twice already. Cancel it if the '
+                    'time no longer works.'
+                : 'Too close to the slot to move it. Cancel it if you can no '
+                    'longer make it.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary),
+          ),
         ],
       ]),
     );
