@@ -236,7 +236,15 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
     // Transcode HERE rather than at submit: the wait happens while they are
     // still writing notes, instead of being tacked onto an upload that already
     // feels too long.
-    final file = await _compressVideo(File(x.path));
+    final File file;
+    try {
+      file = await _compressVideo(File(x.path));
+    } finally {
+      // Cleared HERE, on every path. _compressVideo returns early for a clip
+      // already under the size limit, before its own finally, which left a
+      // short recording stuck on "Optimising 0%" with the screen locked.
+      if (mounted) setState(() => _compressProgress = null);
+    }
     if (!mounted) return;
     setState(() => _videos.add(file));
     await _saveDraft();
@@ -591,9 +599,10 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(title: Text(widget.stage.label)),
       body: AbsorbPointer(
-        // Transcoding is as blocking as uploading - a second recording started
-        // mid-transcode would fight the first for the encoder.
-        absorbing: _submitting || _compressProgress != null,
+        // Only the upload locks the whole form. A transcode blocks just the
+        // camera tiles below (a second recording would fight the first for the
+        // encoder); notes stay typeable, which is why it runs this early.
+        absorbing: _submitting,
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -642,7 +651,8 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               title: 'Walkthrough video',
               subtitle: _compressProgress != null
                   ? 'Optimising for upload - '
-                      '${(_compressProgress! * 100).round()}%'
+                      '${(_compressProgress! * 100).round()}%. '
+                      'You can keep writing notes.'
                   // Multiple recordings were always allowed - a small "+" icon
                   // was the only thing saying so, which read as a limit of one.
                   // A one-room walkthrough is rarely one clip.
@@ -650,7 +660,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
                       ? 'Required · up to 3 minutes each'
                       : '${_videos.length} recorded · tap to add another',
               done: _videos.isNotEmpty,
-              onTap: _recordVideo,
+              onTap: _compressProgress != null ? null : _recordVideo,
             ),
             _captureChips(_videos, video: true),
             if (_compressProgress != null) ...[
@@ -672,7 +682,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
                   ? 'Optional · as many as you need'
                   : '${_images.length} taken · tap to add another',
               done: _images.isNotEmpty,
-              onTap: _takePhoto,
+              onTap: _compressProgress != null ? null : _takePhoto,
             ),
             _captureChips(_images, video: false),
 
@@ -776,7 +786,7 @@ class _CaptureTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool done;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _CaptureTile({
     required this.icon,
