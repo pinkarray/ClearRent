@@ -1711,13 +1711,20 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              // Switch tabs in place. This used to route to
-              // '/landlord/home?tab=1', but nothing reads that parameter, so
-              // the button landed the landlord back on the dashboard they were
-              // already looking at.
-              setState(() => _currentNavIndex = 1);
+              // One listing, one destination: open it, since confirming
+              // readiness happens on the property's own page. With several,
+              // the Properties tab is as specific as we can be. This used to
+              // route to '/landlord/home?tab=1', which nothing reads, so the
+              // button landed the landlord back on the dashboard.
+              if (count == 1) {
+                final p =
+                    _myProperties.firstWhere((p) => p.isNotBookable);
+                context.push('/property-detail', extra: p);
+              } else {
+                setState(() => _currentNavIndex = 1);
+              }
             },
-            child: const Text('View listings'),
+            child: Text(count == 1 ? 'Open listing' : 'View listings'),
           ),
         ],
       ),
