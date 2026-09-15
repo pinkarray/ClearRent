@@ -1676,8 +1676,6 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     final key = 'notBookableSeen_${_authService.currentUserId ?? ''}';
     if (prefs.getInt(key) == count) return;
     if (!mounted) return;
-    // Resolve navigation BEFORE the await gap the dialog introduces.
-    final router = GoRouter.of(context);
     await prefs.setInt(key, count);
     if (!mounted) return;
     await showDialog<void>(
@@ -1690,13 +1688,18 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               : '$count listings are not taking inspections',
           style: AppTextStyles.h4,
         ),
+        // Name the action and whose it is. "Needs to be vetted" reads as
+        // something happening elsewhere, so a landlord waits for a check they
+        // are supposed to make themselves.
         content: Text(
           count == 1
-              ? 'It has been approved, but it still needs to be vetted before '
-                  'tenants can book an inspection. Nothing is wrong with it - '
-                  'it just is not visible for booking yet.'
-              : 'They have been approved, but they still need to be vetted '
-                  'before tenants can book inspections.',
+              ? 'Admin has approved it. Before tenants can book, the readiness '
+                  'checklist has to be confirmed: open the listing and confirm '
+                  'it, or ask your agent to if they handle inspections.'
+              : 'Admin has approved them. Before tenants can book, each one '
+                  'needs its readiness checklist confirmed: open the listing '
+                  'and confirm it, or ask your agent to if they handle '
+                  'inspections.',
           style: AppTextStyles.bodyMedium
               .copyWith(color: AppColors.textSecondary),
         ),
@@ -1708,7 +1711,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              router.go('/landlord/home?tab=1');
+              // Switch tabs in place. This used to route to
+              // '/landlord/home?tab=1', but nothing reads that parameter, so
+              // the button landed the landlord back on the dashboard they were
+              // already looking at.
+              setState(() => _currentNavIndex = 1);
             },
             child: const Text('View listings'),
           ),
