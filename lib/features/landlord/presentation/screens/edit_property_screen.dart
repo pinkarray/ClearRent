@@ -15,6 +15,7 @@ import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../shared/widgets/description_prompts.dart';
+import '../../../../shared/widgets/top_alert.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/caretaker_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -2541,13 +2542,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                           if (!sheetCtx.mounted) return;
                           setSheetState(() => sending = false);
                           if (result.error != null) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(result.error!),
-                                backgroundColor: AppColors.error,
-                              ),
-                            );
+                            // Not a SnackBar: it renders behind this sheet, so
+                            // a refused invite looked like a dead button.
+                            TopAlert.show(sheetCtx, result.error!);
                             return;
                           }
                           Navigator.pop(sheetCtx);
