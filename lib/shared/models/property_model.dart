@@ -49,8 +49,8 @@ class PropertyModel {
 
   // Inspection handling
   // 'self' (landlord), 'agent', or 'caretaker'. 'caretaker' is priced and paid
-  // exactly like 'self' — the fee is flat and the handler share still routes to
-  // the landlord (there is no agentId on the request) — it only changes WHO is
+  // exactly like 'self' - the fee is flat and the handler share still routes to
+  // the landlord (there is no agentId on the request) - it only changes WHO is
   // asked to open the door. Anything that branches on this must treat
   // 'caretaker' as self-handled, never fall through: a missed branch returns a
   // null fee breakdown and inspection booking dies.
@@ -86,19 +86,19 @@ class PropertyModel {
   final String? ownershipDocType;   // 'c_of_o' | 'deed' | 'other'
   // Owner-settable: 'none' | 'not_uploaded' | 'pending' | 'inherited'.
   // Admin-only verdict: 'verified' | 'rejected'.
-  // 'inherited' marks a grouped unit — resolve the real status from its building
+  // 'inherited' marks a grouped unit - resolve the real status from its building
   // (see effectiveDocStatus), never treat the marker itself as an approval.
   // Guards keyed on the literal 'verified' silently passed 'inherited' and
   // 'not_uploaded' straight through, so any new check must be an ALLOWLIST.
   final String ownershipDocStatus;
   final String? ownershipDocRejectionReason;  // admin's words; owner cannot write
 
-  // Building group — non-null when this property is a unit in a multi-unit
+  // Building group - non-null when this property is a unit in a multi-unit
   // building/compound. Units inherit the building's ownership-doc verification
   // (one C of O covers every unit of the same owner). Null = standalone listing.
   final String? buildingId;
 
-  // What the landlord calls this unit within its building — "Room 2",
+  // What the landlord calls this unit within its building - "Room 2",
   // "Left flat", "BQ". Two units of the same shape in one compound are
   // otherwise indistinguishable: both render as their auto-title
   // ("1 Bedroom Flat") to the tenant, the admin reviewer and the landlord's own
@@ -106,7 +106,7 @@ class PropertyModel {
   final String? unitLabel;
 
   // Which floor the unit is on: 'ground' | '1' | '2' … Stored as a string so
-  // 'ground' and a number share one field. Not cosmetic in Lagos — no lift,
+  // 'ground' and a number share one field. Not cosmetic in Lagos - no lift,
   // water pressure at the top, security on the ground floor.
   final String? floor;
 
@@ -121,12 +121,12 @@ class PropertyModel {
   // before this field existed.
   //
   // For a single space this is also the axis that separates a room from a room
-  // & parlour from a self contain — see [isSingleSpace], which governs the
+  // & parlour from a self contain - see [isSingleSpace], which governs the
   // room COUNTS only and must not be used to decide whether to ask this.
   final String? bathroomAccess;
   final String? toiletAccess;
   final String? kitchenAccess;
-  // A sitting room can be shared too — ordinary in a face-me-I-face-you, where
+  // A sitting room can be shared too - ordinary in a face-me-I-face-you, where
   // the parlour is common ground. Same values as the others.
   final String? livingRoomAccess;
 
@@ -136,7 +136,7 @@ class PropertyModel {
   // the site's structure alone would lose which one this unit sits in.
   // Values are BuildingModel.structures. Null unless the site is a compound.
   final String? unitBuildingStructure;
-  // Which of them — "A", "B" — when a compound holds two of the same kind.
+  // Which of them - "A", "B" - when a compound holds two of the same kind.
   final String? unitBuildingLabel;
 
   // Landlord residence (for inspection travel calculation)
@@ -145,7 +145,7 @@ class PropertyModel {
   // Video tour
   final String? videoUrl; // Cloudinary video URL
 
-  // Ceiling types — a flat can mix them (POP in the living room, slate in the
+  // Ceiling types - a flat can mix them (POP in the living room, slate in the
   // bedroom), so this is a list.
   // 'pop' | 'pvc' | 'concrete' | 'asbestos' | 'slate' | 'none'
   // Legacy docs carry a single `ceilingType` string ('false_ceiling' meaning
@@ -168,14 +168,14 @@ class PropertyModel {
   /// for `'self'` and silently fell through: a null fee breakdown that killed
   /// inspection booking outright, a stale `assignedAgentId` left on the unit,
   /// and a bypass of the guard that stops an agent being dropped mid-inspection.
-  /// Anything that is not agent-handled is self-handled — landlord or caretaker
-  /// — and is priced, paid and gated identically.
+  /// Anything that is not agent-handled is self-handled - landlord or caretaker
+  /// - and is priced, paid and gated identically.
   bool get isAgentHandled => inspectionHandler == 'agent';
   bool get isSelfHandled => !isAgentHandled;
 
   // Who MANAGES this unit on ClearRent, as opposed to the two booleans above,
   // which only say whether someone is on the ground. Set server-side when a
-  // caretaker accepts an invite (see caretaker_invites) — the landlord may
+  // caretaker accepts an invite (see caretaker_invites) - the landlord may
   // CLEAR it to revoke, but may never set it, or an invite would be bypassable
   // and a third party would reach the tenant's data without ever consenting.
   // Null on every legacy property; the detail screen falls back to the booleans.
@@ -265,13 +265,13 @@ class PropertyModel {
 
   /// Every propertyType value with its label. ONE vocabulary: the add/edit
   /// chips, the tenant and agent filters, the cards and the admin all read from
-  /// here. They used to hold four different lists — the tenant filter offered
+  /// here. They used to hold four different lists - the tenant filter offered
   /// 'self_contain', 'studio' and 'mansion', none of which anything writes, so
   /// picking Self Contain matched nothing.
   /// 'shop'/'office' are pickable in neither list (hidden until the commercial
   /// branch exists) but keep their labels so an existing doc still renders.
-  /// 'miniFlat' is NOT pickable: it is the same dwelling as 'roomAndParlour' —
-  /// one room plus a sitting room — under the estate-agent word for it, and
+  /// 'miniFlat' is NOT pickable: it is the same dwelling as 'roomAndParlour' -
+  /// one room plus a sitting room - under the estate-agent word for it, and
   /// offering both re-created the duplication this model exists to remove.
   /// "Room & Parlour" is what a Nigerian landlord and tenant actually say. The
   /// label stays so any doc written while both were offered still renders.
@@ -303,7 +303,7 @@ class PropertyModel {
   /// Types offered for one unit inside a building. These are things that ARE a
   /// unit. 'bungalow' is deliberately absent: a bungalow is what the BUILDING
   /// is, and offering it here let a landlord create "Room 2 - 1 Bedroom
-  /// Bungalow" — a unit named Room 2 that claims to be a bungalow. That axis
+  /// Bungalow" - a unit named Room 2 that claims to be a bungalow. That axis
   /// belongs to [BuildingModel.structure].
   ///
   /// Duplex and semi-detached duplex stay: a compound genuinely holds either
@@ -333,11 +333,11 @@ class PropertyModel {
   static List<String> typesForScope({required bool inBuilding}) =>
       inBuilding ? unitTypes : wholePropertyTypes;
 
-  /// Types that ARE a single space. There is no bedroom count to give — "1
+  /// Types that ARE a single space. There is no bedroom count to give - "1
   /// Bedroom Room" is a tautology, and it made a room render as `1 bed · 1 bath`
   /// on the card, byte-identical to a self-contained one-bedroom flat. What
   /// separates these rungs of the Lagos ladder is not room COUNT, it is which
-  /// facilities the tenant gets exclusively — see [sharedFacilities].
+  /// facilities the tenant gets exclusively - see [sharedFacilities].
   /// 'miniFlat' is included so a doc written while it was briefly offered is
   /// still described by what it shares rather than by a bedroom count.
   static bool isSingleSpace(String type) =>
@@ -371,7 +371,7 @@ class PropertyModel {
   bool get isSingleSpaceListing => isSingleSpace(propertyType);
 
   /// What the tenant SHARES, as a display line: "shared bathroom · shared
-  /// kitchen". Empty when everything is private — the assumption a tenant makes
+  /// kitchen". Empty when everything is private - the assumption a tenant makes
   /// unless told otherwise, so there is nothing to say.
   ///
   /// This is what a room's card shows in place of `1 bed · 1 bath · 1 toilet`,
@@ -398,12 +398,12 @@ class PropertyModel {
     return shared.isEmpty ? label : '$label · $shared';
   }
 
-  /// One line naming this unit inside its building — "Room 2 · 1st floor".
+  /// One line naming this unit inside its building - "Room 2 · 1st floor".
   /// Empty for a standalone listing, which has no siblings to be told from.
   String get unitDescriptor {
     final parts = <String>[];
     if (unitLabel != null && unitLabel!.isNotEmpty) parts.add(unitLabel!);
-    // What the unit sits in — "in duplex A" on a compound, "in a face me i
+    // What the unit sits in - "in duplex A" on a compound, "in a face me i
     // face you" anywhere else. A tenant comparing a room needs this in the
     // LIST, not only after opening the listing: a room in a face-me-I-face-you
     // and a room in a block of flats are different products.
@@ -418,7 +418,7 @@ class PropertyModel {
     return parts.join(' · ');
   }
 
-  /// "Duplex A" — the unit's own building within a compound. Empty when the
+  /// "Duplex A" - the unit's own building within a compound. Empty when the
   /// site is a single building, which the building doc already describes.
   String get unitBuildingDescriptor {
     final s = unitBuildingStructure;
@@ -440,7 +440,7 @@ class PropertyModel {
   }
 
   /// Address shown to a viewer who is NOT yet entitled to the exact address.
-  /// Area-level only: LGA, city, state — enough to judge location without
+  /// Area-level only: LGA, city, state - enough to judge location without
   /// revealing the street. Used before an inspection is approved (tenant) or
   /// before an agent is assigned.
   String get approximateAddress {
@@ -533,7 +533,7 @@ class PropertyModel {
 
   /// The rent figure to charge/display *now*. Once the scheduled date has
   /// passed, this returns the scheduled rent; otherwise the current rent.
-  /// Stored `rent` is never mutated — read sites opt in by calling this.
+  /// Stored `rent` is never mutated - read sites opt in by calling this.
   double get effectiveRent {
     if (hasScheduledIncrease &&
         !DateTime.now().isBefore(scheduledRentEffectiveDate!)) {
@@ -737,7 +737,7 @@ class PropertyModel {
   bool get isPendingReview =>
       !isVerified && ownershipDocStatus != 'rejected';
 
-  /// Approved by admin and vacant, but the handler hasn't vetted it — so
+  /// Approved by admin and vacant, but the handler hasn't vetted it - so
   /// tenants are blocked from booking an inspection and the listing earns
   /// nothing. Silent unless something surfaces it, which is why the landlord
   /// home screen counts these.
@@ -762,7 +762,7 @@ class PropertyModel {
     return 'Available';
   }
 
-  /// Whether [statusLabel] is the one good state — a listing a tenant can book
+  /// Whether [statusLabel] is the one good state - a listing a tenant can book
   /// right now. Colour must key off THIS, not `isAvailable`: a not-bookable
   /// listing is still `isAvailable == true`, so keying off availability drew
   /// "Not bookable" in green and read as ready to let.
@@ -873,7 +873,7 @@ class PropertyModel {
   /// Tolerant date parse for [fromJson]. Date fields can arrive as a Firestore
   /// Timestamp (raw Firestore stream data), an ISO-8601 String (already
   /// normalised JSON), or an existing DateTime. DateTime.parse only handles the
-  /// String case — feeding it a Timestamp (e.g. scheduledRentEffectiveDate
+  /// String case - feeding it a Timestamp (e.g. scheduledRentEffectiveDate
   /// written by the approveRentReview CF) threw and broke property loading.
   static DateTime? _dateFromJson(dynamic value) {
     if (value == null) return null;

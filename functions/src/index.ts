@@ -101,7 +101,7 @@ export {
  *
  * Listens on WRITE, not create. Chat notifications are now one rolling doc per
  * conversation (see onChatMessageCreated), so the second and every later
- * message is an UPDATE — on create-only those pushes would simply stop.
+ * message is an UPDATE - on create-only those pushes would simply stop.
  *
  * The guard below is what makes that safe: a write is only pushed when the doc
  * is new, or when `lastMessageId` actually moved. Without it, every
@@ -150,7 +150,7 @@ export const onNotificationCreated = onDocumentWritten(
       return;
     }
 
-    // Stringify payload values — FCM data must be string-only.
+    // Stringify payload values - FCM data must be string-only.
     const data: Record<string, string> = {};
     if (payload) {
       for (const [k, v] of Object.entries(payload)) {
@@ -161,7 +161,7 @@ export const onNotificationCreated = onDocumentWritten(
     // The doc's own `type` travels with the push.
     //
     // Without this, `data.type` was only ever set when a caller happened to
-    // repeat the type inside `payload` — and none do. The per-type collapse
+    // repeat the type inside `payload` - and none do. The per-type collapse
     // logic below therefore never matched, so twenty messages from one
     // conversation arrived as twenty stacked banners instead of one that
     // replaces itself. The web service worker groups on the same field.
@@ -238,7 +238,7 @@ export const onNotificationCreated = onDocumentWritten(
 
 
 /**
- * Slot-holding statuses — mirror of InspectionService._slotHoldingStatuses
+ * Slot-holding statuses - mirror of InspectionService._slotHoldingStatuses
  * on the Dart side. A request in any of these states reserves
  * its (handler, date, slot) tuple against new bookings.
  */
@@ -256,7 +256,7 @@ const SLOT_HOLDING_STATUSES = [
  * handler on the same date+slot, decline+refund the new doc and
  * notify the tenant.
  *
- * The collision is resolved in favour of the EARLIER createdAt —
+ * The collision is resolved in favour of the EARLIER createdAt -
  * the new doc is the one rejected.
  *
  * Returns true if the new doc was conflict-declined (caller should
@@ -281,7 +281,7 @@ async function rejectIfSlotConflict(
     return false;
   }
 
-  // Handler key — agent if agent-handled, else landlord.
+  // Handler key - agent if agent-handled, else landlord.
   const handlerField = agentId ? "agentId" : "landlordId";
   const handlerId = agentId ?? landlordId;
 
@@ -327,7 +327,7 @@ async function rejectIfSlotConflict(
 
   if (!conflict) return false;
 
-  logger.info("Slot conflict detected — declining new request", {
+  logger.info("Slot conflict detected - declining new request", {
     requestId,
     conflictWith: conflict.id,
     handlerField,
@@ -348,7 +348,7 @@ async function rejectIfSlotConflict(
   if (wasPaid) {
     update.paymentStatus = "refunded";
     update.refundedAt = FieldValue.serverTimestamp();
-    update.refundReason = "Slot conflict — automatic refund";
+    update.refundReason = "Slot conflict - automatic refund";
   }
   await db.collection("inspection_requests").doc(requestId).update(update);
 
@@ -365,7 +365,7 @@ async function rejectIfSlotConflict(
         body:
           `Your inspection slot for ${propertyTitle} was just booked ` +
           "by someone else. Please pick a different time" +
-          (wasPaid ? " — refund processing." : "."),
+          (wasPaid ? " - refund processing." : "."),
         payload: {
           route: "/tenant/inspections",
           initialTab: "2",
@@ -402,7 +402,7 @@ async function rejectIfSlotConflict(
 /**
  * Server-side duplicate guard. The clients check "do I already have an
  * open request on this property?" before writing (web: hasActiveRequest,
- * app: InspectionService), but a read-then-write check is racy — two
+ * app: InspectionService), but a read-then-write check is racy - two
  * quick submits both pass the read and both commit. Rules cannot close
  * this, because a rule cannot query the collection.
  *
@@ -451,7 +451,7 @@ async function rejectIfDuplicateRequest(
 
   if (!duplicate) return false;
 
-  logger.info("Duplicate inspection request — declining new doc", {
+  logger.info("Duplicate inspection request - declining new doc", {
     requestId,
     duplicateOf: duplicate.id,
     tenantId,
@@ -472,7 +472,7 @@ async function rejectIfDuplicateRequest(
   if (wasPaid) {
     update.paymentStatus = "refunded";
     update.refundedAt = FieldValue.serverTimestamp();
-    update.refundReason = "Duplicate request — automatic refund";
+    update.refundReason = "Duplicate request - automatic refund";
   }
   await db.collection("inspection_requests").doc(requestId).update(update);
 
@@ -484,7 +484,7 @@ async function rejectIfDuplicateRequest(
       title: "Duplicate Request",
       body:
         `You already have an open inspection request for ${propertyTitle}` +
-        (wasPaid ? " — refund processing." : "."),
+        (wasPaid ? " - refund processing." : "."),
       payload: {
         route: "/tenant/inspections",
         initialTab: "2",
@@ -499,14 +499,14 @@ async function rejectIfDuplicateRequest(
 /**
  * Notify the handler when a new inspection request is created.
  *
- * Skipped when status is "pendingPayment" — the tenant hasn't
+ * Skipped when status is "pendingPayment" - the tenant hasn't
  * committed payment yet, so we don't ping the handler for an
  * unconverted request. The handler will be notified by the
  * request-update trigger when status advances to "pending" or
  * "pendingVerification".
  *
- * Recipients: the handler — the agent (if agent-handled) or the
- * landlord (if self-handled) — plus, when an agent handles it, the
+ * Recipients: the handler - the agent (if agent-handled) or the
+ * landlord (if self-handled) - plus, when an agent handles it, the
  * landlord as the property's owner. The tenant is not pushed; they
  * just made the request.
  */
@@ -531,14 +531,14 @@ export const onInspectionRequestCreated = onDocumentCreated(
     try {
       duplicated = await rejectIfDuplicateRequest(requestId, data);
     } catch (err) {
-      logger.error("Duplicate check failed — proceeding", {
+      logger.error("Duplicate check failed - proceeding", {
         requestId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
     if (duplicated) return;
 
-    // Slot conflict check — if the new request collides with an
+    // Slot conflict check - if the new request collides with an
     // existing booking on the same handler/date/slot, decline it
     // here and exit. Skip the handler notification below since the
     // request is being rejected. Wrapped so a query failure (e.g.
@@ -548,7 +548,7 @@ export const onInspectionRequestCreated = onDocumentCreated(
     try {
       conflicted = await rejectIfSlotConflict(requestId, data);
     } catch (err) {
-      logger.error("Slot conflict check failed — proceeding", {
+      logger.error("Slot conflict check failed - proceeding", {
         requestId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -582,13 +582,13 @@ export const onInspectionRequestCreated = onDocumentCreated(
       type: "inspection_lifecycle",
       severity: "info",
       title: awaitingPayment ?
-        "Inspection requested — awaiting payment" :
+        "Inspection requested - awaiting payment" :
         "Inspection requested",
       body:
         `${(data.tenantName as string | undefined) ?? "A tenant"} requested ` +
         `to inspect ${(data.propertyTitle as string | undefined) ??
           "a property"}` +
-        (awaitingPayment ? " — awaiting payment." : "."),
+        (awaitingPayment ? " - awaiting payment." : "."),
       targetCollection: "inspection_requests",
       targetId: requestId,
       actors: {
@@ -600,7 +600,7 @@ export const onInspectionRequestCreated = onDocumentCreated(
     });
 
     if (status === "pendingPayment") {
-      logger.info("Skipping notification — pendingPayment", {requestId});
+      logger.info("Skipping notification - pendingPayment", {requestId});
       return;
     }
 
@@ -638,7 +638,7 @@ export const onInspectionRequestCreated = onDocumentCreated(
 
     // The owner is told too when an agent handles the property. Previously
     // only the handler was notified, so a landlord could learn nothing about
-    // a stranger visiting their own house — and if that agent had no FCM
+    // a stranger visiting their own house - and if that agent had no FCM
     // token, the request reached nobody at all. Awareness only: the agent
     // still owns the approve/decline.
     if (agentId && landlordId && landlordId !== agentId) {
@@ -672,7 +672,7 @@ export const onInspectionRequestCreated = onDocumentCreated(
  * Notify an agent when a landlord assigns them to handle a property's
  * inspections. Prompts them to reach out to the landlord, visit the unit, and
  * help get it viewing-ready. Fires only when assignedAgentId actually changes
- * to a (new) agent — ordinary edits that leave the agent unchanged are ignored.
+ * to a (new) agent - ordinary edits that leave the agent unchanged are ignored.
  *
  * @param {object} event Firestore update event with before/after.
  * @return {Promise<void>}
@@ -688,7 +688,7 @@ export const onPropertyAgentAssigned = onDocumentUpdated(
       (before.assignedAgentId as string | null | undefined) ?? null;
     const afterAgent =
       (after.assignedAgentId as string | null | undefined) ?? null;
-    // Only on a newly-assigned (or changed) agent — not removals or no-ops.
+    // Only on a newly-assigned (or changed) agent - not removals or no-ops.
     if (!afterAgent || afterAgent === beforeAgent) return;
 
     const propertyId = event.params.propertyId;
@@ -703,7 +703,7 @@ export const onPropertyAgentAssigned = onDocumentUpdated(
         title: "You've been assigned a property",
         body:
           `You're now handling inspections for ${propertyTitle}. Visit the ` +
-          `property and confirm it's ready — tenants can't book inspections ` +
+          `property and confirm it's ready - tenants can't book inspections ` +
           `until you do.`,
         payload: {route: `/agent/property/${propertyId}`},
       },
@@ -773,7 +773,7 @@ export const onIssueCreated = onDocumentCreated(
 
     // The caretaker is the day-to-day responder and has full triage on the
     // property-health screen, yet heard nothing until now. Sent ALONGSIDE the
-    // landlord, never instead of them — the owner stays informed.
+    // landlord, never instead of them - the owner stays informed.
     //
     // Their deep link is /caretaker/properties, not /landlord/issues: a
     // caretaker keeps their own accountType (often tenant), and the landlord
@@ -804,7 +804,7 @@ export const onIssueCreated = onDocumentCreated(
 );
 
 /**
- * Push the right party when an issue's status changes — completes the
+ * Push the right party when an issue's status changes - completes the
  * report → working → fixed → confirm/dispute loop with phone pings + deep
  * links. Landlord moves drive tenant notifications; the tenant's confirm /
  * dispute drives a landlord notification.
@@ -847,7 +847,7 @@ export const onIssueUpdated = onDocumentUpdated(
       body = `${propertyTitle}: the tenant reports the ${category} issue ` +
         "isn't resolved.";
       payload = {...landlordRoute, initialTab: "1"}; // → In Progress tab
-      // A contested fix is a dispute — surface it to the admin too.
+      // A contested fix is a dispute - surface it to the admin too.
       await writeAdminAlert({
         type: "issue_fix_disputed",
         severity: "warning",
@@ -867,7 +867,7 @@ export const onIssueUpdated = onDocumentUpdated(
       payload = tenantRoute;
     } else if (to === "pending_confirmation") {
       userId = tenantId; // landlord marked fixed → confirm/dispute
-      title = "Fix ready — please confirm";
+      title = "Fix ready - please confirm";
       body = `Your landlord says the ${category} issue at ${propertyTitle} ` +
         "is fixed. Confirm or dispute.";
       payload = tenantRoute;
@@ -900,7 +900,7 @@ export const onIssueUpdated = onDocumentUpdated(
 
     // Mirror to the caretaker on the LANDLORD-directed transitions only. Both
     // of those (a disputed fix, a confirmed one) are driven by the tenant and
-    // land on the person who has to act next — which, where one is appointed,
+    // land on the person who has to act next - which, where one is appointed,
     // is the caretaker. The tenant-directed messages stay between the tenant
     // and their landlord.
     if (userId === landlordId) {
@@ -927,7 +927,7 @@ export const onIssueUpdated = onDocumentUpdated(
     // A resolved issue is finished work: close the `issue_reported` and
     // `issue_fix_disputed` alerts it raised, instead of leaving them in the
     // queue for an admin to dismiss by hand. Both carry targetId == issueId.
-    // "system" as resolvedBy because no admin touched it — the tenant closing
+    // "system" as resolvedBy because no admin touched it - the tenant closing
     // the loop is what completed it.
     if (to === "resolved") {
       await resolveAdminAlertsForTarget(issueId, "system").catch(() => 0);
@@ -1033,19 +1033,19 @@ export const onActiveRentalUpdated = onDocumentUpdated(
         });
       } else if (agrAfter === "finalized") {
         // Finalizing is what unlocks rent payment, so the tenant's notice must
-        // actually tell them to pay — otherwise Pay Rent appears with nothing
+        // actually tell them to pay - otherwise Pay Rent appears with nothing
         // pointing at it. (Tenant acceptance now finalizes the agreement, so
         // this is normally triggered by the tenant themselves.)
         uid = tenantId;
         type = "agreement_finalized";
-        title = "Agreement finalized — pay your rent";
+        title = "Agreement finalized - pay your rent";
         body =
           `Your tenancy agreement for ${propertyTitle} is finalized. Pay ` +
           "your rent now to complete your move-in. (For full legal " +
           "protection, consider stamping it at your local tax office.)";
         payload = tenantRentalsRoute;
 
-        // Tell the landlord too — they sent the agreement and would otherwise
+        // Tell the landlord too - they sent the agreement and would otherwise
         // never learn the tenant accepted, since there's no finalize step now.
         if (landlordId) {
           await writeNotificationOnce(
@@ -1053,10 +1053,10 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             {
               userId: landlordId,
               type: "agreement_finalized",
-              title: "Tenant accepted — agreement finalized",
+              title: "Tenant accepted - agreement finalized",
               body:
                 `${tenantName} accepted the tenancy agreement for ` +
-                `${propertyTitle}. It's finalized — we'll let you know once ` +
+                `${propertyTitle}. It's finalized - we'll let you know once ` +
                 "their rent payment comes through.",
               payload: landlordAgreementsRoute,
             },
@@ -1070,7 +1070,7 @@ export const onActiveRentalUpdated = onDocumentUpdated(
         );
       }
     } else {
-      // Bare agreement upload (agreementUrl set without an agreementStatus —
+      // Bare agreement upload (agreementUrl set without an agreementStatus -
       // e.g. confirming a rental with an attached agreement). Guarded by the
       // `else` so it can't double-fire with the pending_review branch above.
       const urlBefore = (before.agreementUrl as string | undefined) ?? "";
@@ -1122,7 +1122,7 @@ export const onActiveRentalUpdated = onDocumentUpdated(
         stBefore === "moveout_pending" &&
         tenantId
       ) {
-        // Move-out confirmed — by the landlord or the auto-confirm sweep.
+        // Move-out confirmed - by the landlord or the auto-confirm sweep.
         await writeNotificationOnce(
           `rental_${rentalId}_moveout_confirmed_${rev}`,
           {
@@ -1183,7 +1183,7 @@ export const onActiveRentalUpdated = onDocumentUpdated(
     //
     // `tenantContested` carries TWO different disputes and they need different
     // words. Contesting a landlord-ENDED tenancy is "I did not leave". During
-    // a handover it is "the caution deposit never reached me" — money, not the
+    // a handover it is "the caution deposit never reached me" - money, not the
     // ending. Telling a landlord his tenant "added their account of the ended
     // tenancy" when they actually said the deposit never arrived hides the
     // one fact he has to act on, and points him at the wrong screen.
@@ -1229,14 +1229,14 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             `${tenantName} added their account of the ended tenancy for ` +
               `${propertyTitle}${quoted}`,
           // A settlement dispute is resolved on the handover, not the
-          // rentals list — the deposit, the proof and the stage all live there.
+          // rentals list - the deposit, the proof and the stage all live there.
           payload: isSettlement ?
             {route: `/handover/${rentalId}`,
               ...(propertyId ? {propertyId} : {})} :
             landlordRentalsRoute,
         },
       );
-      // Two-sided dispute — loop in the admin either way.
+      // Two-sided dispute - loop in the admin either way.
       await writeAdminAlert({
         type: isSettlement ?
           "handover_settlement_contested" :
@@ -1264,14 +1264,14 @@ export const onActiveRentalUpdated = onDocumentUpdated(
 /**
  * Populate the landlord (and agent) earnings ledger when a completed rent
  * payment is recorded. The `transactions` collection powers the landlord
- * Earnings screen, but nothing ever wrote to it — so earnings always read
+ * Earnings screen, but nothing ever wrote to it - so earnings always read
  * empty. Payout amounts are recomputed from the authoritative
  * `rental_interests` doc rather than trusting the client-written payment
  * fields. Deterministic doc IDs keep it idempotent if the trigger retries.
  *
  * Two rows per rent payment: a landlord row (carries `landlordId`, so the
- * Earnings screen's `where(landlordId == me)` reads it) and — when there's an
- * agent — an agent row (keyed by `agentId` only, so it never shows in the
+ * Earnings screen's `where(landlordId == me)` reads it) and - when there's an
+ * agent - an agent row (keyed by `agentId` only, so it never shows in the
  * landlord's earnings; readable by the agent per the transactions rules).
  *
  * @param {object} event Firestore create event for payments/{reference}.
@@ -1282,7 +1282,7 @@ export const onRentPaymentRecorded = onDocumentWritten(
   async (event) => {
     // Listens on WRITE, not create.
     //
-    // A payment doc is not born complete. It is created, then ENRICHED — the
+    // A payment doc is not born complete. It is created, then ENRICHED - the
     // Paystack webhook adds gatewayStatus/webhookVerified, and the client adds
     // the rental linkage. On create-only this trigger ran against the first,
     // half-written snapshot, found no rentalInterestId, logged
@@ -1305,7 +1305,7 @@ export const onRentPaymentRecorded = onDocumentWritten(
     const db = getFirestore();
 
     // SECURITY (H2): money and the identities that receive it are derived
-    // ONLY from the authoritative rental_interest — NEVER from the
+    // ONLY from the authoritative rental_interest - NEVER from the
     // client-written payment doc. A tampered client can forge a `payments`
     // doc (type:rent, status:completed) with arbitrary landlordId/landlordPayout;
     // trusting those fields would mint a fabricated earnings row. So if the
@@ -1313,14 +1313,14 @@ export const onRentPaymentRecorded = onDocumentWritten(
     // we write NO earnings rows rather than fall back to client figures.
     const riId = pay.rentalInterestId as string | undefined;
     if (!riId) {
-      logger.warn("Rent payment has no rentalInterestId — no earnings written", {
+      logger.warn("Rent payment has no rentalInterestId - no earnings written", {
         reference,
       });
       return;
     }
     const riSnap = await db.collection("rental_interests").doc(riId).get();
     if (!riSnap.exists) {
-      logger.warn("rental_interest not found — no earnings written", {
+      logger.warn("rental_interest not found - no earnings written", {
         reference,
         riId,
       });
@@ -1384,15 +1384,15 @@ export const onRentPaymentRecorded = onDocumentWritten(
     }
 
     // Money visibility: surface each completed rent payment to the admin feed.
-    // Keyed by reference — the trigger now fires on every write to the payment
+    // Keyed by reference - the trigger now fires on every write to the payment
     // doc, so an auto-id alert would stack a new row each time the webhook
     // touched it. Severity is `warning`, not `info`: this is money the
     // platform now owes a landlord (and possibly an agent), and only
-    // warning/critical alerts push to a registered admin device — an `info`
+    // warning/critical alerts push to a registered admin device - an `info`
     // row waits in the feed for someone to happen to look.
     // A payout can come out NEGATIVE when the rent is smaller than the fees
     // taken out of it. The ledger already refuses to write such a row
-    // (landlordPayout > 0), so without this the alert was the only trace —
+    // (landlordPayout > 0), so without this the alert was the only trace -
     // and it announced "₦-3,000 is owed to the landlord", which reads as a
     // display bug rather than the pricing problem it actually is.
     const brokenSplit = landlordPayout < 0 || agentPayout < 0;
@@ -1401,13 +1401,13 @@ export const onRentPaymentRecorded = onDocumentWritten(
       severity: brokenSplit ? "critical" : "warning",
       title: brokenSplit ?
         "Rent paid but the payout split is negative" :
-        "Rent paid — payout due",
+        "Rent paid - payout due",
       body: brokenSplit ?
         `${tenantName} paid ₦${Number(pay.amount ?? 0)
           .toLocaleString("en-NG")} for ${propertyTitle}, but the split ` +
           `computes to ₦${landlordPayout.toLocaleString("en-NG")} for the ` +
           `landlord and ₦${agentPayout.toLocaleString("en-NG")} for the ` +
-          "agent — the fees exceed the rent. No earnings row was written; " +
+          "agent - the fees exceed the rent. No earnings row was written; " +
           "settle this manually." :
         `${tenantName} paid rent for ${propertyTitle}. ` +
         `₦${landlordPayout.toLocaleString("en-NG")} is owed to the landlord` +
@@ -1443,7 +1443,7 @@ export const onRentPaymentRecorded = onDocumentWritten(
 /**
  * Notify the landlord the moment a tenant *pays to rent* (rental interest
  * reaches payment_verified). Before this, a paid applicant produced no push
- * and no Recent-Activities entry — the landlord only found it by digging into
+ * and no Recent-Activities entry - the landlord only found it by digging into
  * Inspections → History. Sends a push (deep-linking to where they accept) and
  * writes a Recent-Activities row. Both are idempotent on trigger retries.
  *
@@ -1462,7 +1462,7 @@ export const onRentalInterestPaid = onDocumentUpdated(
     // Pay-after-accept renamed this: recordRentPayment now writes "rent_paid"
     // (rental_interest_ops.ts), and "payment_verified" is only ever seen on
     // legacy pay-first interests. Watching the old value alone meant this
-    // trigger stopped firing entirely — the landlord's feed never once said
+    // trigger stopped firing entirely - the landlord's feed never once said
     // their tenant had paid the rent, which is the single most important thing
     // that happens on a tenancy. Both are accepted so old docs still work.
     const PAID = ["rent_paid", "payment_verified"];
@@ -1478,7 +1478,7 @@ export const onRentalInterestPaid = onDocumentUpdated(
     const propertyTitle =
       (after.propertyTitle as string | undefined) ?? "your property";
     // Carried into the activity row as relatedId so the tap can land on the
-    // exact inspection the landlord accepts from — the subtitle tells them to
+    // exact inspection the landlord accepts from - the subtitle tells them to
     // go to Inspections → History, so the tap must go there too.
     const inspectionRequestId =
       (after.inspectionRequestId as string | undefined) ?? "";
@@ -1636,7 +1636,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
 
     // ---- Status: pendingPayment → pending / pendingVerification ----
     // Deferred Batch A push: handler wasn't notified at create time
-    // because payment hadn't arrived. Now it has — push them.
+    // because payment hadn't arrived. Now it has - push them.
     if (
       statusChanged &&
       beforeStatus === "pendingPayment" &&
@@ -1665,7 +1665,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       await upsertAdminAlert(`insplc_${requestId}`, {
         type: "inspection_lifecycle",
         severity: "info",
-        title: "Inspection paid — awaiting approval",
+        title: "Inspection paid - awaiting approval",
         body:
           `${tenantName} paid for the inspection of ${propertyTitle}. ` +
           "Awaiting the handler's approval.",
@@ -1693,7 +1693,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           {
             userId: recipientId,
             type: "inspection_confirmed",
-            title: "Inspection confirmed — tenant paid",
+            title: "Inspection confirmed - tenant paid",
             body:
               `${tenantName} paid for the inspection of ${propertyTitle}. ` +
               `The visit is confirmed for ${slot}.`,
@@ -1708,7 +1708,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       await upsertAdminAlert(`insplc_${requestId}`, {
         type: "inspection_lifecycle",
         severity: "info",
-        title: "Inspection confirmed — tenant paid",
+        title: "Inspection confirmed - tenant paid",
         body:
           `${tenantName} paid for the inspection of ${propertyTitle}. ` +
           "The visit is confirmed.",
@@ -1752,7 +1752,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
 
     // ---- Status: → cancelled ----
     // Catches every cancel path (tenant, handler, or the nightly sweep). Keeps
-    // the admin lifecycle alert current AND — the gap this fixes — writes a
+    // the admin lifecycle alert current AND - the gap this fixes - writes a
     // Recent-Activities row for the landlord, which no cancel path did before.
     if (statusChanged && afterStatus === "cancelled") {
       await upsertAdminAlert(`insplc_${requestId}`, {
@@ -1768,7 +1768,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       });
 
       // Only surface it to the landlord for inspections they already knew
-      // about — skip the unpaid-abandon (pendingPayment) case they never saw.
+      // about - skip the unpaid-abandon (pendingPayment) case they never saw.
       const knownStates = [
         "pending", "pendingVerification", "approved", "declinedByAgent",
       ];
@@ -1845,7 +1845,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           type: "inspection_approved",
           title: "Inspection Approved",
           body:
-            `Good news — your inspection for ${propertyTitle} was ` +
+            `Good news - your inspection for ${propertyTitle} was ` +
             "approved",
           payload: {
             route: tenantRoute,
@@ -1910,7 +1910,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
 
     // ---- Status: pending → declined (landlord-handled decline) ----
     // Tenant gets pushed. Skipped when the decline came from a
-    // server-side guard — those paths emit their own tenant
+    // server-side guard - those paths emit their own tenant
     // notification with accurate wording.
     if (
       statusChanged &&
@@ -1985,7 +1985,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     }
 
     // ---- Status: → completed ----
-    // Tenant only — review prompt. Landlord/agent see it in feed.
+    // Tenant only - review prompt. Landlord/agent see it in feed.
     if (
       statusChanged &&
       afterStatus === "completed" &&
@@ -2127,7 +2127,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     // ---- Field: tenant confirms their half of the meeting ----
     // Notify the handler(s) so they know to confirm their own half and
     // complete the inspection. We push on the tenant's confirmation (not the
-    // handler's) — when the handler confirms, the tenant is right there and
+    // handler's) - when the handler confirms, the tenant is right there and
     // the inspection_completed push follows soon after anyway.
     if (
       before.tenantConfirmedMet !== true &&
@@ -2207,7 +2207,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
 
     // ============ RESCHEDULE TRANSITIONS ============
     // The reschedule side-channel uses the `rescheduleProposal` map.
-    // Decline is NOT handled here — declineReschedule flips status
+    // Decline is NOT handled here - declineReschedule flips status
     // to "declined", which is already covered by the status diff
     // blocks above.
 
@@ -2262,7 +2262,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
     };
 
     /**
-     * uid for a given role — the activity feed records who acted, not just
+     * uid for a given role - the activity feed records who acted, not just
      * their name, so the row is attributable and passes the actorId read rule.
      *
      * @param {string} role The role.
@@ -2331,7 +2331,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
             },
           },
         );
-        // A reschedule never reached the activity feed — none of the five
+        // A reschedule never reached the activity feed - none of the five
         // reschedule paths in inspection_service call _createActivity, so the
         // landlord got a push and then found no record of it anywhere.
         await writeActivityOnce(
@@ -2443,7 +2443,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
         },
       );
 
-      // The approval is the outcome that matters, so it lands in BOTH feeds —
+      // The approval is the outcome that matters, so it lands in BOTH feeds -
       // the proposer already knows they asked, but the approving side needs
       // the record too. Only the proposer gets the push (the approver just
       // performed the action).
@@ -2512,7 +2512,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
             type: "reschedule_abandoned",
             title: "Reschedule withdrawn",
             subtitle:
-              `${proposerName} dropped their reschedule proposal — ` +
+              `${proposerName} dropped their reschedule proposal - ` +
               "the original date stands",
             propertyId: reschedPropertyId,
             propertyTitle,
@@ -2657,7 +2657,7 @@ export const onChatMessageCreated = onDocumentCreated(
 
     // ONE rolling notification per conversation per recipient, not one per
     // message. The old `msg_{messageId}_{rid}` id meant a hundred messages
-    // became a hundred inbox rows — and since the inbox reads the 50 newest
+    // became a hundred inbox rows - and since the inbox reads the 50 newest
     // docs, a chatty thread buried every inspection, payment and lease
     // notification below two full pages of chat.
     //
@@ -2746,11 +2746,11 @@ export const resolveAccount = onCall(
   {
     secrets: [paystackSecret],
     timeoutSeconds: 30,
-    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    // M4: enforced - the Flutter app sends Play Integrity App Check tokens.
     enforceAppCheck: true,
   },
   async (request) => {
-    // 1. Auth check — only signed-in users may call this.
+    // 1. Auth check - only signed-in users may call this.
     if (!request.auth) {
       throw new HttpsError(
         "unauthenticated",
@@ -2794,7 +2794,7 @@ export const resolveAccount = onCall(
 
       if (!resp.ok) {
         // Read Paystack's own explanation FIRST. It used to be discarded, so
-        // every unhandled status collapsed into "could not reach Paystack" —
+        // every unhandled status collapsed into "could not reach Paystack" -
         // which is false for anything Paystack actually answered, and sends
         // people to retry a request that will fail identically forever.
         let detail = "";
@@ -2802,12 +2802,12 @@ export const resolveAccount = onCall(
           const errBody = (await resp.json()) as {message?: string};
           if (typeof errBody.message === "string") detail = errBody.message;
         } catch {
-          // Non-JSON body (gateway HTML, etc.) — nothing to quote.
+          // Non-JSON body (gateway HTML, etc.) - nothing to quote.
         }
 
         // Paystack rate-limits /bank/resolve per integration. Surface 429
         // as resource-exhausted so the client says "slow down" rather than
-        // "service unavailable" — the endpoint is up, just throttled.
+        // "service unavailable" - the endpoint is up, just throttled.
         if (resp.status === 429) {
           logger.warn("Paystack resolve rate-limited (429)", {
             uid: request.auth.uid,
@@ -2823,7 +2823,7 @@ export const resolveAccount = onCall(
         // unresolvable. All three are about the request, not our
         // connectivity, and all three were previously indistinguishable from
         // an outage. Note 400 is also what TEST-mode keys return for a real
-        // account number — resolution needs live keys — so quoting Paystack
+        // account number - resolution needs live keys - so quoting Paystack
         // verbatim is what makes that diagnosable at all.
         if (resp.status === 400 || resp.status === 422 || resp.status === 404) {
           logger.warn("Paystack resolve rejected the request", {
@@ -2884,12 +2884,12 @@ export const resolveAccount = onCall(
 // These intentionally preserve the exact request/response shape the old
 // client code used, so PaystackService and its four call sites need no
 // behavioural change. Server-authoritative writes to the `payments`
-// collection are a separate, later hardening step — these functions do NOT
+// collection are a separate, later hardening step - these functions do NOT
 // write Firestore; the client still records payments for now.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface InitializePaymentInput {
-  amount?: unknown; // Naira (not kobo) — matches old client contract.
+  amount?: unknown; // Naira (not kobo) - matches old client contract.
   type?: unknown;
   metadata?: Record<string, unknown>;
 }
@@ -2914,7 +2914,7 @@ export const initializePayment = onCall(
   {
     secrets: [paystackSecret],
     timeoutSeconds: 30,
-    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    // M4: enforced - the Flutter app sends Play Integrity App Check tokens.
     enforceAppCheck: true,
   },
   async (request) => {
@@ -2979,7 +2979,7 @@ export const initializePayment = onCall(
     // unreachable and remains only as a belt-and-braces default.
     const serverAmount = await resolveServerAmount(type, uid, callerMetadata);
     if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
-      logger.warn("Client/server amount mismatch — charging server amount", {
+      logger.warn("Client/server amount mismatch - charging server amount", {
         uid,
         type,
         clientAmount: amount,
@@ -3076,7 +3076,7 @@ export const verifyPayment = onCall(
   {
     secrets: [paystackSecret],
     timeoutSeconds: 30,
-    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    // M4: enforced - the Flutter app sends Play Integrity App Check tokens.
     enforceAppCheck: true,
   },
   async (request) => {
@@ -3166,22 +3166,22 @@ export const refundPayment = onCall(
   {
     secrets: [paystackSecret],
     timeoutSeconds: 30,
-    // M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+    // M4: enforced - the Flutter app sends Play Integrity App Check tokens.
     enforceAppCheck: true,
   },
   async (request) => {
     // ADMIN ONLY. This used to require nothing but a signed-in caller: no
     // check that the reference belonged to them, no amount check, no lookup
     // against `payments`. Since `verificationPaymentReference` sits on the
-    // user document — readable by any authenticated account — anyone could
+    // user document - readable by any authenticated account - anyone could
     // read a stranger's reference and reverse their charge. It also let a
     // tenant refund their own inspection fee after the inspection had been
     // conducted, because nothing revokes the entitlement on refund.
     //
     // Admin-only rather than owner-scoped because a refund is a decision, not
     // a self-service action: who is owed money back is settled on the admin
-    // Refunds queue. No client calls this — the mobile `initiateRefund`
-    // wrapper has no call sites — so nothing legitimate loses access.
+    // Refunds queue. No client calls this - the mobile `initiateRefund`
+    // wrapper has no call sites - so nothing legitimate loses access.
     assertAdmin(request.auth);
     // assertAdmin throws when auth is absent, but it isn't a type guard.
     const callerUid = request.auth!.uid;
@@ -3235,7 +3235,7 @@ export const refundPayment = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// paystackWebhook (G6 — server-authoritative payment record)
+// paystackWebhook (G6 - server-authoritative payment record)
 //
 // Closes the gap where every payment was CLIENT-recorded: if the app died,
 // went offline, or was tampered with after a charge, the money moved but no
@@ -3250,7 +3250,7 @@ export const refundPayment = onCall(
 //
 // Signature: HMAC-SHA512 of the RAW request body with the Paystack secret key,
 // compared to the `x-paystack-signature` header. This is the ONLY auth (App
-// Check can't apply — the caller is Paystack, not our app), so it runs before
+// Check can't apply - the caller is Paystack, not our app), so it runs before
 // any work and rejects anything that doesn't match.
 //
 // SETUP: register the deployed URL as the webhook in the Paystack dashboard
@@ -3287,7 +3287,7 @@ export const paystackWebhook = onRequest(
       sigBuf.length !== expBuf.length ||
       !timingSafeEqual(sigBuf, expBuf)
     ) {
-      logger.warn("Paystack webhook: signature mismatch — rejected");
+      logger.warn("Paystack webhook: signature mismatch - rejected");
       res.status(401).send("Invalid signature");
       return;
     }
@@ -3342,7 +3342,7 @@ async function reconcilePaystackCharge(
     const snap = await tx.get(ref);
     const now = FieldValue.serverTimestamp();
 
-    // Gateway-authoritative fields — never sourced from the client.
+    // Gateway-authoritative fields - never sourced from the client.
     const authoritative = {
       reference,
       gatewayStatus,
@@ -3361,7 +3361,7 @@ async function reconcilePaystackCharge(
       // The purpose ids are carried over from the charge metadata, not just
       // userId/paymentType. Without them an orphaned charge could not be tied
       // back to WHAT it paid for, and resolveServerAmount could not tell that
-      // this rental had already been charged — which is exactly how the same
+      // this rental had already been charged - which is exactly how the same
       // rent got paid twice: the client died after the charge, nothing flipped
       // rentPaymentStatus, and the next initialize saw an unpaid rental.
       const purposeIds: Record<string, string> = {};
@@ -3424,14 +3424,14 @@ async function reconcilePaystackCharge(
 // Looks up a user's email address by phone number so the client can complete
 // a phone+password sign-in flow. This replaces a direct, unauthenticated
 // Firestore query against the `users` collection (which previously required
-// `allow list: if true` — see security audit finding F1.1).
+// `allow list: if true` - see security audit finding F1.1).
 //
 // Because this CF is callable by unauthenticated clients (the user is in the
 // process of signing in), it would otherwise be a phone-enumeration oracle.
 // Three layers of defense apply:
 //   1. Per-IP rate limit on total lookups in a rolling window.
 //   2. Per-IP cap on distinct phone numbers queried in a rolling window.
-//   3. App Check enforcement (currently disabled — see TODO).
+//   3. App Check enforcement (currently disabled - see TODO).
 //
 // IP addresses are SHA-256-hashed before storage so we don't retain raw IPs
 // (NDPA hygiene). The hashed values are the document IDs in /_rate_limits.
@@ -3667,7 +3667,7 @@ export const lookupEmailByPhone = onCall(
  * For both `active_rentals` and `tenancy_links`, this:
  *  1. Sends lease-end reminders at T-30, T-7 and T-1 days. Reminder notif IDs
  *     are deterministic (`lease_reminder_T{n}_{docId}`), so `writeNotificationOnce`
- *     dedups them — a given threshold fires exactly once even across daily runs.
+ *     dedups them - a given threshold fires exactly once even across daily runs.
  *  2. Flips active-ish docs whose `leaseEndDate` has passed to `grace_locked`
  *     (server is the source of truth for this transition) and sends a one-time
  *     `lease_ended_{docId}` notification.
@@ -3675,7 +3675,7 @@ export const lookupEmailByPhone = onCall(
  * Scale note: reads all active docs daily (Approach 1). Fine at launch scale;
  * switch to leaseEndDate range queries + composite indexes at high volume.
  *
- * Docs with no `leaseEndDate` (legacy links) are skipped — they never expire.
+ * Docs with no `leaseEndDate` (legacy links) are skipped - they never expire.
  */
 export const leaseLifecycleSweep = onSchedule(
   {schedule: "0 8 * * *", timeZone: "Africa/Lagos"},
@@ -3709,7 +3709,7 @@ export const leaseLifecycleSweep = onSchedule(
       for (const doc of snap.docs) {
         const data = doc.data();
         const leaseEndTs = data.leaseEndDate as Timestamp | undefined;
-        if (!leaseEndTs) continue; // legacy/no-term — never expires
+        if (!leaseEndTs) continue; // legacy/no-term - never expires
 
         const leaseEndMs = leaseEndTs.toMillis();
         const tenantId = data.tenantId as string | undefined;
@@ -3732,7 +3732,7 @@ export const leaseLifecycleSweep = onSchedule(
             `lease_ended_${doc.id}`,
             {
               userId: tenantId,
-              title: "Lease ended — action needed",
+              title: "Lease ended - action needed",
               body: isLinked ?
                 `Your lease for ${propertyTitle} has ended. Pay rent to ` +
                   "continue, or move out." :
@@ -3807,7 +3807,7 @@ export const leaseLifecycleSweep = onSchedule(
 // setAdminClaim
 //
 // Grants or revokes the admin / superAdmin custom claim on a target user.
-// Caller must hold the superAdmin claim — admins cannot promote each other
+// Caller must hold the superAdmin claim - admins cannot promote each other
 // or escalate themselves. The bootstrap superAdmin is set out-of-band via
 // the local scripts/bootstrap-superadmin.ts script (never via this CF).
 //
@@ -3840,7 +3840,7 @@ export const setAdminClaim = onCall(
       );
     }
 
-    // 2. Caller must be superAdmin. Read from the token, not Firestore —
+    // 2. Caller must be superAdmin. Read from the token, not Firestore -
     //    Firestore could be stale or spoofed; the token is signed by Auth.
     const callerClaims = request.auth.token ?? {};
     if (callerClaims.superAdmin !== true) {
@@ -3935,7 +3935,7 @@ export const setAdminClaim = onCall(
 //
 // Firestore trigger on inspection_requests/{requestId} update. When an
 // inspection's status transitions to "completed" for the first time, credits
-// the handler (agent if agent-handled, else landlord) with ₦7,000 — the flat
+// the handler (agent if agent-handled, else landlord) with ₦7,000 - the flat
 // handler fee under the current pricing model. Sets earningsCredited: true
 // on the inspection doc to make the operation idempotent.
 //
@@ -3943,7 +3943,7 @@ export const setAdminClaim = onCall(
 // to credit earnings, and the Firestore rule was too permissive (any
 // authenticated user could update earnings fields on any user). After this
 // CF ships and the corresponding rule lockdown deploys, clients cannot write
-// to earnings fields at all — credit flows exclusively through this trigger.
+// to earnings fields at all - credit flows exclusively through this trigger.
 //
 // Idempotency: the transaction reads earningsCredited first; if already true,
 // exits as no-op. This makes the trigger safe against re-firing.
@@ -3976,7 +3976,7 @@ export const creditInspectionEarnings = onDocumentUpdated(
     // economic control and it belongs on the side that moves the money.
     const paymentStatus = after.paymentStatus as string | undefined;
     if (paymentStatus !== "paid") {
-      logger.warn("Inspection completed without a paid fee — no credit", {
+      logger.warn("Inspection completed without a paid fee - no credit", {
         requestId,
         paymentStatus,
       });
@@ -4006,8 +4006,8 @@ export const creditInspectionEarnings = onDocumentUpdated(
       return;
     }
 
-    // Handler fee comes from config/pricing — the same document the tenant is
-    // charged from — so the payout can never drift from the booking fee. Was a
+    // Handler fee comes from config/pricing - the same document the tenant is
+    // charged from - so the payout can never drift from the booking fee. Was a
     // hardcoded 7000 that had to be kept in sync with the client by hand. Read
     // before the transaction, since getPricing does its own get.
     const handlerEarnings = (await getPricing()).inspection.handler;
@@ -4056,7 +4056,7 @@ export const creditInspectionEarnings = onDocumentUpdated(
         amount: handlerEarnings,
       });
     } catch (err) {
-      // Don't throw — we don't want the trigger to retry indefinitely on
+      // Don't throw - we don't want the trigger to retry indefinitely on
       // permanent errors. Logged for admin investigation.
       logger.error("Failed to credit inspection earnings", {
         requestId,
@@ -4075,21 +4075,21 @@ export const creditInspectionEarnings = onDocumentUpdated(
 // tenancy_links PLUS the number of active_rentals in an occupying state
 // (active or expiring_soon). Either source changing recomputes the total.
 //
-// Recompute-from-source (not increment) makes it self-healing — it can't
+// Recompute-from-source (not increment) makes it self-healing - it can't
 // drift. Moving the write server-side also closes the category-2 permission
 // gap: a tenant accepting a link can't write to the landlord's property doc
 // directly, and now doesn't need to.
 //
 // A property can legitimately hold BOTH a rental tenant (inspection → paid
 // rent) and a directly-linked pre-existing tenant, so both sources must be
-// summed — neither may clobber the other.
+// summed - neither may clobber the other.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // active_rental statuses that occupy a slot. expired/terminated free it.
-// grace_locked still occupies — the tenant may still be living there while
+// grace_locked still occupies - the tenant may still be living there while
 // they decide to renew or move out; the slot frees only on actual move-out.
 // `pending_payment` is included so a property slot is HELD the moment a tenant
-// is accepted (rental created), not only once they pay — one slot = one tenant.
+// is accepted (rental created), not only once they pay - one slot = one tenant.
 // The unit goes off-market during the agreement window and comes back only if
 // the accept lapses unpaid (rentalInterestStrandSweep releases it). Note this is
 // occupancy only: the tenant is NOT flagged active on their dashboard until they
@@ -4100,13 +4100,13 @@ const OCCUPYING_RENTAL_STATUSES = [
   "grace_locked",
   "pending_payment",
   // The tenant still occupies while a move-out request awaits the landlord's
-  // handover confirmation — the unit must not re-list until it's confirmed.
+  // handover confirmation - the unit must not re-list until it's confirmed.
   "moveout_pending",
 ];
 
 /**
  * Recompute currentTenantsCount + isAvailable for one property from both
- * occupancy sources and write the result. Admin SDK — bypasses rules.
+ * occupancy sources and write the result. Admin SDK - bypasses rules.
  *
  * @param {string} propertyId The property to recompute.
  * @return {Promise<void>}
@@ -4143,7 +4143,7 @@ async function recomputePropertyOccupancy(propertyId: string): Promise<void> {
   // settled: condition recorded, deposit dealt with, tenant confirmed or the
   // claim recorded against the landlord. ClearRent never holds the caution
   // deposit, so relisting is the only leverage that makes a landlord settle up
-  // — which means emptiness alone must not restore availability.
+  // - which means emptiness alone must not restore availability.
   const handoverPending =
     propertySnap.get("handoverPending") === true;
 
@@ -4206,14 +4206,14 @@ export const onTenancyLinkOccupancyChange = onDocumentUpdated(
  * Open the caretaker thread for a unit that has just become occupied.
  *
  * `openCaretakerThread` is also called when an invitation is accepted, but it
- * bails there if no one lives in the unit yet — and nothing ever re-ran it. A
+ * bails there if no one lives in the unit yet - and nothing ever re-ran it. A
  * landlord who appoints a caretaker for a VACANT unit (the common case: you
  * arrange cover before or between tenancies) therefore never got a thread at
  * all, so the caretaker, tenant and landlord had nowhere to talk. Verified
  * against prod on 2026-08-21: zero `caretaker_*` conversations had ever
  * existed.
  *
- * Idempotent by construction — the conversation id is deterministic and the
+ * Idempotent by construction - the conversation id is deterministic and the
  * write merges, so if the accept path already opened the thread this is a
  * no-op.
  *
@@ -4257,7 +4257,7 @@ export const onActiveRentalCreatedOccupancy = onDocumentCreated(
     const propertyId = snap.data().propertyId as string | undefined;
     if (!propertyId) return;
     // A rental is born `pending_payment`, which is already an occupying
-    // status — so the tenant exists from creation and the thread can open now.
+    // status - so the tenant exists from creation and the thread can open now.
     await openCaretakerThreadIfAppointed(propertyId);
     try {
       await recomputePropertyOccupancy(propertyId);
@@ -4333,14 +4333,14 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
     }
 
     // A tenancy that ended through the move-out flow leaves the PROPERTY
-    // gated. The tenant is free either way — their side is over — but the unit
+    // gated. The tenant is free either way - their side is over - but the unit
     // is not relistable until the handover is settled: condition recorded,
     // deposit dealt with, and the outgoing tenant either paid or their claim
     // recorded. ClearRent never holds the caution deposit, so withholding the
     // relist is the only leverage there is.
     //
     // Written BEFORE the recompute below, which reads the flag when deciding
-    // availability. Setting it afterwards would leave a window — and in fact
+    // availability. Setting it afterwards would leave a window - and in fact
     // leave the unit permanently available, since the recompute would already
     // have flipped it on the way past.
     const endedViaMoveOut =
@@ -4354,8 +4354,8 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
           handoverRentalId: event.params.rentalId,
           updatedAt: FieldValue.serverTimestamp(),
         });
-        // The tenant can film from the moment they give notice — while they
-        // still have keys — so by the time the tenancy ends the evidence is
+        // The tenant can film from the moment they give notice - while they
+        // still have keys - so by the time the tenancy ends the evidence is
         // usually already in. Asking for it again would be asking someone to
         // photograph a property they have just handed back.
         const tenantId = after.tenantId as string | undefined;
@@ -4402,7 +4402,7 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
       }
     }
 
-    // Rental left the occupying statuses (ended / terminated) — clear the
+    // Rental left the occupying statuses (ended / terminated) - clear the
     // tenant's denormalized active-rental flag if they have no other occupancy.
     if (!isOccupying) {
       const tenantId = after.tenantId as string | undefined;
@@ -4424,8 +4424,8 @@ export const onActiveRentalStatusOccupancy = onDocumentUpdated(
  * Releases the property once a handover reaches `closed`.
  *
  * The counterpart to the gate opened in onActiveRentalStatusOccupancy. Kept
- * beside it rather than in handover_ops.ts because it is the same concern —
- * who owns `isAvailable` — and recomputePropertyOccupancy lives here.
+ * beside it rather than in handover_ops.ts because it is the same concern -
+ * who owns `isAvailable` - and recomputePropertyOccupancy lives here.
  *
  * Deliberately keyed on the stage reaching `closed` rather than on any single
  * route to it: the tenant confirming, the silence sweep recording the
@@ -4475,7 +4475,7 @@ export const onHandoverClosed = onDocumentUpdated(
 //
 // Grants/revokes the verificationExempt custom claim on a target user and
 // mirrors it to their user doc. Exempt accounts bypass the email-verification
-// nudge — intended ONLY for test accounts with non-deliverable emails.
+// nudge - intended ONLY for test accounts with non-deliverable emails.
 // Caller must be superAdmin. Strip these before launch; logs every change.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4530,7 +4530,7 @@ export const setVerificationExempt = onCall(
       {merge: true},
     );
 
-    logger.warn("VERIFICATION EXEMPT CHANGED — strip before launch", {
+    logger.warn("VERIFICATION EXEMPT CHANGED - strip before launch", {
       callerUid: request.auth.uid, targetUid, exempt,
     });
 

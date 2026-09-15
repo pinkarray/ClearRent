@@ -3,7 +3,7 @@
  *
  *   submitNin
  *     Caller: any authenticated user, writing only to their OWN user doc.
- *     Validates the NIN server-side (exactly 11 digits — never trust the
+ *     Validates the NIN server-side (exactly 11 digits - never trust the
  *     client regex), encrypts it with AES-256-GCM via nin_crypto, and
  *     writes the versioned ciphertext to users/{uid}.nin.
  *
@@ -16,7 +16,7 @@
  *   - Auth guard is assertSelf(auth, auth.uid): enforces an authenticated
  *     caller and writes scoped to that caller's own document. There is no
  *     other party's uid in play (a user submits their own NIN), so this is
- *     the natural use of the helper — auth-present + self-scoped.
+ *     the natural use of the helper - auth-present + self-scoped.
  *   - enforceAppCheck: false to match the debug-build workaround used by
  *     the payment and renewal callables (Play Integrity fails before a
  *     Play Store upload; re-enable across all callables post-submission).

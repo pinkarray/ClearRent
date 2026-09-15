@@ -208,7 +208,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) return 'Please enter your email address';
-    // The TLD was capped at 4 characters, which refused real addresses —
+    // The TLD was capped at 4 characters, which refused real addresses -
     // .online, .email, .store, .agency, and .africa among them. A user with a
     // perfectly good address was told it was invalid and could go no further.
     // Also rejects a leading/trailing dot and doubled dots, which the previous
@@ -309,7 +309,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   /// Refuse the submit and say why, at the top of the screen.
   ///
   /// Every path out of validation used to be a bare `return` or an inline
-  /// message rendered next to the field — which on this form is usually
+  /// message rendered next to the field - which on this form is usually
   /// scrolled out of sight. The button looked dead and the user had to hunt.
   void _rejectSubmit(String reason) {
     setState(() => _errorMessage = reason);
@@ -490,7 +490,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   imageFile: _profileImageFile, size: 100, showEditBadge: true, onTap: _pickProfileImage)),
                 const SizedBox(height: 24),
 
-                // Phone number display (read-only — already verified)
+                // Phone number display (read-only - already verified)
                 if (_authService.currentUser?.phoneNumber != null) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -581,7 +581,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   label: 'Email Address', hint: 'you@example.com', controller: _emailController,
                   keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next,
                   // `username` beside a `newPassword` field is what tells an
-                  // autofill service this is a REGISTRATION form — the thing
+                  // autofill service this is a REGISTRATION form - the thing
                   // that makes it offer to generate and save a password.
                   autofillHints: const [AutofillHints.username],
                   validator: _validateEmail,

@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// admin_review_ops.ts — admin review actions that were previously raw client
+// admin_review_ops.ts - admin review actions that were previously raw client
 // updateDoc calls and so bypassed the immutable admin_audit_log (money-flow
 // certification "audit gap", Medium). Routing them through admin-SDK callables
 // gives every property-doc verdict and inspection-review resolution a
-// server-authoritative, immutable audit entry — the same accountability the
+// server-authoritative, immutable audit entry - the same accountability the
 // money-ops CFs already have.
 //
-//   adminReviewPropertyDoc  — verify / reject / publish a property's ownership
+//   adminReviewPropertyDoc  - verify / reject / publish a property's ownership
 //                             doc (and its building, if grouped).
-//   adminResolveInspection  — refund or complete an inspection stuck in the
+//   adminResolveInspection  - refund or complete an inspection stuck in the
 //                             admin review queue.
 //
 // admin_audit_log is `create: if false` (admin SDK only), so the audit trail
@@ -97,7 +97,7 @@ export const adminReviewPropertyDoc = onCall(callableOptions, async (request) =>
         });
       }
     } else {
-      // publish — a grouped unit whose building C of O is already verified.
+      // publish - a grouped unit whose building C of O is already verified.
       tx.update(propRef, {isVerified: true, isAvailable: true, updatedAt: now});
     }
   });
@@ -181,7 +181,7 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
       return 0;
     }
 
-    // refund — clamp to (0, totalFee]. Setting paymentStatus=refunded triggers
+    // refund - clamp to (0, totalFee]. Setting paymentStatus=refunded triggers
     // onInspectionRefundTriggered to create the refund payout record.
     const totalFee = data.totalFee;
     if (typeof totalFee !== "number" || !(totalFee > 0)) {
@@ -200,8 +200,8 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
       refundAmount: amount,
       refundReason:
         amount < totalFee ?
-          "Resolved by admin — partial refund (non-refundable cut retained)" :
-          "Resolved by admin — inspection not completed",
+          "Resolved by admin - partial refund (non-refundable cut retained)" :
+          "Resolved by admin - inspection not completed",
       resolvedByAdmin: true,
       refundedAt: now,
       updatedAt: now,
@@ -211,7 +211,7 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
   });
 
   // Close any open admin_alerts for this inspection (e.g. the dispute alert)
-  // now that it's resolved, so the dashboard queue clears. Best-effort —
+  // now that it's resolved, so the dashboard queue clears. Best-effort -
   // a failure here shouldn't undo the resolution above.
   try {
     await resolveAdminAlertsForTarget(requestId, adminUid);
@@ -242,7 +242,7 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
  * `profile_identity_change` is the one alert type with no observable
  * completion: a user renames themselves, an admin is meant to eyeball it for
  * account takeover, and nothing anywhere records that they did. So it sat in
- * the queue until someone pressed Dismiss — which writes no audit entry, so
+ * the queue until someone pressed Dismiss - which writes no audit entry, so
  * "was this reviewed?" had no answer afterwards, and the row read as clutter
  * rather than the fraud control it is.
  *
@@ -273,7 +273,7 @@ export const adminMarkIdentityReviewed = onCall(
     });
 
     // Only this type. A user doc can carry a sign-up or verification notice at
-    // the same time, and those are closed by their own decision — clearing
+    // the same time, and those are closed by their own decision - clearing
     // them here would hide someone still waiting to be verified.
     const closed = await resolveAdminAlertsForTarget(
       uid, adminUid, ["profile_identity_change"],

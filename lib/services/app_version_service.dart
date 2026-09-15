@@ -9,12 +9,12 @@ import '../core/utils/app_info.dart';
 ///
 /// Same live-config pattern as `PricingService`'s `config/areas` listener: a
 /// value admin can change with no Play release. That matters more here than
-/// anywhere else — it lets a bad build be retired without spending another
+/// anywhere else - it lets a bad build be retired without spending another
 /// version code, and version codes are a finite resource we have already
 /// burned several of.
 ///
 /// **This class fails open, deliberately and at every step.** A missing doc, an
-/// unreadable doc, a malformed field, an unparseable local build number — all
+/// unreadable doc, a malformed field, an unparseable local build number - all
 /// of them resolve to "not blocked". A typo in `minSupportedBuild` would
 /// otherwise brick every install simultaneously, and the only recovery would be
 /// shipping a new release to users who can no longer be reached. The failure
@@ -44,7 +44,7 @@ class AppVersionService {
   /// The last resolved gate. Non-blocking until the config says otherwise.
   AppVersionGate get current => _current;
 
-  /// Emits whenever the remote config changes. Replays nothing on subscribe —
+  /// Emits whenever the remote config changes. Replays nothing on subscribe -
   /// read [current] for the state so far.
   Stream<AppVersionGate> get changes => _controller.stream;
 
@@ -112,7 +112,7 @@ class AppVersionService {
 }
 
 class AppVersionGate {
-  /// This build is below `minSupportedBuild` — the app is unusable.
+  /// This build is below `minSupportedBuild` - the app is unusable.
   final bool blocked;
 
   /// A newer build exists. Worth a nudge, not a wall.

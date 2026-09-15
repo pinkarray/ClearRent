@@ -158,7 +158,7 @@ class InspectionRequest {
   final String? ratedUserType; // 'agent' or 'landlord'
   final String? ratedUserName;
 
-  // Tenant dispute ("Report a problem") — distinct from rating. Written by the
+  // Tenant dispute ("Report a problem") - distinct from rating. Written by the
   // reportInspectionIssue Cloud Function; an admin resolves it from the queue.
   final bool disputed;
   final String? disputeStatus; // 'open' | 'resolved'
@@ -191,10 +191,10 @@ class InspectionRequest {
   /// Snapshotted from the property at request time
   /// (`inspection_service.dart:377`). A landlord who lives in the unit is
   /// already there on inspection day, so "I'm on my way" and "I've arrived"
-  /// are nonsense to them — see [handlerIsResident].
+  /// are nonsense to them - see [handlerIsResident].
   final bool landlordLivesInProperty;
 
-  // Met confirmation — a meeting is a two-person fact, so each party records
+  // Met confirmation - a meeting is a two-person fact, so each party records
   // only their OWN half. `met` (which gates completion) is derived: true only
   // when both have confirmed. Neither side can assert the meeting alone.
   final bool tenantConfirmedMet;
@@ -326,7 +326,7 @@ class InspectionRequest {
       landlordOverrideDeadline != null && 
       DateTime.now().isBefore(landlordOverrideDeadline!);
   
-  // If completedByType is recorded use it — it reflects who actually conducted the inspection.
+  // If completedByType is recorded use it - it reflects who actually conducted the inspection.
   // Fall back to agentId check for older records that predate this field.
   bool get isAgentHandled => completedByType != null
       ? completedByType == 'agent'
@@ -343,7 +343,7 @@ class InspectionRequest {
 
   // On-the-way helpers
   /// True if current time is within 2 hours of the scheduled slot.
-  /// Mirror of isWithinRescheduleWindow — reschedule is allowed
+  /// Mirror of isWithinRescheduleWindow - reschedule is allowed
   /// before the cutoff, on-way is allowed after.
   bool get isWithinOnWayWindow {
     final cutoff = requestedDate.subtract(const Duration(hours: 2));
@@ -363,7 +363,7 @@ class InspectionRequest {
 
   /// The handler is already at the property because they live in it.
   ///
-  /// Only when the landlord handles it themselves — an assigned agent still
+  /// Only when the landlord handles it themselves - an assigned agent still
   /// travels, whoever lives there. Travel language ("on my way", "I've
   /// arrived") is meaningless for these handlers, so their UI collapses to a
   /// single "I'm ready" confirmation.
@@ -372,7 +372,7 @@ class InspectionRequest {
 
   // Met confirmation helpers
   /// A meeting happened only when BOTH parties have confirmed it. Derived, so
-  /// no single party's flag can assert it — the anti-fake-meet guard now cuts
+  /// no single party's flag can assert it - the anti-fake-meet guard now cuts
   /// both ways (handler can't fake a no-show tenant; tenant can't unlock the
   /// handler's payout alone).
   bool get met => tenantConfirmedMet && handlerConfirmedMet;
@@ -384,8 +384,8 @@ class InspectionRequest {
   bool get handlerAwaitingTenantMet => handlerConfirmedMet && !tenantConfirmedMet;
 
   /// True when the tenant can tap "I've met the agent/landlord".
-  /// Requires both physically arrived — you can't have met someone who
-  /// isn't there — and that the tenant hasn't already confirmed.
+  /// Requires both physically arrived - you can't have met someone who
+  /// isn't there - and that the tenant hasn't already confirmed.
   bool get canTenantMarkMet =>
       bothArrived && !tenantConfirmedMet && isConfirmed;
 
@@ -394,7 +394,7 @@ class InspectionRequest {
   bool get canHandlerMarkMet =>
       bothArrived && !handlerConfirmedMet && isConfirmed;
 
-  /// True when the handler may now tap Mark as Completed — only once both
+  /// True when the handler may now tap Mark as Completed - only once both
   /// halves of the meeting are confirmed.
   bool get canMarkComplete => met && isConfirmed;
 

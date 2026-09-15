@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// inspection_reminders_ops.ts — day-of reminders so nobody forgets a scheduled
+// inspection_reminders_ops.ts - day-of reminders so nobody forgets a scheduled
 // inspection (a no-show is what turns into a dispute admin has to settle).
 //
 // Two schedulers, both notifying the tenant AND the handler (agent if assigned,
 // else the landlord):
 //
-//   inspectionMorningReminders — 07:00 WAT daily. "Inspection today."
-//   inspectionSoonReminders    — hourly, fires ~1h out. "Inspection soon."
+//   inspectionMorningReminders - 07:00 WAT daily. "Inspection today."
+//   inspectionSoonReminders    - hourly, fires ~1h out. "Inspection soon."
 //
 // Both reuse writeNotificationOnce with deterministic IDs, so re-runs (or the
 // overlapping hourly windows) never double-send. The onNotificationCreated
@@ -65,7 +65,7 @@ function resolveHandler(data: DocumentData): HandlerTarget | null {
  * Write one reminder notification (deduped by notifId). Deep-links to the
  * recipient's Scheduled tab, highlighting the specific inspection.
  *
- * @param {string} notifId Deterministic id — dedupes re-runs.
+ * @param {string} notifId Deterministic id - dedupes re-runs.
  * @param {string} userId Recipient.
  * @param {string} route Recipient's inspections route.
  * @param {string} requestId Inspection request id (for the deep-link).
@@ -97,7 +97,7 @@ export const inspectionMorningReminders = onSchedule(
     const todayKey = watDayKey(Date.now());
 
     // Approved is a transient state (swept once the date passes), so this set
-    // stays small. Single-field equality query — no composite index needed.
+    // stays small. Single-field equality query - no composite index needed.
     const snap = await db
       .collection("inspection_requests")
       .where("status", "==", "approved")
@@ -109,7 +109,7 @@ export const inspectionMorningReminders = onSchedule(
       const reqTs = data.requestedDate as Timestamp | undefined;
       if (!reqTs) continue;
       if (watDayKey(reqTs.toMillis()) !== todayKey) continue; // not today
-      // Pay-after-approve: only remind for CONFIRMED inspections — the tenant
+      // Pay-after-approve: only remind for CONFIRMED inspections - the tenant
       // must have paid (or the inspection is free) before we nag either party.
       const ps = data.paymentStatus;
       if (ps !== "paid" && ps !== "not_required") continue;
@@ -169,7 +169,7 @@ export const inspectionSoonReminders = onSchedule(
     // run ~1h out lands in this window; the 2h-out run does not. The
     // deterministic id makes any overlap a no-op.
     const WINDOW_MIN = 0;
-    // 100 minutes — tolerant of scheduler drift while catching the ~1h-out run.
+    // 100 minutes - tolerant of scheduler drift while catching the ~1h-out run.
     const WINDOW_MAX = 100 * 60 * 1000;
 
     const snap = await db
@@ -202,7 +202,7 @@ export const inspectionSoonReminders = onSchedule(
               TENANT_INSPECTIONS_ROUTE,
               doc.id,
               "Inspection soon",
-              `Your inspection for ${title} starts around ${slot} — ` +
+              `Your inspection for ${title} starts around ${slot} - ` +
                 "time to head out.",
             )
           ) {
@@ -217,7 +217,7 @@ export const inspectionSoonReminders = onSchedule(
               handler.route,
               doc.id,
               "Inspection soon",
-              `You're showing ${title} around ${slot} — time to head out.`,
+              `You're showing ${title} around ${slot} - time to head out.`,
             )
           ) {
             sent++;

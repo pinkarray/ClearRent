@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// A dialog the user cannot dismiss by accident — barrier tap AND system back.
+/// A dialog the user cannot dismiss by accident - barrier tap AND system back.
 ///
 /// `barrierDismissible: false` alone stops the barrier tap and nothing else:
 /// the Android back gesture still pops the route. On the payment screens that

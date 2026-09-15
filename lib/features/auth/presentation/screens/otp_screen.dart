@@ -113,11 +113,11 @@ class _OtpScreenState extends State<OtpScreen> {
       if (!mounted) return;
 
       if (result.isNewUser) {
-        // New user — go to account type selection
+        // New user - go to account type selection
         setState(() => _isLoading = false);
         context.go('/account-type');
       } else {
-        // Existing user — navigate to their home
+        // Existing user - navigate to their home
         await _navigateAfterAuth();
       }
     } else {
@@ -247,7 +247,7 @@ class _OtpScreenState extends State<OtpScreen> {
   /// Fill the boxes from a whole code, however it arrived.
   ///
   /// Non-digits are stripped, so a code copied with surrounding text from the
-  /// SMS ("Your code is 123456") still works — that is exactly how someone
+  /// SMS ("Your code is 123456") still works - that is exactly how someone
   /// copying from their messages tends to select it.
   void _applyWholeCode(String raw) {
     final digits = raw.replaceAll(RegExp(r'\D'), '');
@@ -366,7 +366,7 @@ class _OtpScreenState extends State<OtpScreen> {
                         textAlign: TextAlign.center,
                         // NO maxLength. It capped input at one character, so a
                         // pasted or autofilled six-digit code was truncated to
-                        // its first digit before onChanged ever saw it — which
+                        // its first digit before onChanged ever saw it - which
                         // is why pasting silently did nothing and the code had
                         // to be memorised from the SMS and typed back in.
                         // _onOtpChanged spreads anything longer across the

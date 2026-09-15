@@ -8,7 +8,7 @@ import '../../services/caretaker_service.dart';
 import '../models/property_model.dart';
 
 /// The caretaker's way in, shown on the home screen of whichever shell they
-/// happen to be in — and shown to nobody else.
+/// happen to be in - and shown to nobody else.
 ///
 /// Three states, in order:
 ///  1. A pending invitation → an action prompt. Someone is waiting on an answer.
@@ -20,7 +20,7 @@ import '../models/property_model.dart';
 /// streams are driven by live Firestore state rather than a stored flag.
 ///
 /// It lives in all three home screens because a caretaker can be a tenant, a
-/// landlord or an agent — accountType decides their shell, not this role.
+/// landlord or an agent - accountType decides their shell, not this role.
 /// The earlier version rendered only state 1, so the entry point evaporated as
 /// soon as an invitation was accepted and the work became unreachable.
 class CaretakerBanner extends StatefulWidget {
@@ -34,7 +34,7 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
   final CaretakerService _service = CaretakerService();
 
   // Built once. A stream created in build() re-subscribes on every rebuild and
-  // tears its own subtree down mid-flight — that is what crashed the caretaker
+  // tears its own subtree down mid-flight - that is what crashed the caretaker
   // screen with '_dependents.isEmpty'.
   late final Stream<List<CaretakerInvite>> _invites = _service.myInvites();
   late final Stream<List<PropertyModel>> _managed = _service.managedProperties();
@@ -51,7 +51,7 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
           final invite = pending.first;
           final count = invite.propertyIds.length;
           // An invitation is the one state here that someone else is WAITING
-          // on, and it is answerable in a single tap — so it is raised once as
+          // on, and it is answerable in a single tap - so it is raised once as
           // a dialog rather than left as a banner to be scrolled past. The
           // banner stays underneath as the fallback: if the prompt is
           // dismissed, or was already shown, the invitation is still visible
@@ -139,12 +139,12 @@ class _CaretakerBannerState extends State<CaretakerBanner> {
     required String subtitle,
     required bool emphasised,
   }) {
-    // Horizontally NEUTRAL on purpose — the screen supplies the inset, exactly
+    // Horizontally NEUTRAL on purpose - the screen supplies the inset, exactly
     // as it already does for AnnouncementsBanner.
     //
     // This used to pad itself 20 on each side, which is correct in the tenant
     // and agent shells (their parents are full-width) but wrong on the
-    // landlord dashboard, whose scroll view ALREADY insets every child by 20 —
+    // landlord dashboard, whose scroll view ALREADY insets every child by 20 -
     // so the banner rendered at 40 and sat visibly narrower than every card
     // around it. The top 12 replaces a bottom 12: with no leading gap it
     // collided with the header row, touching the avatar and the bell whenever

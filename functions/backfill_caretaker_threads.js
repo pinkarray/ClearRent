@@ -1,7 +1,7 @@
 /*
  * One-off backfill: open caretaker threads for units that were already
  * occupied before the occupancy triggers learned to open them.
- * Idempotent — the conversation id is deterministic and the write merges.
+ * Idempotent - the conversation id is deterministic and the write merges.
  */
 const admin = require('firebase-admin');
 admin.initializeApp({credential: admin.credential.cert(require('./serviceAccountKey.json'))});

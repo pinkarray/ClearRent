@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// payment_verify.ts — server-side proof that money actually moved.
+// payment_verify.ts - server-side proof that money actually moved.
 //
 // Several callables used to take a `paymentReference` as free text, store it,
 // and grant the entitlement. Nothing ever asked Paystack whether that
-// reference existed, whether it succeeded, or how much it was for — so a
+// reference existed, whether it succeeded, or how much it was for - so a
 // modified client could mark rent paid, or an inspection paid, without paying
 // anything. The reference was decoration on a client-declared payment.
 //
@@ -17,7 +17,7 @@
 //      `payment_references/{reference}` with `.create()`, inside a
 //      transaction. Paystack will happily verify the same successful
 //      reference forever, so without a ledger one ₦X charge could be replayed
-//      across many rentals — which is exactly the open renewal finding
+//      across many rentals - which is exactly the open renewal finding
 //      (one payment renewing several grace-locked tenancies).
 //
 // Re-entry is distinguished from replay by `purposeId`: the SAME reference
@@ -84,7 +84,7 @@ interface ConsumeInput {
   expectedAmount: number;
   /** Coarse label for logs/audit, e.g. "rent" | "inspection". */
   purpose: string;
-  /** The thing being paid for — rentalId, inspection requestId, … */
+  /** The thing being paid for - rentalId, inspection requestId, … */
   purposeId: string;
   /** Who is paying, for the audit row. */
   uid: string;

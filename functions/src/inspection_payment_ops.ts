@@ -3,12 +3,12 @@
  *
  * Pay-after-approve: the tenant requests an inspection UNPAID, the handler
  * approves, and ONLY THEN does the tenant pay. This callable records that
- * payment and unlocks the exact address — both of which must be server-side:
+ * payment and unlocks the exact address - both of which must be server-side:
  *
  *   • The reveal grant (properties/{id}/reveals/{tenantId}) and the private
  *     location subdoc are handler-only by security rule. At payment time the
  *     actor is the tenant, so the grant + exact-address fill must run with the
- *     Admin SDK (which bypasses rules). Moving the reveal here — off approval —
+ *     Admin SDK (which bypasses rules). Moving the reveal here - off approval -
  *     is what stops an approved-but-unpaid tenant getting the connection free.
  *
  * Gate: caller must be the tenant on the request, and the request must be
@@ -59,7 +59,7 @@ export const confirmInspectionPayment = onCall(
     }
     const requestId = rawId.trim();
 
-    // Required and verified — see the header note.
+    // Required and verified - see the header note.
     if (
       typeof data.paymentReference !== "string" ||
       data.paymentReference.trim().length === 0
@@ -98,8 +98,8 @@ export const confirmInspectionPayment = onCall(
       );
     }
 
-    // The fee comes from config/pricing — the same document the handler payout
-    // is derived from — never from the client.
+    // The fee comes from config/pricing - the same document the handler payout
+    // is derived from - never from the client.
     const expectedFee = (await getPricing()).inspection.total;
     await verifyAndConsumeReference({
       reference: paymentReference,
@@ -151,7 +151,7 @@ export const confirmInspectionPayment = onCall(
       }
 
       // Grant the tenant read access to the exact location (handler-only by
-      // rule; the Admin SDK bypasses it). Best-effort — a failed grant is
+      // rule; the Admin SDK bypasses it). Best-effort - a failed grant is
       // logged, but the paid flip still stands.
       try {
         await db

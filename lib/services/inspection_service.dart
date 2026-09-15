@@ -48,7 +48,7 @@ class InspectionService {
 
   /// Whether [slot] on [date] is far enough ahead to be booked.
   ///
-  /// Unknown slots are treated as bookable — an unrecognised slot name is a
+  /// Unknown slots are treated as bookable - an unrecognised slot name is a
   /// data problem, and silently hiding it would look like the handler has no
   /// availability at all.
   static bool isSlotBookable(DateTime date, String slot) {
@@ -73,7 +73,7 @@ class InspectionService {
   /// Resolves the property's area/cluster from its address, LGA, or city fields.
   /// Tries address first (most specific), then LGA, then city.
   String? _resolvePropertyArea(PropertyModel property) {
-    // Try address — extract the most likely area name
+    // Try address - extract the most likely area name
     final address = property.address.trim();
     if (address.isNotEmpty) {
       // Try each comma-separated segment (e.g. "12 Adeola Odeku, Victoria Island, Lagos")
@@ -120,7 +120,7 @@ class InspectionService {
 
         final agentCluster = InspectionPricing.getClusterForArea(agentBaseLocation);
         final propertyArea = _resolvePropertyArea(property);
-        // Prefer the cluster resolved at listing time — the exact street
+        // Prefer the cluster resolved at listing time - the exact street
         // address now lives in the gated subdoc and isn't on the property here.
         final propertyCluster = property.inspectionPropertyCluster ??
             (propertyArea != null
@@ -158,14 +158,14 @@ class InspectionService {
       }
     }
 
-    // Self-handled — by the landlord, or by the caretaker they appointed.
+    // Self-handled - by the landlord, or by the caretaker they appointed.
     //
     // `!= 'agent'` rather than `== 'self'` deliberately. This method returns
     // null when no branch matches, and a null breakdown takes the inspection
     // booking sheet down with it, so a handler value that falls through here is
     // not a degraded experience but a dead flow. The fee is flat (₦10k / ₦7k /
-    // ₦3k) and the ₦7k still settles to the landlord either way — no inspection
-    // request carries an agentId when it isn't agent-handled — so the two cases
+    // ₦3k) and the ₦7k still settles to the landlord either way - no inspection
+    // request carries an agentId when it isn't agent-handled - so the two cases
     // differ only in who is asked to show up.
     if (property.isSelfHandled) {
       final byCaretaker = property.inspectionHandler == 'caretaker' &&
@@ -192,7 +192,7 @@ class InspectionService {
         );
       }
 
-      // Handler lives elsewhere — get their baseLocation
+      // Handler lives elsewhere - get their baseLocation
       try {
         final landlordDoc = await _firestore
             .collection('users')
@@ -232,7 +232,7 @@ class InspectionService {
   /// Whether [userId] is verified, or NULL when we could not find out.
   ///
   /// The three-state return is the point. This used to return `false` both for
-  /// "checked, not verified" and for "the read failed" — and a bare `.get()`
+  /// "checked, not verified" and for "the read failed" - and a bare `.get()`
   /// defaults to `Source.serverAndCache`, so on a poor connection it quietly
   /// falls back to the local cache. A cold or pre-verification cache then
   /// reported a verified account as unverified, and the caller stated that to
@@ -243,7 +243,7 @@ class InspectionService {
   Future<bool?> _isUserVerified(String userId) async {
     try {
       final userDoc = await _firestore.collection('users').doc(userId).get();
-      // A missing document is genuinely "not verified" — the account has no
+      // A missing document is genuinely "not verified" - the account has no
       // profile at all. An absent FIELD on a present doc is the same. Only a
       // failed read is unknown.
       if (!userDoc.exists) return false;
@@ -263,7 +263,7 @@ class InspectionService {
   // ============ CREATE INSPECTION REQUEST ============
 
   /// Pay-after-approve: creates the request UNPAID and awaiting the handler
-  /// (status 'pending'). The tenant pays only after the handler approves — the
+  /// (status 'pending'). The tenant pays only after the handler approves - the
   /// fee breakdown is stored now so the amount is fixed, but nothing is charged
   /// here. (Was pay-before-handler: the old callers passed paymentStatus:'paid'
   /// after charging up front.)
@@ -282,7 +282,7 @@ class InspectionService {
 
       // Read the caller's own profile. `.get()` falls back to the local cache
       // when the server is unreachable, so a missing document here means "the
-      // read didn't land", not "this account is unverified" — the account is
+      // read didn't land", not "this account is unverified" - the account is
       // signed in, so it certainly exists. Reporting that as unverified told
       // verified testers their account wasn't, and sent them to a verification
       // screen that then showed them verified.
@@ -431,7 +431,7 @@ class InspectionService {
         'totalFee': feeBreakdown?.totalFee ?? 0,
         'agentEarnings': feeBreakdown?.agentEarnings ?? 0,
 
-        // Snapshot of handler context — used by activity notifications
+        // Snapshot of handler context - used by activity notifications
         // and (later) by the creditInspectionEarnings Cloud Function.
         'isSelfHandled': property.inspectionHandler != 'agent',
         'landlordLivesInProperty': property.landlordLivesInProperty == true,
@@ -451,7 +451,7 @@ class InspectionService {
         'refundedAt': null,
         'refundReason': null,
 
-        // Always awaiting the handler's decision — no money has moved yet.
+        // Always awaiting the handler's decision - no money has moved yet.
         'status': 'pending',
         'declinedBy': null,
         'declineReason': null,
@@ -756,7 +756,7 @@ class InspectionService {
 
   // ============ APPROVE / DECLINE ============
 
-  /// Tenant reschedules an inspection that expired unapproved — picks a new
+  /// Tenant reschedules an inspection that expired unapproved - picks a new
   /// future date; the request re-enters the approval queue (payment is kept).
   Future<bool> rescheduleExpiredInspection(
     String requestId,
@@ -808,7 +808,7 @@ class InspectionService {
         name: 'InspectionService',
       );
 
-      // Refuse to approve a request whose date has already passed — it can't be
+      // Refuse to approve a request whose date has already passed - it can't be
       // a real future inspection. (Compare by day so a same-day slot still
       // works.) The lifecycle sweep reclassifies these stale requests.
       final existing = await _firestore
@@ -841,7 +841,7 @@ class InspectionService {
       }
 
       // Pay-after-approve: the exact address is NOT revealed on approval any
-      // more. Approval alone doesn't unlock the property location — otherwise
+      // more. Approval alone doesn't unlock the property location - otherwise
       // an approved-but-unpaid tenant would get the connection for free. The
       // reveal (exact address fill + reveals/{tenantId} grant) now happens
       // server-side when the tenant pays (confirmInspectionPayment callable).
@@ -869,7 +869,7 @@ class InspectionService {
       final requestData = verifyDoc.data();
 
       if (requestData != null) {
-        // (Reveal moved to payment — see confirmInspectionPayment. Approval no
+        // (Reveal moved to payment - see confirmInspectionPayment. Approval no
         // longer writes the reveals grant or the exact address.)
         final approvedBy =
             isLandlordOverride
@@ -897,7 +897,7 @@ class InspectionService {
 
         // Transport advisory: remind the tenant that transport is
         // off-platform. Skip if the handler is a landlord living in
-        // the property (nothing to coordinate — landlord is already
+        // the property (nothing to coordinate - landlord is already
         // at the destination).
         final isSelfHandled = requestData['isSelfHandled'] == true;
         final landlordLivesInProperty =
@@ -1287,7 +1287,7 @@ class InspectionService {
       final role = _actorRole(requestData, userId);
       if (role != 'agent' && role != 'landlord') return false;
 
-      // Determine the actual handler — whoever is calling this method.
+      // Determine the actual handler - whoever is calling this method.
       // If the current user is the assigned agent, they handled it.
       // If the landlord called it (even on an agent-assigned property), landlord handled it.
       final String? assignedAgentId = requestData['agentId'] as String?;
@@ -1317,7 +1317,7 @@ class InspectionService {
       );
 
       if (agentHandled) {
-        // Agent did the inspection — landlord activity feed entry.
+        // Agent did the inspection - landlord activity feed entry.
         // Earnings are credited server-side by the
         // creditInspectionEarnings Cloud Function (closes F1.4).
         await _createActivity(
@@ -1457,7 +1457,7 @@ class InspectionService {
   /// File a dispute on an inspection that went wrong. This is distinct from
   /// rating: it routes the case to the admin review queue (via the
   /// reportInspectionIssue Cloud Function) which raises an admin alert and
-  /// lets an admin decide a refund — the tenant can't self-refund.
+  /// lets an admin decide a refund - the tenant can't self-refund.
   ///
   /// [category] is one of: misrepresented, no_show, unprofessional, safety,
   /// refund_request. Returns true on success (including an idempotent no-op
@@ -1863,7 +1863,7 @@ class InspectionService {
 
   /// Tenant marks themselves as on the way to the property.
   /// Eligible only when status is 'approved' and we're within 2h of
-  /// the scheduled slot. Idempotent — second call is a no-op.
+  /// the scheduled slot. Idempotent - second call is a no-op.
   Future<bool> markTenantOnWay(String requestId) async {
     final userId = _currentUserId;
     if (userId == null) return false;
@@ -1932,7 +1932,7 @@ class InspectionService {
 
   /// Handler (agent or landlord) marks themselves as on the way.
   /// Eligible only when status is 'approved' and we're within 2h of
-  /// the scheduled slot. Idempotent — second call is a no-op.
+  /// the scheduled slot. Idempotent - second call is a no-op.
   Future<bool> markHandlerOnWay(String requestId) async {
     final userId = _currentUserId;
     if (userId == null) return false;
@@ -1994,7 +1994,7 @@ class InspectionService {
   // ============ MET CONFIRMATION ============
 
   /// Records the CALLER's own half of the "we met" confirmation. A meeting is
-  /// a two-person fact, so neither party can assert it alone — completion is
+  /// a two-person fact, so neither party can assert it alone - completion is
   /// gated on BOTH halves (see completeInspection). Either party may only
   /// confirm once both have physically arrived: the handler can't fake a
   /// meeting with a tenant who never showed, and a tenant's confirmation alone
@@ -2027,7 +2027,7 @@ class InspectionService {
         update['tenantConfirmedMet'] = true;
         update['tenantConfirmedMetAt'] = FieldValue.serverTimestamp();
       } else {
-        // agent or landlord — records the handler's half only.
+        // agent or landlord - records the handler's half only.
         if (data['handlerConfirmedMet'] == true) return false;
         update['handlerConfirmedMet'] = true;
         update['handlerConfirmedMetAt'] = FieldValue.serverTimestamp();
@@ -2197,7 +2197,7 @@ class InspectionService {
   ///
   /// [allowToday] opens up same-day booking. It is OFF by default because a
   /// brand-new request still has to be approved by the handler and paid for
-  /// before the slot arrives — hours of notice makes that a wasted approval.
+  /// before the slot arrives - hours of notice makes that a wasted approval.
   /// A reschedule is already approved and paid, so moving it a few hours is
   /// just a time change, and that flow passes true.
   ///
@@ -2281,7 +2281,7 @@ class InspectionService {
   /// times the handler is already booked for). This MUST be server-side: a
   /// tenant isn't allowed to list another handler's inspections to find taken
   /// slots (that would leak other tenants' bookings), so the old client query
-  /// was silently denied and every slot looked free — letting a tenant book
+  /// was silently denied and every slot looked free - letting a tenant book
   /// a taken slot and pay before the server conflict-guard declined it.
   Future<List<String>> getAvailableTimeSlots(
     PropertyModel property,

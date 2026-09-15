@@ -63,7 +63,7 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen>
   /// [silent] refreshes in place, leaving the list on screen.
   ///
   /// Uploading calls this to pick up the new state, and without it the whole
-  /// tab dropped to a spinner and rebuilt — the card you just used vanished
+  /// tab dropped to a spinner and rebuilt - the card you just used vanished
   /// and reappeared, which reads as the app losing your work.
   Future<void> _loadProperties({bool silent = false}) async {
     if (mounted && !silent) setState(() => _isLoadingProperties = true);
@@ -96,7 +96,7 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen>
       if (mounted) {
         setState(() {
           // Order by what needs the LANDLORD's attention, not by lease
-          // lifecycle — otherwise a rental where the tenant raised a concern
+          // lifecycle - otherwise a rental where the tenant raised a concern
           // (a pending_payment rental) sank to the bottom of the list, so the
           // concern was buried below every active agreement.
           _rentals = rentals..sort((a, b) {
@@ -169,7 +169,7 @@ class _LandlordAgreementsScreenState extends State<LandlordAgreementsScreen>
     );
   }
 
-  /// Every property, whether or not it has a tenant — so an agreement can be
+  /// Every property, whether or not it has a tenant - so an agreement can be
   /// put in place ahead of time instead of only once someone is accepted.
   Widget _buildPropertiesTab() {
     if (_isLoadingProperties) {
@@ -275,7 +275,7 @@ class _AgreementCardState extends State<_AgreementCard> {
   }
 
   /// Revising the agreement on a LIVE tenancy is the one place a rent increase
-  /// could be slipped past a tenant — they are asked to sign a fresh document,
+  /// could be slipped past a tenant - they are asked to sign a fresh document,
   /// and signing binds them. So ask what is changing: rent goes to the
   /// admin-approved rent-review flow, terms only carries a declaration the
   /// tenant can check.
@@ -339,7 +339,7 @@ class _AgreementCardState extends State<_AgreementCard> {
     if (!mounted) return false;
 
     if (choice == 'rent') {
-      // Blocked here on purpose — the rent-review flow already demands a
+      // Blocked here on purpose - the rent-review flow already demands a
       // revised agreement AND an admin decision before anything reaches the
       // tenant.
       context.push('/landlord/request-rent-change', extra: {
@@ -397,7 +397,7 @@ class _AgreementCardState extends State<_AgreementCard> {
 
     setState(() => _isUploading = true);
     try {
-      // Private Storage (not Cloudinary) — agreements are sensitive PII.
+      // Private Storage (not Cloudinary) - agreements are sensitive PII.
       // The real reason, not a shrug. A dropped connection and a rules
       // rejection used to produce the same sentence.
       String? uploadError;
@@ -472,7 +472,7 @@ class _AgreementCardState extends State<_AgreementCard> {
   /// leaving no document that carried either party's hand.
   ///
   /// Legacy rentals accepted by tap have no `tenantSignedUrl`. They can still
-  /// be finalized without an upload — refusing would strand tenancies that
+  /// be finalized without an upload - refusing would strand tenancies that
   /// predate signatures.
   Future<void> _finalizeAgreement() async {
     final hasTenantSignature = r.hasTenantSignature;
@@ -591,7 +591,7 @@ class _AgreementCardState extends State<_AgreementCard> {
 
   /// Open the copy the tenant signed, so the landlord can print and
   /// counter-sign it. Served through getSignedAgreementUrl because the tenant
-  /// uploaded it under THEIR uid — storage rules deny the landlord directly.
+  /// uploaded it under THEIR uid - storage rules deny the landlord directly.
   Future<void> _viewTenantSigned() async {
     final url = await _agreementAccess.resolveUrl(
       collection: 'active_rentals',
@@ -883,13 +883,13 @@ class _AgreementCardState extends State<_AgreementCard> {
       // Finalized → View only + stamp notice
       case AgreementStatus.finalized:
         return Column(children: [
-          // A tenant signing goes STRAIGHT to finalized — there is no
+          // A tenant signing goes STRAIGHT to finalized - there is no
           // counter-sign round trip (see tenantUploadSignedAgreement), so the
           // 'accepted' case below never runs for a signed tenancy and its
           // "view what your tenant signed" button was unreachable. Without
           // this, the landlord got the notification that the tenant had
           // signed, opened the agreement, and was shown their OWN unsigned
-          // copy — the one document that cannot answer "what did they sign?".
+          // copy - the one document that cannot answer "what did they sign?".
           if (r.hasTenantSignature) ...[
             ElevatedButton.icon(
               onPressed: () => _viewTenantSigned(),
@@ -943,7 +943,7 @@ class _AgreementCardState extends State<_AgreementCard> {
     }
   }
 
-  // Agreements are private — resolve a short-lived signed URL via the CF
+  // Agreements are private - resolve a short-lived signed URL via the CF
   // (which authorizes this landlord as a party) before opening.
   Future<void> _viewAgreement() async {
     // Show the executed copy once it exists, not the draft that was sent out

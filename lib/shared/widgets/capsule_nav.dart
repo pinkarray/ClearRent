@@ -4,7 +4,7 @@ import '../../core/constants/text_styles.dart';
 
 /// The app's bottom navigation: a floating capsule, matching the web app.
 ///
-/// Replaces three identical private `_NavItem` copies — one per home screen —
+/// Replaces three identical private `_NavItem` copies - one per home screen -
 /// which drifted only in which tabs they listed. Keeping the chrome here means
 /// a change lands on tenant, landlord and agent at once.
 ///
@@ -19,7 +19,7 @@ class CapsuleNavItem {
   final bool isActive;
   final VoidCallback onTap;
 
-  /// Small count over the icon — saved properties, unread messages.
+  /// Small count over the icon - saved properties, unread messages.
   final String? badge;
 
   const CapsuleNavItem({
@@ -49,7 +49,7 @@ class CapsuleNav extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
           // Row, NOT Center. Scaffold gives bottomNavigationBar loose
           // constraints whose maxHeight is the whole screen, and Center expands
-          // to fill bounded constraints — so it swallowed the screen and
+          // to fill bounded constraints - so it swallowed the screen and
           // squeezed the body to zero height. A Row takes its height from its
           // child while still centring it horizontally.
           child: Row(

@@ -1,5 +1,5 @@
 /**
- * One-shot script to grant the `admin` custom claim to a user — the
+ * One-shot script to grant the `admin` custom claim to a user - the
  * out-of-band equivalent of the setAdminClaim callable, for when you'd
  * rather run it locally than through the admin webapp.
  *

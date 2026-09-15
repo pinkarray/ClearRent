@@ -22,7 +22,7 @@ class ConnectivityService {
   bool _isOnline = true;
   bool get isOnline => _isOnline;
 
-  /// Initialize — call once at app startup
+  /// Initialize - call once at app startup
   Future<void> initialize() async {
     // Check initial state
     await checkConnection();

@@ -11,7 +11,7 @@ enum VerificationStatus { none, pending, verified, rejected, expired }
 
 // Verification fee structure.
 //
-// UNUSED — every screen reads PlatformPricing (pricing_service.dart), which
+// UNUSED - every screen reads PlatformPricing (pricing_service.dart), which
 // loads config/pricing so a price can change without a store release. Kept
 // only because functions/src/pricing.ts names this as the client mirror; the
 // numbers are maintained so it cannot mislead, not because anything calls it.
@@ -81,7 +81,7 @@ class VerificationData {
   final bool isVerified;
   // True once the user has submitted an annual renewal. Persisted so the
   // renewal shape (role proof only, no NIN) survives the status moving on to
-  // pending/rejected — a rejected renewal is still a renewal.
+  // pending/rejected - a rejected renewal is still a renewal.
   final bool isRenewal;
   /// When the current verification lapses. Written server-side by the
   /// onVerificationVerified trigger; null for records verified before the
@@ -99,7 +99,7 @@ class VerificationData {
   final String? paymentReference;
   final double paymentAmount;
   final String? paymentStatus;
-  // Legacy field — kept for backward compat with old records
+  // Legacy field - kept for backward compat with old records
   final String? paymentProofUrl;
 
   VerificationData({
@@ -234,7 +234,7 @@ class VerificationService {
   /// Record a successful charge BEFORE the documents are uploaded.
   ///
   /// The submit flow is pick → pay → upload → write. Everything, including the
-  /// payment reference, used to be written in that final step — so an upload
+  /// payment reference, used to be written in that final step - so an upload
   /// failure discarded the reference for a charge that had already gone
   /// through. The user was left with no application, no record of paying, and
   /// no route back: the free-reapply path reads `verificationPaymentReference`
@@ -265,7 +265,7 @@ class VerificationService {
   /// A verification payment this user made that no submission ever consumed.
   ///
   /// The user document is the primary record of a paid slot, but writing it is
-  /// a single best-effort call made at the riskiest moment — just back from an
+  /// a single best-effort call made at the riskiest moment - just back from an
   /// external checkout, on a device that may be under pressure. If THAT write
   /// is the only thing standing between a user and their money, the safety net
   /// has a hole in it.
@@ -280,7 +280,7 @@ class VerificationService {
       findUnconsumedVerificationPayment() async {
     if (_currentUserId == null) return null;
     try {
-      // Two equality filters only — no orderBy, so this needs no composite
+      // Two equality filters only - no orderBy, so this needs no composite
       // index. The set is tiny (one user's verification payments), so the
       // newest is picked in Dart.
       final snap = await _firestore
@@ -324,15 +324,15 @@ class VerificationService {
 
   /// Why the most recent [_uploadDocument] call failed, if it did.
   ///
-  /// Release builds log NOTHING — `AppLogger` and `developer.log` are both
-  /// gated on kDebugMode and there is no Crashlytics — so a failed upload
+  /// Release builds log NOTHING - `AppLogger` and `developer.log` are both
+  /// gated on kDebugMode and there is no Crashlytics - so a failed upload
   /// reached the user as a bare "Failed to upload one or more documents" with
   /// the actual cause discarded. That left a tester who had already PAID with
   /// an error nobody could act on.
   ///
   /// Storage's own error code (`unauthorized`, `retry-limit-exceeded`,
   /// `quota-exceeded`, `object-not-found`, …) is short, carries no personal
-  /// data, and usually names the problem outright — so it is carried into the
+  /// data, and usually names the problem outright - so it is carried into the
   /// message the user can read back to us.
   String? _lastUploadError;
 
@@ -354,7 +354,7 @@ class VerificationService {
       developer.log('✅ Upload successful: $path', name: 'VerificationService');
       return path;
     } on FirebaseException catch (e) {
-      // Storage's own code — the one piece of this that survives to release.
+      // Storage's own code - the one piece of this that survives to release.
       _lastUploadError = e.code;
       developer.log('❌ Upload failed: ${e.code} ${e.message}',
           name: 'VerificationService', error: e);
@@ -369,7 +369,7 @@ class VerificationService {
   }
 
   /// Encrypts and stores the user's NIN via the submitNin Cloud Function.
-  /// The raw NIN never persists in plaintext — the CF validates, encrypts
+  /// The raw NIN never persists in plaintext - the CF validates, encrypts
   /// (AES-256-GCM), and writes ciphertext to users/{uid}.nin.
   Future<bool> submitNin(String nin) async {
     try {
@@ -394,8 +394,8 @@ class VerificationService {
   }
 
   /// The NIN document URL already stored for the current user (from their
-  /// original verification). Used on renewal, where the NIN — a permanent
-  /// number — is not re-collected, so the existing slip is carried forward.
+  /// original verification). Used on renewal, where the NIN - a permanent
+  /// number - is not re-collected, so the existing slip is carried forward.
   Future<String?> _existingNinUrl() async {
     if (_currentUserId == null) return null;
     final snap =
@@ -415,7 +415,7 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // Renewal (ninFile == null) reuses the NIN already on file - it never
       // changes. First-time verification uploads the NIN slip.
       final ninUrl = ninFile != null
           ? await _uploadDocument(ninFile, 'nin')
@@ -428,7 +428,7 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
-        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // Renewal submissions carry no new NIN - lets admin distinguish an
         // annual renewal from a first-time application in the review queue.
         'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
@@ -474,7 +474,7 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // Renewal (ninFile == null) reuses the NIN already on file - it never
       // changes. First-time verification uploads the NIN slip.
       final ninUrl = ninFile != null
           ? await _uploadDocument(ninFile, 'nin')
@@ -487,7 +487,7 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
-        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // Renewal submissions carry no new NIN - lets admin distinguish an
         // annual renewal from a first-time application in the review queue.
         'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),
@@ -538,7 +538,7 @@ class VerificationService {
         return VerificationResult(success: false, error: 'User not authenticated');
       }
 
-      // Renewal (ninFile == null) reuses the NIN already on file — it never
+      // Renewal (ninFile == null) reuses the NIN already on file - it never
       // changes. First-time verification uploads the NIN slip.
       final ninUrl = ninFile != null
           ? await _uploadDocument(ninFile, 'nin')
@@ -568,7 +568,7 @@ class VerificationService {
 
       await _firestore.collection('users').doc(_currentUserId).update({
         'verificationStatus': 'pending',
-        // Renewal submissions carry no new NIN — lets admin distinguish an
+        // Renewal submissions carry no new NIN - lets admin distinguish an
         // annual renewal from a first-time application in the review queue.
         'isRenewal': ninFile == null,
         'verificationSubmittedAt': FieldValue.serverTimestamp(),

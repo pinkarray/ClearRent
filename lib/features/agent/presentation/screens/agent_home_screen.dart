@@ -47,7 +47,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
   StreamSubscription? _profileSubscription;
   StreamSubscription? _unreadCountSubscription;
 
-  // Cached streams — created once. The profile + unread-count subscriptions
+  // Cached streams - created once. The profile + unread-count subscriptions
   // setState() often; if these were built inside build() each rebuild would
   // hand StreamBuilder a new stream and flash its loading state.
   late final Stream<QuerySnapshot> _assignedPropertiesStream;
@@ -381,7 +381,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
         backgroundColor: AppColors.background,
         // IndexedStack keeps every tab alive so switching between them (or
         // returning from a pushed detail screen) preserves each tab's state and
-        // live streams — no re-subscribe, no reload spinner on the Discover /
+        // live streams - no re-subscribe, no reload spinner on the Discover /
         // Properties tabs.
         body:
             _isLoading
@@ -420,7 +420,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             ),
           ),
         ),
-        // A caretaker can be any accountType — see CaretakerInviteBanner.
+        // A caretaker can be any accountType - see CaretakerInviteBanner.
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
@@ -451,7 +451,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
           ),
         ),
         SliverToBoxAdapter(child: _buildInspectionRequestsSection()),
-        // Small end-of-list breathing room; was 100 (dead space — the agent
+        // Small end-of-list breathing room; was 100 (dead space - the agent
         // dashboard has no floating button needing clearance).
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ],

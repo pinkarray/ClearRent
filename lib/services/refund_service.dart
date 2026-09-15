@@ -5,7 +5,7 @@ import '../shared/models/refund_model.dart';
 /// Service for reading refund records.
 ///
 /// Refunds are created server-side by the `onInspectionRefundTriggered`
-/// Cloud Function. This service is read-only — clients never write to
+/// Cloud Function. This service is read-only - clients never write to
 /// the `refunds` collection (rules enforce this).
 class RefundService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;

@@ -9,6 +9,6 @@ typings/
 node_modules/
 *.local
 
-# Service account keys — never commit
+# Service account keys - never commit
 serviceAccountKey*.json
 scripts/*.json

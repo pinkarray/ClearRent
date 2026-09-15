@@ -19,7 +19,7 @@ import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
 
 /// Minimum notice, in days, between a move-out request and the intended
-/// move-out date — the window the handover check has to be booked in.
+/// move-out date - the window the handover check has to be booked in.
 const int kMoveOutNoticeDays = 3;
 
 class LeaseDetailsScreen extends StatefulWidget {
@@ -46,7 +46,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     _rental = widget.rental;
     // LIVE, not a one-shot read. The landlord uploads the agreement from the
     // app or the web while the tenant is sitting on this very screen, and the
-    // rent button unlocks off the back of it — with a getRentalById the tenant
+    // rent button unlocks off the back of it - with a getRentalById the tenant
     // had to leave and come back before any of that appeared.
     _rentalSub = _rentalService.streamRentalById(_rental.id).listen((updated) {
       if (updated != null && mounted) {
@@ -238,7 +238,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
                       color: AppColors.primary,
                       onTap: () => _messageLandlord(),
                     ),
-                    // Hidden once a request is already pending — the rental
+                    // Hidden once a request is already pending - the rental
                     // dashboard's banner is what covers that state.
                     if (!_rental.isMoveoutPending) ...[
                       const SizedBox(height: 8),
@@ -266,7 +266,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   /// and the rental is marked ended_by_tenant server-side; the switcher stream
   /// then drops it from the list so no manual navigation is needed.
   Future<void> _showMoveOutSheet() async {
-    // Check before opening the sheet, not after the tenant has filled it in —
+    // Check before opening the sheet, not after the tenant has filled it in -
     // an unresolved fault has to be closed first, and they deserve to know why
     // up front rather than hitting a generic failure at submit.
     final blocked = await _rentalService.hasOpenIssueForRental(
@@ -306,7 +306,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     String? selectedReason;
     // Minimum notice: the handover has to be schedulable, so the earliest
     // intended move-out is 3 days out. Must stay in step with the picker's
-    // firstDate below — an initialDate before firstDate asserts.
+    // firstDate below - an initialDate before firstDate asserts.
     DateTime selectedDate =
         DateTime.now().add(const Duration(days: kMoveOutNoticeDays));
     final otherController = TextEditingController();
@@ -494,8 +494,8 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     );
 
     // Landlord recent-activity entry (the push itself comes from the
-    // onActiveRentalUpdated Cloud Function). Field must be `landlordId` — the
-    // activity feed only queries that field — matching the issue writes below.
+    // onActiveRentalUpdated Cloud Function). Field must be `landlordId` - the
+    // activity feed only queries that field - matching the issue writes below.
     if (ok) {
       try {
         await FirebaseFirestore.instance.collection('activities').add({
@@ -530,11 +530,11 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
-    // On success the rental becomes moveout_pending — still shown as current,
+    // On success the rental becomes moveout_pending - still shown as current,
     // now with the pending banner until the landlord confirms.
   }
 
-  // ── Agreement Section — the main new piece ──
+  // ── Agreement Section - the main new piece ──
   Widget _buildAgreementSection() {
     if (!_rental.hasAgreement) {
       // No agreement uploaded yet
@@ -557,7 +557,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       );
     }
 
-    // Agreement exists — show based on status
+    // Agreement exists - show based on status
     switch (_rental.agreementStatus) {
       case AgreementStatus.pendingReview:
         return _buildPendingReviewCard();
@@ -568,7 +568,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
       case AgreementStatus.finalized:
         return _buildFinalizedCard();
       case AgreementStatus.none:
-        // Has URL but no status set (legacy data) — treat as pending review
+        // Has URL but no status set (legacy data) - treat as pending review
         return _buildPendingReviewCard();
     }
   }
@@ -658,7 +658,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           ),
           const SizedBox(height: 8),
 
-          // Message the landlord — a question about the lease shouldn't have to
+          // Message the landlord - a question about the lease shouldn't have to
           // become a formal dispute to get asked.
           SizedBox(
             width: double.infinity,
@@ -675,7 +675,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           const SizedBox(height: 8),
 
           // Contradicting the declaration is its own action, not buried in
-          // "Raise Concern" — it blocks signing and goes to admin with both
+          // "Raise Concern" - it blocks signing and goes to admin with both
           // the landlord's claim and the tenant's.
           if (_rental.agreementRevisionTermsOnly) ...[
             SizedBox(
@@ -871,7 +871,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             ),
           ]),
           const SizedBox(height: 12),
-          // Pay-after-accept: rent is collected now the agreement is finalized —
+          // Pay-after-accept: rent is collected now the agreement is finalized -
           // and only from you, the accepted tenant. Hidden once paid (and for
           // legacy rentals, which have no rentPaymentStatus and read as paid).
           if (_rental.rentPaymentStatus == 'pending') ...[
@@ -956,7 +956,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   /// Acceptance is a SIGNED DOCUMENT, not a button press.
   ///
   /// Tapping "I Accept" used to write a status and a timestamp and leave the
-  /// agreement itself untouched — so the only evidence a tenant agreed was a
+  /// agreement itself untouched - so the only evidence a tenant agreed was a
   /// row in ClearRent's own database, which a tenant could simply deny. The
   /// tenant now downloads the agreement, signs it, and uploads the signed
   /// copy; that upload IS the acceptance.
@@ -1013,7 +1013,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                // Opens a file picker — a plain next step, not an approval.
+                // Opens a file picker - a plain next step, not an approval.
                 backgroundColor: AppColors.primary, foregroundColor: Colors.white),
             child: const Text('Choose signed copy'),
           ),
@@ -1032,7 +1032,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
 
     // Uploads under the TENANT's own uid, which storage rules already permit.
     // The landlord reads it back through getSignedAgreementUrl, which checks
-    // tenancy membership — a storage rule cannot.
+    // tenancy membership - a storage rule cannot.
     final path = await PropertyService().uploadAgreementDoc(file);
     if (path == null || path.isEmpty) {
       if (mounted) {
@@ -1235,7 +1235,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
     }
   }
 
-  // Agreements are private — resolve a short-lived signed URL via the CF
+  // Agreements are private - resolve a short-lived signed URL via the CF
   // (which authorizes this tenant as a party) before opening.
   Future<void> _viewAgreement() async {
     // The executed copy is enough on its own: a signed agreement can be on
@@ -1394,7 +1394,7 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
           _finRow('Agent Fee', '₦${_formatAmount(_rental.agentFee)}'),
         ],
         // Snapshotted onto the rental at creation. The tenant saw this while
-        // browsing and then never again — so at move-out, when it is being
+        // browsing and then never again - so at move-out, when it is being
         // deducted from or withheld, they had nothing on record saying what it
         // was or whether it ever comes back.
         if (_rental.cautionDeposit > 0) ...[
@@ -1406,13 +1406,13 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               // Says WHO holds it, not just whether it comes back. ClearRent
-              // never collects this — it is not part of paymentAmount — so a
+              // never collects this - it is not part of paymentAmount - so a
               // tenant who read only "refundable at move-out" could reasonably
               // assume the platform was holding it for them.
               'Paid directly to your landlord, not through ClearRent. '
               '${_rental.cautionDepositRefundable
                   ? 'Refundable at move-out, less any agreed deductions.'
-                  : 'Non-refundable — this is not returned at move-out.'}',
+                  : 'Non-refundable - this is not returned at move-out.'}',
               style: AppTextStyles.caption.copyWith(
                 color: _rental.cautionDepositRefundable
                     ? AppColors.textSecondary

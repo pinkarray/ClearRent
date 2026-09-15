@@ -28,13 +28,13 @@ class ChatScreen extends StatefulWidget {
   final String? propertyTitle;
   final String? propertyImage;
   /// Optional pre-filled message text. The user can edit or discard before
-  /// sending — we never auto-send. Used by features like agent reschedule
+  /// sending - we never auto-send. Used by features like agent reschedule
   /// that want to draft a message for the user.
   final String? initialDraft;
 
   /// Optional tappable openers shown in the empty state. Tapping one fills the
   /// input so the user can edit it; like [initialDraft], nothing is sent until
-  /// they hit send. Used where a blank box is intimidating — e.g. a tenant
+  /// they hit send. Used where a blank box is intimidating - e.g. a tenant
   /// reaching a handler for the first time after paying.
   final List<String>? suggestions;
 
@@ -80,7 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isCurrentUserVerified = false;
   bool _isOtherPartyVerified = false;
   bool _isCheckingVerification = true;
-  // The verification read didn't land — as opposed to landing and saying "no".
+  // The verification read didn't land - as opposed to landing and saying "no".
   // Both flags above default to false, so a failed lookup used to be
   // indistinguishable from an unverified account, and the UI stated the latter
   // as fact ("the other party hasn't completed verification yet") about
@@ -171,7 +171,7 @@ class _ChatScreenState extends State<ChatScreen> {
         // caretaker when one is on the thread, otherwise the landlord.
         otherPartyId = hasCaretaker ? caretakerId : _conversation!.landlordId;
       } else if (hasCaretaker && _currentUserId == caretakerId) {
-        // The caretaker is here to deal with the tenant — except on the
+        // The caretaker is here to deal with the tenant - except on the
         // landlord↔caretaker thread, which has no tenant on it at all.
         otherPartyId = _conversation!.tenantId.isNotEmpty
             ? _conversation!.tenantId
@@ -231,7 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// The other people on this thread, as mention handles.
   ///
   /// A conversation carries at most a landlord, a tenant and an agent, so this
-  /// is two entries at the outside. The current user is excluded — you don't
+  /// is two entries at the outside. The current user is excluded - you don't
   /// mention yourself.
   List<_MentionTarget> _buildMentionTargets(ConversationData? c) {
     if (c == null) return [];
@@ -270,7 +270,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Recompute the mention overlay from the caret position.
   ///
-  /// Matches on the word being typed after an '@' that starts a word — so an
+  /// Matches on the word being typed after an '@' that starts a word - so an
   /// email address in the middle of a sentence doesn't open the picker.
   void _updateMentionMatches() {
     final selection = _messageController.selection;
@@ -289,7 +289,7 @@ class _ChatScreenState extends State<ChatScreen> {
               .where((t) =>
                   t.handle.toLowerCase().startsWith(query.toLowerCase()))
               .toList();
-          // An exact, complete handle needs no picker — the user is done.
+          // An exact, complete handle needs no picker - the user is done.
           if (matches.length == 1 &&
               matches.first.handle.toLowerCase() == query.toLowerCase()) {
             matches = [];
@@ -419,7 +419,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (messageId == null) return;
 
     final text = _messageController.text.trim();
-    // An edit down to nothing is a delete — the rules reject empty text on the
+    // An edit down to nothing is a delete - the rules reject empty text on the
     // edit path, so offer the real action instead of failing the write.
     if (text.isEmpty) {
       _confirmDelete(messageId, _editingIsLastMessage);
@@ -451,7 +451,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Long-press sheet on a message the user sent. Property shares can be
-  /// deleted but not edited — there is no text on them to rewrite.
+  /// deleted but not edited - there is no text on them to rewrite.
   void _showMessageActions(MessageData message) {
     final isLast = _messages.isNotEmpty && _messages.last.id == message.id;
 
@@ -558,7 +558,7 @@ class _ChatScreenState extends State<ChatScreen> {
   /// while both people are looking at the thread.
   ///
   /// Marking used to happen once, in [_loadData], which meant a message that
-  /// arrived while the screen was already open was never receipted — the
+  /// arrived while the screen was already open was never receipted - the
   /// sender only saw it turn blue after the reader closed and reopened the
   /// chat.
   void _markIncomingRead() {
@@ -761,7 +761,7 @@ class _ChatScreenState extends State<ChatScreen> {
         otherPersonRole = hasTenant ? 'Tenant' : 'Landlord';
       } else if (_currentUserId == c.tenantId) {
         // Tenant's counterpart. On a caretaker thread the landlord is present
-        // too and can read it — say so rather than implying a private line.
+        // too and can read it - say so rather than implying a private line.
         otherPersonRole = hasCaretaker
             ? 'Caretaker / Landlord'
             : (hasAgent ? 'Landlord / Agent' : 'Landlord');
@@ -970,7 +970,7 @@ class _ChatScreenState extends State<ChatScreen> {
       icon = Icons.warning_amber_rounded;
       color = AppColors.warning;
     } else if (_verificationCheckFailed) {
-      message = 'Couldn\'t check account details — reopen this chat to retry';
+      message = 'Couldn\'t check account details - reopen this chat to retry';
       icon = Icons.wifi_off_rounded;
       color = AppColors.warning;
     } else if (!_isOtherPartyVerified) {
@@ -1551,7 +1551,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Fetch the shared property and open its detail screen. Only navigates
-  /// if the property still exists — the /property-detail route casts
+  /// if the property still exists - the /property-detail route casts
   /// state.extra as a non-null PropertyModel, so pushing null would crash.
   ///
   /// Guarded against re-entry, because tapping the card four times used to
@@ -1636,7 +1636,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Tappable openers for an empty thread. Fills the input rather than
-  /// sending — the user stays the author and can edit before it goes.
+  /// sending - the user stays the author and can edit before it goes.
   Widget _buildSuggestionChips() {
     // Full width on purpose. The parent Column defaults to
     // CrossAxisAlignment.center, so without this the block shrank to its own
@@ -1863,7 +1863,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           const SizedBox(width: 12),
 
-          // Send button — becomes "save" while an edit is in progress.
+          // Send button - becomes "save" while an edit is in progress.
           GestureDetector(
             onTap: inputEnabled
                 ? _submitComposer
@@ -1894,7 +1894,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
 /// Someone on this thread who can be @-mentioned.
 ///
-/// [handle] is what gets typed and highlighted — a single token, because the
+/// [handle] is what gets typed and highlighted - a single token, because the
 /// parser reads the word after '@' and full names contain spaces. It's the
 /// person's first name, falling back to their role, and de-collided by
 /// [_buildMentionTargets] when two people share a first name.
@@ -1968,7 +1968,7 @@ class _PropertyPickerSheetState extends State<_PropertyPickerSheet> {
           break;
       }
     } catch (_) {
-      // Leave result empty — the empty state covers it.
+      // Leave result empty - the empty state covers it.
     }
 
     if (mounted) {

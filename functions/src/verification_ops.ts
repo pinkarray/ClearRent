@@ -1,8 +1,8 @@
 /**
- * Annual re-verification — Cloud Function wrappers.
+ * Annual re-verification - Cloud Function wrappers.
  *
  * Verification is granted by an admin (direct write of
- * verificationStatus: "verified" / isVerified: true on the user doc — from
+ * verificationStatus: "verified" / isVerified: true on the user doc - from
  * the admin dashboard or the Flutter admin path). These two triggers add the
  * "annual" part. The logic they call lives in verification_lifecycle.ts so it
  * stays testable outside the Functions runtime.
@@ -67,8 +67,8 @@ export const verificationExpirySweep = onSchedule(
   {schedule: "0 8 * * *", timeZone: "Africa/Lagos"},
   async () => {
     // Narrow on 30 days out of 31. The full read exists only so a document
-    // missing verificationExpiresAt can be backfilled — a range query cannot
-    // match a field that is absent — and no such document has existed since
+    // missing verificationExpiresAt can be backfilled - a range query cannot
+    // match a field that is absent - and no such document has existed since
     // the feature shipped. Monthly is often enough to catch one; daily was
     // paying for every verified user on the platform to find nothing.
     const fullScan = new Date().getDate() === 1;
@@ -81,7 +81,7 @@ export const verificationExpirySweep = onSchedule(
  * Promotes a PAID web verification into the admin review queue.
  *
  * Web cannot do what the app does. The app pays first and creates the request
- * afterwards, and the create rule permits an owner — so one write, no problem.
+ * afterwards, and the create rule permits an owner - so one write, no problem.
  * Web has to upload the documents BEFORE paying, because paying redirects to
  * Paystack and back through a different origin and the chosen File objects do
  * not survive the trip. So the request is parked at `awaiting_payment` and has
@@ -90,7 +90,7 @@ export const verificationExpirySweep = onSchedule(
  * That promotion was written as a CLIENT update, and
  * `verification_requests` is `allow update: if isAdmin()`. Every web payment
  * was therefore taken, the documents stored, and the request left at
- * `awaiting_payment` — a state the admin queue deliberately hides. The user
+ * `awaiting_payment` - a state the admin queue deliberately hides. The user
  * paid and vanished.
  *
  * It has to be server-side anyway, not merely to satisfy the rule: if a client
@@ -100,7 +100,7 @@ export const verificationExpirySweep = onSchedule(
  *
  * Verifies with Paystack rather than trusting the caller, binds the reference
  * to the caller through the payments doc so one person's transaction cannot
- * promote another's application, and is idempotent — a double callback (or a
+ * promote another's application, and is idempotent - a double callback (or a
  * refresh of the callback page) is a no-op rather than a second promotion.
  */
 export const finalizeWebVerification = onCall(
@@ -165,7 +165,7 @@ export const finalizeWebVerification = onCall(
       );
     }
 
-    // What this user actually owed — initial or renewal, decided server-side.
+    // What this user actually owed - initial or renewal, decided server-side.
     const expected = await resolveServerAmount("verification", uid);
 
     const resp = await fetch(
@@ -208,7 +208,7 @@ export const finalizeWebVerification = onCall(
     }, {merge: true});
     batch.set(db.collection("users").doc(uid), {
       verificationStatus: "pending",
-      // Renewals carry no new NIN — lets admin tell an annual renewal from a
+      // Renewals carry no new NIN - lets admin tell an annual renewal from a
       // first-time application in the review queue.
       isRenewal: false,
       verificationSubmittedAt: FieldValue.serverTimestamp(),

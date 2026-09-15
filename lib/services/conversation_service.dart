@@ -109,7 +109,7 @@ class ConversationService {
     String? agentName,
     // A caretaker thread is THREE-party: landlord, tenant, caretaker. The
     // landlord is a listed participant rather than a hidden observer, so the
-    // tenant can see who is in the room — no silent-reader concept was added.
+    // tenant can see who is in the room - no silent-reader concept was added.
     // It is also a SEPARATE thread from the plain landlord↔tenant one, because
     // that history can include rent negotiation the caretaker has no business
     // reading.
@@ -166,9 +166,9 @@ class ConversationService {
       }
 
       // Check if a conversation already exists for this (property, landlord,
-      // tenant) tuple. M3: query by the CALLER's participation — the only
+      // tenant) tuple. M3: query by the CALLER's participation - the only
       // owner-scoped shape the tightened list rule accepts, since the caller
-      // may be the agent (neither landlord nor tenant) — then client-filter
+      // may be the agent (neither landlord nor tenant) - then client-filter
       // the tuple. The caller's conversation set is small, so this is cheap
       // and needs no composite index.
       final caller = currentUserId;
@@ -304,7 +304,7 @@ class ConversationService {
   /// Called from chat screen dispose to clean up "ghost" conversations
   /// where a user opens chat but never types anything.
   ///
-  /// Safe to call regardless of message status — non-empty
+  /// Safe to call regardless of message status - non-empty
   /// conversations are left alone. Returns true if deleted, false
   /// otherwise (including any error).
   Future<bool> deleteIfEmpty(String conversationId) async {
@@ -536,7 +536,7 @@ class ConversationService {
   ///
   /// The rules (`firestore.rules`, messages `isAuthorEdit`) accept only
   /// `text` / `editedAt` / `mentions` from the author, so this deliberately
-  /// writes nothing else — no `updatedAt`, no re-stamped `timestamp`. Adding a
+  /// writes nothing else - no `updatedAt`, no re-stamped `timestamp`. Adding a
   /// field here without widening that allowlist fails the whole write.
   ///
   /// [isLastMessage] patches the conversation preview too. Without it the
@@ -577,7 +577,7 @@ class ConversationService {
 
   /// Soft-delete a message the caller sent: the doc stays (hard deletes are
   /// refused by the rules) but its text is blanked and the bubble renders as
-  /// removed. Blanking matters — the rules require it, because a `deleted`
+  /// removed. Blanking matters - the rules require it, because a `deleted`
   /// flag over intact text would leave the message readable to anyone reading
   /// the document directly.
   Future<bool> deleteMessage({
@@ -611,7 +611,7 @@ class ConversationService {
     }
   }
 
-  /// Update only the inbox preview text — no timestamp bump and no unread
+  /// Update only the inbox preview text - no timestamp bump and no unread
   /// increment, because editing or deleting is not a new message and must not
   /// re-badge the thread for the other party.
   Future<void> _patchConversationPreview(
@@ -666,7 +666,7 @@ class ConversationService {
       return null;
     }
 
-    // Same gate as sendMessage — unverified users cannot share.
+    // Same gate as sendMessage - unverified users cannot share.
     final senderVerified = await _isUserVerified(senderId);
     if (!senderVerified) {
       developer.log(
@@ -818,7 +818,7 @@ class ConversationService {
       });
 
       // Mark all messages as read (for the sender's double-tick receipt).
-      // Query on a single equality field only — combining it with a
+      // Query on a single equality field only - combining it with a
       // `senderId != userId` inequality would require a composite index we
       // don't deploy, so that query silently failed. We instead skip our
       // own messages client-side below.
@@ -1117,7 +1117,7 @@ class ConversationService {
   /// every unit in a building, so keying it to one property would fragment the
   /// same conversation across units.
   ///
-  /// Mirrors [getOrCreateAgentPitchConversation] — the existing precedent for
+  /// Mirrors [getOrCreateAgentPitchConversation] - the existing precedent for
   /// a person-to-person thread with no property attached. Three equality
   /// filters and no orderBy, so it needs no composite index.
   Future<String?> getOrCreateCaretakerConversation({
@@ -1133,7 +1133,7 @@ class ConversationService {
     }
 
     try {
-      // Both must be verified — the same gate every other thread applies, and
+      // Both must be verified - the same gate every other thread applies, and
       // the invite itself already refuses an unverified invitee.
       if (!await _isUserVerified(landlordId)) {
         developer.log('❌ Landlord not verified', name: 'ConversationService');
@@ -1232,7 +1232,7 @@ class ConversationService {
   }
 
   /// Get or create an admin support conversation with a specific user.
-  /// Bypasses verification check — admin can message anyone.
+  /// Bypasses verification check - admin can message anyone.
   Future<ConversationData?> getOrCreateAdminConversation({
     required String adminId,
     required String adminName,
@@ -1421,7 +1421,7 @@ class ConversationData {
   }
 
   String getOtherPersonName(String currentUserId) {
-    // Return the counterpart's name — never the current user's own name.
+    // Return the counterpart's name - never the current user's own name.
     // Mirrors the other-party precedence used in chat_screen.dart.
     if (currentUserId == landlordId) {
       // Landlord sees the tenant if there is one, else the caretaker, else the
@@ -1442,7 +1442,7 @@ class ConversationData {
     }
     if (caretakerId != null && currentUserId == caretakerId) {
       // Caretaker sees the tenant they manage for, else the landlord who
-      // appointed them — which is the only counterpart before acceptance.
+      // appointed them - which is the only counterpart before acceptance.
       if (tenantName.isNotEmpty) return tenantName;
       return landlordName.isNotEmpty ? landlordName : 'Unknown';
     }

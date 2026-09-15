@@ -4,13 +4,13 @@
  * field existed.
  *
  * A tenant browsing the LIST needs to know a room is in a face-me-I-face-you
- * rather than a block of flats — different products at the same room count.
+ * rather than a block of flats - different products at the same room count.
  * The card reads this field so it doesn't have to load the building doc per
  * card, so units written earlier show nothing until this runs.
  *
  * Copies the unit's building's `structure`. Compounds are SKIPPED: a compound
  * is land that can carry a duplex and a bungalow, so which building a given
- * unit sits in is not derivable — the landlord has to say, on the unit.
+ * unit sits in is not derivable - the landlord has to say, on the unit.
  *
  * Dry run (default) prints what it would write and changes nothing:
  *   node scripts/backfill_unit_building.js

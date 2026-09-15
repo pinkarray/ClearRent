@@ -17,7 +17,7 @@ class RentalInterestService {
   /// Amounts are deliberately NOT passed from here. The createRentalInterest
   /// Cloud Function derives every figure from the property and config/pricing,
   /// because the client-supplied paymentAmount written here used to decide what
-  /// the tenant was later charged for rent — a modified client could mint an
+  /// the tenant was later charged for rent - a modified client could mint an
   /// interest claiming ₦100 against a ₦1.2m tenancy (HANDOVER H2). Direct
   /// `create` on rental_interests is now denied by rule, so this MUST go
   /// through the callable. Eligibility (caller is the tenant, inspection
@@ -47,7 +47,7 @@ class RentalInterestService {
     } on FirebaseFunctionsException catch (e) {
       // Server rejected it (not the tenant, inspection not completed/rated,
       // property missing a rent). Logged with the real reason; the caller's
-      // contract is unchanged — null means "couldn't create".
+      // contract is unchanged - null means "couldn't create".
       developer.log('❌ createRentalInterest rejected: ${e.code} ${e.message}',
           name: 'RentalInterestService');
       return null;
@@ -87,7 +87,7 @@ class RentalInterestService {
 
   // ============ ADMIN VERIFICATION ============
 
-  /// Admin: Verify payment — LOCKS IN the landlord
+  /// Admin: Verify payment - LOCKS IN the landlord
   Future<bool> verifyRentalPayment(String interestId) async {
     try {
       final currentUserId = _authService.currentUserId;
@@ -113,7 +113,7 @@ class RentalInterestService {
     }
   }
 
-  /// Admin: Reject payment — tenant must re-upload
+  /// Admin: Reject payment - tenant must re-upload
   Future<bool> rejectRentalPayment(String interestId, String reason) async {
     try {
       await _firestore
@@ -136,7 +136,7 @@ class RentalInterestService {
   }
 
   /// Mark rental interest as payment verified (called after Paystack success).
-  /// Skips the 'paymentUploaded' state — goes directly to 'paymentVerified'.
+  /// Skips the 'paymentUploaded' state - goes directly to 'paymentVerified'.
   Future<bool> markPaymentVerified(
     String rentalInterestId, {
     String? paymentReference,
@@ -256,7 +256,7 @@ class RentalInterestService {
 
   /// Live stream of the rental interest for one inspection (or null if none
   /// yet). Lets the inspection card update itself the moment the interest state
-  /// changes — e.g. the landlord accepting flips it to `accepted`, so "Review
+  /// changes - e.g. the landlord accepting flips it to `accepted`, so "Review
   /// Agreement" appears without the tenant having to leave and come back.
   Stream<RentalInterest?> streamInterestForInspection(
       String inspectionRequestId) {

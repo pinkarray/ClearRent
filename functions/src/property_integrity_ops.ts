@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// property_integrity_ops.ts — server-side invariant for the ownership document.
+// property_integrity_ops.ts - server-side invariant for the ownership document.
 //
 // A standalone listing that says `ownershipDocStatus: 'pending'` is a promise
 // that there is a document waiting to be reviewed. The listing
@@ -9,7 +9,7 @@
 // uploadOwnershipDoc swallowed the exception and returned null, and the
 // publish carried on regardless.
 //
-// Both fixes for that are on the CLIENT — add-property and edit-property now
+// Both fixes for that are on the CLIENT - add-property and edit-property now
 // abort the publish when the upload returns null. Neither helps a listing
 // written by an older build, a modified client, or the web listing form. This
 // trigger is the invariant the other two only approximate: whatever wrote the
@@ -19,7 +19,7 @@
 // Scoped deliberately to 'pending':
 //   - 'none' / 'not_uploaded' / 'rejected' honestly say there is no document.
 //   - 'inherited' belongs to a grouped unit, whose document lives on its
-//     BUILDING — excluded by the buildingId guard below.
+//     BUILDING - excluded by the buildingId guard below.
 //   - 'verified' with no URL is unreachable: an admin can only verify from the
 //     dashboard's document panel, which has nothing to approve when the URL is
 //     missing. Repairing it here would mean silently delisting a live property,
@@ -66,7 +66,7 @@ export const onPropertyOwnershipDocWritten = onDocumentWritten(
   "properties/{propertyId}",
   async (event) => {
     const after = event.data?.after;
-    if (!after?.exists) return; // deleted — onPropertyDeleted handles cascade
+    if (!after?.exists) return; // deleted - onPropertyDeleted handles cascade
 
     const propertyId = event.params.propertyId;
     const d = after.data();
@@ -76,7 +76,7 @@ export const onPropertyOwnershipDocWritten = onDocumentWritten(
     // A grouped unit owns no document; its building holds the reviewed one.
     if (now.grouped) return;
 
-    // The document arrived (or was replaced) — close the standing alert.
+    // The document arrived (or was replaced) - close the standing alert.
     // Guarded on the transition so this doesn't query admin_alerts on every
     // unrelated property write.
     if (now.url && !was.url) {
@@ -90,8 +90,8 @@ export const onPropertyOwnershipDocWritten = onDocumentWritten(
     }
 
     // 'pending' with no file is the whole invariant. The doc TYPE is not
-    // part of the test — a landlord who set neither is just as un-reviewable
-    // as one whose upload failed — it only changes what the alert says.
+    // part of the test - a landlord who set neither is just as un-reviewable
+    // as one whose upload failed - it only changes what the alert says.
     if (now.url || now.status !== "pending") return;
 
     // Repair first: until the status moves, the listing occupies the admin's
@@ -117,7 +117,7 @@ export const onPropertyOwnershipDocWritten = onDocumentWritten(
       title: "Ownership document never arrived",
       body:
         `"${title}" was queued for document review, but ${chose}, so there ` +
-        "is nothing to review. It has been taken out of the queue — reject " +
+        "is nothing to review. It has been taken out of the queue - reject " +
         `it from Properties to ask ${landlordName} for the document.`,
       targetCollection: "properties",
       targetId: propertyId,
@@ -130,7 +130,7 @@ export const onPropertyOwnershipDocWritten = onDocumentWritten(
       },
     });
 
-    logger.warn("Ownership doc missing — status forced to none", {
+    logger.warn("Ownership doc missing - status forced to none", {
       propertyId,
       ownershipDocType: now.type,
     });

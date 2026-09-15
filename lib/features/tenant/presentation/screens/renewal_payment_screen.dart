@@ -35,7 +35,7 @@ class RenewalPaymentScreen extends StatefulWidget {
 class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   final ActiveRentalService _activeRentalService = ActiveRentalService();
   bool _isProcessing = false;
-  /// Latched once money has moved — see the note in rental_payment_screen.
+  /// Latched once money has moved - see the note in rental_payment_screen.
   bool _paymentSuccessful = false;
   String? _paymentReference;
 
@@ -97,7 +97,7 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
     } catch (e) {
       developer.log('❌ Renewal payment error: $e', name: 'RenewalPayment');
       if (!mounted) return;
-      // If we have a reference, the charge likely went through — steer the
+      // If we have a reference, the charge likely went through - steer the
       // tenant to support rather than implying they lost money.
       if (_paymentReference != null) {
         _showUpdateFailureDialog();

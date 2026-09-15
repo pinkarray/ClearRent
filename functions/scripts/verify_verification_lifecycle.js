@@ -8,7 +8,7 @@
  * warning buckets, untouched healthy users, exempt accounts, and idempotency
  * on a second run.
  *
- * Needs BOTH the firestore (8080) and auth (9099) emulators — platform admin
+ * Needs BOTH the firestore (8080) and auth (9099) emulators - platform admin
  * status lives in Auth custom claims, so proving admins are never soft-locked
  * requires Auth. firebase.json must have an "auth" entry under "emulators".
  *   npm run build
@@ -61,27 +61,27 @@ async function seed(now) {
   const v = (extra) => ({
     verificationStatus: "verified", isVerified: true, ...extra,
   });
-  // No expiry yet — the launch-day backfill case.
+  // No expiry yet - the launch-day backfill case.
   await db.collection("users").doc("u_backfill").set(v({}));
-  // Lapsed yesterday — must soft-lock.
+  // Lapsed yesterday - must soft-lock.
   await db.collection("users").doc("u_expired").set(
     v({verificationExpiresAt: Timestamp.fromMillis(now - DAY)}));
-  // 5 days left — falls in the 7-day warning bucket.
+  // 5 days left - falls in the 7-day warning bucket.
   await db.collection("users").doc("u_warn7").set(
     v({verificationExpiresAt: Timestamp.fromMillis(now + 5 * DAY)}));
-  // 12 days left — falls in the 14-day warning bucket.
+  // 12 days left - falls in the 14-day warning bucket.
   await db.collection("users").doc("u_warn14").set(
     v({verificationExpiresAt: Timestamp.fromMillis(now + 12 * DAY)}));
-  // Healthy — must be left completely alone.
+  // Healthy - must be left completely alone.
   await db.collection("users").doc("u_safe").set(
     v({verificationExpiresAt: Timestamp.fromMillis(now + 100 * DAY)}));
-  // Lapsed BUT exempt — must be skipped.
+  // Lapsed BUT exempt - must be skipped.
   await db.collection("users").doc("u_exempt").set(
     v({
       verificationExempt: true,
       verificationExpiresAt: Timestamp.fromMillis(now - DAY),
     }));
-  // Lapsed superAdmin — admin status lives in Auth claims only, so the sweep
+  // Lapsed superAdmin - admin status lives in Auth claims only, so the sweep
   // must consult Auth and refuse to soft-lock them out of their own platform.
   await getAuth().createUser({uid: "u_admin", email: "admin@clearrent.test"});
   await getAuth().setCustomUserClaims("u_admin", {superAdmin: true});
@@ -163,12 +163,12 @@ async function main() {
   check("idempotent: expired user unchanged",
     expiredAgain.verificationStatus === "expired", "changed");
 
-  // ── Narrow path (fullScan=false) — what the daily job actually runs ──
+  // ── Narrow path (fullScan=false) - what the daily job actually runs ──
   //
   // The range query cannot see documents with no verificationExpiresAt, so
   // backfill is expected to be MISSED here; that is why the scheduled job
-  // still does a full read once a month. Everything time-critical — expiry
-  // and both warning buckets — must still be caught.
+  // still does a full read once a month. Everything time-critical - expiry
+  // and both warning buckets - must still be caught.
   await wipe();
   await seed(now);
   const c3 = await runVerificationExpirySweep(now, false);

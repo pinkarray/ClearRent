@@ -54,7 +54,7 @@ class BuildingService {
     }
   }
 
-  /// The current landlord's buildings, newest first — feeds the add-property
+  /// The current landlord's buildings, newest first - feeds the add-property
   /// "join an existing building" picker. Scoped to landlordId so it satisfies
   /// the ownership-constrained list rule.
   Stream<List<BuildingModel>> streamLandlordBuildings() {
@@ -94,7 +94,7 @@ class BuildingService {
     }
   }
 
-  /// Live stream of a single building — for screens that should react to the
+  /// Live stream of a single building - for screens that should react to the
   /// admin verifying the shared ownership doc.
   Stream<BuildingModel?> streamBuilding(String buildingId) {
     if (buildingId.isEmpty) return Stream.value(null);

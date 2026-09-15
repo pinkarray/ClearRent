@@ -18,7 +18,7 @@ class ActivityService {
   // ─────────────────────────────────────────────
 
   /// Track when a landlord lists a property.
-  /// [landlordId] is optional — falls back to the current user's uid.
+  /// [landlordId] is optional - falls back to the current user's uid.
   /// Deduplicates: only one "propertyAdded" per propertyId per landlord.
   Future<void> trackPropertyAdded({
     String? landlordId,
@@ -205,7 +205,7 @@ class ActivityService {
   /// All activities for the current landlord (one-time fetch).
   ///
   /// Merged from BOTH logs. `activities` is written ad hoc by whichever client
-  /// screen remembered to — nine types in all. `notifications` is written
+  /// screen remembered to - nine types in all. `notifications` is written
   /// centrally by the Cloud Functions and carries nineteen landlord-facing
   /// types, sixteen of which never reached this feed: a tenant requesting an
   /// inspection, rent interest paid, an agreement finalising, a caretaker
@@ -245,7 +245,7 @@ class ActivityService {
   /// Notification types that belong in the feed, mapped to the nearest
   /// [ActivityType] so the existing tap-routing and icons keep working.
   ///
-  /// Anything absent from this map is deliberately NOT in the feed — chat
+  /// Anything absent from this map is deliberately NOT in the feed - chat
   /// messages and reminders addressed to the tenant would only be noise here.
   static const Map<String, ActivityType> _notificationFeedTypes = {
     'inspection_request': ActivityType.inspectionRequest,
@@ -352,7 +352,7 @@ class ActivityService {
   ///
   /// The two use different field names on purpose: `activities` has `isRead`,
   /// `notifications` has `read` + `readAt`, and the notification update rule
-  /// allowlists exactly those two — sending `isRead` there rejects the whole
+  /// allowlists exactly those two - sending `isRead` there rejects the whole
   /// write.
   Future<void> markAsRead(String activityId) async {
     try {

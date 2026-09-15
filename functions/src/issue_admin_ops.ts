@@ -2,7 +2,7 @@
  * Admin-facing maintenance-issue operations.
  *
  * `nudgeIssueParty` lets an admin send an on-demand push to whichever party
- * is holding up a reported issue — usually the landlord sitting on a tenant's
+ * is holding up a reported issue - usually the landlord sitting on a tenant's
  * open report, occasionally the tenant sitting on a fix awaiting confirmation.
  * The issue lifecycle already pushes on every status change (onIssueCreated /
  * onIssueUpdated in index.ts); what it cannot do is prod a party who simply
@@ -10,7 +10,7 @@
  *
  * Mirrors inspection_admin_ops.ts: notifications are admin-SDK-only writes, so
  * the nudge must go server-side, and an auto-id create (not
- * writeNotificationOnce) is deliberate — an admin pressing "nudge" twice SHOULD
+ * writeNotificationOnce) is deliberate - an admin pressing "nudge" twice SHOULD
  * send twice. Unlike the inspection nudge, the nudge is also stamped onto the
  * issue doc (`lastNudgedAt` / `nudgeCount`) so the next admin to open the issue
  * can see it has already been chased, instead of piling on.
@@ -141,7 +141,7 @@ function buildNudge(
   return {
     recipientId,
     title,
-    body: note ? `${base} — ${note}` : base,
+    body: note ? `${base} - ${note}` : base,
     payload,
   };
 }
@@ -202,7 +202,7 @@ export const nudgeIssueParty = onCall(callableOptions, async (request) => {
 });
 
 // ── nudgeIssuesBulk ──────────────────────────────────────────────────────────
-// Chase a whole backlog in one press — the stale pending-confirmation queue is
+// Chase a whole backlog in one press - the stale pending-confirmation queue is
 // the motivating case (a dozen fixes nobody signed off on, twelve panel-opens
 // to chase them one at a time).
 //
@@ -210,7 +210,7 @@ export const nudgeIssueParty = onCall(callableOptions, async (request) => {
 //   • the caller passes explicit issue ids (never a server-side "everything
 //     matching" sweep) so what got hit is exactly what the admin was shown
 //   • capped per call
-//   • a cooldown skips anyone already nudged recently — an admin pressing the
+//   • a cooldown skips anyone already nudged recently - an admin pressing the
 //     single button twice is deliberate; a bulk press catching the same person
 //     two days running is just noise
 //   • per-issue failures are collected and reported, never abort the batch
@@ -247,7 +247,7 @@ function validateBulkInput(data: unknown): BulkInput {
   if (issueIds.length > BULK_MAX) {
     throw new HttpsError(
       "invalid-argument",
-      `Too many issues at once — ${BULK_MAX} is the limit`,
+      `Too many issues at once - ${BULK_MAX} is the limit`,
     );
   }
   return {issueIds, note: note.slice(0, 300)};
@@ -333,7 +333,7 @@ export const nudgeIssuesBulk = onCall(
       }
     }
 
-    // One audit row for the batch — fifty rows for one press buries the log.
+    // One audit row for the batch - fifty rows for one press buries the log.
     await writeAuditLog({
       actorId: adminUid,
       action: "nudge_issues_bulk",

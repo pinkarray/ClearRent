@@ -43,7 +43,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../shared/utils/sheet_insets.dart';
 
 // Derived from the one vocabulary in PropertyModel. This list used to be its
-// own invention — 'self_contain', 'room_and_parlour', 'studio' and 'mansion'
+// own invention - 'self_contain', 'room_and_parlour', 'studio' and 'mansion'
 // are values nothing has ever written, so those filters matched no property at
 // all while 'room' and 'selfContain' listings were unreachable.
 final List<Map<String, String>> propertyTypes = [
@@ -85,7 +85,7 @@ const List<String> lagosAreas = [
 class TenantHomeScreen extends StatefulWidget {
   /// Which bottom-nav tab to open on (0 = Home/dashboard). Lets callers land the
   /// tenant on the dashboard rather than whatever tab a reused home instance was
-  /// last on — e.g. "Go to My Home" after paying rent must not land on Profile.
+  /// last on - e.g. "Go to My Home" after paying rent must not land on Profile.
   final int initialTab;
   const TenantHomeScreen({super.key, this.initialTab = 0});
 
@@ -113,7 +113,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   // The banner is mounted on two surfaces (the tenancy dashboard and the
   // browse home) and only one is in the tree at a time. With a shared stream
   // instance, moving between them cancelled one subscription and started
-  // another — and a single-subscription stream cannot be listened to twice,
+  // another - and a single-subscription stream cannot be listened to twice,
   // so the second mount silently got an error the `hasData` check rendered as
   // nothing. That is why the banner vanished on the way to browse and never
   // came back on the way home.
@@ -126,10 +126,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   List<RentalInterest> _interests = const [];
   bool _inspectionsLoaded = false;
   bool _interestsLoaded = false;
-  // Approved inspections for the tenant — powers the "inspection today" banner
+  // Approved inspections for the tenant - powers the "inspection today" banner
   // on the home tab. Created once in initState (see cached-streams note below).
 
-  // Cached streams for the home body. Created ONCE in initState — the many
+  // Cached streams for the home body. Created ONCE in initState - the many
   // init-time setState() calls (profile, saved, unread, properties, rental
   // count, active rental) rebuild this screen repeatedly, and if these streams
   // were created inside build() each rebuild would hand StreamBuilder a fresh
@@ -147,13 +147,13 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   StreamSubscription<List<TenantRental>>? _tenantRentalsSub;
   // Rentals that have ENDED but whose handover is still open. These are absent
   // from _tenantRentals by design, so without this the tenant is never told
-  // their caution deposit is waiting on them — and the landlord's unit stays
+  // their caution deposit is waiting on them - and the landlord's unit stays
   // off the market meanwhile.
   List<ActiveRental> _openHandovers = const [];
   StreamSubscription<List<ActiveRental>>? _openHandoversSub;
   // Saved properties
   Set<String> _savedProperties = {};
-  /// Saved properties that browse does not carry — typically because they are
+  /// Saved properties that browse does not carry - typically because they are
   /// no longer available. Keyed by id; see [_resolveSavedProperties].
   final Map<String, PropertyModel> _savedExtras = {};
   bool _isLoadingSaved = true;
@@ -186,7 +186,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   // Active rental (paid/contract-based)
   ActiveRental? _activeRental;
-  // Count of the tenant's current active rentals — a tenant can hold more than
+  // Count of the tenant's current active rentals - a tenant can hold more than
   // one (multi-rental), so the profile "Rentals" stat shows the real number.
   int _activeRentalCount = 0;
   bool _browsingFromDashboard =
@@ -402,7 +402,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// Fetches the saved properties that browse does not carry.
   ///
   /// `_allProperties` holds AVAILABLE listings only, so intersecting the saved
-  /// IDs with it silently dropped anything now let, delisted or paused — the
+  /// IDs with it silently dropped anything now let, delisted or paused - the
   /// tenant's own bookmark disappeared with no explanation, and the badge and
   /// the list disagreed about how many there were. The saved doc still exists
   /// in `users/{uid}/savedProperties`; only the rendering was lossy.
@@ -679,7 +679,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             if (_searchController.text.isNotEmpty) {
               final query = _searchController.text.toLowerCase();
               // Exact street address lives in the gated subdoc and isn't available
-              // when browsing — match on the area-level fields only.
+              // when browsing - match on the area-level fields only.
               return property.title.toLowerCase().contains(query) ||
                   property.city.toLowerCase().contains(query) ||
                   property.state.toLowerCase().contains(query);
@@ -689,7 +689,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     });
   }
 
-  /// Area filter — the shared height-capped bottom-sheet picker instead of a
+  /// Area filter - the shared height-capped bottom-sheet picker instead of a
   /// dropdown menu that balloons to cover the screen.
   void _showAreaPicker() {
     showOptionPicker(
@@ -708,7 +708,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  /// Upper bound for the price slider — the highest rent in view, rounded up to
+  /// Upper bound for the price slider - the highest rent in view, rounded up to
   /// the nearest ₦100k (with a sensible floor so the slider isn't degenerate).
   double get _rentBound {
     double maxR = 0;
@@ -982,7 +982,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  /// Live count for the sheet's Apply button — how many listings the pending
+  /// Live count for the sheet's Apply button - how many listings the pending
   /// (not-yet-applied) filter selection would show.
   int _matchCount(
     double minRent,
@@ -1120,14 +1120,14 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       }
     }
 
-    // ── Verified tenant — multi-rental switcher (active + linked) ─────────
+    // ── Verified tenant - multi-rental switcher (active + linked) ─────────
     // Replaces the old mutually-exclusive Tier 1 (single linked) / Tier 3
     // (single active) routing. The switcher enumerates every occupied rental
     // via streamTenantRentals() and shows one at a time.
     if (_currentNavIndex == 0 &&
         !_browsingFromDashboard &&
         !_browsingFromLinkedDashboard) {
-      // First delivery hasn't landed yet — show a spinner rather than flashing
+      // First delivery hasn't landed yet - show a spinner rather than flashing
       // the browse home before the real list arrives.
       if (!_tenantRentalsLoaded) {
         return SafeArea(
@@ -1137,7 +1137,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         );
       }
       if (_tenantRentals.isEmpty) {
-        // No occupied rentals — fall through to browse home. The handover
+        // No occupied rentals - fall through to browse home. The handover
         // banner has to come too: a tenant whose only rental just ended lands
         // HERE, which is exactly when their deposit is outstanding.
         return SafeArea(
@@ -1153,7 +1153,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         child: Column(
           children: [
             // This branch returns before _buildHomeTab, where the verification
-            // prompt normally lives — so a tenant WITH rentals would otherwise
+            // prompt normally lives - so a tenant WITH rentals would otherwise
             // never see that their verification lapsed. Surface it here too.
             if (_verificationStatus != VerificationStatus.verified)
               _buildVerificationPrompt(),
@@ -1169,9 +1169,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             _buildHandoverBanner(),
             _buildInspectionBanner(),
             // And the same trap a fourth time. Caretaking is the one role that
-            // has nothing to do with whether you rent somewhere — renting a
+            // has nothing to do with whether you rent somewhere - renting a
             // flat is exactly why you might be on the premises to look after
-            // another one — yet the banner lived only on the browse home, so
+            // another one - yet the banner lived only on the browse home, so
             // the tenant most likely to BE a caretaker was the one person who
             // could never see the invitation.
             // The 20 inset is supplied HERE: this Column is full-width, and
@@ -1386,7 +1386,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   }
 
   // ── TIER 1: VERIFIED LINKED TENANT DASHBOARD ────────────────────────────
-  // Full linked dashboard — report issues, lease details, messaging, browse
+  // Full linked dashboard - report issues, lease details, messaging, browse
 
   Widget _buildLinkedVerifiedDashboard(
     TenancyLinkModel link,
@@ -1422,7 +1422,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 // Active issues summary (open + in_progress)
                 _buildActiveIssuesCard(link),
 
-                // Quick actions — verified tenant only
+                // Quick actions - verified tenant only
                 Row(
                   children: [
                     Expanded(
@@ -1534,7 +1534,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  // Streams pending_confirmation issues for linked tenants — same accountability
+  // Streams pending_confirmation issues for linked tenants - same accountability
   // loop as the inspection-path tenant dashboard.
   Widget _buildLinkedPendingConfirmations(TenancyLinkModel link) {
     return StreamBuilder<QuerySnapshot>(
@@ -1584,7 +1584,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     );
   }
 
-  /// Active issues card — shows open + in_progress issues for THIS property.
+  /// Active issues card - shows open + in_progress issues for THIS property.
   /// Only visible while the tenancy link is confirmed/active.
   /// Scoped to propertyId so switching properties shows the right data.
   Widget _buildActiveIssuesCard(TenancyLinkModel link) {
@@ -1681,7 +1681,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                   ],
                 ),
 
-                // Issue rows — up to 3
+                // Issue rows - up to 3
                 if (docs.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Divider(height: 1),
@@ -1904,7 +1904,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   }
 
   // ── TIER 2: UNVERIFIED LINKED TENANT PROFILE ─────────────────────────────
-  // Mini profile: edit info, verify, help — no saved/inspections/browse
+  // Mini profile: edit info, verify, help - no saved/inspections/browse
 
   Widget _buildLinkedUnverifiedProfile() {
     return SingleChildScrollView(
@@ -2671,7 +2671,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 ),
               ),
             ),
-          // Pending link requests banner — replaces the old route-based banner
+          // Pending link requests banner - replaces the old route-based banner
           if (pendingLinks.isNotEmpty) _buildPendingLinksBanner(pendingLinks),
           _buildRentDueBanner(),
           _buildInspectionBanner(),
@@ -2705,7 +2705,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// A rental is BORN `pending_payment` and only becomes `active` once rent
   /// lands, so this is the window where the tenant owes money and nothing was
   /// telling them. The dashboard's own stream deliberately carries only
-  /// OCCUPYING statuses, which excludes `pending_payment` outright — so this
+  /// OCCUPYING statuses, which excludes `pending_payment` outright - so this
   /// reads `streamAllTenantRentals` instead, exactly as the inspection banner
   /// runs off its own stream rather than the dashboard's state.
   ///
@@ -2714,7 +2714,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// The tenancy is over; the caution deposit is not. Leads to the handover.
   ///
   /// This exists because the ended rental leaves the dashboard entirely, so
-  /// the only route to the handover was My Rentals — a screen nobody visits
+  /// the only route to the handover was My Rentals - a screen nobody visits
   /// after moving out. Meanwhile the landlord's property stays off the market
   /// waiting on an answer the tenant was never asked for.
   Widget _buildHandoverBanner() {
@@ -2790,7 +2790,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
         final r = owing.first;
         final more = owing.length - 1;
         // Rent only unlocks once the agreement is executed, so until then the
-        // tenant's actual next step is signing — promising "pay now" would send
+        // tenant's actual next step is signing - promising "pay now" would send
         // them to a button they cannot press.
         final ready = r.isAgreementFinalized;
         final title = ready
@@ -2860,23 +2860,23 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
   /// The one inspection banner. Three states, highest priority first.
   ///
-  ///  1. An inspection TODAY — time-critical, someone is expecting them.
-  ///  2. A visit not yet rated — rating confirms it happened, which secures
+  ///  1. An inspection TODAY - time-critical, someone is expecting them.
+  ///  2. A visit not yet rated - rating confirms it happened, which secures
   ///     the handler's fee and unlocks the decision on that property.
-  ///  3. Rated but no decision — the landlord is waiting to hear.
+  ///  3. Rated but no decision - the landlord is waiting to hear.
   ///
   /// Reads [_inspections] and [_interests], which are kept current by
   /// subscriptions held for the life of this screen. It used to be a
   /// StreamBuilder over a shared stream, which broke in two visible ways: the
   /// banner never appeared on the browse home, and it did not come back after
-  /// returning to the dashboard. Both were the same cause — the banner is
+  /// returning to the dashboard. Both were the same cause - the banner is
   /// mounted on two surfaces, moving between them cancels one subscription and
   /// opens another, and a single-subscription stream cannot be listened to
   /// twice. `hasData` then rendered that error as nothing at all.
   Widget _buildInspectionBanner() {
     if (!_inspectionsLoaded) return const SizedBox.shrink();
 
-    // 1 — happening today
+    // 1 - happening today
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final todays = _inspections.where((r) {
@@ -2923,7 +2923,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
     final completed = _inspections.where((r) => r.isCompleted).toList();
 
-    // 2 — visited but not rated
+    // 2 - visited but not rated
     final unrated = completed.where((r) => !r.tenantRated).toList();
     if (unrated.isNotEmpty) {
       final more = unrated.length - 1;
@@ -2942,7 +2942,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       );
     }
 
-    // 3 — rated, still undecided. `tenantPassed` IS a decision ("I'll Keep
+    // 3 - rated, still undecided. `tenantPassed` IS a decision ("I'll Keep
     // Looking"); it writes a flag on the inspection rather than a
     // rental_interest, so it must be excluded or the banner nags about a
     // property the tenant has already turned down.
@@ -3561,7 +3561,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   /// Every saved property, whether or not browse still carries it.
   ///
   /// Resolved from `_allProperties` first and `_savedExtras` second, so a place
-  /// that has since been let or delisted still appears — it is the tenant's own
+  /// that has since been let or delisted still appears - it is the tenant's own
   /// bookmark, and silently dropping it is what made the badge and the list
   /// disagree ("1 saved" over an empty list, then 2 after one like).
   List<PropertyModel> get _savedList {
@@ -4161,7 +4161,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
-  // Agreements live in private storage — resolve a short-lived signed URL via
+  // Agreements live in private storage - resolve a short-lived signed URL via
   // the CF (which authorizes this tenant as a party) before opening.
   Future<void> _openLinkAgreement(TenancyLinkModel link) async {
     final url = await _agreementAccess.resolveUrl(
@@ -4447,7 +4447,7 @@ class _LeaseDetailRow extends StatelessWidget {
   }
 }
 
-/// Confirmation card for linked tenants — identical accountability loop
+/// Confirmation card for linked tenants - identical accountability loop
 /// to the inspection-path version in tenant_rental_dashboard.dart
 class _LinkedPendingConfirmationCard extends StatefulWidget {
   final String issueId;

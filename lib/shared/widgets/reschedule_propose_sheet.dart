@@ -101,7 +101,7 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
       // inside the lead time.
       //
       // The old local filter judged a whole DAY by its 9 AM slot, so any day
-      // was discarded the moment 9 AM was less than two hours away — which
+      // was discarded the moment 9 AM was less than two hours away - which
       // removed today from every reschedule after 7 AM even when the afternoon
       // and evening were wide open. Per-slot filtering is in the service now.
       final dates = await _inspectionService.getAvailableDates(
@@ -140,7 +140,7 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
       // Never offer the slot this inspection ALREADY holds. Proposing a move
       // to where you already are is a no-op the other party still has to
       // approve. The availability callable excludes handler-held slots, but
-      // this must hold on its fallback path too — that one has no way to know
+      // this must hold on its fallback path too - that one has no way to know
       // what is taken, so without this the current slot reappears whenever the
       // callable is unreachable.
       final current = widget.request;

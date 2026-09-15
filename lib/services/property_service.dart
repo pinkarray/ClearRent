@@ -84,7 +84,7 @@ class PropertyService {
   /// (`com.verealtytech.clearrent`), so the `contains` test is ALWAYS true and
   /// the split returns everything after the last dot anywhere in the path. For
   /// a picked file whose name has no extension that is
-  /// `clearrent/cache/file_picker/<id>/<name>` — slashes and all — which turns
+  /// `clearrent/cache/file_picker/<id>/<name>` - slashes and all - which turns
   /// a one-segment object name into several. `ownership/{uid}/{docId}` and
   /// `agreements/{uid}/{docId}` each match a SINGLE segment, so such an upload
   /// matched no rule at all, fell through to the catch-all deny, and came back
@@ -147,7 +147,7 @@ class PropertyService {
 
   /// Upload an ownership document (C of O / deed) to PRIVATE Firebase Storage,
   /// mirroring how verification documents are handled. Returns the storage
-  /// PATH (not a public URL) — the admin streams the bytes through an
+  /// PATH (not a public URL) - the admin streams the bytes through an
   /// authenticated route, and Storage rules restrict reads to the owner + admin.
   /// A C of O is title-level PII, so it must never live on a public URL.
   /// [onError] receives a sentence fit to show the user. Optional so the
@@ -178,7 +178,7 @@ class PropertyService {
   /// landlord's folder (`agreements/{uid}/…`). Returns the storage PATH.
   /// Tenants read it via a short-lived signed URL from the getSignedAgreementUrl
   /// CF (storage rules can't authorize the tenant). A tenancy agreement is
-  /// sensitive — it must not live on a public URL.
+  /// sensitive - it must not live on a public URL.
   /// [onError] receives a sentence fit to show the user. Optional so the
   /// existing callers that only check for null keep working unchanged.
   Future<String?> uploadAgreementDoc(
@@ -211,7 +211,7 @@ class PropertyService {
   // longer requires an upload.
   //
   // Lives in the gated `properties/{id}/private/agreement` subdoc, not on the
-  // property document — that one is readable by any signed-in user and feeds
+  // property document - that one is readable by any signed-in user and feeds
   // public browse.
 
   /// Store (or replace) the agreement kept against [propertyId].
@@ -271,7 +271,7 @@ class PropertyService {
   }
 
   /// Remove the agreement kept against [propertyId]. Tenancies that already
-  /// copied it keep their own copy — this only stops future auto-attaches.
+  /// copied it keep their own copy - this only stops future auto-attaches.
   Future<bool> deletePropertyAgreement(String propertyId) async {
     if (propertyId.isEmpty) return false;
     try {
@@ -406,7 +406,7 @@ class PropertyService {
     String? ownershipDocUrl,
     String? ownershipDocType,
     // When set, this unit belongs to a building/compound and inherits the
-    // building's shared ownership doc — no per-property doc is stored.
+    // building's shared ownership doc - no per-property doc is stored.
     String? buildingId,
     // What the landlord calls this unit within its building ("Room 2", "Left
     // flat") and which floor it's on. Both are only meaningful alongside a
@@ -415,14 +415,14 @@ class PropertyService {
     String? floor,
     // For any UNIT inside a building, whatever its type: 'private' | 'shared',
     // plus 'none' for a kitchen or living room. Sharing is a fact about the
-    // arrangement, not the type — a self contain in a compound can still share
+    // arrangement, not the type - a self contain in a compound can still share
     // the toilet. Null when the whole property is let.
     String? bathroomAccess,
     String? toiletAccess,
     String? kitchenAccess,
     String? livingRoomAccess,
     // Which building on the land this unit sits in, when the site is a
-    // compound — one C of O can cover a duplex and a bungalow side by side.
+    // compound - one C of O can cover a duplex and a bungalow side by side.
     String? unitBuildingStructure,
     String? unitBuildingLabel,
     String? listingFeePaymentReference,
@@ -494,7 +494,7 @@ class PropertyService {
         'guestRooms': guestRooms,
         'kitchens': kitchens,
         'images': imageUrls,
-        // Exact street address + precise coords are NOT stored here — they go
+        // Exact street address + precise coords are NOT stored here - they go
         // to the gated `private/location` subdoc below. Only area-level
         // city/state/lga live on the world-readable parent doc.
         'city': city,
@@ -507,7 +507,7 @@ class PropertyService {
         'cautionDepositRefundable': cautionDepositRefundable,
         'isAvailable': true,
         // A listing is born unreviewed. This is the ADMIN's badge for THIS
-        // listing's ownership document (adminReviewPropertyDoc writes it) — not
+        // listing's ownership document (adminReviewPropertyDoc writes it) - not
         // a mirror of the landlord's own verification, which is what it used to
         // copy. Seeding it true let every listing skip the review the rules
         // exist to enforce; firestore.rules now pins it false at create.
@@ -580,7 +580,7 @@ class PropertyService {
       );
 
       // Increment lifetime listing count on the user document.
-      // This counter only goes up — removing a property doesn't decrease it.
+      // This counter only goes up - removing a property doesn't decrease it.
       // Used to determine whether the landlord qualifies for the free first listing.
       try {
         await _firestore.collection('users').doc(_currentUserId).update({
@@ -811,12 +811,12 @@ class PropertyService {
   }
 
   /// The units already listed in one building, as
-  /// `{unitLabel, structure, buildingLabel}` — the last two naming which
+  /// `{unitLabel, structure, buildingLabel}` - the last two naming which
   /// building inside a compound the unit sits in, empty elsewhere.
   ///
   /// Feeds two things the add-property flow had no way to know:
   ///  * which buildings a compound already contains. They are not records of
-  ///    their own — each unit describes the one it sits in — so adding a
+  ///    their own - each unit describes the one it sits in - so adding a
   ///    second unit to the SAME duplex meant re-picking the structure and
   ///    landing on the same letter from memory, and a slip silently split one
   ///    duplex into two.
@@ -1136,7 +1136,7 @@ class PropertyService {
     Map<String, dynamic> updates,
   ) async {
     try {
-      // Route any exact-location fields to the gated subdoc — they must never
+      // Route any exact-location fields to the gated subdoc - they must never
       // be written back onto the world-readable parent doc.
       final hasExact = updates.containsKey('address') ||
           updates.containsKey('latitude') ||
@@ -1189,7 +1189,7 @@ class PropertyService {
         'assignedAgentId': agentId,
         'assignedAgentName': agentName,
         'assignedAgentPhone': agentPhone,
-        // Assigning an agent means the agent handles inspections — keep the
+        // Assigning an agent means the agent handles inspections - keep the
         // handler consistent so it doesn't read back as 'self'.
         'inspectionHandler': 'agent',
         // Readiness gate (Phase 2): the handler changed, so the new agent must
@@ -1404,7 +1404,7 @@ class PropertyService {
 
   // ============ DELETE ============
 
-  /// True if the property has a sitting tenant — an occupying active rental or
+  /// True if the property has a sitting tenant - an occupying active rental or
   /// a confirmed tenancy link. Such a property must not be deleted (doing so
   /// strands the tenant's dashboard with an orphaned rental/link). Uses the
   /// same occupying statuses as the server-side rent-review occupancy check.
@@ -1435,7 +1435,7 @@ class PropertyService {
   }
 
   /// Delete a property. Refuses if it has a sitting tenant (see
-  /// [propertyHasSittingTenant]) — returns false without deleting.
+  /// [propertyHasSittingTenant]) - returns false without deleting.
   Future<bool> deleteProperty(String propertyId) async {
     try {
       if (await propertyHasSittingTenant(propertyId)) {

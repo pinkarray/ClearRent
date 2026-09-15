@@ -12,7 +12,7 @@ import '../models/condition_record.dart';
 /// Without a baseline, "this was damaged" and "it was already like that" are
 /// the same sentence with nobody able to prove either. The move-out flow
 /// treats a missing baseline as weakening a deduction rather than blocking it,
-/// which is the fair reading — but it is a poor substitute for having one.
+/// which is the fair reading - but it is a poor substitute for having one.
 ///
 /// Shown to BOTH sides, and to tenancies already underway: every existing
 /// tenancy predates this feature, so the alternative is a baseline that only
@@ -80,7 +80,7 @@ class _MoveInBaselinePromptState extends State<MoveInBaselinePrompt> {
     // Gone only once the record is SEALED. Hiding it the moment a record
     // EXISTS stranded anyone whose upload died halfway: they were left with a
     // pending record holding no media, no baseline on file, and no way back to
-    // the camera — even though rules deliberately leave an unsealed record
+    // the camera - even though rules deliberately leave an unsealed record
     // editable for exactly this case.
     if (!_loaded || _mine?.capturedAt != null) return const SizedBox.shrink();
 

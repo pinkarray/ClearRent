@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// rent_review_ops.ts — admin decisions on landlord rent-review requests.
+// rent_review_ops.ts - admin decisions on landlord rent-review requests.
 //
 // A landlord files rent_review_requests/{id} on an occupied property to raise
 // rent at the sitting tenant's NEXT renewal. Admin approves or rejects.
@@ -11,12 +11,12 @@
 // + increase-counter is a SEPARATE write (Block B-2), not done here.
 //
 // rent_review_requests/{id} contract (written by the mobile filing form):
-//   landlordId, tenantId, rentalId   — strings
-//   proposedRent                     — number (naira)
-//   effectiveDate                    — Timestamp (landlord's chosen date)
-//   reasonType                       — 'improvements' | 'market' | 'both'
-//   justification                    — string
-//   status                           — 'pending' | 'approved' | 'rejected'
+//   landlordId, tenantId, rentalId   - strings
+//   proposedRent                     - number (naira)
+//   effectiveDate                    - Timestamp (landlord's chosen date)
+//   reasonType                       - 'improvements' | 'market' | 'both'
+//   justification                    - string
+//   status                           - 'pending' | 'approved' | 'rejected'
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
@@ -30,7 +30,7 @@ import {
 import {writeNotificationOnce} from "./notification_helpers";
 import {resolveAdminAlertsForTarget} from "./admin_alerts";
 
-// Lighter options than renewal_ops — no Paystack secret needed here.
+// Lighter options than renewal_ops - no Paystack secret needed here.
 const callableOptions = {
   enforceAppCheck: false,
   timeoutSeconds: 30,
@@ -39,7 +39,7 @@ const callableOptions = {
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6;
 const TENANT_RENTALS_ROUTE = "/tenant/my-rentals";
 // Linked tenants have no active_rental, so /tenant/my-rentals is empty for
-// them — their tenancy (and the revised agreement) lives on the home dashboard.
+// them - their tenancy (and the revised agreement) lives on the home dashboard.
 const TENANT_HOME_ROUTE = "/tenant/home";
 // Occupied-context outcomes (scheduled approve, reject) deep-link to the
 // landlord's active rentals, where the affected unit shows. A vacant/immediate
@@ -96,10 +96,10 @@ export const approveRentReview = onCall(
       }
 
       // The target tenancy is either an active_rental (inspection→payment path)
-      // or a tenancy_link (landlord-link path). Resolve by existence — ids are
+      // or a tenancy_link (landlord-link path). Resolve by existence - ids are
       // collection-unique. The link case carries through to
       // completeLinkedPromotion, which reads the same pendingRent* fields when
-      // the link promotes to an active rental. (All reads before any writes —
+      // the link promotes to an active rental. (All reads before any writes -
       // Firestore transaction rule.)
       const activeRef = db.collection("active_rentals").doc(rentalId);
       const activeSnap = await tx.get(activeRef);
@@ -118,12 +118,12 @@ export const approveRentReview = onCall(
 
       // 6-month notice gate (auto-reject). Approval ≈ notice time, so this
       // measures from now. Legacy links with no lease term ("never expires")
-      // have no renewal to measure against — skip the gate for them.
+      // have no renewal to measure against - skip the gate for them.
       const leaseEndTs = target.leaseEndDate as Timestamp | undefined;
       if (leaseEndTs && leaseEndTs.toDate().getTime() - Date.now() < SIX_MONTHS_MS) {
         throw new HttpsError(
           "failed-precondition",
-          "Too late for this cycle — the increase needs 6 months' notice " +
+          "Too late for this cycle - the increase needs 6 months' notice " +
             "before the tenant's renewal. Refile earlier.",
         );
       }
@@ -131,7 +131,7 @@ export const approveRentReview = onCall(
       const revisedAgreementUrl =
         (review.revisedAgreementUrl as string | undefined) ?? "";
 
-      // Stage the per-tenant figure. The current rent is NOT mutated here — it
+      // Stage the per-tenant figure. The current rent is NOT mutated here - it
       // applies at the tenant's renewal (completeActiveRenewal) or promotion
       // (completeLinkedPromotion).
       const targetUpdate: Record<string, unknown> = {
@@ -152,7 +152,7 @@ export const approveRentReview = onCall(
       }
       tx.update(targetRef, targetUpdate);
 
-      // New/future tenants pay the new rate immediately — bump the property's
+      // New/future tenants pay the new rate immediately - bump the property's
       // asking rent. Sitting tenants are protected separately by the staged
       // pendingRent* above. (Replaces the old dead scheduledRent* fields, which
       // nothing read.)
@@ -225,7 +225,7 @@ export const approveRentReview = onCall(
       },
     );
 
-    // Notify the LANDLORD too — they filed it and should know the outcome
+    // Notify the LANDLORD too - they filed it and should know the outcome
     // regardless of which way it went.
     await writeNotificationOnce(
       `rent_review_${requestId}_approved_landlord_${result.landlordId}`,
@@ -308,7 +308,7 @@ export const rejectRentReview = onCall(
         }),
     );
 
-    // Notify the LANDLORD who filed the request — the tenant is intentionally
+    // Notify the LANDLORD who filed the request - the tenant is intentionally
     // NOT told about a rejected increase (nothing changed on their tenancy).
     await writeNotificationOnce(
       `rent_review_${requestId}_rejected_${result.landlordId}`,
@@ -331,7 +331,7 @@ export const rejectRentReview = onCall(
 
 // ── approveImmediateRentChange ────────────────────────────────────────────────
 // Vacant-property rent change (error correction / re-pricing). Applies to
-// property.rent IMMEDIATELY on approval. Server re-checks occupancy — a tenant
+// property.rent IMMEDIATELY on approval. Server re-checks occupancy - a tenant
 // may have moved in between filing and approval, in which case this MUST refuse
 // and the landlord must use the scheduled review path instead.
 export const approveImmediateRentChange = onCall(
@@ -348,7 +348,7 @@ export const approveImmediateRentChange = onCall(
 
     // Read the request first to get propertyId for the occupancy queries.
     // (Transactions can't run collection queries, so the occupancy check
-    // happens before the transaction — small TOCTOU window, acceptable for an
+    // happens before the transaction - small TOCTOU window, acceptable for an
     // admin-gated action.)
     const preSnap = await reviewRef.get();
     if (!preSnap.exists) {
@@ -390,7 +390,7 @@ export const approveImmediateRentChange = onCall(
     if (!rentalsSnap.empty || !linksSnap.empty) {
       throw new HttpsError(
         "failed-precondition",
-        "Property now has a tenant — use the scheduled review path instead.",
+        "Property now has a tenant - use the scheduled review path instead.",
       );
     }
 
@@ -408,13 +408,13 @@ export const approveImmediateRentChange = onCall(
         );
       }
       // The property can be deleted after filing (vacant units are deletable).
-      // There's then nothing to apply the new rent to — fail cleanly instead of
+      // There's then nothing to apply the new rent to - fail cleanly instead of
       // crashing the transaction with a 500. The admin can Reject to clear it,
       // and onPropertyDeleted now auto-rejects such orphans going forward.
       if (!propertySnap.exists) {
         throw new HttpsError(
           "failed-precondition",
-          "This property no longer exists — it was deleted after the request " +
+          "This property no longer exists - it was deleted after the request " +
             "was filed. Reject the request to clear it.",
         );
       }
@@ -473,7 +473,7 @@ export const approveImmediateRentChange = onCall(
           userId: landlordId,
           title: "Rent change approved",
           body:
-            `Your rent change for ${propertyTitle} was approved — the new ` +
+            `Your rent change for ${propertyTitle} was approved - the new ` +
             `rent of ${formatNaira(proposedRent)} is now live.`,
           payload: {route: `/landlord/property/${propertyId}`, requestId},
           type: "rent_review_approved",

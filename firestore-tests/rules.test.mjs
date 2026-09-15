@@ -1,7 +1,7 @@
 // Firestore security-rules tests, run against the Firestore emulator via
 // `firebase emulators:exec`. Covers:
-//   1. active_rentals update ALLOWLIST (the new rule) — positive + negative.
-//   2. tenancy_links list rule (F1.13 ownership scoping) — positive + negative.
+//   1. active_rentals update ALLOWLIST (the new rule) - positive + negative.
+//   2. tenancy_links list rule (F1.13 ownership scoping) - positive + negative.
 //
 // Positive cases guard against an over-tight allowlist breaking real client
 // writes; negative cases prove the holes (rentAmount / payout self-edits,
@@ -100,7 +100,7 @@ beforeEach(async () => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    // Verified landlords — property creation requires verificationStatus.
+    // Verified landlords - property creation requires verificationStatus.
     await setDoc(doc(db, "users/" + LANDLORD), {
       verificationStatus: "verified",
     });
@@ -230,7 +230,7 @@ beforeEach(async () => {
       propertyId: "prop2", lastMessage: "hi",
     });
     // Caretaker fixtures. isPropertyCaretaker() get()s the property, so these
-    // docs have to exist for ANY caretaker rule to evaluate at all — prop1 is
+    // docs have to exist for ANY caretaker rule to evaluate at all - prop1 is
     // managed by CARETAKER, prop2 is somebody else's and has none.
     await setDoc(doc(db, "properties/prop1"), {
       landlordId: LANDLORD,
@@ -273,10 +273,10 @@ const caretakerDb = () => testEnv.authenticatedContext(CARETAKER).firestore();
 const adminDb = () =>
   testEnv.authenticatedContext("admin1", { admin: true }).firestore();
 
-// ─── active_rentals allowlist — POSITIVE (must succeed) ──────────────────────
+// ─── active_rentals allowlist - POSITIVE (must succeed) ──────────────────────
 // Each mirrors a real update site in active_rental_service.dart.
 
-test("landlord finalizes agreement (allowlisted fields) — allowed", async () => {
+test("landlord finalizes agreement (allowlisted fields) - allowed", async () => {
   // landlordFinalizeAgreement: agreementStatus + landlordFinalizedAt + updatedAt
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
@@ -287,7 +287,7 @@ test("landlord finalizes agreement (allowlisted fields) — allowed", async () =
   );
 });
 
-test("tenant accepts agreement (allowlisted fields) — allowed", async () => {
+test("tenant accepts agreement (allowlisted fields) - allowed", async () => {
   // tenantAcceptAgreement: agreementStatus + tenantAcceptedAt + tenantDisputeReason + updatedAt
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
@@ -299,7 +299,7 @@ test("tenant accepts agreement (allowlisted fields) — allowed", async () => {
   );
 });
 
-test("tenant moves out (status lifecycle, allowlisted) — allowed", async () => {
+test("tenant moves out (status lifecycle, allowlisted) - allowed", async () => {
   // tenantMoveOut: status + endReason + endedBy + endedAt + updatedAt
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
@@ -312,7 +312,7 @@ test("tenant moves out (status lifecycle, allowlisted) — allowed", async () =>
   );
 });
 
-test("landlord toggles payment reminder (allowlisted) — allowed", async () => {
+test("landlord toggles payment reminder (allowlisted) - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       hasPaymentReminder: true,
@@ -321,10 +321,10 @@ test("landlord toggles payment reminder (allowlisted) — allowed", async () => 
   );
 });
 
-// ─── active_rentals allowlist — NEGATIVE (must be denied) ────────────────────
+// ─── active_rentals allowlist - NEGATIVE (must be denied) ────────────────────
 // These are the holes the allowlist closes.
 
-test("non-admin writing rentAmount on own rental — denied", async () => {
+test("non-admin writing rentAmount on own rental - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       rentAmount: 70000,
@@ -333,7 +333,7 @@ test("non-admin writing rentAmount on own rental — denied", async () => {
   );
 });
 
-test("tenant writing rentAmount on own rental — denied", async () => {
+test("tenant writing rentAmount on own rental - denied", async () => {
   await assertFails(
     updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
       rentAmount: 70000,
@@ -342,7 +342,7 @@ test("tenant writing rentAmount on own rental — denied", async () => {
   );
 });
 
-test("non-admin writing a payout field — denied", async () => {
+test("non-admin writing a payout field - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       landlordPayoutStatus: "paid",
@@ -351,7 +351,7 @@ test("non-admin writing a payout field — denied", async () => {
   );
 });
 
-test("smuggling rentAmount alongside an allowlisted field — denied", async () => {
+test("smuggling rentAmount alongside an allowlisted field - denied", async () => {
   // Proves the rule is hasOnly (allowlist), not just a single-field block:
   // an otherwise-valid agreement write that also touches rentAmount must fail.
   await assertFails(
@@ -365,7 +365,7 @@ test("smuggling rentAmount alongside an allowlisted field — denied", async () 
 
 // ─── tenancy_links F1.13 ownership scoping ───────────────────────────────────
 
-test("owner-scoped query (landlordId == uid) — allowed", async () => {
+test("owner-scoped query (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -376,7 +376,7 @@ test("owner-scoped query (landlordId == uid) — allowed", async () => {
   );
 });
 
-test("tenant-scoped query (tenantId == uid) — allowed", async () => {
+test("tenant-scoped query (tenantId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -387,7 +387,7 @@ test("tenant-scoped query (tenantId == uid) — allowed", async () => {
   );
 });
 
-test("unscoped propertyId-only list by non-owner — denied", async () => {
+test("unscoped propertyId-only list by non-owner - denied", async () => {
   await assertFails(
     getDocs(
       query(
@@ -403,7 +403,7 @@ test("unscoped propertyId-only list by non-owner — denied", async () => {
 // and the admin-only pendingRent* are denied so a landlord can't self-apply an
 // increase to a link and bypass the rent-review path.
 
-test("tenant accepts link (status + acceptedAt) — allowed", async () => {
+test("tenant accepts link (status + acceptedAt) - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "tenancy_links/tl1"), {
       status: "confirmed",
@@ -412,7 +412,7 @@ test("tenant accepts link (status + acceptedAt) — allowed", async () => {
   );
 });
 
-test("landlord removes link (status + removedAt) — allowed", async () => {
+test("landlord removes link (status + removedAt) - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "tenancy_links/tl1"), {
       status: "removed",
@@ -421,7 +421,7 @@ test("landlord removes link (status + removedAt) — allowed", async () => {
   );
 });
 
-test("landlord writing pendingRentForRenewal on a link — denied", async () => {
+test("landlord writing pendingRentForRenewal on a link - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "tenancy_links/tl1"), {
       pendingRentForRenewal: 70000,
@@ -430,7 +430,7 @@ test("landlord writing pendingRentForRenewal on a link — denied", async () => 
   );
 });
 
-test("landlord writing rentAmount on a link — denied", async () => {
+test("landlord writing rentAmount on a link - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "tenancy_links/tl1"), {
       rentAmount: 70000,
@@ -443,7 +443,7 @@ test("landlord writing rentAmount on a link — denied", async () => {
 // verify it. Units inherit the building's doc status, so any authed user can
 // read a building, but only the owner/admin can list them.
 
-test("landlord creates own building (pending doc) — allowed", async () => {
+test("landlord creates own building (pending doc) - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "buildings/b2"), {
       landlordId: LANDLORD,
@@ -455,7 +455,7 @@ test("landlord creates own building (pending doc) — allowed", async () => {
   );
 });
 
-test("creating a building for someone else — denied", async () => {
+test("creating a building for someone else - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "buildings/b3"), {
       landlordId: OTHER,
@@ -465,7 +465,7 @@ test("creating a building for someone else — denied", async () => {
   );
 });
 
-test("creating a building pre-verified — denied", async () => {
+test("creating a building pre-verified - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "buildings/b4"), {
       landlordId: LANDLORD,
@@ -475,7 +475,7 @@ test("creating a building pre-verified — denied", async () => {
   );
 });
 
-test("owner re-uploads building doc (status → pending) — allowed", async () => {
+test("owner re-uploads building doc (status → pending) - allowed", async () => {
   await assertSucceeds(
     // A private Storage path under the owner's own uid. This used to be an
     // http URL; owners may no longer attach one, because an external URL can
@@ -488,7 +488,7 @@ test("owner re-uploads building doc (status → pending) — allowed", async () 
   );
 });
 
-test("owner self-verifying the building doc — denied", async () => {
+test("owner self-verifying the building doc - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "buildings/b1"), {
       ownershipDocStatus: "verified",
@@ -497,7 +497,7 @@ test("owner self-verifying the building doc — denied", async () => {
   );
 });
 
-test("owner-scoped building list — allowed", async () => {
+test("owner-scoped building list - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -508,7 +508,7 @@ test("owner-scoped building list — allowed", async () => {
   );
 });
 
-test("non-owner listing another landlord's buildings — denied", async () => {
+test("non-owner listing another landlord's buildings - denied", async () => {
   await assertFails(
     getDocs(
       query(
@@ -519,12 +519,12 @@ test("non-owner listing another landlord's buildings — denied", async () => {
   );
 });
 
-test("any authed user reads a building (unit doc inheritance) — allowed", async () => {
+test("any authed user reads a building (unit doc inheritance) - allowed", async () => {
   await assertSucceeds(getDoc(doc(otherDb(), "buildings/b1")));
 });
 
 // ─── property ↔ building cross-owner guard ───────────────────────────────────
-// A unit may only reference a building the SAME landlord owns — otherwise a
+// A unit may only reference a building the SAME landlord owns - otherwise a
 // modified client could borrow another owner's verified C of O.
 
 const newUnit = (landlordId, buildingId) => ({
@@ -535,13 +535,13 @@ const newUnit = (landlordId, buildingId) => ({
   ...(buildingId ? { buildingId } : {}),
 });
 
-test("creating a standalone unit (no building) — allowed", async () => {
+test("creating a standalone unit (no building) - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/p_standalone"), newUnit(LANDLORD, null))
   );
 });
 
-test("creating a unit in a building the caller owns — allowed", async () => {
+test("creating a unit in a building the caller owns - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/p_owned"), newUnit(LANDLORD, "b1"))
   );
@@ -551,7 +551,7 @@ test("creating a unit in a building the caller owns — allowed", async () => {
 // Below the floor the deal fee eats the whole rent and the landlord nets zero,
 // so the listing can never pay anyone. Read from config/pricing (absent here,
 // so the rule's 10000 default applies).
-test("creating a unit below the rent floor — denied", async () => {
+test("creating a unit below the rent floor - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "properties/p_cheap"), {
       ...newUnit(LANDLORD, null),
@@ -560,7 +560,7 @@ test("creating a unit below the rent floor — denied", async () => {
   );
 });
 
-test("creating a unit exactly at the rent floor — allowed", async () => {
+test("creating a unit exactly at the rent floor - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/p_floor"), {
       ...newUnit(LANDLORD, null),
@@ -569,20 +569,20 @@ test("creating a unit exactly at the rent floor — allowed", async () => {
   );
 });
 
-test("creating a unit with no rent at all — denied", async () => {
+test("creating a unit with no rent at all - denied", async () => {
   const { rent, ...noRent } = newUnit(LANDLORD, null);
   await assertFails(
     setDoc(doc(landlordDb(), "properties/p_norent"), noRent)
   );
 });
 
-test("editing rent DOWN below the floor — denied", async () => {
+test("editing rent DOWN below the floor - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "properties/p_standalone"), { rent: 3000 })
   );
 });
 
-test("editing a sub-floor listing without touching rent — allowed", async () => {
+test("editing a sub-floor listing without touching rent - allowed", async () => {
   // Listings created before the floor existed must stay editable; they only
   // have to meet the floor if their rent is touched.
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -598,14 +598,14 @@ test("editing a sub-floor listing without touching rent — allowed", async () =
   );
 });
 
-test("creating a unit in ANOTHER owner's building — denied", async () => {
+test("creating a unit in ANOTHER owner's building - denied", async () => {
   // OTHER is a verified landlord, but b1 belongs to LANDLORD.
   await assertFails(
     setDoc(doc(otherDb(), "properties/p_borrowed"), newUnit(OTHER, "b1"))
   );
 });
 
-test("creating a unit referencing a non-existent building — denied", async () => {
+test("creating a unit referencing a non-existent building - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "properties/p_ghost"), newUnit(LANDLORD, "does_not_exist"))
   );
@@ -613,7 +613,7 @@ test("creating a unit referencing a non-existent building — denied", async () 
 
 // ─── property ownershipDocStatus guard (owner can't self-verify) ─────────────
 
-test("owner self-verifying their property doc — denied", async () => {
+test("owner self-verifying their property doc - denied", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties/p_self"), {
       landlordId: LANDLORD,
@@ -630,7 +630,7 @@ test("owner self-verifying their property doc — denied", async () => {
   );
 });
 
-test("owner re-uploads their property doc (status → pending) — allowed", async () => {
+test("owner re-uploads their property doc (status → pending) - allowed", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties/p_reup"), {
       landlordId: LANDLORD,
@@ -655,61 +655,61 @@ test("owner re-uploads their property doc (status → pending) — allowed", asy
 // WHOLE collection. Positive = the owner's own scoped query still works;
 // negative = an unscoped query, or one targeting another user, is denied.
 
-test("tenant lists own payments (userId == uid) — allowed", async () => {
+test("tenant lists own payments (userId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "payments"), where("userId", "==", TENANT)))
   );
 });
 
-test("tenant lists ALL payments (unscoped) — denied", async () => {
+test("tenant lists ALL payments (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "payments")));
 });
 
-test("tenant lists another user's payments — denied", async () => {
+test("tenant lists another user's payments - denied", async () => {
   await assertFails(
     getDocs(query(collection(tenantDb(), "payments"), where("userId", "==", OTHER)))
   );
 });
 
-test("user lists own notifications (userId == uid) — allowed", async () => {
+test("user lists own notifications (userId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "notifications"), where("userId", "==", TENANT)))
   );
 });
 
-test("tenant lists ALL notifications (unscoped) — denied", async () => {
+test("tenant lists ALL notifications (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "notifications")));
 });
 
-test("landlord lists own transactions (landlordId == uid) — allowed", async () => {
+test("landlord lists own transactions (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "transactions"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("other user lists landlord's transactions — denied", async () => {
+test("other user lists landlord's transactions - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "transactions"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("tenant lists own refunds (beneficiaryId == uid) — allowed", async () => {
+test("tenant lists own refunds (beneficiaryId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "refunds"), where("beneficiaryId", "==", TENANT)))
   );
 });
 
-test("tenant lists ALL refunds (unscoped) — denied", async () => {
+test("tenant lists ALL refunds (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "refunds")));
 });
 
-test("landlord lists own rent-review requests (landlordId == uid) — allowed", async () => {
+test("landlord lists own rent-review requests (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "rent_review_requests"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("other user lists ALL rent-review requests (unscoped) — denied", async () => {
+test("other user lists ALL rent-review requests (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(otherDb(), "rent_review_requests")));
 });
 
@@ -719,94 +719,94 @@ test("other user lists ALL rent-review requests (unscoped) — denied", async ()
 // shape (scoped by the caller's id) still works; negative = an unscoped query,
 // a propertyId-only query, or one targeting another user is denied.
 
-// issues — tenant by tenantId, landlord by landlordId (PropertyHealth scopes
+// issues - tenant by tenantId, landlord by landlordId (PropertyHealth scopes
 // landlordId then client-filters propertyId).
-test("tenant lists own issues (tenantId == uid) — allowed", async () => {
+test("tenant lists own issues (tenantId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "issues"), where("tenantId", "==", TENANT)))
   );
 });
 
-test("landlord lists own issues (landlordId == uid) — allowed", async () => {
+test("landlord lists own issues (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "issues"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("tenant lists ALL issues (unscoped) — denied", async () => {
+test("tenant lists ALL issues (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "issues")));
 });
 
-test("user lists issues by propertyId only (unscoped owner) — denied", async () => {
+test("user lists issues by propertyId only (unscoped owner) - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "issues"), where("propertyId", "==", "prop1")))
   );
 });
 
-// maintenance_logs — landlord only.
-test("landlord lists own maintenance logs (landlordId == uid) — allowed", async () => {
+// maintenance_logs - landlord only.
+test("landlord lists own maintenance logs (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "maintenance_logs"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("tenant lists ALL maintenance logs (unscoped) — denied", async () => {
+test("tenant lists ALL maintenance logs (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "maintenance_logs")));
 });
 
-test("user lists maintenance logs by propertyId only — denied", async () => {
+test("user lists maintenance logs by propertyId only - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "maintenance_logs"), where("propertyId", "==", "prop1")))
   );
 });
 
-// inspection_requests — party (tenant/landlord/agent).
-test("tenant lists own inspection requests (tenantId == uid) — allowed", async () => {
+// inspection_requests - party (tenant/landlord/agent).
+test("tenant lists own inspection requests (tenantId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "inspection_requests"), where("tenantId", "==", TENANT)))
   );
 });
 
-test("landlord lists own inspection requests (landlordId == uid) — allowed", async () => {
+test("landlord lists own inspection requests (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "inspection_requests"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("agent lists own inspection requests (agentId == uid) — allowed", async () => {
+test("agent lists own inspection requests (agentId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(agentDb(), "inspection_requests"), where("agentId", "==", AGENT)))
   );
 });
 
-test("tenant lists ALL inspection requests (unscoped) — denied", async () => {
+test("tenant lists ALL inspection requests (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "inspection_requests")));
 });
 
-test("user lists inspection requests by propertyId only — denied", async () => {
+test("user lists inspection requests by propertyId only - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "inspection_requests"), where("propertyId", "==", "prop1")))
   );
 });
 
-// active_rentals — tenant or landlord on the rental.
-test("tenant lists own active rentals (tenantId == uid) — allowed", async () => {
+// active_rentals - tenant or landlord on the rental.
+test("tenant lists own active rentals (tenantId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "active_rentals"), where("tenantId", "==", TENANT)))
   );
 });
 
-test("landlord lists own active rentals (landlordId == uid) — allowed", async () => {
+test("landlord lists own active rentals (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "active_rentals"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("tenant lists ALL active rentals (unscoped) — denied", async () => {
+test("tenant lists ALL active rentals (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "active_rentals")));
 });
 
-test("user lists active rentals by propertyId only — denied", async () => {
+test("user lists active rentals by propertyId only - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "active_rentals"), where("propertyId", "==", "prop1")))
   );
@@ -814,14 +814,14 @@ test("user lists active rentals by propertyId only — denied", async () => {
 
 // The landlord accept flow's two pre-checks (propertyHasOpenSlot /
 // hasRentalForInterest). Unscoped they are denied for the OWNING landlord too,
-// and both fail closed — which reported "already taken" on an empty property.
-test("landlord lists active rentals by propertyId only — denied", async () => {
+// and both fail closed - which reported "already taken" on an empty property.
+test("landlord lists active rentals by propertyId only - denied", async () => {
   await assertFails(
     getDocs(query(collection(landlordDb(), "active_rentals"), where("propertyId", "==", "prop1")))
   );
 });
 
-test("landlord lists active rentals by propertyId + landlordId — allowed", async () => {
+test("landlord lists active rentals by propertyId + landlordId - allowed", async () => {
   await assertSucceeds(
     getDocs(query(
       collection(landlordDb(), "active_rentals"),
@@ -831,13 +831,13 @@ test("landlord lists active rentals by propertyId + landlordId — allowed", asy
   );
 });
 
-test("landlord lists active rentals by rentalInterestId only — denied", async () => {
+test("landlord lists active rentals by rentalInterestId only - denied", async () => {
   await assertFails(
     getDocs(query(collection(landlordDb(), "active_rentals"), where("rentalInterestId", "==", "ri1")))
   );
 });
 
-test("landlord lists active rentals by rentalInterestId + landlordId — allowed", async () => {
+test("landlord lists active rentals by rentalInterestId + landlordId - allowed", async () => {
   await assertSucceeds(
     getDocs(query(
       collection(landlordDb(), "active_rentals"),
@@ -851,13 +851,13 @@ test("landlord lists active rentals by rentalInterestId + landlordId — allowed
 // Clients must not be able to mint already-paid financial state. Positive =
 // the real client write still works; negative = the forgery is closed.
 
-// rental_interests create — SERVER-ONLY since H2 (`allow create: if false`).
+// rental_interests create - SERVER-ONLY since H2 (`allow create: if false`).
 // The amounts on this document decide what the tenant is charged, so creation
 // runs through the createRentalInterest callable, which derives every figure
 // from the property and config/pricing. This case used to assert a tenant
 // could file their own; the rule was tightened and the test was not updated,
 // which is why it had been failing.
-test("tenant creates own rental interest directly — denied", async () => {
+test("tenant creates own rental interest directly - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "rental_interests/ri_new"), {
       tenantId: TENANT, landlordId: LANDLORD, inspectionRequestId: "insp1",
@@ -867,7 +867,7 @@ test("tenant creates own rental interest directly — denied", async () => {
   );
 });
 
-test("tenant creates ALREADY-VERIFIED rental interest — denied", async () => {
+test("tenant creates ALREADY-VERIFIED rental interest - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "rental_interests/ri_forged"), {
       tenantId: TENANT, landlordId: LANDLORD, inspectionRequestId: "insp1",
@@ -877,7 +877,7 @@ test("tenant creates ALREADY-VERIFIED rental interest — denied", async () => {
   );
 });
 
-test("tenant creates rental interest attributed to someone else — denied", async () => {
+test("tenant creates rental interest attributed to someone else - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "rental_interests/ri_spoof"), {
       tenantId: OTHER, landlordId: LANDLORD, inspectionRequestId: "insp1",
@@ -886,8 +886,8 @@ test("tenant creates rental interest attributed to someone else — denied", asy
   );
 });
 
-// rental_interests update — lifecycle fields allowed, money immutable (M2).
-test("tenant updates own interest lifecycle fields — allowed", async () => {
+// rental_interests update - lifecycle fields allowed, money immutable (M2).
+test("tenant updates own interest lifecycle fields - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "rental_interests/ri_pending"), {
       status: "payment_uploaded",
@@ -898,7 +898,7 @@ test("tenant updates own interest lifecycle fields — allowed", async () => {
   );
 });
 
-test("tenant rewrites interest landlordPayout — denied", async () => {
+test("tenant rewrites interest landlordPayout - denied", async () => {
   await assertFails(
     updateDoc(doc(tenantDb(), "rental_interests/ri_pending"), {
       landlordPayout: 9999999,
@@ -906,8 +906,8 @@ test("tenant rewrites interest landlordPayout — denied", async () => {
   );
 });
 
-// active_rentals create — landlord only, backed by a verified interest.
-test("landlord creates active rental from a verified interest — allowed", async () => {
+// active_rentals create - landlord only, backed by a verified interest.
+test("landlord creates active rental from a verified interest - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "active_rentals/ar_new"), {
       landlordId: LANDLORD, tenantId: TENANT, propertyId: "prop1",
@@ -917,7 +917,7 @@ test("landlord creates active rental from a verified interest — allowed", asyn
   );
 });
 
-test("tenant fabricates an active rental — denied", async () => {
+test("tenant fabricates an active rental - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "active_rentals/ar_forged"), {
       landlordId: LANDLORD, tenantId: TENANT, propertyId: "prop1",
@@ -927,7 +927,7 @@ test("tenant fabricates an active rental — denied", async () => {
   );
 });
 
-test("landlord creates active rental from an UNVERIFIED interest — denied", async () => {
+test("landlord creates active rental from an UNVERIFIED interest - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "active_rentals/ar_premature"), {
       landlordId: LANDLORD, tenantId: TENANT, propertyId: "prop1",
@@ -941,25 +941,25 @@ test("landlord creates active rental from an UNVERIFIED interest — denied", as
 // The user doc is world-readable to authed users; account numbers must not
 // live there. Only the owner and admin may read the private subcollection.
 
-test("owner reads own bank details — allowed", async () => {
+test("owner reads own bank details - allowed", async () => {
   await assertSucceeds(
     getDoc(doc(landlordDb(), "users/" + LANDLORD + "/private/bank"))
   );
 });
 
-test("admin reads another user's bank details — allowed", async () => {
+test("admin reads another user's bank details - allowed", async () => {
   await assertSucceeds(
     getDoc(doc(adminDb(), "users/" + LANDLORD + "/private/bank"))
   );
 });
 
-test("other user reads someone's bank details — denied", async () => {
+test("other user reads someone's bank details - denied", async () => {
   await assertFails(
     getDoc(doc(otherDb(), "users/" + LANDLORD + "/private/bank"))
   );
 });
 
-test("owner writes own bank details — allowed", async () => {
+test("owner writes own bank details - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "users/" + LANDLORD + "/private/bank"), {
       bankName: "Access", bankCode: "044",
@@ -968,7 +968,7 @@ test("owner writes own bank details — allowed", async () => {
   );
 });
 
-test("other user writes someone's bank details — denied", async () => {
+test("other user writes someone's bank details - denied", async () => {
   await assertFails(
     setDoc(doc(otherDb(), "users/" + LANDLORD + "/private/bank"), {
       accountNumber: "0000000000",
@@ -977,54 +977,54 @@ test("other user writes someone's bank details — denied", async () => {
 });
 
 // ─── M1: activities feed no longer world-enumerable ──────────────────────────
-test("landlord lists own activity feed (landlordId == uid) — allowed", async () => {
+test("landlord lists own activity feed (landlordId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(landlordDb(), "activities"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("actor lists activities they generated (actorId == uid) — allowed", async () => {
+test("actor lists activities they generated (actorId == uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "activities"), where("actorId", "==", TENANT)))
   );
 });
 
-test("user lists ALL activities (unscoped) — denied", async () => {
+test("user lists ALL activities (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "activities")));
 });
 
-test("other user lists a landlord's activity feed — denied", async () => {
+test("other user lists a landlord's activity feed - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "activities"), where("landlordId", "==", LANDLORD)))
   );
 });
 
-test("landlord marks own activity read (isRead only) — allowed", async () => {
+test("landlord marks own activity read (isRead only) - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "activities/act_party"), { isRead: true })
   );
 });
 
-test("other user updates a landlord's activity — denied", async () => {
+test("other user updates a landlord's activity - denied", async () => {
   await assertFails(
     updateDoc(doc(otherDb(), "activities/act_party"), { isRead: true })
   );
 });
 
 // ─── M3: conversations no longer world-enumerable ────────────────────────────
-test("participant lists own conversations (array-contains uid) — allowed", async () => {
+test("participant lists own conversations (array-contains uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "conversations"), where("participants", "array-contains", TENANT)))
   );
 });
 
-test("agent lists conversations they're in (array-contains uid) — allowed", async () => {
+test("agent lists conversations they're in (array-contains uid) - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(agentDb(), "conversations"), where("participants", "array-contains", AGENT)))
   );
 });
 
-test("agent-path dedup: agent lists by participants then client-filters — allowed", async () => {
+test("agent-path dedup: agent lists by participants then client-filters - allowed", async () => {
   // Mirrors the refactored getOrCreateConversation dedup (M3): the agent is
   // neither landlordId nor tenantId, so it must scope by participation.
   await assertSucceeds(
@@ -1032,17 +1032,17 @@ test("agent-path dedup: agent lists by participants then client-filters — allo
   );
 });
 
-test("tenant-path dedup lists by tenantId == uid — allowed", async () => {
+test("tenant-path dedup lists by tenantId == uid - allowed", async () => {
   await assertSucceeds(
     getDocs(query(collection(tenantDb(), "conversations"), where("tenantId", "==", TENANT)))
   );
 });
 
-test("user lists ALL conversations (unscoped) — denied", async () => {
+test("user lists ALL conversations (unscoped) - denied", async () => {
   await assertFails(getDocs(collection(tenantDb(), "conversations")));
 });
 
-test("other user lists a landlord's conversations (landlordId) — denied", async () => {
+test("other user lists a landlord's conversations (landlordId) - denied", async () => {
   await assertFails(
     getDocs(query(collection(otherDb(), "conversations"), where("landlordId", "==", LANDLORD)))
   );
@@ -1052,9 +1052,9 @@ test("other user lists a landlord's conversations (landlordId) — denied", asyn
 // The client (ConversationService) blocks unverified users from sending, but
 // that gate was client-only. These prove the rule now enforces it server-side.
 // Seed state: conv_party has participants [LANDLORD, TENANT, AGENT]; only
-// LANDLORD (and OTHER) have a verified user doc — TENANT/AGENT are unverified.
+// LANDLORD (and OTHER) have a verified user doc - TENANT/AGENT are unverified.
 
-test("verified participant sends a message — allowed", async () => {
+test("verified participant sends a message - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "conversations/conv_party/messages/m1"), {
       senderId: LANDLORD,
@@ -1066,7 +1066,7 @@ test("verified participant sends a message — allowed", async () => {
   );
 });
 
-test("unverified participant sends a message — denied", async () => {
+test("unverified participant sends a message - denied", async () => {
   // AGENT is a participant but has no verified user doc.
   await assertFails(
     setDoc(doc(agentDb(), "conversations/conv_party/messages/m2"), {
@@ -1079,7 +1079,7 @@ test("unverified participant sends a message — denied", async () => {
   );
 });
 
-test("unverified participant posts a system message — allowed", async () => {
+test("unverified participant posts a system message - allowed", async () => {
   // System status lines are app-generated and exempt from the verify gate.
   await assertSucceeds(
     setDoc(doc(agentDb(), "conversations/conv_party/messages/m3"), {
@@ -1091,7 +1091,7 @@ test("unverified participant posts a system message — allowed", async () => {
   );
 });
 
-test("verified NON-participant sends a message — denied", async () => {
+test("verified NON-participant sends a message - denied", async () => {
   // OTHER is verified but not in conv_party.participants.
   await assertFails(
     setDoc(doc(otherDb(), "conversations/conv_party/messages/m4"), {
@@ -1104,7 +1104,7 @@ test("verified NON-participant sends a message — denied", async () => {
   );
 });
 
-test("verified participant forging another's senderId — denied", async () => {
+test("verified participant forging another's senderId - denied", async () => {
   // LANDLORD is verified, but the message claims TENANT sent it.
   await assertFails(
     setDoc(doc(landlordDb(), "conversations/conv_party/messages/m5"), {
@@ -1117,7 +1117,7 @@ test("verified participant forging another's senderId — denied", async () => {
   );
 });
 
-test("admin sends in a support convo without a verified doc — allowed", async () => {
+test("admin sends in a support convo without a verified doc - allowed", async () => {
   // Admin support messages unverified users; the admin (no verified user doc)
   // must still be able to send via the isAdmin() escape hatch.
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -1170,37 +1170,37 @@ async function seedGatedProperty({ withGrant = true } = {}) {
   });
 }
 
-test("owner reads exact location subdoc — allowed", async () => {
+test("owner reads exact location subdoc - allowed", async () => {
   await seedGatedProperty();
   await assertSucceeds(getDoc(doc(landlordDb(), "properties/pg/private/location")));
 });
 
-test("assigned agent reads exact location subdoc — allowed", async () => {
+test("assigned agent reads exact location subdoc - allowed", async () => {
   await seedGatedProperty();
   await assertSucceeds(getDoc(doc(agentDb(), "properties/pg/private/location")));
 });
 
-test("admin reads exact location subdoc — allowed", async () => {
+test("admin reads exact location subdoc - allowed", async () => {
   await seedGatedProperty();
   await assertSucceeds(getDoc(doc(adminDb(), "properties/pg/private/location")));
 });
 
-test("tenant WITH reveal grant reads exact location subdoc — allowed", async () => {
+test("tenant WITH reveal grant reads exact location subdoc - allowed", async () => {
   await seedGatedProperty({ withGrant: true });
   await assertSucceeds(getDoc(doc(tenantDb(), "properties/pg/private/location")));
 });
 
-test("tenant WITHOUT reveal grant reads exact location subdoc — denied", async () => {
+test("tenant WITHOUT reveal grant reads exact location subdoc - denied", async () => {
   await seedGatedProperty({ withGrant: false });
   await assertFails(getDoc(doc(tenantDb(), "properties/pg/private/location")));
 });
 
-test("unrelated user reads exact location subdoc — denied", async () => {
+test("unrelated user reads exact location subdoc - denied", async () => {
   await seedGatedProperty();
   await assertFails(getDoc(doc(otherDb(), "properties/pg/private/location")));
 });
 
-test("owner writes exact location subdoc — allowed", async () => {
+test("owner writes exact location subdoc - allowed", async () => {
   await seedGatedProperty();
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/pg/private/location"), {
@@ -1212,7 +1212,7 @@ test("owner writes exact location subdoc — allowed", async () => {
   );
 });
 
-test("tenant (even with grant) writes exact location subdoc — denied", async () => {
+test("tenant (even with grant) writes exact location subdoc - denied", async () => {
   await seedGatedProperty({ withGrant: true });
   await assertFails(
     setDoc(doc(tenantDb(), "properties/pg/private/location"), {
@@ -1222,7 +1222,7 @@ test("tenant (even with grant) writes exact location subdoc — denied", async (
   );
 });
 
-test("handler (assigned agent) grants a reveal on approval — allowed", async () => {
+test("handler (assigned agent) grants a reveal on approval - allowed", async () => {
   await seedGatedProperty({ withGrant: false });
   await assertSucceeds(
     setDoc(doc(agentDb(), "properties/pg/reveals/" + TENANT), {
@@ -1231,7 +1231,7 @@ test("handler (assigned agent) grants a reveal on approval — allowed", async (
   );
 });
 
-test("landlord (owner) grants a reveal on approval — allowed", async () => {
+test("landlord (owner) grants a reveal on approval - allowed", async () => {
   await seedGatedProperty({ withGrant: false });
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/pg/reveals/" + TENANT), {
@@ -1240,7 +1240,7 @@ test("landlord (owner) grants a reveal on approval — allowed", async () => {
   );
 });
 
-test("tenant self-grants a reveal — denied", async () => {
+test("tenant self-grants a reveal - denied", async () => {
   await seedGatedProperty({ withGrant: false });
   await assertFails(
     setDoc(doc(tenantDb(), "properties/pg/reveals/" + TENANT), {
@@ -1266,7 +1266,7 @@ async function seedAgentProperty(id) {
   });
 }
 
-test("assigned agent updates inspection availability — allowed", async () => {
+test("assigned agent updates inspection availability - allowed", async () => {
   await seedAgentProperty("p_sched_ok");
   await assertSucceeds(
     updateDoc(doc(agentDb(), "properties/p_sched_ok"), {
@@ -1277,7 +1277,7 @@ test("assigned agent updates inspection availability — allowed", async () => {
   );
 });
 
-test("assigned agent sneaking a rent change via schedule clause — denied", async () => {
+test("assigned agent sneaking a rent change via schedule clause - denied", async () => {
   await seedAgentProperty("p_sched_rent");
   await assertFails(
     updateDoc(doc(agentDb(), "properties/p_sched_rent"), {
@@ -1288,7 +1288,7 @@ test("assigned agent sneaking a rent change via schedule clause — denied", asy
   );
 });
 
-test("non-assigned user updates inspection availability — denied", async () => {
+test("non-assigned user updates inspection availability - denied", async () => {
   await seedAgentProperty("p_sched_other");
   await assertFails(
     updateDoc(doc(otherDb(), "properties/p_sched_other"), {
@@ -1298,13 +1298,13 @@ test("non-assigned user updates inspection availability — denied", async () =>
   );
 });
 
-// ─── withinInspectionWindow — arrival may not be recorded early ──────────────
+// ─── withinInspectionWindow - arrival may not be recorded early ──────────────
 // A visit marked arrived/met/completed a day before it was scheduled put a
 // meeting that never happened on the record backing the handler's payout.
 // Gating arrival gates the chain: 'confirm met' needs both arrived, and
 // completion needs both confirmed.
 
-test("tenant marks arrived on the scheduled day — allowed", async () => {
+test("tenant marks arrived on the scheduled day - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "inspection_requests/ir_now"), {
       tenantArrived: true,
@@ -1314,7 +1314,7 @@ test("tenant marks arrived on the scheduled day — allowed", async () => {
   );
 });
 
-test("handler marks arrived on the scheduled day — allowed", async () => {
+test("handler marks arrived on the scheduled day - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(agentDb(), "inspection_requests/ir_now"), {
       handlerArrived: true,
@@ -1324,7 +1324,7 @@ test("handler marks arrived on the scheduled day — allowed", async () => {
   );
 });
 
-test("tenant marks arrived three days early — denied", async () => {
+test("tenant marks arrived three days early - denied", async () => {
   await assertFails(
     updateDoc(doc(tenantDb(), "inspection_requests/ir_future"), {
       tenantArrived: true,
@@ -1334,7 +1334,7 @@ test("tenant marks arrived three days early — denied", async () => {
   );
 });
 
-test("handler marks arrived three days early — denied", async () => {
+test("handler marks arrived three days early - denied", async () => {
   await assertFails(
     updateDoc(doc(agentDb(), "inspection_requests/ir_future"), {
       handlerArrived: true,
@@ -1344,7 +1344,7 @@ test("handler marks arrived three days early — denied", async () => {
   );
 });
 
-test("arrival on an inspection with no scheduled date — denied", async () => {
+test("arrival on an inspection with no scheduled date - denied", async () => {
   await assertFails(
     updateDoc(doc(tenantDb(), "inspection_requests/ir_nodate"), {
       tenantArrived: true,
@@ -1358,7 +1358,7 @@ test("arrival on an inspection with no scheduled date — denied", async () => {
 //
 // Regression for a signup that could never complete. The profile form
 // autosaves a `profileDraft`, which CREATES users/{uid}. The submit then does
-// a merge write — now an UPDATE, not a create — and for landlords and agents
+// a merge write - now an UPDATE, not a create - and for landlords and agents
 // that payload seeded `rating` / `totalRatings`, which the owner-update clause
 // refuses outright (audit #2 reserves them to the rating CF). The write was
 // denied every time, so "Failed to save profile. Please try again." was
@@ -1385,7 +1385,7 @@ const profilePayload = (accountType) => ({
   updatedAt: serverTimestamp(),
 });
 
-test("landlord completes profile over a saved draft — allowed", async () => {
+test("landlord completes profile over a saved draft - allowed", async () => {
   await seedDraft(LANDLORD);
   await assertSucceeds(
     setDoc(doc(landlordDb(), `users/${LANDLORD}`), profilePayload("landlord"), {
@@ -1394,7 +1394,7 @@ test("landlord completes profile over a saved draft — allowed", async () => {
   );
 });
 
-test("agent completes profile over a saved draft — allowed", async () => {
+test("agent completes profile over a saved draft - allowed", async () => {
   await seedDraft(LANDLORD);
   await assertSucceeds(
     setDoc(
@@ -1405,7 +1405,7 @@ test("agent completes profile over a saved draft — allowed", async () => {
   );
 });
 
-test("seeding rating alongside the profile — denied", async () => {
+test("seeding rating alongside the profile - denied", async () => {
   await seedDraft(LANDLORD);
   await assertFails(
     setDoc(
@@ -1416,7 +1416,7 @@ test("seeding rating alongside the profile — denied", async () => {
   );
 });
 
-test("seeding totalRatings alongside the profile — denied", async () => {
+test("seeding totalRatings alongside the profile - denied", async () => {
   await seedDraft(LANDLORD);
   await assertFails(
     setDoc(
@@ -1427,7 +1427,7 @@ test("seeding totalRatings alongside the profile — denied", async () => {
   );
 });
 
-test("tenant completes profile over a saved draft — allowed", async () => {
+test("tenant completes profile over a saved draft - allowed", async () => {
   await seedDraft(LANDLORD);
   await assertSucceeds(
     setDoc(
@@ -1443,10 +1443,10 @@ test("tenant completes profile over a saved draft — allowed", async () => {
 // The FIRST test here is deliberately a positive one. isPropertyCaretaker() is
 // declared at the document root and called from two other match blocks; if that
 // call ever stops resolving, it compiles with a warning and then denies at
-// evaluation — so a passing positive case is the only real proof the helper is
+// evaluation - so a passing positive case is the only real proof the helper is
 // wired up. A suite of negatives would all still "pass" against a broken rule.
 
-test("caretaker lists issues on the property they manage — allowed", async () => {
+test("caretaker lists issues on the property they manage - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -1461,9 +1461,9 @@ test("caretaker lists issues on the property they manage — allowed", async () 
 // documents: only fields the query pins by equality are known, and reading any
 // other field is an evaluation error that denies. So the landlord cannot ride
 // the caretaker's propertyId-shaped query even though every matching issue
-// names them — they must keep pinning landlordId, which is the field their own
+// names them - they must keep pinning landlordId, which is the field their own
 // branch reads. PropertyHealth therefore builds a DIFFERENT query per role.
-test("landlord lists issues by propertyId alone — denied", async () => {
+test("landlord lists issues by propertyId alone - denied", async () => {
   await assertFails(
     getDocs(
       query(
@@ -1474,7 +1474,7 @@ test("landlord lists issues by propertyId alone — denied", async () => {
   );
 });
 
-test("landlord lists issues by landlordId + propertyId — allowed", async () => {
+test("landlord lists issues by landlordId + propertyId - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -1486,7 +1486,7 @@ test("landlord lists issues by landlordId + propertyId — allowed", async () =>
   );
 });
 
-test("caretaker lists issues on a property they don't manage — denied", async () => {
+test("caretaker lists issues on a property they don't manage - denied", async () => {
   await assertFails(
     getDocs(
       query(
@@ -1497,7 +1497,7 @@ test("caretaker lists issues on a property they don't manage — denied", async 
   );
 });
 
-test("caretaker triages an issue on their property — allowed", async () => {
+test("caretaker triages an issue on their property - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(caretakerDb(), "issues/iss_party"), {
       status: "in_progress",
@@ -1506,7 +1506,7 @@ test("caretaker triages an issue on their property — allowed", async () => {
   );
 });
 
-test("caretaker reassigns an issue's landlord — denied", async () => {
+test("caretaker reassigns an issue's landlord - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "issues/iss_party"), {
       status: "resolved",
@@ -1515,7 +1515,7 @@ test("caretaker reassigns an issue's landlord — denied", async () => {
   );
 });
 
-test("caretaker moves an issue to another property — denied", async () => {
+test("caretaker moves an issue to another property - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "issues/iss_party"), {
       status: "resolved",
@@ -1524,7 +1524,7 @@ test("caretaker moves an issue to another property — denied", async () => {
   );
 });
 
-test("non-caretaker triages an issue — denied", async () => {
+test("non-caretaker triages an issue - denied", async () => {
   await assertFails(
     updateDoc(doc(otherDb(), "issues/iss_party"), { status: "resolved" })
   );
@@ -1533,7 +1533,7 @@ test("non-caretaker triages an issue — denied", async () => {
 // The landlord's own create path, which the ownership get() above tightened
 // and which nothing covered before. PropertyHealth._saveMaintenanceLog writes
 // exactly this shape.
-test("landlord logs maintenance on their own property — allowed", async () => {
+test("landlord logs maintenance on their own property - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "maintenance_logs/ml_own"), {
       landlordId: LANDLORD,
@@ -1545,7 +1545,7 @@ test("landlord logs maintenance on their own property — allowed", async () => 
   );
 });
 
-test("caretaker logs maintenance on their property — allowed", async () => {
+test("caretaker logs maintenance on their property - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(caretakerDb(), "maintenance_logs/ml_new"), {
       landlordId: LANDLORD,
@@ -1562,7 +1562,7 @@ test("caretaker logs maintenance on their property — allowed", async () => {
 // propertyId. Harmless while the only reader queried by landlordId; not
 // harmless once the caretaker's feed queries by propertyId, which is why the
 // create rule now also checks who owns the property.
-test("caretaker logs maintenance claiming the wrong owner — denied", async () => {
+test("caretaker logs maintenance claiming the wrong owner - denied", async () => {
   await assertFails(
     setDoc(doc(caretakerDb(), "maintenance_logs/ml_bad"), {
       landlordId: CARETAKER,
@@ -1575,7 +1575,7 @@ test("caretaker logs maintenance claiming the wrong owner — denied", async () 
   );
 });
 
-test("stranger injects a log into another owner's property — denied", async () => {
+test("stranger injects a log into another owner's property - denied", async () => {
   await assertFails(
     setDoc(doc(otherDb(), "maintenance_logs/ml_inject"), {
       landlordId: OTHER,
@@ -1587,7 +1587,7 @@ test("stranger injects a log into another owner's property — denied", async ()
   );
 });
 
-test("caretaker logs maintenance on a property they don't manage — denied", async () => {
+test("caretaker logs maintenance on a property they don't manage - denied", async () => {
   await assertFails(
     setDoc(doc(caretakerDb(), "maintenance_logs/ml_bad2"), {
       landlordId: OTHER,
@@ -1600,7 +1600,7 @@ test("caretaker logs maintenance on a property they don't manage — denied", as
   );
 });
 
-test("caretaker lists maintenance logs on their property — allowed", async () => {
+test("caretaker lists maintenance logs on their property - allowed", async () => {
   await assertSucceeds(
     getDocs(
       query(
@@ -1611,7 +1611,7 @@ test("caretaker lists maintenance logs on their property — allowed", async () 
   );
 });
 
-test("caretaker edits their own maintenance log — allowed", async () => {
+test("caretaker edits their own maintenance log - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(caretakerDb(), "maintenance_logs/ml_caretaker"), {
       note: "Replaced washer and seal",
@@ -1620,7 +1620,7 @@ test("caretaker edits their own maintenance log — allowed", async () => {
   );
 });
 
-test("caretaker edits the landlord's maintenance log — denied", async () => {
+test("caretaker edits the landlord's maintenance log - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "maintenance_logs/ml_landlord"), {
       note: "Rewritten by the caretaker",
@@ -1629,7 +1629,7 @@ test("caretaker edits the landlord's maintenance log — denied", async () => {
   );
 });
 
-test("landlord appoints a caretaker by writing the field — denied", async () => {
+test("landlord appoints a caretaker by writing the field - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "properties/prop2"), {
       caretakerId: CARETAKER,
@@ -1638,7 +1638,7 @@ test("landlord appoints a caretaker by writing the field — denied", async () =
   );
 });
 
-test("landlord renames the sitting caretaker — denied", async () => {
+test("landlord renames the sitting caretaker - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "properties/prop1"), {
       caretakerName: "Someone Else",
@@ -1646,7 +1646,7 @@ test("landlord renames the sitting caretaker — denied", async () => {
   );
 });
 
-test("landlord revokes by clearing the caretaker — allowed", async () => {
+test("landlord revokes by clearing the caretaker - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "properties/prop1"), {
       caretakerId: null,
@@ -1655,7 +1655,7 @@ test("landlord revokes by clearing the caretaker — allowed", async () => {
   );
 });
 
-test("caretaker attests inspection readiness — allowed", async () => {
+test("caretaker attests inspection readiness - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(caretakerDb(), "properties/prop1"), {
       readyForInspections: true,
@@ -1666,7 +1666,7 @@ test("caretaker attests inspection readiness — allowed", async () => {
   );
 });
 
-test("caretaker sets inspection availability — allowed", async () => {
+test("caretaker sets inspection availability - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(caretakerDb(), "properties/prop1"), {
       inspectionDays: ["monday"],
@@ -1676,19 +1676,19 @@ test("caretaker sets inspection availability — allowed", async () => {
   );
 });
 
-test("caretaker changes the rent — denied", async () => {
+test("caretaker changes the rent - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "properties/prop1"), { rent: 100000 })
   );
 });
 
-test("caretaker relists the property — denied", async () => {
+test("caretaker relists the property - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "properties/prop1"), { isAvailable: false })
   );
 });
 
-test("caretaker promotes themselves on another property — denied", async () => {
+test("caretaker promotes themselves on another property - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "properties/prop2"), {
       caretakerId: CARETAKER,
@@ -1696,7 +1696,7 @@ test("caretaker promotes themselves on another property — denied", async () =>
   );
 });
 
-test("caretaker extends their own readiness grant to rent — denied", async () => {
+test("caretaker extends their own readiness grant to rent - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "properties/prop1"), {
       readyForInspections: true,
@@ -1706,16 +1706,16 @@ test("caretaker extends their own readiness grant to rent — denied", async () 
   );
 });
 
-test("both parties read the caretaker invite — allowed", async () => {
+test("both parties read the caretaker invite - allowed", async () => {
   await assertSucceeds(getDoc(doc(landlordDb(), "caretaker_invites/ci1")));
   await assertSucceeds(getDoc(doc(caretakerDb(), "caretaker_invites/ci1")));
 });
 
-test("a stranger reads the caretaker invite — denied", async () => {
+test("a stranger reads the caretaker invite - denied", async () => {
   await assertFails(getDoc(doc(otherDb(), "caretaker_invites/ci1")));
 });
 
-test("landlord writes a caretaker invite directly — denied", async () => {
+test("landlord writes a caretaker invite directly - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "caretaker_invites/ci_forged"), {
       landlordId: LANDLORD,
@@ -1726,7 +1726,7 @@ test("landlord writes a caretaker invite directly — denied", async () => {
   );
 });
 
-test("caretaker accepts their own invite directly — denied", async () => {
+test("caretaker accepts their own invite directly - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "caretaker_invites/ci1"), {
       status: "accepted",
@@ -1738,9 +1738,9 @@ test("caretaker accepts their own invite directly — denied", async () => {
 //
 // The caretaker walks the unit, so they may record what it looked like. Every
 // money-bearing part of the handover lives on the PARENT active_rental, where
-// they have no clause at all — so these tests prove the split holds.
+// they have no clause at all - so these tests prove the split holds.
 
-test("caretaker records move-out condition evidence — allowed", async () => {
+test("caretaker records move-out condition evidence - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${CARETAKER}`), {
       recordedBy: CARETAKER,
@@ -1749,13 +1749,13 @@ test("caretaker records move-out condition evidence — allowed", async () => {
   );
 });
 
-test("caretaker reads the tenant's condition record — allowed", async () => {
+test("caretaker reads the tenant's condition record - allowed", async () => {
   await assertSucceeds(
     getDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${TENANT}`))
   );
 });
 
-test("caretaker records evidence under someone else's name — denied", async () => {
+test("caretaker records evidence under someone else's name - denied", async () => {
   await assertFails(
     setDoc(doc(caretakerDb(), `active_rentals/ar1/condition/move_out/parties/${TENANT}`), {
       recordedBy: CARETAKER,
@@ -1763,7 +1763,7 @@ test("caretaker records evidence under someone else's name — denied", async ()
   );
 });
 
-test("caretaker records evidence on a rental they don't manage — denied", async () => {
+test("caretaker records evidence on a rental they don't manage - denied", async () => {
   await assertFails(
     setDoc(doc(caretakerDb(), `active_rentals/ar_other/condition/move_out/parties/${CARETAKER}`), {
       recordedBy: CARETAKER,
@@ -1771,7 +1771,7 @@ test("caretaker records evidence on a rental they don't manage — denied", asyn
   );
 });
 
-test("caretaker declares a caution deduction — denied", async () => {
+test("caretaker declares a caution deduction - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
       cautionDeductionAmount: 50000,
@@ -1780,7 +1780,7 @@ test("caretaker declares a caution deduction — denied", async () => {
   );
 });
 
-test("caretaker confirms the handover condition check — denied", async () => {
+test("caretaker confirms the handover condition check - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
       handoverConditionConfirmedAt: serverTimestamp(),
@@ -1788,7 +1788,7 @@ test("caretaker confirms the handover condition check — denied", async () => {
   );
 });
 
-test("caretaker settles the deposit — denied", async () => {
+test("caretaker settles the deposit - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), 'active_rentals/ar1'), {
       handoverSettlementMethod: 'cash',
@@ -1797,13 +1797,13 @@ test("caretaker settles the deposit — denied", async () => {
   );
 });
 
-test("caretaker reads the tenancy itself — denied", async () => {
+test("caretaker reads the tenancy itself - denied", async () => {
   await assertFails(getDoc(doc(caretakerDb(), 'active_rentals/ar1')));
 });
 
 // ── Caretaker: the two holes the code review found ───────────────────────────
 
-test("landlord creates a listing with a caretaker pre-set — denied", async () => {
+test("landlord creates a listing with a caretaker pre-set - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), 'properties/prop_forged'), {
       landlordId: LANDLORD,
@@ -1816,7 +1816,7 @@ test("landlord creates a listing with a caretaker pre-set — denied", async () 
   );
 });
 
-test("landlord creates a clean listing — allowed", async () => {
+test("landlord creates a clean listing - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), 'properties/prop_clean'), {
       landlordId: LANDLORD,
@@ -1830,7 +1830,7 @@ test("landlord creates a clean listing — allowed", async () => {
 
 // Being the caretaker is not being the HANDLER. On an agent-handled unit the
 // agent owns readiness and the showing slots.
-test("caretaker wipes slots on an agent-handled unit — denied", async () => {
+test("caretaker wipes slots on an agent-handled unit - denied", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'properties/prop1'), {
       landlordId: LANDLORD, caretakerId: CARETAKER, caretakerName: 'Caretaker One',
@@ -1851,7 +1851,7 @@ test("caretaker wipes slots on an agent-handled unit — denied", async () => {
   );
 });
 
-test("caretaker attests readiness on an agent-handled unit — denied", async () => {
+test("caretaker attests readiness on an agent-handled unit - denied", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'properties/prop1'), {
       landlordId: LANDLORD, caretakerId: CARETAKER, caretakerName: 'Caretaker One',
@@ -1876,10 +1876,10 @@ test("caretaker attests readiness on an agent-handled unit — denied", async ()
 //
 // getSignedAgreementUrl signs whatever string these fields hold, using ADMIN
 // credentials. So an arbitrary path here was a read of ANY object in the
-// bucket — NIN slips, C of O, another tenancy's agreement. Uploads are already
+// bucket - NIN slips, C of O, another tenancy's agreement. Uploads are already
 // uid-scoped by storage.rules; these prove Firestore now agrees.
 
-test("landlord attaches an agreement from their own folder — allowed", async () => {
+test("landlord attaches an agreement from their own folder - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       agreementUrl: `agreements/${LANDLORD}/agreement_123.pdf`,
@@ -1890,7 +1890,7 @@ test("landlord attaches an agreement from their own folder — allowed", async (
   );
 });
 
-test("tenant uploads their signed copy from their own folder — allowed", async () => {
+test("tenant uploads their signed copy from their own folder - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
       tenantSignedUrl: `agreements/${TENANT}/agreement_456.pdf`,
@@ -1902,7 +1902,7 @@ test("tenant uploads their signed copy from their own folder — allowed", async
   );
 });
 
-test("revision clears the signed copies to null — allowed", async () => {
+test("revision clears the signed copies to null - allowed", async () => {
   await assertSucceeds(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       agreementUrl: `agreements/${LANDLORD}/agreement_789.pdf`,
@@ -1914,7 +1914,7 @@ test("revision clears the signed copies to null — allowed", async () => {
   );
 });
 
-test("landlord points the agreement at another user's folder — denied", async () => {
+test("landlord points the agreement at another user's folder - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       agreementUrl: `agreements/${OTHER}/agreement_123.pdf`,
@@ -1923,7 +1923,7 @@ test("landlord points the agreement at another user's folder — denied", async 
   );
 });
 
-test("landlord points the agreement at a NIN slip — denied", async () => {
+test("landlord points the agreement at a NIN slip - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
       agreementUrl: `verification/${OTHER}/nin/1723456789`,
@@ -1932,7 +1932,7 @@ test("landlord points the agreement at a NIN slip — denied", async () => {
   );
 });
 
-test("tenant points the executed copy at an ownership doc — denied", async () => {
+test("tenant points the executed copy at an ownership doc - denied", async () => {
   await assertFails(
     updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
       executedAgreementUrl: `ownership/${OTHER}/cofo_1723456789.jpg`,
@@ -1941,7 +1941,7 @@ test("tenant points the executed copy at an ownership doc — denied", async () 
   );
 });
 
-test("unrelated update on a legacy Cloudinary agreement — allowed", async () => {
+test("unrelated update on a legacy Cloudinary agreement - allowed", async () => {
   // Legacy rows hold public http URLs. Re-checking those on every write would
   // deny move-outs and handovers that never touch the agreement.
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -1959,7 +1959,7 @@ test("unrelated update on a legacy Cloudinary agreement — allowed", async () =
   );
 });
 
-test("forged tenancy_link naming another user's file — denied", async () => {
+test("forged tenancy_link naming another user's file - denied", async () => {
   // The whole C1 chain in one write: create a link you control that points at
   // somebody else's document, then have the callable sign it for you.
   await assertFails(
@@ -1974,7 +1974,7 @@ test("forged tenancy_link naming another user's file — denied", async () => {
   );
 });
 
-test("landlord creates a tenancy_link with their own agreement — allowed", async () => {
+test("landlord creates a tenancy_link with their own agreement - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "tenancy_links/tl_new"), {
       landlordId: LANDLORD,
@@ -2031,14 +2031,14 @@ const bookingDoc = (overrides) => ({
   ...overrides,
 });
 
-test("tenant books an inspection normally — allowed", async () => {
+test("tenant books an inspection normally - allowed", async () => {
   await seedBookableProperty();
   await assertSucceeds(
     setDoc(doc(tenantDb(), "inspection_requests/ir_new"), bookingDoc({}))
   );
 });
 
-test("booking on someone else's behalf — denied", async () => {
+test("booking on someone else's behalf - denied", async () => {
   await seedBookableProperty();
   await assertFails(
     setDoc(
@@ -2048,7 +2048,7 @@ test("booking on someone else's behalf — denied", async () => {
   );
 });
 
-test("booking created already approved — denied", async () => {
+test("booking created already approved - denied", async () => {
   // Skipping straight to approved is what let confirmInspectionPayment reveal
   // any property's exact address with no handler involved.
   await seedBookableProperty();
@@ -2060,7 +2060,7 @@ test("booking created already approved — denied", async () => {
   );
 });
 
-test("booking created with both parties already met — denied", async () => {
+test("booking created with both parties already met - denied", async () => {
   // The earnings-minting shape: pre-set the confirm flags, then one update to
   // completed passes Row 6 and fires creditInspectionEarnings.
   await seedBookableProperty();
@@ -2076,7 +2076,7 @@ test("booking created with both parties already met — denied", async () => {
   );
 });
 
-test("booking created already paid — denied", async () => {
+test("booking created already paid - denied", async () => {
   await seedBookableProperty();
   await assertFails(
     setDoc(
@@ -2086,7 +2086,7 @@ test("booking created already paid — denied", async () => {
   );
 });
 
-test("booking your own listing (tenant is also the handler) — denied", async () => {
+test("booking your own listing (tenant is also the handler) - denied", async () => {
   // One account as both parties walks the whole chain legitimately and
   // collects the handler fee for a visit that never happened.
   await seedBookableProperty();
@@ -2100,11 +2100,11 @@ test("booking your own listing (tenant is also the handler) — denied", async (
 
 // ─── payment_references ledger is client-invisible ───────────────────────────
 
-test("client reads the spent-reference ledger — denied", async () => {
+test("client reads the spent-reference ledger - denied", async () => {
   await assertFails(getDoc(doc(tenantDb(), "payment_references/ref_123")));
 });
 
-test("client pre-spends a reference in the ledger — denied", async () => {
+test("client pre-spends a reference in the ledger - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "payment_references/ref_123"), {
       purpose: "rent", purposeId: "ri1", uid: TENANT,
@@ -2116,12 +2116,12 @@ test("client pre-spends a reference in the ledger — denied", async () => {
 //
 // `ownershipDocUrl` and the `verificationDocs` map were client-written Storage
 // paths that nothing checked the uid segment of. An admin later OPENS them to
-// decide whether to approve a listing or verify an account — so pointing them
+// decide whether to approve a listing or verify an account - so pointing them
 // at another user's genuine document put real evidence in front of a reviewer
 // as backing for the wrong person. `properties` is readable by any authed
 // user, so the paths to copy were free.
 
-test("landlord attaches their own C of O — allowed", async () => {
+test("landlord attaches their own C of O - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "properties/p_owndoc"), {
       landlordId: LANDLORD,
@@ -2142,7 +2142,7 @@ test("landlord attaches their own C of O — allowed", async () => {
   );
 });
 
-test("landlord attaches ANOTHER owner's C of O — denied", async () => {
+test("landlord attaches ANOTHER owner's C of O - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "properties/p_stolendoc"), {
       landlordId: LANDLORD,
@@ -2163,7 +2163,7 @@ test("landlord attaches ANOTHER owner's C of O — denied", async () => {
   );
 });
 
-test("owner swaps in another owner's C of O by edit — denied", async () => {
+test("owner swaps in another owner's C of O by edit - denied", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties/p_edit"), {
       landlordId: LANDLORD,
@@ -2190,7 +2190,7 @@ test("owner swaps in another owner's C of O by edit — denied", async () => {
   );
 });
 
-test("owner re-uploads their own C of O by edit — allowed", async () => {
+test("owner re-uploads their own C of O by edit - allowed", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties/p_edit2"), {
       landlordId: LANDLORD,
@@ -2217,7 +2217,7 @@ test("owner re-uploads their own C of O by edit — allowed", async () => {
   );
 });
 
-test("editing a legacy Cloudinary-doc listing without touching the doc — allowed", async () => {
+test("editing a legacy Cloudinary-doc listing without touching the doc - allowed", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties/p_legacydoc"), {
       landlordId: LANDLORD,
@@ -2243,7 +2243,7 @@ test("editing a legacy Cloudinary-doc listing without touching the doc — allow
   );
 });
 
-test("building created with another owner's C of O — denied", async () => {
+test("building created with another owner's C of O - denied", async () => {
   await assertFails(
     setDoc(doc(landlordDb(), "buildings/b_stolen"), {
       landlordId: LANDLORD,
@@ -2257,7 +2257,7 @@ test("building created with another owner's C of O — denied", async () => {
   );
 });
 
-test("building created with the owner's own C of O — allowed", async () => {
+test("building created with the owner's own C of O - allowed", async () => {
   await assertSucceeds(
     setDoc(doc(landlordDb(), "buildings/b_own"), {
       landlordId: LANDLORD,
@@ -2271,7 +2271,7 @@ test("building created with the owner's own C of O — allowed", async () => {
   );
 });
 
-test("building doc swapped for another owner's by edit — denied", async () => {
+test("building doc swapped for another owner's by edit - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "buildings/b1"), {
       ownershipDocUrl: `ownership/${OTHER}/cofo_9.jpg`,
@@ -2294,7 +2294,7 @@ async function seedTenantProfile() {
   });
 }
 
-test("user submits their own identity documents — allowed", async () => {
+test("user submits their own identity documents - allowed", async () => {
   await seedTenantProfile();
   await assertSucceeds(
     updateDoc(doc(tenantDb(), "users/" + TENANT), {
@@ -2309,7 +2309,7 @@ test("user submits their own identity documents — allowed", async () => {
   );
 });
 
-test("user points their NIN at another person's slip — denied", async () => {
+test("user points their NIN at another person's slip - denied", async () => {
   await seedTenantProfile();
   // The identity-fraud shape: an admin reviewing this application would be
   // shown a real NIN slip belonging to someone else.
@@ -2324,7 +2324,7 @@ test("user points their NIN at another person's slip — denied", async () => {
   );
 });
 
-test("user smuggles one foreign doc among their own — denied", async () => {
+test("user smuggles one foreign doc among their own - denied", async () => {
   await seedTenantProfile();
   await assertFails(
     updateDoc(doc(tenantDb(), "users/" + TENANT), {
@@ -2338,7 +2338,7 @@ test("user smuggles one foreign doc among their own — denied", async () => {
   );
 });
 
-test("user points a doc at an ownership path — denied", async () => {
+test("user points a doc at an ownership path - denied", async () => {
   await seedTenantProfile();
   await assertFails(
     updateDoc(doc(tenantDb(), "users/" + TENANT), {
@@ -2350,7 +2350,7 @@ test("user points a doc at an ownership path — denied", async () => {
   );
 });
 
-test("legacy un-versioned verification path of one's own — allowed", async () => {
+test("legacy un-versioned verification path of one's own - allowed", async () => {
   await seedTenantProfile();
   // Records predating the timestamped scheme are `verification/{uid}/{docType}`.
   await assertSucceeds(
@@ -2363,7 +2363,7 @@ test("legacy un-versioned verification path of one's own — allowed", async () 
   );
 });
 
-test("unrelated profile edit leaves verificationDocs untouched — allowed", async () => {
+test("unrelated profile edit leaves verificationDocs untouched - allowed", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "users/" + TENANT), {
       verificationStatus: "verified",
@@ -2379,7 +2379,7 @@ test("unrelated profile edit leaves verificationDocs untouched — allowed", asy
   );
 });
 
-test("user smuggles a foreign path under an unlisted key — denied", async () => {
+test("user smuggles a foreign path under an unlisted key - denied", async () => {
   // Without the key allowlist this path is carried by a key no clause checks.
   await seedTenantProfile();
   await assertFails(
@@ -2393,7 +2393,7 @@ test("user smuggles a foreign path under an unlisted key — denied", async () =
   );
 });
 
-test("tenant lists own verification payments (userId + type) — allowed", async () => {
+test("tenant lists own verification payments (userId + type) - allowed", async () => {
   // The exact query findUnconsumedVerificationPayment() runs. A list rule is
   // evaluated against the QUERY's constraints, so userId must stay pinned by
   // equality even with a second filter alongside it.
@@ -2408,7 +2408,7 @@ test("tenant lists own verification payments (userId + type) — allowed", async
   );
 });
 
-test("tenant lists ANOTHER user's verification payments — denied", async () => {
+test("tenant lists ANOTHER user's verification payments - denied", async () => {
   await assertFails(
     getDocs(
       query(

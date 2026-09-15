@@ -1,15 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// agent_property_ops.ts — agent ↔ property assignment lifecycle.
+// agent_property_ops.ts - agent ↔ property assignment lifecycle.
 //
-//   revertPropertyToSelf  — shared cleanup when an agent stops handling a
+//   revertPropertyToSelf  - shared cleanup when an agent stops handling a
 //     property (self-unassign OR account deletion): reverts the unit to
 //     landlord-handled, PRESERVES the agent fee in `savedAgentFee` (zeroing
 //     the live `agentFee` so the tenant isn't charged a commission with no
-//     agent — the rent-payment flow treats agentFee>0 as "has agent"), and
+//     agent - the rent-payment flow treats agentFee>0 as "has agent"), and
 //     notifies the landlord. The saved fee is restored client-side when a new
 //     agent is assigned, so the landlord never re-enters it.
 //
-//   agentUnassignFromProperty — callable: an agent steps back from a property
+//   agentUnassignFromProperty - callable: an agent steps back from a property
 //     they're assigned to, with a reason. Blocked if they have an in-flight
 //     inspection on that property (don't strand a tenant mid-deal). Runs
 //     server-side because the agent isn't the property owner (Firestore rules
@@ -26,7 +26,7 @@ import {
 } from "firebase-admin/firestore";
 import {writeNotificationOnce} from "./notification_helpers";
 
-// Inspection states that represent a live obligation — an agent (or tenant /
+// Inspection states that represent a live obligation - an agent (or tenant /
 // landlord) with one of these shouldn't vanish mid-flow.
 export const ACTIVE_INSPECTION_STATUSES = [
   "pending",
@@ -35,7 +35,7 @@ export const ACTIVE_INSPECTION_STATUSES = [
   "approved",
 ];
 
-// M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+// M4: enforced - the Flutter app sends Play Integrity App Check tokens.
 const callableOptions = {enforceAppCheck: true, timeoutSeconds: 30};
 
 /**

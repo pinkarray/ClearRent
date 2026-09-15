@@ -135,7 +135,7 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
         _tabController.animateTo(target);
       }
     } catch (_) {
-      // Non-fatal — keep default Requests tab.
+      // Non-fatal - keep default Requests tab.
     }
   }
 
@@ -203,7 +203,7 @@ class _TenantPendingTabState extends State<_TenantPendingTab> {
   // Cache the stream once. The parent rebuilds this tab whenever a badge-count
   // subscription fires (e.g. the other party marks "on my way"); recreating the
   // stream inside build() would hand StreamBuilder a fresh instance, resetting
-  // it to ConnectionState.waiting and flashing the loading spinner — the flicker.
+  // it to ConnectionState.waiting and flashing the loading spinner - the flicker.
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getTenantRequests();
 
@@ -320,7 +320,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
     );
   }
 
-  /// Reschedule an inspection that expired unapproved — pick a new date/slot;
+  /// Reschedule an inspection that expired unapproved - pick a new date/slot;
   /// it re-enters the approval queue (payment kept).
   Future<void> _rescheduleExpired() async {
     final payload = await ReschedulePropoSheet.show(context, widget.request);
@@ -603,7 +603,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
             ),
           ]),
 
-          // What happens now — keeps the tenant oriented while they wait.
+          // What happens now - keeps the tenant oriented while they wait.
           if (r.isPending || r.isPendingVerification || r.isDeclinedByAgent) ...[
             const SizedBox(height: 12),
             WhatHappensNowHint(
@@ -641,7 +641,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
                   ]),
             ),
           ],
-          // Actions — only when there's payment in flight (cancel
+          // Actions - only when there's payment in flight (cancel
           // request and verifying badge). Paid requests must go
           // through handler-cancel instead.
           if (r.isPendingPayment) ...[
@@ -673,7 +673,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               ),
             ]),
           ],
-          // Expired unapproved — tenant picks reschedule (free) or refund.
+          // Expired unapproved - tenant picks reschedule (free) or refund.
           if (r.isExpiredUnapproved) ...[
             const SizedBox(height: 12),
             Container(
@@ -744,7 +744,7 @@ class _TenantUpcomingTab extends StatefulWidget {
 }
 
 class _TenantUpcomingTabState extends State<_TenantUpcomingTab> {
-  // Cached stream — see _TenantPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _TenantPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getTenantRequests();
 
@@ -805,7 +805,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
 
   // Exact pin for the map shown on inspection day. Lives in the property's
   // gated `private/location` subdoc, not on the request, so it needs its own
-  // read — which returns null unless this tenant is entitled (paid + approved).
+  // read - which returns null unless this tenant is entitled (paid + approved).
   double? _latitude;
   double? _longitude;
   String? _exactAddress;
@@ -815,8 +815,8 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   void initState() {
     super.initState();
     // Paid is the whole condition. It used to also require the inspection to
-    // be TODAY, which meant a tenant planning the journey the night before —
-    // the moment a map is actually useful — got nothing. Payment is already
+    // be TODAY, which meant a tenant planning the journey the night before -
+    // the moment a map is actually useful - got nothing. Payment is already
     // what the SERVER treats as the reveal trigger (confirmInspectionPayment
     // writes reveals/{uid}), so gating the client on the date made the two
     // disagree for no benefit.
@@ -833,7 +833,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     // Payment usually lands while this card is already on screen. The parent
     // stream then pushes a NEW request into the SAME widget, so initState never
     // runs again and the pin stayed unloaded until the tenant navigated away
-    // and back — exactly when they least want to go hunting for the map.
+    // and back - exactly when they least want to go hunting for the map.
     if (!widget.request.isPaid) return;
     if (oldWidget.request.isPaid && oldWidget.request.id == widget.request.id) {
       return;
@@ -850,7 +850,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
       return;
     }
     if (loc == null) {
-      // Entitlement not visible yet — leave it unloaded so a later update can
+      // Entitlement not visible yet - leave it unloaded so a later update can
       // retry rather than latching a permanent failure.
       _pinLoading = false;
       return;
@@ -873,7 +873,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     return d.year == t.year && d.month == t.month && d.day == t.day;
   }
 
-  /// "tomorrow" / "on 6 Sep" — enough for the tenant to place the visit
+  /// "tomorrow" / "on 6 Sep" - enough for the tenant to place the visit
   /// without repeating the full date card above.
   String _dateLabel(DateTime d) {
     if (_isTomorrow(d)) return 'tomorrow';
@@ -1173,7 +1173,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         // Where to actually go.
         //
         // The same pin is already on the property detail screen after payment,
-        // but this card is where the arrival happens — "I'm on my way", then
+        // but this card is where the arrival happens - "I'm on my way", then
         // "I've Arrived", back-to-back with the handler doing the same. Making
         // the tenant leave this card to find the map, then come back to press
         // the button, is the one moment they cannot afford that detour.
@@ -1181,7 +1181,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         // No longer restricted to the day itself: working out how to get
         // somewhere is something people do the night before, and that is
         // precisely when this was blank. The slot still governs the
-        // inspection — see the notice below — the map only governs the route.
+        // inspection - see the notice below - the map only governs the route.
         //
         // Only rendered once the pin actually resolved: an entitlement failure
         // returns null, and an empty map box would be worse than none.
@@ -1198,7 +1198,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
           // Shown whenever the visit is NOT today. The address is for planning
           // the trip; turning up outside the slot means no handler, and
-          // nothing the tenant does there can be recorded — arrival and
+          // nothing the tenant does there can be recorded - arrival and
           // completion both sit behind the 2h window.
           if (!today) ...[
             const SizedBox(height: 10),
@@ -1216,7 +1216,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                     'This is for planning your journey. Your inspection is '
                     '${_dateLabel(widget.request.requestedDate)}'
                     '${widget.request.requestedTimeDisplay.isEmpty ? '' : ', ${widget.request.requestedTimeDisplay}'}'
-                    ' — please do not go before then, nobody will be there '
+                    ' - please do not go before then, nobody will be there '
                     'to let you in.',
                     style: AppTextStyles.bodySmall
                         .copyWith(color: AppColors.warning),
@@ -1249,7 +1249,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
         ],
 
-        // Handler's live status — so the tenant can see whether the
+        // Handler's live status - so the tenant can see whether the
         // agent/landlord is on the way or has arrived. Arrived takes
         // priority. Hidden once met (cascade below shows in-progress).
         if (!r.met && r.handlerArrived) ...[
@@ -1272,7 +1272,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
         ],
 
-        // On Way / Arrived / Met — single-slot cascade that
+        // On Way / Arrived / Met - single-slot cascade that
         // progresses through the inspection-day state machine
         if (r.canTenantMarkOnWay) ...[
           const SizedBox(height: 12),
@@ -1449,7 +1449,7 @@ class _TenantHistoryTab extends StatefulWidget {
 }
 
 class _TenantHistoryTabState extends State<_TenantHistoryTab> {
-  // Cached stream — see _TenantPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _TenantPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getTenantRequests();
 
@@ -1515,7 +1515,7 @@ class _TenantHistoryTabState extends State<_TenantHistoryTab> {
 /// rating, and the rent decision that follows from it.
 ///
 /// Public because the property detail screen now opens it directly for a
-/// property the tenant has already inspected — previously the only way to
+/// property the tenant has already inspected - previously the only way to
 /// reach this was the History tab, so the detail screen kept offering a fresh
 /// (paid) inspection instead.
 class TenantInspectionOutcomeCard extends StatefulWidget {
@@ -1536,7 +1536,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
   bool _isLoadingInterest = false;
   bool _hasCheckedInterest = false;
   bool _hasPassed = false; // true after tenant taps "I'll Keep Looking"
-  // Loaded only when a decision is still open — the decision box must know
+  // Loaded only when a decision is still open - the decision box must know
   // whether the property is still on the market (see build()).
   PropertyModel? _property;
 
@@ -1572,7 +1572,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     _hasPassed = widget.request.tenantPassed;
     // Only completion gates this. Rating is optional (see the decision section
     // below), but requiring it here meant _hasCheckedInterest was never set for
-    // an unrated inspection — so the decision box silently never rendered and
+    // an unrated inspection - so the decision box silently never rendered and
     // the tenant had no way to say they wanted the property.
     if (widget.request.isCompleted) {
       _loadRentalInterest();
@@ -1606,7 +1606,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     super.didUpdateWidget(oldWidget);
     // The parent's StreamBuilder rebuilds this card IN PLACE the moment the
     // handler completes the inspection, and initState does not run again on a
-    // rebuild — so the interest subscription that initState sets up was never
+    // rebuild - so the interest subscription that initState sets up was never
     // started for a card first built while the visit was still approved. The
     // decision box only appeared after leaving the screen and coming back,
     // which destroyed and recreated the widget. _loadRentalInterest already
@@ -1615,7 +1615,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
   }
 
   /// Live-subscribe to this inspection's rental interest so the card reacts to
-  /// state changes on its own — the landlord accepting flips the interest to
+  /// state changes on its own - the landlord accepting flips the interest to
   /// `accepted`, and the card shows "Review Agreement" without the tenant
   /// having to leave and return. Idempotent: called from initState and after
   /// expressing interest, but only ever sets up one subscription.
@@ -1652,7 +1652,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
         });
       }
       // A loser (lost_to_other) is owed a refund tracked at
-      // refunds/{interestId} — stream it so the card shows Processing → Paid.
+      // refunds/{interestId} - stream it so the card shows Processing → Paid.
       if (interest != null && interest.isLostToOther && _refundSub == null) {
         _refundSub =
             _refundService.streamForRental(interest.id).listen((refund) {
@@ -1704,7 +1704,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // Rating comes FIRST and gates the decision: the tenant rates the completed
     // inspection before they can express interest (or pass). The rating is the
     // tenant's confirmation that the visit genuinely happened, and it's what
-    // backs the handler's inspection payment — so it's required either way, not
+    // backs the handler's inspection payment - so it's required either way, not
     // only when the tenant goes on to rent. createRentalInterest enforces the
     // same gate server-side.
     final decisionOpen = r.isCompleted &&
@@ -1715,7 +1715,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // ...but only offer the property if it's still on the market. Occupancy is
     // server-authoritative (occupancy-sync CFs own isAvailable /
     // currentTenantsCount), and createRentalInterest rejects a non-listable
-    // property too — this keeps the tenant from being offered something that's
+    // property too - this keeps the tenant from being offered something that's
     // already taken. Fails closed: if the property couldn't be loaded we say
     // unavailable rather than send them into a call the server will reject.
     final stillAvailable = _property?.isListable ?? false;
@@ -1735,7 +1735,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
                 : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Dispute under review — the tenant reported a problem; an admin is on
+        // Dispute under review - the tenant reported a problem; an admin is on
         // it. Takes priority over any rating/decision prompt.
         if (r.isUnderReview) ...[
           Container(
@@ -1904,7 +1904,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
           ),
         ],
 
-        // ============ RATING SECTION — optional, scoped to handler conduct ============
+        // ============ RATING SECTION - optional, scoped to handler conduct ============
         if (r.isCompleted && !r.isUnderReview) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
@@ -2528,7 +2528,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
   Future<void> _expressInterest() async {
     // Re-read availability at tap time: the card may have been on screen a
     // while, and the property can be taken between render and tap. The CF
-    // rejects a non-listable property too — this just gives a clear message.
+    // rejects a non-listable property too - this just gives a clear message.
     final property = await PropertyService().getProperty(
       widget.request.propertyId,
     );
@@ -2560,7 +2560,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     }
 
     // Amounts are derived server-side by the createRentalInterest CF from the
-    // property and config/pricing — the client no longer decides what the
+    // property and config/pricing - the client no longer decides what the
     // tenant will be charged for rent (HANDOVER H2).
     final interest = await _rentalInterestService.createRentalInterest(
       inspectionRequest: widget.request,

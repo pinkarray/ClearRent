@@ -15,12 +15,12 @@
  *   npm install firebase-admin node-fetch@2
  *   (node-fetch v2 for CommonJS require() support)
  *
- * Secrets (never hardcode — read from the environment):
+ * Secrets (never hardcode - read from the environment):
  *   PAYSTACK_SECRET_KEY=sk_... node backfill_payments.js [--dry-run]
  *
  * Place your Firebase service account JSON at:
  *   ./serviceAccountKey.json  (or update the path below). This file is
- *   gitignored — never commit it.
+ *   gitignored - never commit it.
  */
 
 const admin = require('firebase-admin');
@@ -145,7 +145,7 @@ function _inferTypeFromReference(reference) {
 // ── Main ─────────────────────────────────────────────────────────────
 async function main() {
   console.log('🔄 Backfilling Firestore payments from Paystack...');
-  if (DRY_RUN) console.log('   (DRY RUN — no writes will be made)\n');
+  if (DRY_RUN) console.log('   (DRY RUN - no writes will be made)\n');
 
   // 1. Fetch all successful transactions from Paystack
   console.log('📡 Fetching transactions from Paystack...');

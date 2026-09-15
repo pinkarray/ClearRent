@@ -8,7 +8,7 @@ import '../../core/constants/text_styles.dart';
 import '../../services/app_version_service.dart';
 
 /// Wraps the whole router so the upgrade gate covers every route with a single
-/// subscription — the same reason [ConnectivityWrapper] sits where it does.
+/// subscription - the same reason [ConnectivityWrapper] sits where it does.
 ///
 /// Two behaviours, driven by `config/app_version`:
 ///  * below `minSupportedBuild` → the app is replaced by a wall with no way
@@ -18,7 +18,7 @@ import '../../services/app_version_service.dart';
 ///
 /// Both are drawn inline rather than pushed as routes: this sits ABOVE the
 /// router's Navigator, so there is no Navigator or Material ancestor to show a
-/// dialog or sheet with — the same constraint [ConnectivityWrapper] works
+/// dialog or sheet with - the same constraint [ConnectivityWrapper] works
 /// around by painting its banner directly.
 ///
 /// [AppVersionService] fails open, so when the config is missing, unreadable
@@ -136,7 +136,7 @@ class _UpgradeGateState extends State<UpgradeGate> {
     );
   }
 
-  /// No back button, no dismiss, no route underneath — a blocked build has
+  /// No back button, no dismiss, no route underneath - a blocked build has
   /// nothing safe to show.
   Widget _buildBlockingWall() {
     return Material(

@@ -29,7 +29,7 @@ class ActiveRental {
   final double totalPaid;
   // Pay-after-accept: 'pending' until the accepted tenant pays rent (after the
   // agreement is finalized), then 'paid'. Legacy rentals created under the old
-  // pay-before-accept flow have no field — treated as already paid.
+  // pay-before-accept flow have no field - treated as already paid.
   final String rentPaymentStatus;    // pending | paid
   final double inspectionFeeCredit;
   final String rentFrequency;
@@ -57,7 +57,7 @@ class ActiveRental {
   final DateTime? landlordFinalizedAt;
 
   /// The copy the TENANT signed and uploaded. Their acceptance is this
-  /// document, not a button press — a status and a timestamp in our own
+  /// document, not a button press - a status and a timestamp in our own
   /// database is something a tenant can simply deny having agreed to.
   final String? tenantSignedUrl;
   final DateTime? tenantSignedAt;
@@ -97,7 +97,7 @@ class ActiveRental {
   // (or the auto-confirm sweep does). `endReason` carries the move-out reason.
   final DateTime? moveOutRequestedAt;
   final DateTime? moveOutIntendedDate;
-  /// The landlord has seen the notice. Not the same as having the keys back —
+  /// The landlord has seen the notice. Not the same as having the keys back -
   /// that is [handoverConditionConfirmedAt] territory. Optional courtesy.
   final DateTime? moveOutAcknowledgedAt;
 
@@ -117,7 +117,7 @@ class ActiveRental {
   // Caution deposit, snapshotted from the property at rental creation so it
   // reflects what THIS tenant was promised, not the current listing. The
   // deduction fields are the landlord's declaration at handover: 0 (or
-  // absent) means returned in full. ClearRent never holds this money — these
+  // absent) means returned in full. ClearRent never holds this money - these
   // are a record, not a transfer.
   final double cautionDeposit;
   final bool cautionDepositRefundable;
@@ -221,7 +221,7 @@ class ActiveRental {
 
   /// The tenant may record the condition they are leaving the property in.
   ///
-  /// Open from the moment notice is given, NOT from when the tenancy ends —
+  /// Open from the moment notice is given, NOT from when the tenancy ends -
   /// by then they may have handed back the keys, and asking someone to film a
   /// property they can no longer enter is asking for nothing.
   bool get canRecordMoveOutCondition =>
@@ -231,7 +231,7 @@ class ActiveRental {
   bool get isHandoverClosed => handoverStage == 'closed';
 
   /// The tenancy ended through move-out and the handover is still open. The
-  /// TENANT is not waiting on any of it — their side is over — but the
+  /// TENANT is not waiting on any of it - their side is over - but the
   /// property cannot be relisted until it closes.
   bool get isHandoverOpen =>
       handoverStage.isNotEmpty && handoverStage != 'closed';
@@ -266,7 +266,7 @@ class ActiveRental {
   /// Whether the landlord may confirm handover yet.
   ///
   /// The tenant is still living there until the date they gave notice for, so
-  /// confirming before it ends the tenancy over their head — frees the unit and
+  /// confirming before it ends the tenancy over their head - frees the unit and
   /// clears their active-rental flag while they are mid-move. Allowed from the
   /// START of the intended day, since that is the day they said they'd be out.
   ///
@@ -283,10 +283,10 @@ class ActiveRental {
   bool get isEndedByLandlord => status == ActiveRentalStatus.endedByLandlord;
   bool get isEnded => isEndedByTenant || isEndedByLandlord;
   /// Accepted, agreement in progress, rent not yet paid. A LIVE, current rental
-  /// — must be shown as such, never bucketed with past/ended rentals.
+  /// - must be shown as such, never bucketed with past/ended rentals.
   bool get isPendingPayment => status == ActiveRentalStatus.pendingPayment;
   /// A rental that belongs in the "current" section (in-progress or occupying).
-  /// Move-out-pending is still current — the tenant occupies until handover.
+  /// Move-out-pending is still current - the tenant occupies until handover.
   bool get isCurrent => isActive || isExpiringSoon || isPendingPayment || isMoveoutPending;
 
   // Agreement helpers
@@ -298,7 +298,7 @@ class ActiveRental {
   bool get hasExecutedAgreement =>
       executedAgreementUrl != null && executedAgreementUrl!.isNotEmpty;
 
-  /// A tenancy finalized WITHOUT a counter-signed document on file — every
+  /// A tenancy finalized WITHOUT a counter-signed document on file - every
   /// rental that accepted by tap before signatures were required. Kept
   /// distinguishable so the gap is visible rather than silently blessed.
   bool get isFinalizedWithoutSignature =>
@@ -685,7 +685,7 @@ enum ActiveRentalStatus {
   graceLocked,
   /// The tenant has requested to move out and is awaiting the landlord's
   /// handover confirmation (or the auto-confirm sweep). The tenant is still
-  /// occupying — kept in the server's OCCUPYING_RENTAL_STATUSES so the unit
+  /// occupying - kept in the server's OCCUPYING_RENTAL_STATUSES so the unit
   /// doesn't re-list until the move-out is confirmed.
   moveoutPending,
   expired,

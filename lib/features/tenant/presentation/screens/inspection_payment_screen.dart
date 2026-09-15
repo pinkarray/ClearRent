@@ -37,7 +37,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   final AuthService _authService = AuthService();
 
   /// Openers offered to the tenant in the chat once payment is in. The fee buys
-  /// the connection — transport is settled directly with the handler, so that's
+  /// the connection - transport is settled directly with the handler, so that's
   /// the question most tenants actually need to ask first.
   static const List<String> _handlerSuggestions = [
     'How much would transport to the property cost?',
@@ -116,7 +116,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
       );
 
       // Confirm server-side: flips the request to paid and reveals the exact
-      // address (both must happen server-side — the reveal is handler-only by
+      // address (both must happen server-side - the reveal is handler-only by
       // rule). This is what "unlocks" the inspection.
       await _confirmPayment();
     } catch (e) {
@@ -138,7 +138,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
       if (ok) {
         _showSuccessDialog();
       } else {
-        // Payment succeeded but the server couldn't confirm — offer retry.
+        // Payment succeeded but the server couldn't confirm - offer retry.
         _showConfirmFailureDialog();
       }
     } catch (e) {
@@ -200,7 +200,7 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   }
 
   void _showConfirmFailureDialog({String? error}) {
-    // The charge landed even though confirmation did not — same reasoning as
+    // The charge landed even though confirmation did not - same reasoning as
     // the success dialog: stop looking payable, stay escapable.
     _paymentSuccessful = true;
     showUndismissibleDialog(

@@ -3,7 +3,7 @@
  * Reset ONE test tenant's rental state to a clean slate, so the rent flow can be
  * tested end-to-end without the pile of half-finished records from earlier runs.
  *
- * DRY RUN by default — prints what it WOULD do and writes nothing.
+ * DRY RUN by default - prints what it WOULD do and writes nothing.
  * Pass --confirm to actually perform the writes.
  *
  *   node scripts/cleanup_tenant_rentals.js syd@gmail.com            # dry run
@@ -31,7 +31,7 @@ async function main() {
     process.exit(0);
   }
   const uid = usersByEmail.docs[0].id;
-  console.log(`\n${CONFIRM ? "EXECUTING" : "DRY RUN"} — tenant ${email} (${uid})\n`);
+  console.log(`\n${CONFIRM ? "EXECUTING" : "DRY RUN"} - tenant ${email} (${uid})\n`);
 
   const rentals = await db.collection("active_rentals")
     .where("tenantId", "==", uid).get();
@@ -49,7 +49,7 @@ async function main() {
   console.log(`properties to FREE (${propertyIds.size}): ${[...propertyIds].join(", ")}`);
 
   if (!CONFIRM) {
-    console.log("\n(dry run — nothing written. Re-run with --confirm to execute.)");
+    console.log("\n(dry run - nothing written. Re-run with --confirm to execute.)");
     process.exit(0);
   }
 

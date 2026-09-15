@@ -2,7 +2,7 @@
  * Server-authoritative rating aggregation.
  *
  * Ratings were computed CLIENT-SIDE (inspection_service) as a plain mean and
- * written straight to the ratee's user doc — which meant (a) one 5★ rating
+ * written straight to the ratee's user doc - which meant (a) one 5★ rating
  * showed a perfect 5.0 off a single data point, and (b) any authed client
  * could write anyone's rating (security audit #2).
  *
@@ -26,8 +26,8 @@ import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 
-const PRIOR_MEAN = 3.5; // m — neutral starting point
-const PRIOR_WEIGHT = 5; // C — how many prior "average" ratings to assume
+const PRIOR_MEAN = 3.5; // m - neutral starting point
+const PRIOR_WEIGHT = 5; // C - how many prior "average" ratings to assume
 
 /**
  * Recompute and persist a user's Bayesian rating from all their rated
@@ -39,7 +39,7 @@ async function recomputeUserRating(userId: string): Promise<void> {
   const db = getFirestore();
 
   // ratedUserId is only written on rated inspections, so this returns exactly
-  // this user's ratings — a single-field (auto-indexed) query, no composite
+  // this user's ratings - a single-field (auto-indexed) query, no composite
   // index required.
   const snap = await db
     .collection("inspection_requests")

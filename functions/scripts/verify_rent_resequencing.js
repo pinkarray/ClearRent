@@ -2,14 +2,14 @@
 /**
  * Pay-after-accept rent charge-gate verification.
  *
- * Proves resolveServerAmount("rent", ...) — the pre-charge authority used by
- * initializePayment — only ever authorises a rent charge for the ACCEPTED
+ * Proves resolveServerAmount("rent", ...) - the pre-charge authority used by
+ * initializePayment - only ever authorises a rent charge for the ACCEPTED
  * tenant, and only once the tenancy agreement is FINALIZED and the rent is
  * still unpaid. This is the exact boundary behind the statement to Paystack
  * ("only the accepted tenant ever pays"): a charge on any other state must
  * hard-fail (THROW), never fall back to a client-supplied amount.
  *
- * Only the firestore emulator is needed (no Auth — rent uses no custom claims).
+ * Only the firestore emulator is needed (no Auth - rent uses no custom claims).
  *   npm run build
  *   firebase emulators:start --only firestore --project demo-clearrent
  *   node scripts/verify_rent_resequencing.js
@@ -79,19 +79,19 @@ async function resolve(uid) {
 async function main() {
   await wipe();
 
-  // 1. Awaiting acceptance (new interests start here) — NOT chargeable.
+  // 1. Awaiting acceptance (new interests start here) - NOT chargeable.
   await seed({interestStatus: "pending_acceptance"});
   let r = await resolve(TENANT);
   check("pending_acceptance interest cannot be charged",
     r.ok === false, JSON.stringify(r));
 
-  // 2. Accepted but NO active_rental / not finalized — NOT chargeable.
+  // 2. Accepted but NO active_rental / not finalized - NOT chargeable.
   await seed({interestStatus: "accepted"});
   r = await resolve(TENANT);
   check("accepted but agreement not finalized cannot be charged",
     r.ok === false, JSON.stringify(r));
 
-  // 3. Accepted + agreement finalized + unpaid — the ONLY chargeable state.
+  // 3. Accepted + agreement finalized + unpaid - the ONLY chargeable state.
   await seed({
     interestStatus: "accepted",
     rental: {agreementStatus: "finalized", rentPaymentStatus: "pending"},
@@ -100,12 +100,12 @@ async function main() {
   check("accepted + finalized + unpaid charges the stored amount",
     r.ok === true && r.value === AMOUNT, JSON.stringify(r));
 
-  // 4. Wrong tenant on a fully-ready rental — NOT chargeable (permission).
+  // 4. Wrong tenant on a fully-ready rental - NOT chargeable (permission).
   r = await resolve(OTHER);
   check("a different user cannot pay the accepted tenant's rent",
     r.ok === false, JSON.stringify(r));
 
-  // 5. Already paid — NOT chargeable again (no double charge).
+  // 5. Already paid - NOT chargeable again (no double charge).
   await seed({
     interestStatus: "rent_paid",
     rental: {agreementStatus: "finalized", rentPaymentStatus: "paid"},
@@ -114,7 +114,7 @@ async function main() {
   check("already-paid rent cannot be charged again",
     r.ok === false, JSON.stringify(r));
 
-  // 6. Missing rentalInterestId — NOT chargeable (no client-amount fallback).
+  // 6. Missing rentalInterestId - NOT chargeable (no client-amount fallback).
   try {
     await resolveServerAmount("rent", TENANT, {});
     check("rent with no interestId throws", false, "did not throw");
@@ -122,7 +122,7 @@ async function main() {
     check("rent with no interestId throws", true);
   }
 
-  // 7. Slot released (rental terminated after an unpaid lapse) — NOT chargeable
+  // 7. Slot released (rental terminated after an unpaid lapse) - NOT chargeable
   //    even though the interest still says accepted + agreement finalized.
   await seed({
     interestStatus: "accepted",

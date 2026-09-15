@@ -58,7 +58,7 @@ class ActiveRentalService {
   ///       rentalInterest: interest, inspectionRequest: widget.request);
   /// True if an active_rental already exists for this rental interest.
   ///
-  /// Used to detect — and recover from — a PARTIAL accept: the interest was
+  /// Used to detect - and recover from - a PARTIAL accept: the interest was
   /// flipped to `accepted` but createActiveRental then failed, leaving the
   /// tenant with an accepted application and no rental record (no agreement,
   /// no dashboard). The landlord screen offers a "finish setup" action when
@@ -81,7 +81,7 @@ class ActiveRentalService {
     } catch (e) {
       developer.log('❌ hasRentalForInterest failed: $e',
           name: 'ActiveRentalService');
-      // Fail "it exists" — on a transient read error we'd rather hide the
+      // Fail "it exists" - on a transient read error we'd rather hide the
       // recovery action than risk creating a duplicate rental.
       return true;
     }
@@ -129,7 +129,7 @@ class ActiveRentalService {
   /// Best-effort client guard (rules can't cross-query the collection); the
   /// occupancy CFs remain the source of truth for currentTenantsCount.
   ///
-  /// Scoped to the calling landlord — see [hasRentalForInterest]. A property
+  /// Scoped to the calling landlord - see [hasRentalForInterest]. A property
   /// has exactly one landlord, so this loses no rentals. Unscoped, the list was
   /// denied and the catch below reported every property as full.
   Future<bool> propertyHasOpenSlot(String propertyId, String tenantId) async {
@@ -140,7 +140,7 @@ class ActiveRentalService {
           await _firestore.collection('properties').doc(propertyId).get();
       final maxTenants = (propSnap.data()?['maxTenants'] as num?)?.toInt() ?? 1;
 
-      // Statuses that hold a slot — mirror the server's OCCUPYING set, plus
+      // Statuses that hold a slot - mirror the server's OCCUPYING set, plus
       // pending_payment (accepted, awaiting rent).
       const holding = [
         'active',
@@ -163,7 +163,7 @@ class ActiveRentalService {
     } catch (e) {
       developer.log('❌ propertyHasOpenSlot failed: $e',
           name: 'ActiveRentalService');
-      // Fail "no open slot" — don't risk double-accepting on a read error.
+      // Fail "no open slot" - don't risk double-accepting on a read error.
       return false;
     }
   }
@@ -174,7 +174,7 @@ class ActiveRentalService {
   }) async {
     try {
       // Pay-after-accept: the rental record is created when the landlord
-      // ACCEPTS (still unpaid) — the tenant pays only after the agreement is
+      // ACCEPTS (still unpaid) - the tenant pays only after the agreement is
       // finalized. Legacy pay-first interests (payment_verified) still qualify.
       if (!rentalInterest.isPaymentVerified &&
           rentalInterest.status != RentalInterestStatus.accepted) {
@@ -186,13 +186,13 @@ class ActiveRentalService {
       // Calculate dates
       final now = DateTime.now();
       final leaseStart = now;
-      // Default to yearly — you can fetch property rentFrequency if needed
+      // Default to yearly - you can fetch property rentFrequency if needed
       final leaseEnd = DateTime(now.year + 1, now.month, now.day);
       final nextPayment = leaseEnd;
 
       // Snapshot the caution deposit onto the rental. The amount lives on the
       // property, which the landlord can edit once the unit is vacant again, so
-      // reading it at move-out would report whatever the listing says then —
+      // reading it at move-out would report whatever the listing says then -
       // not what this tenant was promised. Captured here it is fixed for the
       // life of the tenancy.
       double cautionDeposit = 0;
@@ -263,7 +263,7 @@ class ActiveRentalService {
       // The rental id IS the interest id, and creation is a get-or-create in a
       // transaction. The onRentalInterestAccepted Cloud Function now creates
       // this same document the moment the interest flips to accepted, so both
-      // paths converge on one doc instead of minting a duplicate — and a late
+      // paths converge on one doc instead of minting a duplicate - and a late
       // client write can never clobber an agreement the tenant has already
       // accepted, because an existing doc is returned untouched.
       final docRef =
@@ -277,7 +277,7 @@ class ActiveRentalService {
 
       // Property occupancy is server-owned (occupancy-sync CFs) and keys off the
       // rental status, so nothing to do here while it's pending_payment.
-      // The tenant is NOT marked as having an active rental yet either — that
+      // The tenant is NOT marked as having an active rental yet either - that
       // now happens server-side in recordRentPayment, once they've actually
       // paid. Marking them active here would show an unpaid tenant as a real
       // tenant on their dashboard.
@@ -298,7 +298,7 @@ class ActiveRentalService {
     }
   }
 
-  /// Legacy method signature — delegates to createActiveRental
+  /// Legacy method signature - delegates to createActiveRental
   Future<ActiveRental?> createRental({
     required RentalInterest interest,
     required double rentAmount,
@@ -323,7 +323,7 @@ class ActiveRentalService {
 
       // Snapshot the caution deposit onto the rental. The amount lives on the
       // property, which the landlord can edit once the unit is vacant again, so
-      // reading it at move-out would report whatever the listing says then —
+      // reading it at move-out would report whatever the listing says then -
       // not what this tenant was promised. Captured here it is fixed for the
       // life of the tenancy.
       double cautionDeposit = 0;
@@ -400,7 +400,7 @@ class ActiveRentalService {
 
   // ============ HELPERS ============
 
-  /// Update property status — increments/decrements currentTenantsCount
+  /// Update property status - increments/decrements currentTenantsCount
   /// and only marks unavailable when all slots are filled (respects maxTenants).
   /// Property occupancy (currentTenantsCount + isAvailable) is now owned
   /// exclusively by the server-side occupancy-sync Cloud Functions, which
@@ -412,7 +412,7 @@ class ActiveRentalService {
     String tenantId,
     bool isRented,
   ) async {
-    // Intentionally empty — see doc comment above.
+    // Intentionally empty - see doc comment above.
   }
   
   /// Update tenant status (mark as having active rental)
@@ -473,7 +473,7 @@ class ActiveRentalService {
   }
 
   /// Live stream of ALL rentals for the current tenant (every status, no
-  /// filter). Lets My Rentals stay current on its own — e.g. when a payment
+  /// filter). Lets My Rentals stay current on its own - e.g. when a payment
   /// flips a rental from pending_payment to active, the card updates itself
   /// instead of showing the stale "Review & Pay" state until a manual reload.
   Stream<List<ActiveRental>> streamAllTenantRentals() {
@@ -536,7 +536,7 @@ class ActiveRentalService {
   /// Live view of ONE rental.
   ///
   /// Every state the lease screen shows is driven by the other party: the
-  /// landlord uploads the agreement, and — once the tenant accepts — the server
+  /// landlord uploads the agreement, and - once the tenant accepts - the server
   /// records the rent payment. A one-shot [getRentalById] in initState meant the
   /// tenant sat on "your landlord hasn't uploaded the agreement yet" after it
   /// had been uploaded from the web, and had to leave the screen and come back
@@ -552,7 +552,7 @@ class ActiveRentalService {
         });
   }
 
-  /// Stream the tenant's current rental — the one with the latest lease start.
+  /// Stream the tenant's current rental - the one with the latest lease start.
   ///
   /// A tenant can hold several at once, so this cannot take an arbitrary doc:
   /// `.limit(1)` without an `orderBy` returns them in document-ID order, which
@@ -584,7 +584,7 @@ class ActiveRentalService {
   }
 
   /// Unified multi-rental stream: merges every active_rentals doc (active /
-  /// expiring_soon / expired — i.e. not terminated) with every CONFIRMED
+  /// expiring_soon / expired - i.e. not terminated) with every CONFIRMED
   /// tenancy_link for the current tenant, wrapped as [TenantRental] tagged by
   /// origin. Confirmed-only filtering also excludes future 'promoted' links
   /// (a promoted link becomes an active_rental, so it must not double-count).
@@ -603,7 +603,7 @@ class ActiveRentalService {
           'active',
           'expiring_soon',
           'grace_locked',
-          // Still occupying — keep it on the dashboard with the pending banner
+          // Still occupying - keep it on the dashboard with the pending banner
           // until the landlord confirms handover.
           'moveout_pending',
         ])
@@ -615,7 +615,7 @@ class ActiveRentalService {
         .where('status', whereIn: ['confirmed', 'expiring_soon', 'grace_locked'])
         .snapshots();
 
-    // Manual combineLatest — hold the latest of each source, emit on either.
+    // Manual combineLatest - hold the latest of each source, emit on either.
     final controller = StreamController<List<TenantRental>>();
     QuerySnapshot<Map<String, dynamic>>? latestActive;
     QuerySnapshot<Map<String, dynamic>>? latestLinks;
@@ -683,13 +683,13 @@ class ActiveRentalService {
     return controller.stream;
   }
 
-  /// Rentals whose TENANCY is over but whose handover is still open — the
+  /// Rentals whose TENANCY is over but whose handover is still open - the
   /// caution deposit is unresolved and the property cannot be relisted.
   ///
   /// Deliberately separate from [streamTenantRentals], which filters to
   /// rentals the tenant still occupies. An ended rental therefore vanishes
   /// from the dashboard completely, and the tenant was never told their
-  /// landlord was waiting on them to confirm the deposit — the unit sat off
+  /// landlord was waiting on them to confirm the deposit - the unit sat off
   /// the market until a 7-day silence sweep closed it.
   ///
   /// Filtered in memory rather than with a second `where`: an equality plus a
@@ -765,7 +765,7 @@ class ActiveRentalService {
         // Set the review status so the tenant is actually PROMPTED to review +
         // accept (the onActiveRentalUpdated CF fires on agreementStatus →
         // pending_review). Was left unset here, so an agreement uploaded at
-        // accept-time sat with a URL but no status — no prompt, and the flow
+        // accept-time sat with a URL but no status - no prompt, and the flow
         // looked dead. Matches sendAgreementToTenant.
         'agreementStatus': 'pending_review',
         'tenantDisputeReason': null,
@@ -819,11 +819,11 @@ class ActiveRentalService {
     }
   }
 
-  /// Tenant accepts the agreement — which FINALIZES it.
+  /// Tenant accepts the agreement - which FINALIZES it.
   ///
   /// The landlord authored and sent the agreement (their side of it) and the
   /// tenant accepting completes it, so the deal is "finalized between the
-  /// parties" at this point — there's no separate landlord finalize tap. That
+  /// parties" at this point - there's no separate landlord finalize tap. That
   /// matters twice over: it's what unlocks the tenant's rent payment (rent is
   /// only ever collected on a finalized agreement), and it removes the step
   /// where a quiet landlord could strand an accepted tenant indefinitely.
@@ -832,11 +832,11 @@ class ActiveRentalService {
   ///
   /// This replaces tap-to-accept. Acceptance used to write only a status and a
   /// timestamp, which meant the sole evidence a tenant agreed was a row in our
-  /// own database — nothing bearing their hand, and trivially deniable.
+  /// own database - nothing bearing their hand, and trivially deniable.
   ///
   /// The landlord signs their agreement ONCE, against the property, before any
   /// tenant exists. So the copy a tenant downloads already carries the
-  /// landlord's signature, and the copy they upload back carries BOTH — that
+  /// landlord's signature, and the copy they upload back carries BOTH - that
   /// single document is the fully-executed agreement, which is why this
   /// finalizes outright. There is deliberately no counter-sign round trip: it
   /// would have the landlord print and re-upload the same document only to add
@@ -850,7 +850,7 @@ class ActiveRentalService {
     if (rentalId.isEmpty || signedPath.isEmpty) return false;
     try {
       // Only fields in the active_rentals update allowlist (firestore.rules)
-      // may be written — an extra one rejects the whole write.
+      // may be written - an extra one rejects the whole write.
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'tenantSignedUrl': signedPath,
         'tenantSignedAt': FieldValue.serverTimestamp(),
@@ -883,7 +883,7 @@ class ActiveRentalService {
   /// routed to the rent-review flow, which is admin-approved
   /// (`rent_review_ops.ts`) and already demands a revised agreement.
   ///
-  /// What is left is terms and rules, which do not need an admin in the loop —
+  /// What is left is terms and rules, which do not need an admin in the loop -
   /// so this records the declaration and lets the tenant check it. The tenant
   /// sees the declared rent beside the document and can contradict it via
   /// [tenantFlagRentChange], which is what makes a false declaration provable
@@ -921,7 +921,7 @@ class ActiveRentalService {
 
   /// The tenant contradicts the landlord's "terms only" declaration.
   ///
-  /// Parks the agreement as disputed — which stops it being signable — and
+  /// Parks the agreement as disputed - which stops it being signable - and
   /// raises an admin alert via the onActiveRentalUpdated trigger, carrying
   /// both the declaration and this claim.
   Future<bool> tenantFlagRentChange(String rentalId, String reason) async {
@@ -946,8 +946,8 @@ class ActiveRentalService {
 
   /// The landlord's counter-signature, which finalizes the tenancy.
   ///
-  /// [executedPath] is the fully-executed copy — both signatures on one
-  /// document — and becomes the agreement of record.
+  /// [executedPath] is the fully-executed copy - both signatures on one
+  /// document - and becomes the agreement of record.
   Future<bool> landlordUploadExecutedAgreement(
     String rentalId,
     String executedPath,
@@ -977,7 +977,7 @@ class ActiveRentalService {
     try {
       await _firestore.collection('active_rentals').doc(rentalId).update({
         // NOTE: only fields in the active_rentals update allowlist
-        // (firestore.rules) may be written here — an extra field would get the
+        // (firestore.rules) may be written here - an extra field would get the
         // whole write rejected. landlordFinalizedAt doubles as the finalize
         // stamp since tenant acceptance is what finalizes.
         'agreementStatus': 'finalized',
@@ -1183,7 +1183,7 @@ class ActiveRentalService {
   }
 
   /// Tenant requests to move out (request + acknowledge flow). Sets the rental
-  /// to `moveout_pending` — the tenant still occupies until the landlord
+  /// to `moveout_pending` - the tenant still occupies until the landlord
   /// confirms handover (or the auto-confirm sweep does after the grace window),
   /// so the property is NOT freed here. onActiveRentalUpdated notifies the
   /// landlord of the request.
@@ -1237,7 +1237,7 @@ class ActiveRentalService {
   /// The auto-confirm sweep performs the same terminal transition server-side
   /// when the landlord doesn't act within the grace window. onActiveRentalUpdated
   /// notifies the tenant that it's confirmed.
-  /// [cautionDeductionAmount] of 0 means the deposit is returned in full —
+  /// [cautionDeductionAmount] of 0 means the deposit is returned in full -
   /// the default. Anything withheld must carry a [cautionDeductionReason]:
   /// the tenant gets their money back unless the landlord says otherwise, on
   /// the record. ClearRent never holds this money, so these fields are a
@@ -1261,7 +1261,7 @@ class ActiveRentalService {
 
       // The tenant still lives there until the date they gave. Confirming
       // handover early ends the tenancy over their head, frees the unit and
-      // clears their active-rental flag — the same harm the auto-confirm sweep
+      // clears their active-rental flag - the same harm the auto-confirm sweep
       // used to do by counting from the request instead of the intended date.
       // Allowed from the START of the intended day: they said they would be
       // out that day, so the landlord may confirm once it arrives.
@@ -1288,8 +1288,8 @@ class ActiveRentalService {
       });
 
       // Free the property (landlord owns it, so this write is allowed). The
-      // tenant's own `hasActiveRental` flag can't be cleared here — Firestore
-      // rules only let a user write their OWN doc — so the server occupancy
+      // tenant's own `hasActiveRental` flag can't be cleared here - Firestore
+      // rules only let a user write their OWN doc - so the server occupancy
       // trigger (onActiveRentalStatusOccupancy) clears it when the rental
       // leaves the occupying statuses.
       await _updatePropertyStatus(rental.propertyId, rental.tenantId, false);
@@ -1309,7 +1309,7 @@ class ActiveRentalService {
   }
 
   /// Landlord ends a rental. ONLY permitted when the rental is grace_locked
-  /// (lease lapsed + tenant hasn't renewed). Fails closed otherwise — a
+  /// (lease lapsed + tenant hasn't renewed). Fails closed otherwise - a
   /// landlord cannot touch a mid-lease active rental. ClearRent records and
   /// notifies; this is not an eviction.
   Future<bool> landlordRemoveTenant(String rentalId, String reason) async {
@@ -1368,7 +1368,7 @@ class ActiveRentalService {
   /// notification they could not answer for days while the tenant heard
   /// nothing back.
   ///
-  /// Deliberately optional and deliberately gates nothing — a landlord who
+  /// Deliberately optional and deliberately gates nothing - a landlord who
   /// ignores it stalls no part of the move-out, because auto-confirm already
   /// handles silence.
   Future<bool> landlordAcknowledgeMoveOut(String rentalId) async {
@@ -1388,7 +1388,7 @@ class ActiveRentalService {
   // ============ HANDOVER (move-out settlement) ============
   //
   // The tenancy is already over here. What is still open is the caution
-  // deposit, which ClearRent never holds — so none of this moves money. It
+  // deposit, which ClearRent never holds - so none of this moves money. It
   // records what happened, and the PROPERTY stays off the market until it
   // closes, which is the only leverage the platform actually has.
 
@@ -1415,7 +1415,7 @@ class ActiveRentalService {
   /// Landlord attests they have physically checked the property.
   ///
   /// This is the relist lever. The landlord does not have to inspect formally
-  /// — the tenant's walkthrough is the evidence — but nothing frees the unit
+  /// - the tenant's walkthrough is the evidence - but nothing frees the unit
   /// until someone says they have actually looked at it.
   Future<bool> handoverConfirmCondition(
     String rentalId, {
@@ -1438,7 +1438,7 @@ class ActiveRentalService {
 
   /// Landlord declares what they are returning and how it was sent.
   ///
-  /// [deductionAmount] of 0 means the deposit goes back in full — the default,
+  /// [deductionAmount] of 0 means the deposit goes back in full - the default,
   /// and what silence means. Anything withheld must carry a reason, and a
   /// deduction cannot be claimed at all unless the tenant's evidence landed:
   /// without it there is nothing to argue the damage against.
@@ -1483,7 +1483,7 @@ class ActiveRentalService {
     }
   }
 
-  /// Outgoing tenant confirms they were paid — which closes the handover and
+  /// Outgoing tenant confirms they were paid - which closes the handover and
   /// releases the property (onHandoverClosed reacts to the stage).
   Future<bool> handoverConfirmPaid(String rentalId) async {
     try {
@@ -1523,7 +1523,7 @@ class ActiveRentalService {
   }
 
   /// Tenant adds their side to a landlord-ended rental. Annotates the record
-  /// only — does NOT change rental status. Notifies the landlord. No
+  /// only - does NOT change rental status. Notifies the landlord. No
   /// adjudication; the timeline is preserved for any offline/legal process.
   Future<bool> tenantContest(String rentalId, String statement) async {
     try {

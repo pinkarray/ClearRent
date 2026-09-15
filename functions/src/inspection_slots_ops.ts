@@ -5,7 +5,7 @@
  * is already booked for. It CAN'T do that client-side: a tenant isn't allowed
  * to list another handler's inspection_requests (that would expose other
  * tenants' bookings), so the client query was silently denied and every slot
- * looked free — letting a tenant book a taken slot, pay, and only then get
+ * looked free - letting a tenant book a taken slot, pay, and only then get
  * auto-declined by the rejectIfSlotConflict guard.
  *
  * This callable computes availability with the admin SDK (bypasses rules) and
@@ -18,7 +18,7 @@ import {getFirestore, Timestamp} from "firebase-admin/firestore";
 
 // The CF runtime is UTC, but the app is Nigeria-only (WAT = UTC+1, no DST).
 // Comparing calendar days with UTC getters slips across the UTC-midnight
-// boundary — a Thursday-midnight-WAT request is Wednesday 23:00 UTC, so a
+// boundary - a Thursday-midnight-WAT request is Wednesday 23:00 UTC, so a
 // Wednesday booking would wrongly collide with Thursday. Normalise every
 // instant to its WAT wall-clock day (YYYY-MM-DD) before comparing.
 const WAT_OFFSET_MS = 60 * 60 * 1000;
@@ -30,7 +30,7 @@ function watDayKey(ms: number): string {
   return new Date(ms + WAT_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-// Start-of-window hour (WAT) per slot — mirrors
+// Start-of-window hour (WAT) per slot - mirrors
 // InspectionService.timeSlotStartHour on the Dart side.
 const SLOT_START_HOUR: Record<string, number> = {
   morning: 9,
@@ -39,7 +39,7 @@ const SLOT_START_HOUR: Record<string, number> = {
   evening: 18,
 };
 
-// How far ahead a slot must start to still be bookable — mirrors
+// How far ahead a slot must start to still be bookable - mirrors
 // InspectionService.bookingLeadTime.
 const LEAD_TIME_MS = 2 * 60 * 60 * 1000;
 
@@ -66,7 +66,7 @@ function isSlotStillBookable(dayKey: string, slot: string): boolean {
   return startMs > Date.now() + LEAD_TIME_MS;
 }
 
-// Statuses that "hold" a slot — mirror inspection_service._slotHoldingStatuses.
+// Statuses that "hold" a slot - mirror inspection_service._slotHoldingStatuses.
 // Cancelled/declined/refunded/completed/expired do NOT hold a slot.
 const SLOT_HOLDING_STATUSES = [
   "pendingPayment",
@@ -141,13 +141,13 @@ export const getAvailableInspectionSlots = onCall(
     eligible = eligible.filter((s) => isSlotStillBookable(requestedDayKey, s));
 
     if (!handlerId) {
-      // Malformed property — no handler. Return eligible unfiltered; the CF
+      // Malformed property - no handler. Return eligible unfiltered; the CF
       // conflict guard still backstops.
       return {slots: eligible};
     }
 
     // Taken slots for this handler on this date. Single-field equality query
-    // (auto-indexed — can't fail on a missing composite index) + in-memory
+    // (auto-indexed - can't fail on a missing composite index) + in-memory
     // status/date filter.
     const snap = await db
       .collection("inspection_requests")

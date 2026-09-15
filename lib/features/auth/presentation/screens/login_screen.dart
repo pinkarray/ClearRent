@@ -331,7 +331,7 @@ class _LoginScreenState extends State<LoginScreen>
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    // Email tab is sign-in only — sign-up goes through phone OTP
+    // Email tab is sign-in only - sign-up goes through phone OTP
     final result = await _authService.signIn(email: email, password: password);
 
     if (!mounted) return;
@@ -453,7 +453,7 @@ class _LoginScreenState extends State<LoginScreen>
             });
           }
         } else {
-          // Code sent — navigate to OTP screen
+          // Code sent - navigate to OTP screen
           setState(() => _isLoading = false);
           if (!mounted) return;
           context.push(
@@ -556,7 +556,7 @@ class _LoginScreenState extends State<LoginScreen>
   /// Phone-tab recovery: send a one-time code instead of a password.
   ///
   /// "Forgot Password?" on the email tab sends a reset EMAIL, which is no use
-  /// to someone who signed up by phone and may have no email on file at all —
+  /// to someone who signed up by phone and may have no email on file at all -
   /// and sign-up goes through phone OTP, so that is a real slice of users.
   /// Web already treats OTP as the recovery path; this gives the app the same
   /// route instead of a dead end.
@@ -583,7 +583,7 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    // Auto-verified (some Android devices retrieve the SMS themselves) — sign
+    // Auto-verified (some Android devices retrieve the SMS themselves) - sign
     // straight in rather than showing a code screen with nothing to type.
     if (result.autoVerified && result.credential != null) {
       final authResult =

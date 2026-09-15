@@ -20,7 +20,7 @@ class TenancyLinkService {
   /// Resolve a phone number to the tenant the landlord wants to link.
   ///
   /// Replaces a client-side name search that ran an UNBOUNDED query over every
-  /// tenant user document and filtered on the device — that shipped each
+  /// tenant user document and filtered on the device - that shipped each
   /// tenant's nin, phone, email and income to whoever opened the sheet, and let
   /// a two-letter query enumerate people by name. The lookup now happens in
   /// `lookupTenantByPhone`, which checks the caller owns the property before it
@@ -71,7 +71,7 @@ class TenancyLinkService {
       final landlordId = _currentUserId;
       if (landlordId == null) return false;
 
-      // Prevent duplicate — check if a non-removed link already exists
+      // Prevent duplicate - check if a non-removed link already exists
       final existing = await _links
           .where('landlordId', isEqualTo: landlordId)
           .where('tenantId', isEqualTo: tenantId)
@@ -142,9 +142,9 @@ class TenancyLinkService {
     }
   }
 
-  /// Stream of all tenants (pending + confirmed) for a property — for landlord view.
+  /// Stream of all tenants (pending + confirmed) for a property - for landlord view.
   /// Scoped by landlordId so it satisfies the ownership-constrained tenancy_links
-  /// list rule (firestore.rules — F1.13). This is a landlord-only view and every
+  /// list rule (firestore.rules - F1.13). This is a landlord-only view and every
   /// link on the landlord's property carries their uid, so the result is unchanged.
   Stream<List<TenancyLinkModel>> propertyTenantsStream(String propertyId) {
     return _links
@@ -171,7 +171,7 @@ class TenancyLinkService {
 
       // Only pending/confirmed links are removable. Once a linked tenant pays
       // rent through the platform the link is 'promoted' into an active_rental
-      // (see completeLinkedPromotion) — that tenant is now a real on-platform
+      // (see completeLinkedPromotion) - that tenant is now a real on-platform
       // tenancy and must be ended via the rental flow, not removed like a link.
       // The landlord UI already filters promoted links out of the removable
       // list; this is the backstop against removing one by any other path.
@@ -220,7 +220,7 @@ class TenancyLinkService {
             }).toList());
   }
 
-  /// Stream of the tenant's active (confirmed) link — there should only be one at a time
+  /// Stream of the tenant's active (confirmed) link - there should only be one at a time
   Stream<TenancyLinkModel?> tenantActiveLinkStream() {
     final uid = _currentUserId;
     if (uid == null) return Stream.value(null);
@@ -266,7 +266,7 @@ class TenancyLinkService {
     try {
       // Update link status. The parent property's occupancy
       // (currentTenantsCount + isAvailable) is recomputed server-side
-      // by the syncPropertyOccupancyOnLinkChange Cloud Function — the
+      // by the syncPropertyOccupancyOnLinkChange Cloud Function - the
       // tenant can't write to the landlord's property doc directly.
       await _links.doc(linkId).update({
         'status': 'confirmed',
@@ -282,7 +282,7 @@ class TenancyLinkService {
     }
   }
 
-  /// Tenant rejects a link request (no property change needed — was never confirmed).
+  /// Tenant rejects a link request (no property change needed - was never confirmed).
   Future<bool> rejectLink(String linkId) async {
     try {
       await _links.doc(linkId).update({

@@ -6,7 +6,7 @@ class AppTextStyles {
 
   // Outfit has no ₦ (U+20A6) glyph. Roboto is bundled (see pubspec) purely as
   // a glyph fallback so ₦ renders app-wide while everything else stays Outfit.
-  // A BUNDLED family is required — the system 'Roboto' name isn't resolved
+  // A BUNDLED family is required - the system 'Roboto' name isn't resolved
   // reliably as a fallback on all Android devices (e.g. MIUI).
   static const List<String> fontFamilyFallback = ['Roboto'];
 

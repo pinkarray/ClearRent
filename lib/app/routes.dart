@@ -57,7 +57,7 @@ import '../features/caretaker/presentation/screens/caretaker_properties_screen.d
 
 /// Coerce a navigation-extra `initialTab` to an int. In-app pushes pass an
 /// `int`, but notification payloads (FCM data + the Firestore inbox doc) carry
-/// it as a `String` — a raw `as int?` cast threw on those. Handles both.
+/// it as a `String` - a raw `as int?` cast threw on those. Handles both.
 int? _initialTab(Object? value) {
   if (value is int) return value;
   if (value is String) return int.tryParse(value);
@@ -159,7 +159,7 @@ final appRouter = GoRouter(
         final extra = state.extra as Map<String, dynamic>?;
         final tab = _initialTab(extra?['initialTab']) ?? 0;
         // A `reset` nonce forces a fresh home instance (new key) so the tab
-        // actually changes — otherwise go() reuses the existing home, which
+        // actually changes - otherwise go() reuses the existing home, which
         // keeps whatever tab it was last on. Used by "Go to My Home" after
         // paying rent so it lands on the dashboard, not the last-used tab.
         final reset = extra?['reset'];
@@ -173,7 +173,7 @@ final appRouter = GoRouter(
       path: '/tenant/my-rentals',
       builder: (context, state) => const MyRentalsScreen(),
     ),
-    // Both parties land here — the screen decides what to show from who is
+    // Both parties land here - the screen decides what to show from who is
     // signed in, so there is one move-out flow rather than two.
     GoRoute(
       path: '/handover/:rentalId',
@@ -297,7 +297,7 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/landlord/edit-property/:id',
       // `section` rides the QUERY STRING, not `extra`, so it survives the app
-      // being restored — same reason /chat reads conversationId that way.
+      // being restored - same reason /chat reads conversationId that way.
       builder: (context, state) => EditPropertyLoaderScreen(
         propertyId: state.pathParameters['id']!,
         focusSection: state.uri.queryParameters['section'],
@@ -476,8 +476,8 @@ final appRouter = GoRouter(
     // 'Map<String, dynamic>'".
     //
     // conversationId is therefore read from the query string first (it survives
-    // restoration) and falls back to extra. The remaining fields are cosmetic —
-    // ChatScreen loads the conversation by id anyway — so losing them degrades
+    // restoration) and falls back to extra. The remaining fields are cosmetic -
+    // ChatScreen loads the conversation by id anyway - so losing them degrades
     // the header rather than the screen.
     GoRoute(
       path: '/chat',
@@ -505,8 +505,8 @@ final appRouter = GoRouter(
 
 /// Shown when a route is rebuilt without the `extra` it needs.
 ///
-/// go_router's `extra` is an in-memory object — only the location string is
-/// persisted — so the OS restoring the app, a cold start or a hot restart all
+/// go_router's `extra` is an in-memory object - only the location string is
+/// persisted - so the OS restoring the app, a cold start or a hot restart all
 /// rebuild a route with `extra == null`. Every screen below that took a model
 /// object out of `extra` used to cast it unconditionally, which turned that
 /// into "type 'Null' is not a subtype of..." on a red screen.
@@ -514,7 +514,7 @@ final appRouter = GoRouter(
 /// These objects cannot be rebuilt from a URL, so there is nothing to recover:
 /// the honest outcome is to say so and offer a way back, rather than crash.
 ///
-/// Styled with Material defaults on purpose — pulling AppColors/AppTextStyles
+/// Styled with Material defaults on purpose - pulling AppColors/AppTextStyles
 /// in for a screen that should never render is not worth the coupling.
 class _MissingArgsScreen extends StatelessWidget {
   const _MissingArgsScreen(this.what);

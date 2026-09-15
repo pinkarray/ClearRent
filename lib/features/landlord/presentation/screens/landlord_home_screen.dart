@@ -33,7 +33,7 @@ import '../../../../shared/utils/sheet_insets.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
   /// Bottom-nav tab to open on. 0 Dashboard · 1 Properties · 2 Messages ·
-  /// 3 Profile. Lets callers land somewhere specific — publishing a listing
+  /// 3 Profile. Lets callers land somewhere specific - publishing a listing
   /// should arrive at Properties, not the dashboard.
   final int initialNavIndex;
 
@@ -99,13 +99,13 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
   // Summed from the properties themselves. These used to count rows in
   // `_recentActivities`, which is a FEED capped at 20 and trimmed to as few as
-  // 5 — so "Total Views" could never exceed the size of a dashboard card, and
+  // 5 - so "Total Views" could never exceed the size of a dashboard card, and
   // showed 4 for a landlord with nine listings. `viewCount` and `inquiryCount`
   // are the fields that actually accumulate, and they are already on every
   // property this screen has loaded.
   //
   // Reading them here also decouples the stats from the activity feed, which
-  // now merges in notification-backed entries — those would otherwise have
+  // now merges in notification-backed entries - those would otherwise have
   // been miscounted as inquiries.
   int get _totalViews =>
       _myProperties.fold(0, (running, p) => running + p.viewCount);
@@ -396,7 +396,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Use ActivityService stream which queries by 'landlordId' —
+    // Use ActivityService stream which queries by 'landlordId' -
     // this picks up property views, inquiries, AND inspection activities.
     _activitiesSubscription = _activityService
         .activitiesStream(limit: 20)
@@ -405,7 +405,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             if (!mounted) return;
 
             // Was hard-filtered to the last 3 days, which emptied the whole
-            // card for any landlord who had not opened the app that week —
+            // card for any landlord who had not opened the app that week -
             // indistinguishable from "nothing is happening on my properties".
             // A dashboard feed should be short, not amnesiac: keep the recent
             // ones when there are enough of them, otherwise fall back to the
@@ -475,7 +475,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             final rentals =
                 all.where((r) => r.isActive || r.isExpiringSoon).toList();
             // An ended tenancy is neither active nor expiring, so the filter
-            // above drops it — and with it the handover the landlord still
+            // above drops it - and with it the handover the landlord still
             // owes. The property stays off the market and the former tenant's
             // deposit stays unsettled, with nothing on this screen saying so.
             final handovers = all
@@ -556,7 +556,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _startUnreadCountStream();
   }
 
-  /// Approved, vacant listings the handler hasn't vetted yet — tenants can't
+  /// Approved, vacant listings the handler hasn't vetted yet - tenants can't
   /// book them. See [PropertyModel.isNotBookable].
   int get _notBookableCount =>
       _myProperties.where((p) => p.isNotBookable).length;
@@ -690,7 +690,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             // EXACTLY ONE action banner, in priority order.
             //
             // These used to be independent `if`s, so a new landlord could face
-            // four stacked prompts before any dashboard content — which is what
+            // four stacked prompts before any dashboard content - which is what
             // made the top of this screen feel cramped, and made every
             // individual prompt easier to scroll past. One ask at a time.
             //
@@ -719,7 +719,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
               notificationsRoute: '/notifications',
             ),
             // A landlord can be someone else's caretaker too. This is the only
-            // way in to caretaker work, so it is NOT part of the capped stack —
+            // way in to caretaker work, so it is NOT part of the capped stack -
             // hiding it behind a priority rule is how it became unreachable
             // twice before.
             const CaretakerBanner(),
@@ -791,7 +791,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
             const SizedBox(height: 32),
 
-            // Recent Activity — surfaced first so the landlord sees what just
+            // Recent Activity - surfaced first so the landlord sees what just
             // happened before scrolling their rentals and linked tenants.
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -839,7 +839,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                   ),
             ],
 
-            // Linked tenants section — only shown if landlord has confirmed links
+            // Linked tenants section - only shown if landlord has confirmed links
             if (!_isLoadingLinkedTenants && _linkedTenants.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
@@ -1002,7 +1002,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
 
     if (!mounted) return;
 
-    // Issue activities — go straight to the issues screen
+    // Issue activities - go straight to the issues screen
     if (activity.type == ActivityType.issueReported ||
         activity.type == ActivityType.issueDisputed ||
         activity.type == ActivityType.issueConfirmed) {
@@ -1010,7 +1010,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Inspection activities — go to landlord inspections screen
+    // Inspection activities - go to landlord inspections screen
     if (activity.type == ActivityType.inspectionRequest ||
         activity.type == ActivityType.inspectionApproved ||
         activity.type == ActivityType.inspectionDeclined ||
@@ -1020,14 +1020,14 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Payout activities — go to earnings
+    // Payout activities - go to earnings
     if (activity.type == ActivityType.payoutReceived) {
       context.push('/landlord/earnings');
       return;
     }
 
     // Move-out. This screen had no branch for it at all, so it fell through to
-    // the property fallback below — opening the listing, which is the one place
+    // the property fallback below - opening the listing, which is the one place
     // the landlord can do nothing about a move-out. A completed move-out leaves
     // the caution deposit outstanding and the property off the market, so it
     // goes straight to the handover; a request is still confirmed on the
@@ -1043,7 +1043,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Property views and inquiries — show viewer info sheet
+    // Property views and inquiries - show viewer info sheet
     if ((activity.type == ActivityType.propertyViewed ||
             activity.type == ActivityType.inquiry) &&
         activity.actorId != null) {
@@ -1051,11 +1051,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Payment activities — a tenant paid to rent. The landlord accepts them in
+    // Payment activities - a tenant paid to rent. The landlord accepts them in
     // Inspections → History (tab 2), which is what the activity subtitle and
     // the matching push payload both say; this used to open the property
     // instead, leaving no route to the accept box. relatedId is the inspection
-    // to highlight — rows written before it was stored just land on the tab.
+    // to highlight - rows written before it was stored just land on the tab.
     if (activity.type == ActivityType.payment) {
       context.push(
         '/landlord/inspections',
@@ -1067,14 +1067,14 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
       return;
     }
 
-    // Fallback — navigate to the property if available
+    // Fallback - navigate to the property if available
     if (activity.propertyId != null) {
       final property = await _propertyService.getProperty(activity.propertyId!);
       if (!mounted) return;
       if (property != null) {
         context.push('/property-detail', extra: property);
       } else {
-        // Never leave the tap unanswered — a missing/unreadable property used
+        // Never leave the tap unanswered - a missing/unreadable property used
         // to fail silently, which reads as a dead tap.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1662,7 +1662,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   /// approval is the moment a landlord believes they are live, and the unvetted
   /// listing then sits taking no inspections with nothing saying so outside the
   /// property's own page. A banner is precisely the wrong shape for something
-  /// surprising — it is the thing people scroll past. The others (verify, bank,
+  /// surprising - it is the thing people scroll past. The others (verify, bank,
   /// email) are all states the landlord already knows about, so they stay
   /// ambient.
   ///
@@ -1781,7 +1781,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Future<void> _deleteProperty(PropertyModel property) async {
-    // Can't delete a property with a sitting/linked tenant — it would strand
+    // Can't delete a property with a sitting/linked tenant - it would strand
     // their dashboard with an orphaned rental/link.
     if (await _propertyService.propertyHasSittingTenant(property.id)) {
       if (!mounted) return;
@@ -2153,7 +2153,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         CapsuleNavItem(
           // Not the 4-square grid: it is the most generic icon in the set and
           // reads as "menu" more than "overview". A chart matches what this
-          // tab actually shows — properties, views, inquiries, rentals.
+          // tab actually shows - properties, views, inquiries, rentals.
           icon: Icons.insights_outlined,
           activeIcon: Icons.insights,
           label: 'Dashboard',
@@ -2175,7 +2175,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
           onTap: () {
             setState(() {
               _currentNavIndex = 2;
-              // Unread count is live via stream — no manual reload needed
+              // Unread count is live via stream - no manual reload needed
             });
           },
           badge: _unreadCount > 0 ? '$_unreadCount' : null,
@@ -2657,7 +2657,7 @@ class _ViewerSheetState extends State<_ViewerSheet> {
 
             const SizedBox(height: 20),
 
-            // Message button — disabled with explanation if unverified
+            // Message button - disabled with explanation if unverified
             if (_isLoadingProfile)
               Container(
                 height: 50,

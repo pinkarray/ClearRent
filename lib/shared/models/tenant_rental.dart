@@ -1,7 +1,7 @@
 import 'active_rental_model.dart';
 import 'tenancy_link_model.dart';
 
-/// Unified lifecycle state across both rental sources — what the switcher reads
+/// Unified lifecycle state across both rental sources - what the switcher reads
 /// to decide normal-render vs. grey-out. Computed from the underlying source
 /// status so widgets don't re-derive per card.
 enum RentalLifecycle {
@@ -11,7 +11,7 @@ enum RentalLifecycle {
   /// Within the lease-end reminder window; still full dashboard.
   expiringSoon,
 
-  /// Term lapsed, tenant hasn't acted — greyed, renew-only.
+  /// Term lapsed, tenant hasn't acted - greyed, renew-only.
   graceLocked,
 }
 
@@ -30,13 +30,13 @@ enum RentalOrigin {
 /// and which fields are real vs. adapted-from-link.
 class TenantRental {
   /// Display-shape rental. For linked origin this is adapted via
-  /// [ActiveRental.fromLink] — its lease/payout fields are synthetic and must
+  /// [ActiveRental.fromLink] - its lease/payout fields are synthetic and must
   /// not be trusted (check [origin] before reading them).
   final ActiveRental rental;
 
   final RentalOrigin origin;
 
-  /// Source doc id — the `active_rentals` id or the `tenancy_links` id.
+  /// Source doc id - the `active_rentals` id or the `tenancy_links` id.
   /// Equals [rental].id, surfaced explicitly so callers don't depend on that.
   final String sourceId;
 
@@ -72,16 +72,16 @@ class TenantRental {
         case ActiveRentalStatus.endedByTenant:
         case ActiveRentalStatus.endedByLandlord:
         // moveoutPending is still a live tenancy (occupying until handover
-        // confirmed) — treated as active in the lifecycle.
+        // confirmed) - treated as active in the lifecycle.
         case ActiveRentalStatus.moveoutPending:
         // pendingPayment (accepted, rent not yet paid) never reaches this
-        // stream — streamTenantRentals only pulls occupying statuses — but the
+        // stream - streamTenantRentals only pulls occupying statuses - but the
         // switch must stay exhaustive.
         case ActiveRentalStatus.pendingPayment:
           return RentalLifecycle.active;
       }
     }
-    // Linked origin — derive from the raw link.
+    // Linked origin - derive from the raw link.
     final l = link;
     if (l == null) return RentalLifecycle.active;
     if (l.status == 'grace_locked' || l.isLeaseEnded) {

@@ -3,19 +3,19 @@
  *
  * WHY THIS EXISTS AND WHY IT IS NOT PER-EVENT. Web push (admin_push_ops)
  * handles the interruptions: warning/critical alerts that need someone now.
- * This is the other half — the picture. One send a day covering what happened,
+ * This is the other half - the picture. One send a day covering what happened,
  * what is still outstanding, and who is doing what next. A mail per event would
  * bury the recipient and get filtered within a week, which is the failure mode
  * this deliberately avoids.
  *
  * Sent through Resend over plain fetch (Node 22 has it global) rather than
- * adding the SDK — one HTTP call does not justify a dependency, and the repo
+ * adding the SDK - one HTTP call does not justify a dependency, and the repo
  * already talks to Paystack the same way.
  *
  * QUERY SHAPE. Every read here is a single-field filter with the rest narrowed
  * in code. That is deliberate: the composite indexes for
  * `where(...) + orderBy(...)` are not provisioned in this project, and a
- * missing index makes Firestore throw rather than degrade — which is how the
+ * missing index makes Firestore throw rather than degrade - which is how the
  * app's Payments tab ended up permanently empty once.
  */
 
@@ -154,7 +154,7 @@ export const adminDailyDigestEmail = onSchedule(
     const fmtInspection = (i: InspectionRow) =>
       `<strong>${esc(i.propertyTitle)}</strong>${
         i.slot ? ` (${esc(i.slot)})` : ""
-      } — ${esc(i.tenantName)} with ${esc(i.handlerName)}`;
+      } - ${esc(i.tenantName)} with ${esc(i.handlerName)}`;
 
     const today = inspections.filter((i) => i.dayKey === todayKey);
     const tomorrow = inspections.filter((i) => i.dayKey === tomorrowKey);
@@ -184,7 +184,7 @@ export const adminDailyDigestEmail = onSchedule(
     const outstanding: AlertRow[] = [];
     for (const doc of openSnap.docs) {
       const severity = (doc.get("severity") as string | undefined) ?? "info";
-      // Info alerts are awareness, not a queue — they do not belong here.
+      // Info alerts are awareness, not a queue - they do not belong here.
       if (severity === "info") continue;
       outstanding.push({
         type: (doc.get("type") as string | undefined) ?? "",
@@ -197,7 +197,7 @@ export const adminDailyDigestEmail = onSchedule(
       (a.severity === "critical" ? 0 : 1) - (b.severity === "critical" ? 0 : 1)
     );
 
-    // Nothing outstanding, nothing booked, nothing happened — so say nothing.
+    // Nothing outstanding, nothing booked, nothing happened - so say nothing.
     // A daily mail that reports an empty day trains the reader to stop opening
     // it, which is the opposite of what a digest is for: the ones that DO
     // matter should stand out by arriving at all.
@@ -211,7 +211,7 @@ export const adminDailyDigestEmail = onSchedule(
       later.length === 0 &&
       byType.size === 0
     ) {
-      logger.info("Admin digest skipped — nothing to report", {
+      logger.info("Admin digest skipped - nothing to report", {
         day: todayKey,
       });
       return;
@@ -220,7 +220,7 @@ export const adminDailyDigestEmail = onSchedule(
     const html = `
 <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;
   max-width:600px;margin:0 auto;color:#1A1A2E">
-  <h2 style="margin:0;font-size:18px">ClearRent — ${esc(watDayLabel(now))}</h2>
+  <h2 style="margin:0;font-size:18px">ClearRent - ${esc(watDayLabel(now))}</h2>
   <p style="margin:4px 0 0;color:#6B7280;font-size:14px">
     ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} need
     your attention · ${today.length} inspection${

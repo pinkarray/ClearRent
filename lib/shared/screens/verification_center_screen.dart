@@ -33,7 +33,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   StreamSubscription<VerificationData>? _verificationSub;
   String _accountType = 'landlord';
   /// Whether [_accountType] came from the user's profile rather than the
-  /// initialiser above. False means we do not know the role — never render a
+  /// initialiser above. False means we do not know the role - never render a
   /// role-specific form on a guess.
   bool _accountTypeResolved = false;
   /// The profile read has finished, whatever it returned. Separate from
@@ -54,7 +54,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   // Renewal context, captured from the loaded profile. Held separately from
   // _verificationData because _resetForm() blanks that object to surface the
-  // upload form — which would otherwise lose the fact that this is a renewal
+  // upload form - which would otherwise lose the fact that this is a renewal
   // and wrongly re-ask for a NIN we already hold. Sticky once true.
   bool _renewalContext = false;
 
@@ -93,7 +93,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   // ── Draft persistence ──────────────────────────────────────────────────
   //
   // Verification asks for a NIN, a guarantor's full details and several
-  // documents — things people routinely leave the app to go and find. Losing
+  // documents - things people routinely leave the app to go and find. Losing
   // the half-filled form on return meant starting over, and the documents are
   // the slow part.
   //
@@ -134,7 +134,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     }
   }
 
-  /// Re-hydrate a file field, but only if the file is still on disk — a path
+  /// Re-hydrate a file field, but only if the file is still on disk - a path
   /// whose file has gone would otherwise show as an uploaded document and then
   /// fail at submit.
   File? _restoreFile(String? path) {
@@ -179,7 +179,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
     } catch (_) {
-      // Nothing to do — a stale draft is harmless, and every file field is
+      // Nothing to do - a stale draft is harmless, and every file field is
       // dropped on restore if the file is gone.
     }
   }
@@ -218,9 +218,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _verificationData?.isRenewal == true;
 
   Future<void> _loadUserDataAndVerificationStatus() async {
-    // Three INDEPENDENT reads that used to run strictly in sequence — the
+    // Three INDEPENDENT reads that used to run strictly in sequence - the
     // profile (sometimes twice), then the remote fee schedule, then the first
-    // event of the verification stream — so the spinner lasted the SUM of
+    // event of the verification stream - so the spinner lasted the SUM of
     // them, which is where the 7-10 second wait came from. Nothing here feeds
     // anything else, so they run together and the screen lands on the slowest
     // one instead of all of them.
@@ -239,7 +239,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       resolvedType = profile == null ? null : profile['accountType'];
     }
 
-    // Whatever remains is genuinely unknown — an offline read, a permission
+    // Whatever remains is genuinely unknown - an offline read, a permission
     // error, or a document not written yet. `_accountType` used to keep its
     // 'landlord' initialiser in that case, so an agent was shown the landlord
     // form and asked for the wrong documents at the wrong price. A role we
@@ -254,7 +254,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         _accountType = _accountTypeResolved ? resolvedType as String : _accountType;
         // The SAME signal the server prices on (resolveServerAmount reads
         // verifiedAt). Deriving the displayed fee from the renewal FORM state
-        // instead would let the two disagree — and the disagreement the user
+        // instead would let the two disagree - and the disagreement the user
         // would notice is being quoted the renewal price and charged the
         // first-time one.
         _everVerified = profile!['verifiedAt'] != null;
@@ -267,7 +267,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     // details" state at someone whose profile was simply still in flight.
     if (mounted) setState(() => _profileLoaded = true);
 
-    // Remote fee schedule — falls back to the compiled-in values on failure,
+    // Remote fee schedule - falls back to the compiled-in values on failure,
     // so the fee panel always renders something sane.
     final pricing = await pricingFuture;
     if (mounted) setState(() => _pricing = pricing);
@@ -314,13 +314,13 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       final XFile? image = await _picker.pickImage(source: source);
 
       if (image != null) {
-        // Materialise bytes first — this resolves cloud-backed URIs
+        // Materialise bytes first - this resolves cloud-backed URIs
         // (Google Photos, etc.) before we touch the file path.
         final bytes = await image.readAsBytes();
         // The app's DOCUMENTS directory, not systemTemp.
         //
         // systemTemp maps to the cache directory on Android, which the system
-        // reclaims whenever it wants space — including while the app sits in
+        // reclaims whenever it wants space - including while the app sits in
         // the background during the Paystack checkout. Documents are picked
         // BEFORE payment and uploaded AFTER it, so the file could be gone by
         // the time the upload ran. That surfaced as "failed to upload one or
@@ -346,7 +346,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
             case 'experienceProof': _experienceProofFile = tempFile; break;
           }
         });
-        // Picking is the slow part of this form — save it straight away.
+        // Picking is the slow part of this form - save it straight away.
         await _saveDraft();
       }
     } catch (e, stack) {
@@ -454,7 +454,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   }
 
   bool get _allRequiredDocsUploaded {
-    // All roles require a valid NIN number + NIN slip photo — except a
+    // All roles require a valid NIN number + NIN slip photo - except a
     // renewal, where the NIN is already on file and not re-collected.
     if (!_isRenewal && (!_isNinNumberValid || _ninFile == null)) return false;
 
@@ -487,7 +487,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     late final String paymentReference;
     late final double paymentAmount;
 
-    // A charge that was taken but whose submission never completed — the
+    // A charge that was taken but whose submission never completed - the
     // reference is on the user document while verificationStatus never left
     // 'none'. The slot is paid for and unused, so collecting the fee again
     // would charge twice for one application. This is the state a failed
@@ -556,7 +556,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       );
     }
 
-    // Step 2: Payment resolved — now submit verification docs
+    // Step 2: Payment resolved - now submit verification docs
     if (!mounted) return;
     setState(() => _isSubmitting = true);
 
@@ -602,7 +602,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         result = VerificationResult(success: false, error: 'Unknown account type');
     }
 
-    // Step 3: Record payment in Firestore payments collection — first-time only.
+    // Step 3: Record payment in Firestore payments collection - first-time only.
     // A free re-apply moved no money, so there's nothing new to record.
     if (!_isFreeReapply) {
       await PaystackService().recordPayment(
@@ -620,7 +620,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
       _isFreeReapply = false; // consumed
     }
 
-    // The form is submitted — the draft has served its purpose. Left in place
+    // The form is submitted - the draft has served its purpose. Left in place
     // on failure, which is exactly when the user needs it again.
     if (result.success) {
       await _clearDraft();
@@ -684,8 +684,8 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   /// Shown when the account type could not be read.
   ///
-  /// The alternative is worse than an error: the form is role-specific — it
-  /// decides which documents are demanded and which fee is quoted — so
+  /// The alternative is worse than an error: the form is role-specific - it
+  /// decides which documents are demanded and which fee is quoted - so
   /// defaulting silently means asking an agent for a landlord's utility bill
   /// and charging them the landlord price.
   Widget _buildRoleUnknownState() {
@@ -702,7 +702,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
                 style: AppTextStyles.h4),
             const SizedBox(height: 8),
             Text(
-              'Check your connection and try again — verification asks for '
+              'Check your connection and try again - verification asks for '
               'different documents depending on your account type.',
               textAlign: TextAlign.center,
               style: AppTextStyles.bodyMedium
@@ -738,7 +738,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
 
   // ============ RENEWAL STATE (annual verification lapsed) ============
   Widget _buildRenewalState() {
-    // Renewal re-collects the role proof + fee only — NIN is permanent and
+    // Renewal re-collects the role proof + fee only - NIN is permanent and
     // already on file, so the upload form suppresses the NIN steps for
     // renewals (see _isRenewal).
     return Column(
@@ -793,7 +793,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   }
 
   /// Surfaces the annual clock in-app. Without this a user's first hint that
-  /// verification lapses is being soft-locked — the yearly cadence was stated
+  /// verification lapses is being soft-locked - the yearly cadence was stated
   /// only in the Terms and on the website, never in the app itself.
   Widget _buildExpiryNotice() {
     final expires = _verificationData?.expiresAt;
@@ -945,7 +945,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
   }
 
   /// Begin a re-application after a rejection. If the user already paid for the
-  /// earlier attempt, the resubmission is free — carry the original payment
+  /// earlier attempt, the resubmission is free - carry the original payment
   /// reference so it stays tied to that paid slot.
   void _startReapply() {
     final data = _verificationData;
@@ -1362,7 +1362,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     }
   }
 
-  /// NIN number input field — shared across all roles
+  /// NIN number input field - shared across all roles
   Widget _buildNinNumberField() {
     return Container(
       padding: const EdgeInsets.all(16),

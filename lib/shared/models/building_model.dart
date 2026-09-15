@@ -27,7 +27,7 @@ class BuildingModel {
   final String structure;
   final int? totalFloors;
 
-  // Shared ownership document — verified once, covers all units in the building.
+  // Shared ownership document - verified once, covers all units in the building.
   final String? ownershipDocUrl; // Cloudinary URL of the C of O / deed
   final String? ownershipDocType; // 'c_of_o' | 'deed' | 'other'
   final String ownershipDocStatus; // 'none' | 'pending' | 'verified' | 'rejected'
@@ -55,7 +55,7 @@ class BuildingModel {
   bool get isDocRejected => ownershipDocStatus == 'rejected';
 
   /// Human label for [structure]. Empty for buildings created before the field
-  /// existed — callers should omit the line rather than print a placeholder.
+  /// existed - callers should omit the line rather than print a placeholder.
   String get structureLabel => structureLabelFor(structure);
 
   /// The structures a Lagos landlord actually names. Order is the chip order.

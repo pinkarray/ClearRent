@@ -21,7 +21,7 @@ import '../../../../shared/utils/sheet_insets.dart';
 
 /// Shows tenant's documents: tenancy agreements and payment history.
 class DocumentsScreen extends StatefulWidget {
-  /// Which tab to open on — 0 Agreements, 1 Payments.
+  /// Which tab to open on - 0 Agreements, 1 Payments.
   ///
   /// This screen is the single destination behind BOTH the "Documents" and the
   /// "Payment History" entry points, so the one that says payments has to land
@@ -44,7 +44,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
   /// Landlords and agents reach this screen too (`/landlord/documents`), but
   /// the Agreements tab is built from `getTenantRentals()` /
-  /// `getTenantActiveLink()` — tenant-scoped queries that return nothing for
+  /// `getTenantActiveLink()` - tenant-scoped queries that return nothing for
   /// them. They were shown a permanently empty "Agreements" tab beside a
   /// populated "Payments" one, which reads as data missing rather than a tab
   /// that was never theirs. Their agreements live on /landlord/agreements.
@@ -112,7 +112,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
 
       // Query by userId only (auto-indexed) and sort client-side. A
       // server-side orderBy('createdAt') alongside the where would require a
-      // composite index that isn't provisioned — when it's missing Firestore
+      // composite index that isn't provisioned - when it's missing Firestore
       // throws and the catch below silently returns [], which showed up as a
       // permanently-empty Payments tab. Matches the client-sort pattern used
       // by earnings_screen / landlord_issues / activity_service.
@@ -242,7 +242,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   // ────────────────────────────────────────────────────────────────────
 
   /// Payments only, plus a signpost to where a landlord's agreements actually
-  /// live — so the screen never implies their documents are missing.
+  /// live - so the screen never implies their documents are missing.
   Widget _buildLandlordPayments() {
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -920,11 +920,11 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // PAYOUT RECEIPT — "did the money actually land?"
+  // PAYOUT RECEIPT - "did the money actually land?"
   //
   // Marking a payout paid only ever recorded that ClearRent SENT it. This is
   // the beneficiary's side of that. Lives on the payments receipt because it
-  // is the one payout surface BOTH roles can read — an agent is not a party to
+  // is the one payout surface BOTH roles can read - an agent is not a party to
   // active_rentals at all.
   // ────────────────────────────────────────────────────────────────────
 
@@ -1018,12 +1018,12 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   }
 
   /// Confirm, or collect a reason and dispute. Reloads on success so the strip
-  /// reflects the new state — the payments list is a one-shot read.
+  /// reflects the new state - the payments list is a one-shot read.
   Future<void> _submitPayoutReceipt(String rentalId, bool received) async {
     String? reason;
     if (!received) {
       reason = await _askDisputeReason();
-      // Cancelled the reason prompt — don't file a dispute they backed out of.
+      // Cancelled the reason prompt - don't file a dispute they backed out of.
       if (reason == null || reason.trim().isEmpty) return;
     }
 
@@ -1401,7 +1401,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
   // DOCUMENT ACTIONS
   // ────────────────────────────────────────────────────────────────────
 
-  // Agreements are private — resolve a short-lived signed URL via the CF
+  // Agreements are private - resolve a short-lived signed URL via the CF
   // (which authorizes the caller as a party) before opening/sharing.
   Future<void> _viewAgreement(
     String collection,

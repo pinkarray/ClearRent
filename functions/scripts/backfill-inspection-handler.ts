@@ -8,7 +8,7 @@
  * New inspections get this stamped by the onInspectionRequestCreated trigger;
  * this backfills the ones created before that shipped.
  *
- * Idempotent — skips docs whose handlerId already matches. Dry-run by default;
+ * Idempotent - skips docs whose handlerId already matches. Dry-run by default;
  * pass --apply to write.
  *
  * Run:

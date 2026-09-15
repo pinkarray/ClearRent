@@ -10,7 +10,7 @@ import '../models/condition_record.dart';
 ///
 /// Lived on the handover screen originally, which meant it could only be seen
 /// once the tenancy had ENDED. But the tenant films while they still have keys
-/// — during the notice period — so the landlord had no way to see the evidence
+/// - during the notice period - so the landlord had no way to see the evidence
 /// at the one time it might change what they do about the deposit. Shared so
 /// the notice-period card can show the same list.
 ///
@@ -67,7 +67,7 @@ class _ConditionEvidenceListState extends State<ConditionEvidenceList> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: InkWell(
                   // A pending record has nothing stored yet, so there is
-                  // nothing to open — the row still shows, because "they tried
+                  // nothing to open - the row still shows, because "they tried
                   // and it is uploading" is itself worth knowing.
                   onTap: r.isEvidence
                       ? () => Navigator.of(context).push(

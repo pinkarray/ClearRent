@@ -10,7 +10,7 @@
  *
  * These docs are write-once. Proving that matters more than usual: no ownership
  * document has been uploaded to Storage in production yet (everything predates
- * the move off Cloudinary), so this path is unexercised — a mistake here blocks
+ * the move off Cloudinary), so this path is unexercised - a mistake here blocks
  * every new listing from review rather than merely leaving a hole open.
  *
  * Storage emulator must be running on 9199:
@@ -61,7 +61,7 @@ const OTHER = new Uint8Array([9, 9, 9, 9]);
  * `items`, ignoring `prefixes`, so anything nested (all of ours live at
  * ownership/{uid}/…) silently survives. It still resolves OK, which makes the
  * suite pass once on a clean emulator and then fail the two upload checks on
- * every run after — the rules are fine, the fixture isn't. Recurse instead.
+ * every run after - the rules are fine, the fixture isn't. Recurse instead.
  */
 async function clearAllStorage(env) {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -110,7 +110,7 @@ async function main() {
   check("owner: CANNOT delete an existing doc",
     await denies(deleteObject(ref(owner, P))));
 
-  // A NEW document means a NEW path — that's the supported way to replace one,
+  // A NEW document means a NEW path - that's the supported way to replace one,
   // and it flips the Firestore status back to 'pending' for re-review.
   check("owner: CAN upload a REPLACEMENT at a new path",
     await passes(uploadBytes(ref(owner, `ownership/${L1}/cofo_2.jpg`), BYTES)));

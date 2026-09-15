@@ -41,7 +41,7 @@ export const inspectionTodayAdminDigest = onSchedule(
     const db = getFirestore();
     const todayKey = watDayKey(Date.now());
 
-    // Same single-field query as the morning reminders — approved is transient
+    // Same single-field query as the morning reminders - approved is transient
     // so the set stays small; the date is filtered in code.
     const snap = await db
       .collection("inspection_requests")
@@ -69,7 +69,7 @@ export const inspectionTodayAdminDigest = onSchedule(
     }
 
     if (items.length === 0) {
-      logger.info("No inspections today — skipping admin digest", {todayKey});
+      logger.info("No inspections today - skipping admin digest", {todayKey});
       return;
     }
 
@@ -78,7 +78,7 @@ export const inspectionTodayAdminDigest = onSchedule(
       severity: "info",
       title: `${items.length} inspection${items.length === 1 ? "" : "s"} today`,
       body: items
-        .map((i) => `${i.propertyTitle} (${i.slot}) — ${i.handlerName}`)
+        .map((i) => `${i.propertyTitle} (${i.slot}) - ${i.handlerName}`)
         .join("; "),
       meta: {date: todayKey, count: items.length, items},
     });

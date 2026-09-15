@@ -8,7 +8,7 @@ import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../core/utils/app_logger.dart';
 
-/// Inbox screen — merges `notifications` and `announcements` collections,
+/// Inbox screen - merges `notifications` and `announcements` collections,
 /// ordered newest-first.
 ///
 /// - Notifications: per-user, with `read: bool`. Tap to mark read.
@@ -242,7 +242,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ),
                       onPressed: () {
                         Navigator.of(sheetContext).pop();
-                        // push (not go) so the target keeps a back stack —
+                        // push (not go) so the target keeps a back stack -
                         // go replaces the stack and strands the user with a
                         // dead back button.
                         context.push(item.route!, extra: item.payload);

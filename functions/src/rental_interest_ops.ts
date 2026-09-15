@@ -4,7 +4,7 @@
  * The client used to compute paymentAmount / rentAmount / agentFee and write
  * the rental_interests document itself. Firestore rules could freeze those
  * figures AFTER create but had no way to validate them, so a tampered client
- * could mint an interest claiming ₦100 against a ₦1.2m tenancy — and the rent
+ * could mint an interest claiming ₦100 against a ₦1.2m tenancy - and the rent
  * payment then charged whatever that record said.
  *
  * Creation now happens here, derived from the property and the pricing config,
@@ -52,7 +52,7 @@ export const createRentalInterest = onCall(
     // Idempotent: one interest per inspection.
     //
     // This query is only the FAST PATH, and it is only sound for interests
-    // created before the deterministic id below — it cannot make the create
+    // created before the deterministic id below - it cannot make the create
     // safe on its own. Two concurrent calls both read an empty result and both
     // proceeded, which is exactly how one tenant ended up with two interests
     // on the same inspection 53ms apart, two payable rentals, and two rent
@@ -96,7 +96,7 @@ export const createRentalInterest = onCall(
     // Two gates: the inspection must be COMPLETED, and the tenant must have
     // RATED it before the deal can move forward. Rating first is the tenant's
     // confirmation that the visit genuinely happened and a record of the
-    // handler's conduct — it's what backs the handler's inspection payment.
+    // handler's conduct - it's what backs the handler's inspection payment.
     // (Rating was previously optional here; requiring it is a deliberate
     // product change, not a revert to the old client-side behaviour.)
     if (insp.status !== "completed") {
@@ -123,7 +123,7 @@ export const createRentalInterest = onCall(
 
     // The property must still be on the market. Occupancy is owned by the
     // occupancy-sync triggers (recomputePropertyOccupancy), so isAvailable /
-    // currentTenantsCount here are server-authoritative — a tenant whose
+    // currentTenantsCount here are server-authoritative - a tenant whose
     // inspected property was taken in the meantime must not be able to mint an
     // interest against it. Mirrors PropertyModel.isListable; a missing
     // isAvailable means available, matching the client's `?? true` default.
@@ -134,7 +134,7 @@ export const createRentalInterest = onCall(
         prop.currentTenantsCount :
         0;
     if (prop.isAvailable === false || currentTenants >= maxTenants) {
-      logger.info("Rental interest rejected — property not listable", {
+      logger.info("Rental interest rejected - property not listable", {
         uid,
         propertyId: insp.propertyId,
         isAvailable: prop.isAvailable,
@@ -160,7 +160,7 @@ export const createRentalInterest = onCall(
     // The rent floor, enforced again HERE and not only in firestore.rules.
     //
     // The rules check gates creating or repricing a LISTING, which does
-    // nothing about properties listed before the floor existed — they stay
+    // nothing about properties listed before the floor existed - they stay
     // live and bookable and go on producing tenancies where the deal fee
     // consumes the whole rent, the landlord is owed ₦0, and there is no payout
     // anyone can ever send. This is the moment a deal actually begins, so it
@@ -179,12 +179,12 @@ export const createRentalInterest = onCall(
     // of the deal-completion fee. The caution deposit is NOT collected here.
     const paymentAmount = rentAmount + agentFee + dealFee;
 
-    // Each party pays a deal fee out of their OWN proceeds — the tenant on
+    // Each party pays a deal fee out of their OWN proceeds - the tenant on
     // top, the landlord out of the rent, the agent out of the agent fee. A fee
     // can therefore only be taken from money that party is actually owed.
     //
     // Unclamped, a rent (or agent fee) at or below the fee produced a NEGATIVE
-    // payout, and `dealFee * parties` then booked the shortfall as revenue —
+    // payout, and `dealFee * parties` then booked the shortfall as revenue -
     // income never collected and impossible to realise, since nobody is ever
     // sent a negative transfer. It reconciled on paper only because the
     // negative payout cancelled the inflated take: one live rental claimed
@@ -244,7 +244,7 @@ export const createRentalInterest = onCall(
       });
     } catch (err) {
       // ALREADY_EXISTS (gRPC 6) means a concurrent call won the race and this
-      // one lost it — which is precisely the outcome we want. Return THEIR
+      // one lost it - which is precisely the outcome we want. Return THEIR
       // interest instead of minting a second one. Any other failure is real.
       const code = (err as {code?: number | string} | null)?.code;
       if (code === 6 || code === "already-exists") {
@@ -280,13 +280,13 @@ interface RecordRentPaymentInput {
  * The accepted tenant pays via Paystack (amount authorised by
  * resolveServerAmount, which already enforces accepted + agreement-finalized).
  * On checkout success the client calls THIS to record the paid state, rather
- * than writing the money-status fields itself — mirroring how createRentalInterest
+ * than writing the money-status fields itself - mirroring how createRentalInterest
  * took interest creation off the client. It flips the interest to "rent_paid"
  * and stamps the active_rental as rent-paid, in one transaction, only if the
  * caller is the tenant, the interest is "accepted", and the agreement is
  * "finalized". Idempotent: a replay after both docs are already paid is a no-op.
  *
- * Note: this does not itself re-verify the transaction with Paystack — the
+ * Note: this does not itself re-verify the transaction with Paystack - the
  * HMAC-verified paystackWebhook remains the gateway-authoritative reconciler,
  * exactly as for the other client-confirmed payment types.
  */
@@ -311,7 +311,7 @@ export const recordRentPayment = onCall(
       );
     }
     // The reference is now REQUIRED and is checked against Paystack below.
-    // It used to be optional and unverified — passing nothing at all marked
+    // It used to be optional and unverified - passing nothing at all marked
     // the rent paid, flipped the tenancy to active and created the
     // landlord/agent payout rows, with no money having moved.
     if (
@@ -436,7 +436,7 @@ export const recordRentPayment = onCall(
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      // Mark the tenant as actually having a rental now — deliberately NOT done
+      // Mark the tenant as actually having a rental now - deliberately NOT done
       // at acceptance any more, so an unpaid tenant never shows as a real
       // tenant on their dashboard.
       const propertyId =
@@ -459,7 +459,7 @@ export const recordRentPayment = onCall(
     //
     // Until now the only thing that ever wrote a reveal was
     // confirmInspectionPayment, so a tenant's access to their own street
-    // address depended on the inspection that got them the place — and a
+    // address depended on the inspection that got them the place - and a
     // tenant who never inspected, or whose request was cleaned up, could not
     // find their own home on the map. Same grant, same rule, no new surface.
     //

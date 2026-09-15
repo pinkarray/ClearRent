@@ -4,7 +4,7 @@ import '../../services/auth_service.dart';
 
 /// Client-side gate for money-bearing inspection actions: a handler accepting a
 /// request must have a payout account on file first, so their inspection
-/// earnings — and any dispute payout — have a destination admin can settle to.
+/// earnings - and any dispute payout - have a destination admin can settle to.
 ///
 /// Returns true when bank details are present (caller proceeds). When missing,
 /// shows [reason] and routes to [bankDetailsRoute], returning false so the

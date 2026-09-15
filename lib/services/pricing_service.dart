@@ -19,7 +19,7 @@ import '../core/utils/inspection_pricing.dart';
 /// What a role pays to verify, first time versus every year after.
 ///
 /// Renewal is cheaper because it re-collects only the role proof, not identity
-/// — the NIN is permanent and carried forward.
+/// - the NIN is permanent and carried forward.
 class RoleFee {
   final double initial;
   final double renewal;
@@ -92,8 +92,8 @@ class PlatformPricing {
 
   /// The fee to show for [accountType].
   ///
-  /// [isRenewal] must be derived the same way the server derives it — from
-  /// whether the user has EVER been verified (`verifiedAt`) — or the price on
+  /// [isRenewal] must be derived the same way the server derives it - from
+  /// whether the user has EVER been verified (`verifiedAt`) - or the price on
   /// screen will not be the price charged. The server is authoritative either
   /// way; this only decides what the user is told.
   double verificationFee(String accountType, {bool isRenewal = false}) {
@@ -131,7 +131,7 @@ class PlatformPricing {
     );
   }
 
-  /// '₦3,000' — thousands-separated, no decimals.
+  /// '₦3,000' - thousands-separated, no decimals.
   static String formatNaira(double amount) {
     final digits = amount.toStringAsFixed(0);
     final chars = digits.split('').reversed.toList();
@@ -154,7 +154,7 @@ class PricingService {
   PlatformPricing _cached = PlatformPricing.fallback;
 
   /// Live `config/areas` subscription. Singleton service, so one listener for
-  /// the life of the app — never cancelled, because the area list has to stay
+  /// the life of the app - never cancelled, because the area list has to stay
   /// current wherever the landlord is in the flow.
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _areasSub;
 
@@ -186,7 +186,7 @@ class PricingService {
 
   /// Areas an admin has added since the last release (`config/areas`). Merged
   /// over the compiled list, so an unmapped Lagos area becomes selectable
-  /// without shipping a build. Failure is silent — the compiled list stands.
+  /// without shipping a build. Failure is silent - the compiled list stands.
   ///
   /// Awaited once so the first paint has them, then [_watchAreas] keeps them
   /// current for the rest of the session.
@@ -206,7 +206,7 @@ class PricingService {
 
   /// Live subscription, so an area published while a landlord is part-way
   /// through listing reaches them without restarting the app. They see it the
-  /// next time the area picker is opened — the sheet reads the list on open.
+  /// next time the area picker is opened - the sheet reads the list on open.
   void _watchAreas() {
     _areasSub ??= FirebaseFirestore.instance
         .collection('config')

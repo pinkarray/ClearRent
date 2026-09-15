@@ -50,7 +50,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
   final RentReviewService _service = RentReviewService();
   final PropertyService _propertyService = PropertyService();
 
-  // Cached once — the justification field's onChanged: setState() rebuilds this
+  // Cached once - the justification field's onChanged: setState() rebuilds this
   // screen on every keystroke, which would otherwise recreate the tenancy
   // stream and flash the picker.
   late final Stream<List<ActiveRental>> _rentalsStream =
@@ -66,7 +66,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
   // Scheduled-only: revised tenancy agreement, mandatory at filing. The new
   // rent takes effect at renewal, so the effective date is auto-staged to
-  // filing time at submit — the landlord doesn't pick it.
+  // filing time at submit - the landlord doesn't pick it.
   String? _agreementUrl;
   bool _isUploadingAgreement = false;
 
@@ -119,7 +119,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
       AppLogger.e('Failed to resolve occupancy', error: e, name: 'RentChange');
       if (!mounted) return;
       setState(() {
-        // Fail safe to the more conservative immediate path is wrong here —
+        // Fail safe to the more conservative immediate path is wrong here -
         // surface the error and let the landlord retry instead.
         _isResolving = false;
         _hasSittingTenant = null;
@@ -169,7 +169,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
   }
 
   Future<void> _pickAgreement() async {
-    // A revised agreement is a full document, not a single page — pickImage
+    // A revised agreement is a full document, not a single page - pickImage
     // could only ever capture one.
     final file = await DocumentFilePicker.pick(
       context,
@@ -179,7 +179,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
     setState(() => _isUploadingAgreement = true);
     try {
-      // Private Storage (not Cloudinary) — agreements are sensitive PII.
+      // Private Storage (not Cloudinary) - agreements are sensitive PII.
       final url = await _propertyService.uploadAgreementDoc(file);
       if (!mounted) return;
       if (url == null || url.isEmpty) {
@@ -381,7 +381,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
             const SizedBox(height: 16),
 
-            // Mode banner — clear visual distinction between the two paths.
+            // Mode banner - clear visual distinction between the two paths.
             _buildModeBanner(scheduled),
 
             const SizedBox(height: 24),
@@ -468,7 +468,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
             const SizedBox(height: 24),
 
-            // When it takes effect (scheduled only) — auto-staged to renewal,
+            // When it takes effect (scheduled only) - auto-staged to renewal,
             // not picked. Plus the mandatory revised agreement.
             if (scheduled) ...[
               _buildRenewalInfo(),
@@ -877,7 +877,7 @@ class _RequestRentChangeScreenState extends State<RequestRentChangeScreen> {
 
 /// Live thousands-separator formatter for the rent field (e.g. 70000 → 70,000),
 /// so the landlord can read tens- vs hundreds-of-thousands at a glance.
-/// Integer-only — naira rents are whole numbers, which keeps grouping and the
+/// Integer-only - naira rents are whole numbers, which keeps grouping and the
 /// downstream comma-stripping parse simple.
 class _ThousandsSeparatorInputFormatter extends TextInputFormatter {
   static final NumberFormat _fmt = NumberFormat.decimalPattern('en_US');

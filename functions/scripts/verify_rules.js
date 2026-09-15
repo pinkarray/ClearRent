@@ -66,7 +66,7 @@ async function main() {
   await check("tenant CANNOT list alerts",
     await denies(getDocs(collection(tenant.firestore(), "admin_alerts"))));
 
-  // Nobody (not even admin) may create from a client — SDK only.
+  // Nobody (not even admin) may create from a client - SDK only.
   await check("admin client CANNOT create alert",
     await denies(setDoc(
       doc(admin.firestore(), "admin_alerts", "a2"), {type: "x"})));

@@ -530,7 +530,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
 
               const SizedBox(height: 24),
 
-              // What happens after submitting — sets expectations before they tap.
+              // What happens after submitting - sets expectations before they tap.
               const WhatHappensNowHint(
                 text:
                     'Your landlord is notified right away. You can track repair '

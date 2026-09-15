@@ -5,7 +5,7 @@ import '../../../../shared/models/tenancy_link_model.dart';
 
 /// Rent-due card for a linked tenancy.
 ///
-/// Shows the link's own [TenancyLinkModel.rentAmount] — the rent the sitting
+/// Shows the link's own [TenancyLinkModel.rentAmount] - the rent the sitting
 /// tenant agreed to. It deliberately does NOT read `property.rent`: a rent
 /// review bumps `property.rent` immediately for FUTURE tenants, but a sitting
 /// tenant is protected at their agreed figure until renewal. Reading the

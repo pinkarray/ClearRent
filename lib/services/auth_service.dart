@@ -31,7 +31,7 @@ class AuthService {
 
   // ============ PHONE AUTH ============
 
-  // Static — must persist across AuthService instances (LoginScreen vs OtpScreen)
+  // Static - must persist across AuthService instances (LoginScreen vs OtpScreen)
   static String? _verificationId;
   static int? _resendToken;
 
@@ -94,7 +94,7 @@ class AuthService {
             );
           }
           _verificationId = verificationId;
-          // Don't complete here — codeSent already did
+          // Don't complete here - codeSent already did
         },
       );
 
@@ -298,7 +298,7 @@ class AuthService {
         );
       }
       if (e.code == 'provider-already-linked') {
-        // Already has email linked — that's fine, treat as success
+        // Already has email linked - that's fine, treat as success
         developer.log('ℹ️ Email provider already linked - continuing');
         return AuthResult(success: true, user: currentUser);
       }
@@ -490,9 +490,9 @@ class AuthService {
   // Get user profile from Firestore
   /// The signed-in user's own profile document, briefly cached.
   ///
-  /// This is read on almost every screen — 12 call sites, plus
+  /// This is read on almost every screen - 12 call sites, plus
   /// `VerificationService.getVerificationStatus()` reads the SAME document
-  /// again — so opening a property cost at least two round trips for data that
+  /// again - so opening a property cost at least two round trips for data that
   /// cannot have changed since the last screen. That is what made every
   /// property open show a spinner, even one opened moments earlier.
   ///
@@ -503,7 +503,7 @@ class AuthService {
   /// long enough to confuse anyone.
   ///
   /// Pass `forceRefresh` after anything that writes the profile, and call
-  /// [invalidateProfileCache] on sign-out — a cached profile surviving into
+  /// [invalidateProfileCache] on sign-out - a cached profile surviving into
   /// the next account would show one user another's details.
   static Map<String, dynamic>? _profileCache;
   static String? _profileCacheUid;
@@ -682,8 +682,8 @@ class AuthService {
       //
       // Rules reserve those fields to the onInspectionRated CF (audit #2), and
       // the owner-update clause refuses ANY write that touches them. This is a
-      // merge write, so the moment the doc already exists — which it does as
-      // soon as the form autosaves a profileDraft — it counts as an update and
+      // merge write, so the moment the doc already exists - which it does as
+      // soon as the form autosaves a profileDraft - it counts as an update and
       // the whole profile save was denied. Landlords and agents could not
       // finish signing up at all; tenants were fine only because they seed
       // nothing. Every reader already defaults a missing rating to 0.
@@ -811,7 +811,7 @@ class AuthService {
     }
   }
 
-  // ============ BANK DETAILS (C1 — locked subcollection) ============
+  // ============ BANK DETAILS (C1 - locked subcollection) ============
   // Bank details are sensitive (account number/name) and must NOT live on the
   // user doc, which is readable by any authenticated user. They live in
   // `users/{uid}/private/bank`, readable only by the owner + admin (firestore
@@ -844,7 +844,7 @@ class AuthService {
     }
   }
 
-  /// Cheap gate for flows that need a payout destination on file — a tenant
+  /// Cheap gate for flows that need a payout destination on file - a tenant
   /// requesting an inspection or a handler accepting one. Reads the
   /// non-sensitive `hasBankDetails` flag on the user doc (not the locked
   /// subcollection). Fails closed (returns false) so we never let a tenant
@@ -1165,7 +1165,7 @@ class AuthService {
         name: 'AuthService',
       );
 
-      // The auth account is gone — clear the local session so the app routes
+      // The auth account is gone - clear the local session so the app routes
       // back to login. The user is already deleted, so this can't fail
       // meaningfully; swallow any error.
       try {
@@ -1182,7 +1182,7 @@ class AuthService {
         return 'Your session expired. Please sign in again and retry.';
       }
       // Surface the server's reason (e.g. the active-tenancy / inspection
-      // block) so the user knows what to resolve — nothing was deleted.
+      // block) so the user knows what to resolve - nothing was deleted.
       return e.message ?? 'Failed to delete account. Please try again.';
     } catch (e) {
       developer.log('❌ Error deleting account: $e', name: 'AuthService');

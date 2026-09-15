@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// inspection_lifecycle_ops.ts — daily sweep that resolves inspections whose
+// inspection_lifecycle_ops.ts - daily sweep that resolves inspections whose
 // date has passed, so nothing hangs in limbo and the tenant's money is handled.
 //
 // Mirrors leaseLifecycleSweep. For every non-terminal request whose requested
-// date is a PRIOR day (same-day is left alone — it may still happen):
+// date is a PRIOR day (same-day is left alone - it may still happen):
 //
 //   pendingPayment        → cancelled (never paid; no money involved)
 //   pendingVerification /
@@ -11,7 +11,7 @@
 //                           the tenant is offered reschedule or refund)
 //   approved (not done)   → resolved by the arrival flags the day-of flow records:
 //       • met                         → completed (they met, just forgot to tap)
-//       • tenant came, handler didn't → awaitingOutcome (admin reviews — a
+//       • tenant came, handler didn't → awaitingOutcome (admin reviews - a
 //                                       handler's *absence* is forgeable, so we
 //                                       never auto-refund on it)
 //       • handler came, tenant didn't → awaitingOutcome (admin confirms + pays
@@ -74,7 +74,7 @@ export const inspectionLifecycleSweep = onSchedule(
 
       // Pay-after-approve: nothing is charged until AFTER the handler approves,
       // so a request that lapses unapproved (or approved-but-unpaid) involves no
-      // money — it's cancelled, not refunded. `unpaid` distinguishes these from
+      // money - it's cancelled, not refunded. `unpaid` distinguishes these from
       // legacy pay-first records (which were paid up front and still get the
       // reschedule/refund path).
       const isPaid = data.paymentStatus === "paid";
@@ -107,7 +107,7 @@ export const inspectionLifecycleSweep = onSchedule(
                   title: "Inspection wasn't approved in time",
                   body:
                     `Your inspection for ${propertyTitle} wasn't approved ` +
-                    `before the date. You weren't charged — request a new ` +
+                    `before the date. You weren't charged - request a new ` +
                     `time whenever you like.`,
                   payload: {route: TENANT_INSPECTIONS_ROUTE},
                 },
@@ -198,7 +198,7 @@ async function resolveApproved(
     // Tenant says they attended but the handler never confirmed arrival. This
     // is ALSO the exact signal a colluding tenant+handler can forge to conjure
     // a full refund on an inspection that really happened (the handler simply
-    // doesn't tap "arrived"). So we NO LONGER auto-refund on handler absence —
+    // doesn't tap "arrived"). So we NO LONGER auto-refund on handler absence -
     // it goes to admin review, who confirms the no-show with the handler (an
     // agent is one of our own) and issues the refund. Genuine handler no-shows
     // are rare, and the honest tenant is protected by the admin's decision.
@@ -224,7 +224,7 @@ async function resolveApproved(
   if (handlerArrived && !tenantArrived) {
     // Handler confirmed arrival, tenant didn't: the fee should stand and be
     // paid to the handler (₦7k). But "I showed, they didn't" is a one-sided
-    // claim the handler alone made — an agent could forge it to collect on a
+    // claim the handler alone made - an agent could forge it to collect on a
     // genuine tenant no-show. So we don't auto-pay: admin confirms and marks it
     // completed (which credits the handler) from the review queue. tenantNoShow
     // is preserved so the queue shows the case.

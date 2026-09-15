@@ -16,7 +16,7 @@ import 'edit_property_screen.dart';
 class EditPropertyLoaderScreen extends StatelessWidget {
   final String propertyId;
 
-  /// Forwarded to [EditPropertyScreen] — see its `focusSection`.
+  /// Forwarded to [EditPropertyScreen] - see its `focusSection`.
   final String? focusSection;
 
   const EditPropertyLoaderScreen({

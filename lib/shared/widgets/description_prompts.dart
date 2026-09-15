@@ -6,7 +6,7 @@ import '../../core/constants/text_styles.dart';
 ///
 /// The auto-generated description can only restate what the structured fields
 /// already show (bedrooms, amenities). What actually helps a tenant decide is
-/// local knowledge no field captures — the landmark to turn at, whether the road
+/// local knowledge no field captures - the landmark to turn at, whether the road
 /// floods, borehole or public water. These prompts insert a starter line and let
 /// the landlord finish it in their own words, which reads more honestly than
 /// generated copy.
@@ -18,7 +18,7 @@ class DescriptionPrompts extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
 
-  /// Called after a prompt is inserted — the caller marks the description as
+  /// Called after a prompt is inserted - the caller marks the description as
   /// edited, saves the draft, flags unsaved changes, etc.
   final VoidCallback? onInserted;
 
@@ -45,7 +45,7 @@ class _DescriptionPromptsState extends State<DescriptionPrompts> {
     'Who it suits': 'Best suited to: ',
     // Framed around the property, not the person. A tenant who learns on
     // arrival that it's a 3rd-floor walk-up has wasted an inspection fee, so
-    // saying so upfront saves everyone. Keep the starter about the place —
+    // saying so upfront saves everyone. Keep the starter about the place -
     // "Not ideal for" invites a description of the home, where a prompt like
     // "who I don't want" would invite the tenant's tribe or religion.
     'Not ideal for': 'Not ideal for: ',
@@ -80,7 +80,7 @@ class _DescriptionPromptsState extends State<DescriptionPrompts> {
     widget.onInserted?.call();
 
     // Focusing opens the keyboard, which can push the description field off
-    // screen — the line gets inserted but the landlord never sees it happen and
+    // screen - the line gets inserted but the landlord never sees it happen and
     // assumes the chip did nothing. Bring the field back into view.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final fieldContext = widget.focusNode.context;

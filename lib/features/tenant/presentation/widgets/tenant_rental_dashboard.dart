@@ -42,7 +42,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
 
   ActiveRental get rental => widget.rental;
 
-  // Cached, but refreshed when the shown rental changes — MultiRentalDashboard
+  // Cached, but refreshed when the shown rental changes - MultiRentalDashboard
   // reuses this State and swaps widget.rental on switch. Caching stops the
   // pending-confirmation card blinking on unrelated rebuilds; the didUpdateWidget
   // refresh keeps it correct across rental switches.
@@ -160,7 +160,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
       if (!mounted) return;
 
       if (existingQuery.docs.isNotEmpty) {
-        // Existing conversation found — go straight to chat
+        // Existing conversation found - go straight to chat
         setState(() => _isMessageLoading = false);
         context.push('/chat', extra: {
           'conversationId': existingQuery.docs.first.id,
@@ -171,7 +171,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         return;
       }
 
-      // No existing conversation — create one via service
+      // No existing conversation - create one via service
       // (This has verification checks, but for an active rental both
       // parties should be verified anyway)
       final conv = await _conversationService.getOrCreateConversation(
@@ -195,7 +195,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               rental.propertyImage.isNotEmpty ? rental.propertyImage : null,
         });
       } else {
-        // Last resort — create conversation directly without verification
+        // Last resort - create conversation directly without verification
         // since they're in an active rental
         developer.log(
           '⚠️ getOrCreateConversation returned null for active rental, creating directly',
@@ -236,7 +236,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     }
   }
 
-  /// Create a conversation directly for an active rental — skips verification
+  /// Create a conversation directly for an active rental - skips verification
   /// since the rental itself proves both parties went through the full flow.
   Future<String?> _createRentalConversation() async {
     try {
@@ -315,7 +315,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               // This used to say the landlord's confirmation was awaited and
               // that it auto-confirms "after 7 days". Both were false while
               // the tenant was still living there: the landlord CANNOT confirm
-              // before the move-out date, and the 7 days runs from that date —
+              // before the move-out date, and the 7 days runs from that date -
               // so a 3-day notice resolved on day 10, not day 7. It read as a
               // landlord dragging their feet when they were blocked by design.
               Text(
@@ -333,7 +333,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               ),
               // The one window where this can honestly be done: they still
               // have keys. Once the tenancy ends and the keys go back, a
-              // walkthrough is no longer theirs to record — and it is the only
+              // walkthrough is no longer theirs to record - and it is the only
               // thing a deduction from their deposit can be argued against.
               const SizedBox(height: 10),
               // Once recorded, the record is SEALED and a second attempt is
@@ -360,7 +360,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                       ),
                     ),
                     // The label is long and sits inside an already-indented
-                    // banner, so it must be free to wrap — an unconstrained
+                    // banner, so it must be free to wrap - an unconstrained
                     // Text in a min-size Row takes its full intrinsic width
                     // and overflows the line instead.
                     child: Row(children: [
@@ -412,7 +412,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             _buildHeader(),
             const SizedBox(height: 20),
 
-            // Move-out requested — awaiting landlord confirmation
+            // Move-out requested - awaiting landlord confirmation
             if (rental.isMoveoutPending) ...[
               _buildMoveOutPendingBanner(),
               const SizedBox(height: 16),
@@ -435,7 +435,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             _buildLandlordCard(),
             const SizedBox(height: 16),
 
-            // Pending fix confirmations — shown when landlord says something is fixed
+            // Pending fix confirmations - shown when landlord says something is fixed
             _buildPendingConfirmations(),
 
             // Quick actions
@@ -808,7 +808,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
   }
 
   // Streams issues in pending_confirmation state for this tenant's property.
-  // Renders a confirmation card for each — tenant confirms or disputes.
+  // Renders a confirmation card for each - tenant confirms or disputes.
   Widget _buildPendingConfirmations() {
     return StreamBuilder<QuerySnapshot>(
       stream: _pendingConfirmationsStream,
@@ -1189,8 +1189,8 @@ class _PendingConfirmationCardState extends State<_PendingConfirmationCard> {
       final landlordId = widget.data['landlordId'];
       if (landlordId != null) {
         // Landlord recent-activity entry (push itself is sent by the
-        // onIssueUpdated Cloud Function). Field must be `landlordId` — the
-        // activity feed only queries that field — matching tenant_home's
+        // onIssueUpdated Cloud Function). Field must be `landlordId` - the
+        // activity feed only queries that field - matching tenant_home's
         // confirm and the dispute case below.
         await FirebaseFirestore.instance.collection('activities').add({
           'landlordId': landlordId,

@@ -123,11 +123,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// of seconds, which is far too long to show an unexplained spinner.
   double? _compressionProgress;
 
-  /// In-flight background compression. Publish awaits it — that's the one point
+  /// In-flight background compression. Publish awaits it - that's the one point
   /// where the smaller file genuinely has to exist.
   Future<void>? _videoWork;
 
-  // Ceiling types — a flat can mix them (POP in the living room, slate in the
+  // Ceiling types - a flat can mix them (POP in the living room, slate in the
   // bedroom), so more than one may be selected.
   final List<String> _ceilingTypes = [];
 
@@ -175,7 +175,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   double? _longitude;
 
   String _propertyType = '';
-  // What the tenant gets exclusively. Asked for any UNIT inside a building —
+  // What the tenant gets exclusively. Asked for any UNIT inside a building -
   // sharing is a fact about the arrangement, not about the type, so a self
   // contain in a face-me-I-face-you compound can still share the toilet.
   // Never asked when the whole property is let: there is nobody to share with.
@@ -255,7 +255,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   bool _creatingNewBuilding = false;
   String? _selectedBuildingId;
   final TextEditingController _buildingNameController = TextEditingController();
-  // What the whole building is (BuildingModel.structures) — asked only when
+  // What the whole building is (BuildingModel.structures) - asked only when
   // creating a new building; joining one inherits its structure.
   String _buildingStructure = '';
   // The structure of an EXISTING building the landlord joined, so the details
@@ -264,7 +264,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // A compound is LAND, not a building: one C of O can cover a duplex and a
   // bungalow standing side by side. The site's own structure would lose which
   // of them this unit sits in, so a compound asks per unit. Only for compounds
-  // — every other structure IS a single building and every unit inherits it.
+  // - every other structure IS a single building and every unit inherits it.
   String _unitBuildingStructure = '';
 
   /// Units already listed in the selected building. Drives both the "already
@@ -274,11 +274,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // Which unit this is. The landlord no longer types this: it is derived from
   // the unit TYPE plus a number, so "Self Contain 2" instead of free text that
   // could contradict the type ("Room 2" on a listing typed as a bungalow).
-  // Still stored as a string — live docs carry hand-typed labels like "BQ".
+  // Still stored as a string - live docs carry hand-typed labels like "BQ".
   final TextEditingController _unitLabelController = TextEditingController();
   int _unitNumber = 1;
   String _floor = '';
-  // Set once the landlord answers "what are you letting out?" — until then
+  // Set once the landlord answers "what are you letting out?" - until then
   // neither choice is selected, so the question can't be skipped by default.
   bool _lettingScopeChosen = false;
 
@@ -359,7 +359,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   /// Check if a draft exists and offer to restore it.
   ///
-  /// An empty draft is silently thrown away rather than offered — being asked
+  /// An empty draft is silently thrown away rather than offered - being asked
   /// to resume a listing that holds nothing, then landing on step 1 regardless,
   /// is worse than not being asked.
   Future<void> _checkForDraft() async {
@@ -503,7 +503,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'sharesFacilities': _sharesFacilities,
       'unitBuildingStructure': _unitBuildingStructure,
       'unitBuildingNumber': _unitBuildingNumber,
-      // Media paths (not the File objects) — see PropertyDraftService.persistMedia
+      // Media paths (not the File objects) - see PropertyDraftService.persistMedia
       'imagePaths': _selectedImageFiles.map((f) => f.path).toList(),
       'videoPath': _selectedVideoFile?.path,
       // Save timestamp so we can show "Draft from X minutes ago"
@@ -616,7 +616,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         ),
       );
 
-      // Image file paths — only restore if files still exist
+      // Image file paths - only restore if files still exist
       final imagePaths = List<String>.from(draft['imagePaths'] ?? []);
       _selectedImageFiles.clear();
       for (final path in imagePaths) {
@@ -627,7 +627,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       }
       final missingImages = imagePaths.length - _selectedImageFiles.length;
 
-      // Video — reinstating it needs an initialized controller, so it happens
+      // Video - reinstating it needs an initialized controller, so it happens
       // asynchronously once this frame is done.
       final videoPath = draft['videoPath'] as String?;
       var missingVideo = false;
@@ -642,7 +642,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         }
       }
 
-      // Jump to the saved step — unless media went missing, in which case send
+      // Jump to the saved step - unless media went missing, in which case send
       // them back to the media step rather than letting them find out at
       // preview. Photos are required to publish anyway.
       var savedStep = draft['step'] ?? 0;
@@ -676,7 +676,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   /// Rebuilds the video preview for a resumed draft. The file survives, but the
-  /// controller doesn't — it has to be re-initialized before the preview will
+  /// controller doesn't - it has to be re-initialized before the preview will
   /// render.
   Future<void> _restoreDraftVideo(File file) async {
     try {
@@ -698,7 +698,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     }
   }
 
-  /// Media saved with a draft can still disappear — the landlord may have
+  /// Media saved with a draft can still disappear - the landlord may have
   /// deleted it, or Android may have reclaimed the storage. Say so plainly
   /// instead of resuming with a silently shorter gallery.
   void _showMissingDraftMediaNotice(int photos, bool video) {
@@ -744,7 +744,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     PropertyDraftService.saveDraft(_collectFormState());
   }
 
-  /// Throw the draft away for good — storage, photos, and any queued save.
+  /// Throw the draft away for good - storage, photos, and any queued save.
   Future<void> _discardDraft() async {
     _draftDiscarded = true;
     _draftSaveTimer?.cancel();
@@ -764,7 +764,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       if (!isVerified) {
         _showVerificationRequiredDialog(data.status);
       } else {
-        // Verified — check how many properties they've listed
+        // Verified - check how many properties they've listed
         final count = await _propertyService.getLandlordPropertyCount();
         if (!mounted) return;
         setState(() {
@@ -1079,13 +1079,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     if (_propertyType == 'shop' || _propertyType == 'office') {
       _titleController.text = label;
     } else if (_isSingleSpace) {
-      // A single space has no bedroom count to state — "1 Bedroom Room" is what
+      // A single space has no bedroom count to state - "1 Bedroom Room" is what
       // the old unconditional template produced, and it's in live data. The
       // derived unit name already reads "Self Contain 2", so it stands alone.
       _titleController.text = unit.isNotEmpty ? unit : label;
     } else {
       // A flat, duplex or semi-detached duplex genuinely varies in size, so the
-      // bedroom count leads. The unit NUMBER is not glued on here — it would
+      // bedroom count leads. The unit NUMBER is not glued on here - it would
       // read "2 Bedroom Flat 2"; the card shows it as a separate line.
       _titleController.text = '$_bedrooms Bedroom $label';
     }
@@ -1120,7 +1120,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     if (_propertyType == 'shop' || _propertyType == 'office') {
       buffer.write('Well-maintained $label');
     } else if (_isSingleSpace) {
-      // Lead with what's shared — it's the thing a tenant is comparing, and
+      // Lead with what's shared - it's the thing a tenant is comparing, and
       // stating it plainly avoids the listing being read as self-contained.
       buffer.write('A $label');
       // Only a unit has an audience to share with. A whole self contain says
@@ -1140,7 +1140,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       if (_bathrooms > 0) {
         buffer.write(' with $_bathrooms bathroom${_bathrooms > 1 ? 's' : ''}');
       }
-      // A multi-room unit can still share — a flat in a compound whose toilet
+      // A multi-room unit can still share - a flat in a compound whose toilet
       // is outside. Left unsaid, the listing reads as fully self-contained.
       final shared = _sharingApplies ? _sharedFacilities : const <String>[];
       if (shared.isNotEmpty) {
@@ -1223,7 +1223,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             }
           }
           // The unit's type is asked here now, and its name is derived from it
-          // plus the number — so requiring the type covers both. Without it a
+          // plus the number - so requiring the type covers both. Without it a
           // compound of identical flats is unreadable to the tenant, the admin
           // reviewer and the landlord's own list.
           if (_propertyType.isEmpty) {
@@ -1268,7 +1268,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please enter the state');
           return false;
         }
-        // The pin is what the agent and the paid tenant navigate to — a listing
+        // The pin is what the agent and the paid tenant navigate to - a listing
         // without one leaves them with the address alone.
         if (_latitude == null || _longitude == null) {
           _showError('Tap the map to drop a pin on the property');
@@ -1341,7 +1341,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         }
         // Grouping-aware ownership validation. WHICH building this unit is in
         // is settled back on the letting step; what's left here is the document
-        // that follows from that answer — none when joining an existing
+        // that follows from that answer - none when joining an existing
         // building, one when standalone or starting a new building.
         if (!(_isInBuilding && !_creatingNewBuilding)) {
           if (_ownershipDocFile == null) {
@@ -1399,7 +1399,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               TextButton(
                 onPressed: () async {
                   Navigator.pop(dialogContext);
-                  // The dialog promises the information is lost — so actually
+                  // The dialog promises the information is lost - so actually
                   // lose it. Without this the draft survived and the next visit
                   // offered to resume the listing they just discarded.
                   await _discardDraft();
@@ -1420,7 +1420,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
     try {
       // The one point where the shrunk file must actually exist. Usually
-      // finished long ago — the landlord spent the intervening minutes on
+      // finished long ago - the landlord spent the intervening minutes on
       // location, details and pricing.
       if (_videoWork != null) {
         _showUploadProgress('Finishing video...');
@@ -1485,7 +1485,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
       if (_ownershipDocFile != null) {
         _updateUploadProgress('Uploading ownership document...');
-        // Private Firebase Storage (not Cloudinary) — a C of O is title-level
+        // Private Firebase Storage (not Cloudinary) - a C of O is title-level
         // PII. uploadedUrl holds a storage PATH, streamed to admins via an
         // authenticated route.
         final uploadedUrl =
@@ -1494,7 +1494,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         // A failed upload must STOP the publish.
         //
         // uploadOwnershipDoc swallows its exception and returns null, and
-        // nothing here checked it — so a hiccup produced a live listing with
+        // nothing here checked it - so a hiccup produced a live listing with
         // ownershipDocType set, ownershipDocUrl missing, and
         // ownershipDocStatus 'pending': queued for an admin review with no
         // document to review, and no hint to the landlord that the one file
@@ -1506,7 +1506,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             Navigator.pop(context); // Close progress dialog
             _showError(
               'Your ownership document could not be uploaded. Check your '
-              'connection and try again — the listing has not been published.',
+              'connection and try again - the listing has not been published.',
             );
           }
           setState(() => _isPublishing = false);
@@ -1754,7 +1754,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       final Map<String, dynamic> reviewFields = {
         'isAvailable': false, // Hidden until admin approves
       };
-      // Grouped units keep the 'inherited' status set by createProperty — don't
+      // Grouped units keep the 'inherited' status set by createProperty - don't
       // overwrite it. Standalone listings reflect their own doc upload state.
       if (buildingId == null) {
         reviewFields['ownershipDocStatus'] =
@@ -1771,10 +1771,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         '⏳ Property marked as pending admin review (doc: ${hasDoc ? "uploaded" : "not uploaded"}, fee: ${_requiresListingFee ? "pending" : "n/a"})',
       );
 
-      // Track activity — already handled inside PropertyService.createProperty()
+      // Track activity - already handled inside PropertyService.createProperty()
 
       // Clear the draft since we published successfully. Blocks later saves
-      // too — otherwise a queued debounce could re-create the draft for a
+      // too - otherwise a queued debounce could re-create the draft for a
       // listing that is already live.
       await _discardDraft();
 
@@ -1849,7 +1849,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           'This usually takes less than 24 hours.';
     }
 
-    // Approval alone doesn't make a listing bookable — the handler still has to
+    // Approval alone doesn't make a listing bookable - the handler still has to
     // confirm it's ready for inspections, and tenants are blocked from booking
     // until they do. Nothing told landlords this, so listings sat approved and
     // unbookable with no explanation.
@@ -1931,14 +1931,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     text: 'View My Properties',
                     onPressed: () {
                       Navigator.pop(context);
-                      // Land on the Properties tab — the button says "my
+                      // Land on the Properties tab - the button says "my
                       // properties", and the listing they just published is
                       // what they want to see, not the dashboard.
                       context.go('/landlord/home?tab=1');
                     },
                   ),
                 ),
-                // Appointing a caretaker needs a property that exists — the
+                // Appointing a caretaker needs a property that exists - the
                 // invite checks the caller owns the unit, which is what stops
                 // the phone-to-name lookup being a bare PII query. So it can't
                 // be asked during the wizard, and buried in Edit Property it
@@ -2001,7 +2001,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         if (isVideo) {
           await _handleVideoSelected(File(media.path));
         } else {
-          // Image — copied out for Samsung/cloud-backed images, and so a draft
+          // Image - copied out for Samsung/cloud-backed images, and so a draft
           // can still find it later.
           final bytes = await media.readAsBytes();
           final saved = await PropertyDraftService.persistMedia(bytes);
@@ -2103,7 +2103,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           source: ImageSource.camera,
         );
         if (image != null) {
-          // A camera capture exists nowhere else — if this copy is lost, the
+          // A camera capture exists nowhere else - if this copy is lost, the
           // photo is gone for good, so it must not live in the cache dir.
           final bytes = await image.readAsBytes();
           final saved = await PropertyDraftService.persistMedia(bytes);
@@ -2140,7 +2140,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _saveDraftDebounced();
 
     try {
-      // Duration first — it's the cheap check, and there's no point spending a
+      // Duration first - it's the cheap check, and there's no point spending a
       // minute transcoding a clip that's the wrong length anyway.
       final controller = VideoPlayerController.file(videoFile);
       await controller.initialize();
@@ -2163,7 +2163,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         return;
       }
 
-      // Copy somewhere durable now that it has passed validation — the picker
+      // Copy somewhere durable now that it has passed validation - the picker
       // hands back a cache path, which won't survive for a resumed draft.
       final durable = await PropertyDraftService.persistMediaFile(videoFile);
 
@@ -2183,7 +2183,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
       // Shrink in the background. The landlord carries on to location, details
       // and pricing while this runs; by the time they reach Publish it has
-      // almost always finished. The encode takes just as long — they simply
+      // almost always finished. The encode takes just as long - they simply
       // aren't sat watching it.
       _videoWork = _compressInBackground(durable);
     } catch (e) {
@@ -2200,7 +2200,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// smaller file in behind the scenes.
   ///
   /// Bails out at every step if the landlord removed the video or left the
-  /// screen meanwhile — finishing a transcode for a video nobody wants would
+  /// screen meanwhile - finishing a transcode for a video nobody wants would
   /// otherwise resurrect it.
   Future<void> _compressInBackground(File original) async {
     try {
@@ -2240,7 +2240,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   /// Transcodes to 720p so a normal phone recording fits the upload limit.
   ///
-  /// Returns the original untouched when it's already small enough — no point
+  /// Returns the original untouched when it's already small enough - no point
   /// making the landlord wait to re-encode a file that would have uploaded
   /// fine. If compression fails or somehow produces a bigger file, the original
   /// is used and the size check below decides its fate; a failed optimisation
@@ -2586,7 +2586,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             const SizedBox(height: 16),
           ],
 
-          // Add photo buttons — both styled equally (no pre-selected look)
+          // Add photo buttons - both styled equally (no pre-selected look)
           Row(
             children: [
               Expanded(
@@ -2821,7 +2821,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             const SizedBox(height: 8),
             if (_compressionProgress != null)
-              // Informational only — the landlord can keep filling the form
+              // Informational only - the landlord can keep filling the form
               // while this runs. Publish is the only step that waits.
               Row(
                 children: [
@@ -2856,7 +2856,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 ),
               ),
           ] else
-            // No video yet — show hint
+            // No video yet - show hint
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -2927,7 +2927,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             },
             onUnknownAreaDetected: (rawName, lat, lng) async {
               // One report per area per session. admin_requests is admin-read
-              // only, so the client can't check for an existing row — without
+              // only, so the client can't check for an existing row - without
               // this, tapping around an unmapped area files a duplicate every
               // time.
               final key = rawName.trim().toLowerCase();
@@ -2939,7 +2939,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     .add({
                       'type': 'unknown_area',
                       'rawName': rawName,
-                      // Null when the search matched nothing at all — there is
+                      // Null when the search matched nothing at all - there is
                       // no place to take coordinates from. Admin publishes an
                       // area from the name and a chosen LGA, so it needs
                       // neither, and the absence is itself the useful signal.
@@ -2973,7 +2973,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     }
   }
 
-  /// What the SITE is — the thing the ownership document covers.
+  /// What the SITE is - the thing the ownership document covers.
   String get _siteStructure =>
       _creatingNewBuilding ? _buildingStructure : _selectedBuildingStructure;
 
@@ -3005,7 +3005,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   /// True when the name this unit would get is already used by another unit in
   /// the SAME building. Inside a compound that means the same building within
-  /// it — "Flat 1" in Duplex A and "Flat 1" in Bungalow B are different flats.
+  /// it - "Flat 1" in Duplex A and "Flat 1" in Bungalow B are different flats.
   bool get _unitNameTaken {
     final mine = _unitLabelController.text.trim().toLowerCase();
     if (mine.isEmpty) return false;
@@ -3020,7 +3020,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     return false;
   }
 
-  /// Letter back to the counter's number — 'A' is 1, matching
+  /// Letter back to the counter's number - 'A' is 1, matching
   /// [_unitBuildingLabel] in the other direction.
   int _numberForLabel(String label) {
     if (label.isEmpty) return 1;
@@ -3028,20 +3028,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   /// The landlord typed "compound" into the name but recorded the site as
-  /// something else. Only a hint — plenty of Lagos sites are called a compound
-  /// loosely — but it is the one contradiction that silently costs them the
+  /// something else. Only a hint - plenty of Lagos sites are called a compound
+  /// loosely - but it is the one contradiction that silently costs them the
   /// per-unit building question.
   bool get _buildingNameStructureMismatch =>
       _buildingNameController.text.toLowerCase().contains('compound') &&
       _buildingStructure.isNotEmpty &&
       _buildingStructure != 'compound';
 
-  /// "A", "B" — which of the compound's buildings this unit is in. Derived from
+  /// "A", "B" - which of the compound's buildings this unit is in. Derived from
   /// a number for the same reason the unit name is: free text could contradict.
   String get _unitBuildingLabel =>
       String.fromCharCode(64 + _unitBuildingNumber.clamp(1, 26));
 
-  /// "Self Contain 2, in a bungalow" — what this unit is and what it sits in,
+  /// "Self Contain 2, in a bungalow" - what this unit is and what it sits in,
   /// for the details step. The unit's own type is chosen on the letting step,
   /// so this only confirms it alongside the building's axis.
   String _unitContextSummary() {
@@ -3061,7 +3061,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     return parts.isEmpty ? 'A unit in this building' : parts.join(', ');
   }
 
-  /// Derive the unit's name from its type and number — "Self Contain 2". The
+  /// Derive the unit's name from its type and number - "Self Contain 2". The
   /// landlord used to type this, which let the name contradict the type.
   /// Only for a grouped unit; a whole-property listing has no siblings.
   void _syncUnitLabel() {
@@ -3074,7 +3074,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   /// Clear the chosen type when changing the letting scope no longer offers it
-  /// — picking "Room" as a unit and then switching to "the whole property"
+  /// - picking "Room" as a unit and then switching to "the whole property"
   /// otherwise leaves 'room' selected with no chip showing it.
   void _dropTypeIfNotOffered() {
     if (_propertyType.isEmpty) return;
@@ -3093,7 +3093,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   /// Bring the room counts in line with the type just picked, so a listing
   /// can't carry a count the type contradicts. Without this, choosing Flat and
-  /// setting 3 bedrooms, then switching to Room, keeps bedrooms at 3 — and the
+  /// setting 3 bedrooms, then switching to Room, keeps bedrooms at 3 - and the
   /// card renders "3 bed" for a single room.
   void _applyTypeDefaults(String type) {
     if (PropertyModel.isSingleSpace(type)) {
@@ -3102,7 +3102,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // A room & parlour is exactly that: the room plus a sitting room.
       _livingRooms = type == 'roomAndParlour' ? 1 : 0;
     }
-    // Defaults only — every one of these is editable, because the type does
+    // Defaults only - every one of these is editable, because the type does
     // not decide the answer. A plain room or room & parlour inside a building
     // starts shared, since that is the norm for those rungs; everything else
     // starts private and the landlord says otherwise. A whole-property letting
@@ -3119,7 +3119,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   /// True when the chosen type is one space, so it has no bedroom count worth
-  /// giving. This governs the COUNTERS only — it must never govern sharing,
+  /// giving. This governs the COUNTERS only - it must never govern sharing,
   /// which is a fact about the arrangement rather than the type.
   bool get _isSingleSpace =>
       _propertyType.isNotEmpty && PropertyModel.isSingleSpace(_propertyType);
@@ -3128,7 +3128,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// then it arises for EVERY type: a face-me-I-face-you bungalow holds self
   /// contains and room & parlours that still share the toilet and kitchen.
   /// Letting the whole property leaves nobody to share with, so the question is
-  /// never asked there — that journey answers what is PRESENT instead.
+  /// never asked there - that journey answers what is PRESENT instead.
   bool get _sharingApplies => _isInBuilding && _propertyType.isNotEmpty;
 
   /// Counters answer "what is present", which is always a real question for a
@@ -3147,7 +3147,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   /// The six counters, for a multi-room dwelling where bedroom count is a real
-  /// question. Unchanged — only the condition around them is new.
+  /// question. Unchanged - only the condition around them is new.
   Widget _buildRoomCounters() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3221,8 +3221,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   /// Whether the tenant gets the bathroom, toilet and kitchen to themselves.
   /// Shown for any unit inside a building, whatever its type.
   ///
-  /// A single space is DEFINED by what it shares — it is the axis separating a
-  /// single room from a room & parlour from a self contain — so it is asked
+  /// A single space is DEFINED by what it shares - it is the axis separating a
+  /// single room from a room & parlour from a self contain - so it is asked
   /// outright. A multi-room unit is usually self-contained, so it answers one
   /// yes/no and only opens the detail when the answer is yes.
   Widget _buildFacilitiesSection() {
@@ -3327,7 +3327,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         label: 'Living room',
         value: _livingRoomAccess,
         // The parlour is common ground in a face-me-I-face-you, and a plain
-        // room has none at all — both need saying.
+        // room has none at all - both need saying.
         options: const ['private', 'shared', 'none'],
         onChanged: (v) => setState(() {
           _livingRoomAccess = v;
@@ -3391,11 +3391,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           const SizedBox(height: 20),
 
           // Shop/Office are in neither list until the commercial branch exists
-          // — the rest of this step still assumes a home, so a commercial
+          // - the rest of this step still assumes a home, so a commercial
           // listing comes out wrong. Their labels are still handled everywhere.
           //
           // A unit's own type is answered on the letting step, next to its
-          // number — asking it twice was how a listing ended up named "Room 2"
+          // number - asking it twice was how a listing ended up named "Room 2"
           // while typed as a bungalow. Here the unit only confirms what it
           // SITS IN, which is the building's axis.
           if (_isInBuilding) ...[
@@ -3437,7 +3437,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
           // Two independent questions. Counts say what is PRESENT, and are a
           // real question for a whole property and for a multi-room unit alike
-          // — only a single space has nothing to count. Sharing says who else
+          // - only a single space has nothing to count. Sharing says who else
           // uses it, which can only arise inside a building and then applies to
           // every type. They are not alternatives: a two-bedroom flat in a
           // compound has 2 bedrooms AND a shared toilet.
@@ -3451,8 +3451,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ],
 
           // Model A: one unit = one rent = one tenancy. A property is let to a
-          // single household (its bedroom count captures size) — it is not
-          // sub-let as separate per-tenant rents — so maxTenants is fixed at 1.
+          // single household (its bedroom count captures size) - it is not
+          // sub-let as separate per-tenant rents - so maxTenants is fixed at 1.
           // A building with multiple lettable units is listed as one property
           // per unit. (No picker; _maxTenants stays 1.)
 
@@ -3492,7 +3492,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 16),
 
-          // Existing tenant — handled post-publish via the property page's
+          // Existing tenant - handled post-publish via the property page's
           // link flow, not a raw counter. A number can't represent a real,
           // consented tenancy (no tenantId, no lease, no acceptance), and a
           // phantom count desyncs occupancy + the rent lock. Occupancy now
@@ -3573,7 +3573,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             controller: _descriptionController,
             focusNode: _descriptionFocusNode,
             onInserted: () {
-              // Inserting counts as writing it themselves — the auto-generated
+              // Inserting counts as writing it themselves - the auto-generated
               // text must stop overwriting from here on.
               _descriptionManuallyEdited = true;
               _saveDraftDebounced();
@@ -3761,7 +3761,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
-  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling —
+  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling -
   /// picking one clears the other.
   void _toggleCeilingType(String value) {
     if (_ceilingTypes.contains(value)) {
@@ -3902,7 +3902,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             const SizedBox(height: 20),
 
-            // Rent period — yearly only at launch (monthly is v2; Lagos law caps
+            // Rent period - yearly only at launch (monthly is v2; Lagos law caps
             // yearly advance rent at one year, which the lifecycle relies on).
             Text('Rent Period', style: AppTextStyles.labelMedium),
             const SizedBox(height: 8),
@@ -3949,7 +3949,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                     _includeAgentFee = v;
                     if (v) {
                       // An agent fee only makes sense if an agent is assigned to
-                      // close the tenant — so turning it on forces agent-handled
+                      // close the tenant - so turning it on forces agent-handled
                       // inspection and reveals the agent picker below.
                       _inspectionHandler = 'agent';
                     } else {
@@ -4295,7 +4295,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             // The whole header row toggles, not just the switch. A 40px
             // target at the far right of a full-width card is the smallest
             // thing on the row, and the name beside it looked just as
-            // tappable — so tapping the obvious thing did nothing.
+            // tappable - so tapping the obvious thing did nothing.
             InkWell(
               onTap: () => onToggle(!isEnabled),
               borderRadius: BorderRadius.circular(8),
@@ -4318,8 +4318,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       ),
                     ),
                   ),
-                  // Kept as the affordance — it is what tells the landlord
-                  // this row is a toggle at all — but it is no longer the
+                  // Kept as the affordance - it is what tells the landlord
+                  // this row is a toggle at all - but it is no longer the
                   // only way to hit it.
                   Switch(
                     value: isEnabled,
@@ -4759,7 +4759,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   // ── What you're letting ───────────────────────────────────────────────────
   // The first step, deliberately. This used to be asked at the BOTTOM of the
-  // pricing step, in ownership language ("Standalone / In a building — shares
+  // pricing step, in ownership language ("Standalone / In a building - shares
   // one document"), which described the paperwork rather than the letting: a
   // landlord letting one room of their own duplex saw themselves in neither
   // option. Asking what is being let first makes the document consequence
@@ -4910,7 +4910,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ],
           // A compound is LAND. One C of O can cover a duplex and a bungalow
           // standing side by side, and the site's own structure would say only
-          // "in a compound" — losing which building the tenant is renting in.
+          // "in a compound" - losing which building the tenant is renting in.
           // Asked only for compounds; every other structure is one building.
           if (_isCompoundSite) ...[
             const SizedBox(height: 24),
@@ -4960,7 +4960,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              // 'compound' itself is excluded — a compound inside a compound
+              // 'compound' itself is excluded - a compound inside a compound
               // says nothing, and this axis is the BUILDING on the land.
               children: BuildingModel.structures
                   .where((s) => s['value'] != 'compound')
@@ -5014,7 +5014,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 .map((f) => _buildSelectableChip(
                       label: f['label']!,
                       selected: _floor == f['value'],
-                      // Tapping the selected chip clears it — the field is
+                      // Tapping the selected chip clears it - the field is
                       // optional and there is no other way back to "unset".
                       onTap: () => setState(
                         () => _floor = _floor == f['value'] ? '' : f['value']!,
@@ -5113,7 +5113,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           if (_creatingNewBuilding) ...[
             const SizedBox(height: 12),
             // Name only. The address is asked once, further down on the
-            // location step, and the building takes it from there — a second
+            // location step, and the building takes it from there - a second
             // address field here just invited a different answer to the same
             // question, and pushed landlords into naming the site after a
             // street.
@@ -5363,7 +5363,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         children: [
           // Doc type.
           //
-          // Was three bare chips — "C of O" / "Deed of Assignment" / "Other" —
+          // Was three bare chips - "C of O" / "Deed of Assignment" / "Other" -
           // with no default and nothing saying what any of them meant, so a
           // landlord who did not already know the vocabulary could not tell
           // which one described the paper in their hand. Deliberately still no
@@ -5632,7 +5632,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             const SizedBox(height: 16),
             AreaDropdown(
               label: 'Where do you live?',
-              // The inspection fee is flat — InspectionPricing.calculateFee
+              // The inspection fee is flat - InspectionPricing.calculateFee
               // records the cluster "for context, not used in math". Saying it
               // drives the fee was simply untrue.
               helperText:
@@ -6740,7 +6740,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
           const SizedBox(height: 24),
 
-          // Fee info — Total Package breakdown
+          // Fee info - Total Package breakdown
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(

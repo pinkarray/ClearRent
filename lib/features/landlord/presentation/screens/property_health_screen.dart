@@ -10,13 +10,13 @@ import '../../../../shared/models/property_model.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
 
-/// Property Health Dashboard — the landlord's "back office" view of a property.
+/// Property Health Dashboard - the landlord's "back office" view of a property.
 ///
 /// Shows:
 ///  • Overall health score derived from open/pending issues
 ///  • Per-category health cards (Plumbing, Electrical, Security, Structural, etc.)
 ///    mapped from the property's amenities + the 8 reportable issue categories
-///  • Proactive maintenance log — landlord can record fixes before tenants report them
+///  • Proactive maintenance log - landlord can record fixes before tenants report them
 ///  • Recent issue history for this property with statuses
 ///
 /// Navigation: /landlord/property-health  (extra: PropertyModel)
@@ -41,7 +41,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
   // the field its own rule branch reads: the landlord pins landlordId, and the
   // caretaker pins propertyId alone (which is what isPropertyCaretaker reads).
   // Give the caretaker the landlord's query and every document plainly names
-  // the owner — and the whole query is still denied.
+  // the owner - and the whole query is still denied.
   late final bool _isCaretaker =
       widget.property.caretakerId != null &&
       widget.property.caretakerId == _authService.currentUserId;
@@ -92,7 +92,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
 
   // ── CATEGORY SYSTEM ──────────────────────────────────────────────────────
 
-  /// The 8 reportable issue categories — always present regardless of amenities.
+  /// The 8 reportable issue categories - always present regardless of amenities.
   static const _coreCategories = [
     _CategoryDef(
       key: 'plumbing',
@@ -200,7 +200,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       ),
       actions: [
         // Owner only. Editing a listing is rent, availability and ownership
-        // documents — every one of which the rules deny a caretaker, so
+        // documents - every one of which the rules deny a caretaker, so
         // showing it to them offers a form whose every save fails.
         if (!_isCaretaker)
           IconButton(
@@ -381,7 +381,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
     context.push('/landlord/issues', extra: {
       'propertyId': widget.property.id,
       // Without this the caretaker lands on a landlordId-scoped query, sees an
-      // empty list, and can never reach the triage the rules already allow —
+      // empty list, and can never reach the triage the rules already allow -
       // a working backend behind an unreachable button.
       'asCaretaker': _isCaretaker,
       'category': category,
@@ -597,7 +597,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       'propertyId': widget.property.id,
       // The OWNER's uid, not the writer's. A log belongs to the property, so
       // the landlord's landlordId-scoped query must return the caretaker's
-      // entries too — writing the writer here would file a caretaker's note
+      // entries too - writing the writer here would file a caretaker's note
       // where the owner can never see it. `loggedBy` carries who did the work.
       'landlordId': widget.property.landlordId,
       'loggedBy': uid,

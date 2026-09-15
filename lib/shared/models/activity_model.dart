@@ -175,7 +175,7 @@ class ActivityModel {
       // existing inspection, so they reuse that enum value and the stored
       // title/subtitle carry the specifics. Adding enum values instead would
       // leave every build already in the wild rendering these as
-      // `propertyViewed` — the default below — with an eye icon.
+      // `propertyViewed` - the default below - with an eye icon.
       case 'reschedule_proposed':    return ActivityType.inspectionApproved;
       case 'reschedule_countered':   return ActivityType.inspectionApproved;
       case 'reschedule_approved':    return ActivityType.inspectionApproved;
@@ -185,7 +185,7 @@ class ActivityModel {
       case 'inspection_rated':       return ActivityType.inspectionRated;
       case 'payout_received':        return ActivityType.payoutReceived;
       // What the payout Cloud Functions actually write. Unmapped it fell to
-      // the default below — propertyViewed — so tapping "Rent Payout Sent"
+      // the default below - propertyViewed - so tapping "Rent Payout Sent"
       // opened the viewer sheet and showed the landlord ClearRent Admin's
       // details, as though an admin had browsed their listing.
       case 'rent_payout':            return ActivityType.payoutReceived;

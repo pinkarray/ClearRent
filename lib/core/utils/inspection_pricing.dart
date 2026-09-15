@@ -20,7 +20,7 @@ class InspectionPricing {
   // Remote-overridable from Firestore config/pricing via PricingService, so a
   // fee change does not need a Play Store release. The values below are the
   // offline fallback and MUST mirror DEFAULT_PRICING in functions/src/
-  // pricing.ts — the server derives what it actually charges from that same
+  // pricing.ts - the server derives what it actually charges from that same
   // document, so a drift here shows the user one price and bills another.
   static double _bookingFee = 10000.0;
   static double _handlerEarnings = 7000.0;
@@ -68,7 +68,7 @@ class InspectionPricing {
 
   /// All Lagos LGAs used in the system.
   ///
-  /// Order is DISPLAY order — [getAreasGroupedByLGA] walks this list, so it is
+  /// Order is DISPLAY order - [getAreasGroupedByLGA] walks this list, so it is
   /// what every area picker opens on. Busiest rental markets first: a landlord
   /// or tenant in Ikeja or Lekki should not scroll. Nothing computes off the
   /// order (only membership, via [applyRemoteAreas] and [allLGAs]), so it is
@@ -100,7 +100,7 @@ class InspectionPricing {
 
   /// Bucket for areas outside Lagos entirely. Kept separate from [outerLGA]
   /// so Epe and Badagry keep reading as Lagos outskirts. Nothing is compiled
-  /// into it — it exists so `config/areas` can publish an out-of-state area
+  /// into it - it exists so `config/areas` can publish an out-of-state area
   /// without a release, since [applyRemoteAreas] drops any unknown LGA.
   static const String otherLGA = 'other';
 
@@ -112,8 +112,8 @@ class InspectionPricing {
   ///
   /// Adding an area here needs an app release, which is far too slow when a
   /// landlord is standing in an unmapped part of Lagos right now. Areas can
-  /// therefore also be added at runtime from `config/areas` — see
-  /// [applyRemoteAreas] — exactly as `config/pricing` overrides the fees.
+  /// therefore also be added at runtime from `config/areas` - see
+  /// [applyRemoteAreas] - exactly as `config/pricing` overrides the fees.
   static const Map<String, String> _defaultAreaToLGA = {
     // ── Ikorodu LGA ──
     'ikorodu': 'ikorodu',
@@ -328,7 +328,7 @@ class InspectionPricing {
   /// compiled defaults, so a missing Lagos area becomes selectable without a
   /// Play Store release.
   ///
-  /// Entries are ignored unless the LGA is one we actually price — a typo must
+  /// Entries are ignored unless the LGA is one we actually price - a typo must
   /// not silently create an unpriceable area, because `city` feeds
   /// [findMatchingArea] and therefore the inspection fee.
   static void applyRemoteAreas(Map<String, dynamic>? raw) {
@@ -537,7 +537,7 @@ class InspectionPricing {
   ///
   /// FLAT-FEE MODEL: identical to [calculateFee]. Tenant pays ₦10,000,
   /// landlord earns ₦7,000, ClearRent keeps ₦3,000. The
-  /// [landlordLivesInProperty] flag no longer affects the fee — it is
+  /// [landlordLivesInProperty] flag no longer affects the fee - it is
   /// still accepted for API stability and used elsewhere (e.g. to
   /// decide whether to post the transport-coordination chat message
   /// when the landlord accepts).

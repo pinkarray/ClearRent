@@ -1,5 +1,5 @@
 /**
- * System D — renewal / promotion money path (tenant-facing).
+ * System D - renewal / promotion money path (tenant-facing).
  *
  *   completeActiveRenewal
  *     Caller: the tenant on a grace_locked active_rentals doc.
@@ -20,7 +20,7 @@
  *       clearrentEarnings = 10000               (tenant 5k + landlord 5k)
  *       totalPaid         = rentAmount + 5000   (what the tenant's card paid)
  *       agentPayout/agentFee = 0, agentId = null (links have no agent)
- *       inspectionFeeCredit  = 0 (no inspection — tenant already occupying)
+ *       inspectionFeeCredit  = 0 (no inspection - tenant already occupying)
  *       sourceLinkId      = linkId
  *     The lease starts fresh from now (the link's term was off-platform).
  *     Then flips the link status -> promoted with promotedToRentalId.
@@ -33,7 +33,7 @@
  *     a failed display write never rolls back a real lease change.
  *   - Status guards inside the txn block replays (grace_locked -> active
  *     only; a link can't be promoted twice).
- *   - Auth is assertSelf (caller must be the rental/link's tenant) — NOT
+ *   - Auth is assertSelf (caller must be the rental/link's tenant) - NOT
  *     assertAdmin: this is a tenant action, the deliberate divergence from
  *     the admin-only money CFs in admin_money_ops.ts.
  *   - Receipts use deterministic IDs and .create(); an already-exists
@@ -51,7 +51,7 @@ import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 
 // Same Secret Manager entry as index.ts; defining the same name here is
-// fine — both resolve to the one PAYSTACK_SECRET_KEY secret.
+// fine - both resolve to the one PAYSTACK_SECRET_KEY secret.
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 const callableOptions = {
@@ -103,7 +103,7 @@ interface VerifyResult {
 
 /**
  * Re-verify a Paystack reference server-side. Mirrors the verify call in
- * index.ts's verifyPayment — the client claim of "success" is never trusted
+ * index.ts's verifyPayment - the client claim of "success" is never trusted
  * for a money path.
  *
  * @param {string} reference the Paystack transaction reference
@@ -312,8 +312,8 @@ export const completeActiveRenewal = onCall(
       guardStatusTransition(data.status, "grace_locked", "status");
 
       // Apply a staged rent increase if one is scheduled and its effective
-      // date has passed. Reads only this rental's own fields — never the
-      // property — so co-tenants are never swept up. rentAmount mutates here
+      // date has passed. Reads only this rental's own fields - never the
+      // property - so co-tenants are never swept up. rentAmount mutates here
       // (renewal), not at approval.
       const currentRent = (data.rentAmount as number) ?? 0;
       const pendingRent = data.pendingRentForRenewal as number | undefined;
@@ -442,7 +442,7 @@ export const completeLinkedPromotion = onCall(
 
       // Apply a staged rent increase if approveRentReview scheduled one against
       // this link and its effective date has passed (mirrors
-      // completeActiveRenewal). The increase lands here — at promotion, the
+      // completeActiveRenewal). The increase lands here - at promotion, the
       // link's "renewal".
       const baseRent = (link.rentAmount as number) ?? 0;
       const pendingRent = link.pendingRentForRenewal as number | undefined;

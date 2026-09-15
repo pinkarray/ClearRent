@@ -74,7 +74,7 @@ export function encryptNin(plaintext: string, keyB64: string): string {
 /**
  * Decrypt a versioned ciphertext blob back to the plaintext NIN.
  *
- * Not called by any current function — the NIN is write-only until the
+ * Not called by any current function - the NIN is write-only until the
  * future NIN-verification-API integration consumes it. Shipped now so
  * the round-trip is testable and the field is never accidentally
  * write-only-forever.

@@ -40,7 +40,7 @@ class ClearRentApp extends ConsumerWidget {
               isDark ? Brightness.light : Brightness.dark,
         ));
 
-        // The offline banner lives here — above the router, so it covers every
+        // The offline banner lives here - above the router, so it covers every
         // route with a single subscription. It sits OUTSIDE the KeyedSubtree so
         // a theme switch doesn't rebuild it and lose its state mid-animation.
         //

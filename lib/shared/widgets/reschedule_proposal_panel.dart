@@ -11,7 +11,7 @@ import 'refund_confirm_sheet.dart';
 /// pending reschedule proposal. Owns the buttons and service calls
 /// for approve / counter / decline / abandon.
 ///
-/// Caller is responsible only for placing this widget in the card —
+/// Caller is responsible only for placing this widget in the card -
 /// the Firestore stream upstream of the card will redraw it once the
 /// proposal state changes.
 class RescheduleProposalPanel extends StatefulWidget {

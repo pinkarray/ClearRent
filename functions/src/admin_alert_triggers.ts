@@ -7,7 +7,7 @@
  * writeAdminAlert so it lands in the same dashboard feed as everything else.
  *
  * (Rent-payment, tenancy-issue and agreement-dispute alerts live inline in
- * index.ts next to their existing notification triggers — see writeAdminAlert
+ * index.ts next to their existing notification triggers - see writeAdminAlert
  * callers there.)
  */
 
@@ -69,7 +69,7 @@ export const onRentReviewRequested = onDocumentCreated(
 /**
  * A user changed their own name or email. Identity changes are a support /
  * fraud / impersonation signal (e.g. an account being repurposed), so the admin
- * gets a heads-up. Fires only on an actual change to those two fields — the
+ * gets a heads-up. Fires only on an actual change to those two fields - the
  * users doc is written for many other reasons (rating, verification, …).
  */
 export const onUserProfileUpdated = onDocumentUpdated(
@@ -87,7 +87,7 @@ export const onUserProfileUpdated = onDocumentUpdated(
     // A blank → value transition is onboarding filling the field in for the
     // first time, not somebody rewriting their identity. The users doc is
     // created empty by the profile-draft autosave, so EVERY sign-up used to
-    // raise a warning reading `name "" → "Ada"` — noise on the one alert type
+    // raise a warning reading `name "" → "Ada"` - noise on the one alert type
     // that exists to catch account takeovers.
     const nameChanged = Boolean(nameBefore) && nameBefore !== nameAfter;
     const emailChanged = Boolean(emailBefore) && emailBefore !== emailAfter;
@@ -126,7 +126,7 @@ export const onUserProfileUpdated = onDocumentUpdated(
  * NOT on doc create. The users doc is created the moment profile setup
  * autosaves its first draft (saveProfileDraft, a merge write of nothing but
  * `profileDraft`), so creation fires before anyone has said who they are or
- * what kind of account they want — which is how the feed filled up with "New
+ * what kind of account they want - which is how the feed filled up with "New
  * unknown signed up / Someone created a unknown account". The admin is told
  * once the doc can actually answer both questions.
  *
@@ -179,7 +179,7 @@ export const onUserSignedUp = onDocumentWritten(
  * reviews. Until now the ONLY signal was the pending count on the dashboard,
  * which requires an admin to already be looking.
  *
- * `onVerificationVerified` (verification_ops.ts) is the other half — it fires
+ * `onVerificationVerified` (verification_ops.ts) is the other half - it fires
  * after the decision. This fires when the decision becomes due.
  *
  * Warning severity, deliberately: it is actionable, so it belongs in the
@@ -227,14 +227,14 @@ export const onVerificationSubmitted = onDocumentUpdated(
 /**
  * The other end of `onVerificationSubmitted`: a human made the call.
  *
- * Both alerts a normal account raises — "New X signed up" and "Verification
- * waiting for review" — describe a pipeline that ends at this decision, so
+ * Both alerts a normal account raises - "New X signed up" and "Verification
+ * waiting for review" - describe a pipeline that ends at this decision, so
  * this closes them instead of leaving an admin to hand-dismiss two notices
  * about someone they just finished verifying.
  *
  * A rejection closes the review notice too: the review HAPPENED, and its
  * outcome lives on the user doc. It leaves the sign-up alert alone, because
- * that account is still an open question. Nothing else on the uid is touched —
+ * that account is still an open question. Nothing else on the uid is touched -
  * an identity-change warning is a fraud signal, not verification's to clear.
  */
 export const onVerificationDecided = onDocumentUpdated(
@@ -268,7 +268,7 @@ export const onVerificationDecided = onDocumentUpdated(
  *
  * Walks the SAME per-inspection alert as the rest of the lifecycle
  * (`insplc_<id>`, opened in index.ts at request time) rather than spawning a
- * second feed row — one inspection, one alert, whatever stage it is at.
+ * second feed row - one inspection, one alert, whatever stage it is at.
  *
  * The rating matters beyond bookkeeping: it is what backs the handler's
  * payment, so "completed but unrated" and "completed and rated" are genuinely
@@ -300,7 +300,7 @@ export const onInspectionCompleted = onDocumentUpdated(
       body:
         `The inspection of ${propertyTitle} for ${tenantName} is complete` +
         (rated ?
-          " and has been rated — the handler's payout can proceed." :
+          " and has been rated - the handler's payout can proceed." :
           " but has not been rated yet."),
       targetCollection: "inspection_requests",
       targetId: requestId,
@@ -319,7 +319,7 @@ export const onInspectionCompleted = onDocumentUpdated(
 );
 
 /**
- * A tenant expressed interest in renting after a completed inspection — the
+ * A tenant expressed interest in renting after a completed inspection - the
  * first step of the money funnel, and the point at which a landlord decision is
  * pending. Creation is server-only (`allow create: if false`), so every one of
  * these came through createRentalInterest.
@@ -385,8 +385,8 @@ export const onRentalInterestCreated = onDocumentCreated(
 /**
  * A landlord attached the tenancy agreement, so the tenant now has terms to
  * accept. The tenant already gets a notification (index.ts, "Tenancy agreement
- * ready"); this is the admin's copy, because an agreement appearing — and then
- * sitting unaccepted — is the start of most tenancy disputes.
+ * ready"); this is the admin's copy, because an agreement appearing - and then
+ * sitting unaccepted - is the start of most tenancy disputes.
  *
  * Keyed per rental so a re-upload after a dispute updates the same row rather
  * than stacking.
@@ -404,7 +404,7 @@ export const onAgreementReady = onDocumentUpdated(
     // A landlord revising a live tenancy declares whether the rent changed.
     // The tenant, who must read the document to sign it, can say otherwise.
     // That contradiction is the whole point of the mechanism, so it is
-    // critical and carries BOTH sides — an admin should not have to go
+    // critical and carries BOTH sides - an admin should not have to go
     // digging to put it to the landlord.
     if (
       before.tenantFlaggedRentChange !== true &&
@@ -485,7 +485,7 @@ export const onAgreementReady = onDocumentUpdated(
  * listings only through its "docs pending review" count, which resolves a
  * grouped unit's status from its BUILDING. So a unit added under a building
  * whose ownership document was already verified resolved to `verified`, never
- * entered that count, and arrived with no trace anywhere — the only way to
+ * entered that count, and arrived with no trace anywhere - the only way to
  * find it was to already know it had been submitted.
  *
  * Raised for every new listing, with the body naming what (if anything) still

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// account_ops.ts — user-initiated account deletion.
+// account_ops.ts - user-initiated account deletion.
 //
 // Replaces the old client-side delete (auth_service.deleteAccount), which had
 // two bugs:
@@ -15,11 +15,11 @@
 // never from the payload).
 //
 // Three rules govern what happens to the user's data:
-//   1. GUARD — anything mid-obligation (live tenancy, open inspection, rent
+//   1. GUARD - anything mid-obligation (live tenancy, open inspection, rent
 //      payment in flight) blocks the delete outright. The counterparty must not
 //      be left holding a dangling link or a stranded payment.
-//   2. CASCADE — records that only exist to serve this user are removed.
-//   3. RETAIN + TOMBSTONE — financial records survive for audit, and
+//   2. CASCADE - records that only exist to serve this user are removed.
+//   3. RETAIN + TOMBSTONE - financial records survive for audit, and
 //      `deleted_accounts/{uid}` records who the uid was, so the admin dashboard
 //      can render them as a deleted party rather than a live-looking ghost.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   logger.info("Account deletion started", {uid});
 
   // ── Safety guards: never delete an account that's mid-obligation. Applies to
-  // every role — a landlord/tenant with a live tenancy, or anyone with an
+  // every role - a landlord/tenant with a live tenancy, or anyone with an
   // in-flight inspection, must resolve it first (otherwise the counterparty is
   // stranded). All guards fetch by a single equality field (auto-indexed) and
   // filter status in code, so no composite index is required. ──
@@ -93,7 +93,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   ];
   const occupies = (s: FirebaseFirestore.QuerySnapshot) =>
     s.docs.some((d) => OCCUPYING.includes(d.get("status")));
-  // A confirmed tenancy OR a still-open invitation (pending) both count — the
+  // A confirmed tenancy OR a still-open invitation (pending) both count - the
   // link must be resolved (cancelled / declined) before the account is removed,
   // otherwise the counterparty is left with a dangling link.
   const hasOpenLink = (s: FirebaseFirestore.QuerySnapshot) =>
@@ -157,7 +157,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   }
 
   // Money-in-flight guard. A rental interest past `payment_uploaded` means the
-  // tenant has paid real money that has not yet resolved into a tenancy — the
+  // tenant has paid real money that has not yet resolved into a tenancy - the
   // exact state rentalInterestStrandSweep escalates to the admin Rent Attention
   // queue. Letting either party walk away here strands the payment against a
   // uid that no longer resolves: the admin sees a ghost row with a
@@ -224,7 +224,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     db.collection("rent_review_requests").where("landlordId", "==", uid));
   await deleteByQuery(
     db.collection("rent_review_requests").where("tenantId", "==", uid));
-  // The agent leg of an inspection — the tenant/landlord legs are queried
+  // The agent leg of an inspection - the tenant/landlord legs are queried
   // above, but an agent deleting their account used to leave every inspection
   // they ever handled pointing at a dead uid.
   await deleteByQuery(
@@ -239,7 +239,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   // so the grouping doc has nothing left to cover.
   await deleteByQuery(
     db.collection("buildings").where("landlordId", "==", uid));
-  // Rental interests that never touched money — an expression of interest the
+  // Rental interests that never touched money - an expression of interest the
   // tenant abandoned, or one the landlord turned down. Explicit allowlist, not
   // a "not payment_*" test: `accepted` also means money changed hands and must
   // survive as a financial record, same as payment_uploaded/payment_verified.
@@ -260,7 +260,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     }
   }
 
-  // Conversations carry a `messages` subcollection — recursiveDelete clears the
+  // Conversations carry a `messages` subcollection - recursiveDelete clears the
   // subcollection and the parent doc together.
   const convSnap = await db
     .collection("conversations")
@@ -270,7 +270,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     await db.recursiveDelete(doc.ref);
   }
 
-  // Capture the identity fields BEFORE the profile goes — the tombstone is
+  // Capture the identity fields BEFORE the profile goes - the tombstone is
   // written at the very end, once the account is definitively gone, but by then
   // there is nothing left to read them from.
   const userSnap = await db.collection("users").doc(uid).get();
@@ -286,7 +286,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   await db.recursiveDelete(db.collection("users").doc(uid));
 
   // Cloud Storage: verification documents (verification/{uid}/) and ownership
-  // documents — C of O / deed (ownership/{uid}/) + agreements/{uid}/. (Profile
+  // documents - C of O / deed (ownership/{uid}/) + agreements/{uid}/. (Profile
   // and property images are on Cloudinary, purged separately below.)
   // Non-fatal: nothing to delete is fine.
   try {
@@ -299,7 +299,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
   }
 
   // Cloudinary: purge the user's uploaded media. All uploads are namespaced by
-  // uid — property images under clearrent/properties/{uid}/, property videos
+  // uid - property images under clearrent/properties/{uid}/, property videos
   // under the same prefix (resource_type video), profile photos under
   // clearrent/profiles/{uid}/. delete_resources_by_prefix clears each.
   // Non-fatal: a missing prefix / no images is fine.
@@ -326,7 +326,7 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
 
   // Tombstone, only now that the account is definitively gone. Financial
   // records (transactions, refunds, retained rental interests) outlive it for
-  // audit, carrying a denormalized name and a uid that no longer resolves — so
+  // audit, carrying a denormalized name and a uid that no longer resolves - so
   // the admin dashboard used to show a live-looking party who had long since
   // left. This row is where those screens look up "this uid was deleted, here's
   // who it was and when".

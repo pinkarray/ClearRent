@@ -1,5 +1,5 @@
 /**
- * ClearRent — Clean stale data for super admin
+ * ClearRent - Clean stale data for super admin
  * 
  * Removes active_rentals and activities that reference 
  * tenants/users who no longer exist in Firestore.
@@ -64,7 +64,7 @@ async function cleanStaleActivities() {
     if (actorId) {
       const actorOk = await userExists(actorId);
       if (!actorOk) {
-        console.log(`   🗑️  Deleting activity "${data.title}" — actor ${actorId} gone`);
+        console.log(`   🗑️  Deleting activity "${data.title}" - actor ${actorId} gone`);
         await doc.ref.delete();
         deleted++;
       }
@@ -149,7 +149,7 @@ async function cleanStaleTenancyLinks() {
 
 async function main() {
   console.log('═══════════════════════════════════════');
-  console.log('  ClearRent — Stale Data Cleanup');
+  console.log('  ClearRent - Stale Data Cleanup');
   console.log('═══════════════════════════════════════');
 
   await cleanStaleActiveRentals();
@@ -159,7 +159,7 @@ async function main() {
   await cleanStaleTenancyLinks();
 
   console.log('\n═══════════════════════════════════════');
-  console.log('  DONE — All ghost references removed');
+  console.log('  DONE - All ghost references removed');
   console.log('═══════════════════════════════════════\n');
 
   process.exit(0);

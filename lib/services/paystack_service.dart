@@ -63,7 +63,7 @@ class PaystackService {
   /// Initialize a Paystack transaction via the `initializePayment` Cloud
   /// Function and return the authorization URL + reference.
   ///
-  /// Amount is in Naira (e.g. 15000) — the function converts to kobo. The
+  /// Amount is in Naira (e.g. 15000) - the function converts to kobo. The
   /// reference is generated server-side. `metadata` is merged into the
   /// Paystack metadata exactly as before.
   Future<PaystackInitResult> initializeTransaction({
@@ -136,7 +136,7 @@ class PaystackService {
   /// which proxies Paystack server-side.
   ///
   /// Returns an [AccountResolution]: the account name on success, or a
-  /// user-facing message whose wording matches the *actual* cause — an
+  /// user-facing message whose wording matches the *actual* cause - an
   /// App Check / auth rejection reads differently from a genuine
   /// "account not found" or a connectivity failure, so the UI never
   /// mislabels one as the other.
@@ -181,7 +181,7 @@ class PaystackService {
   ///
   /// `unauthenticated` covers both a missing sign-in and a rejected App
   /// Check token (e.g. an unregistered debug device, or a release build
-  /// whose Play Integrity attestation failed) — both mean "we couldn't
+  /// whose Play Integrity attestation failed) - both mean "we couldn't
   /// verify this request", which is distinct from the account not existing.
   String _resolveErrorMessage(FirebaseFunctionsException e) {
     switch (e.code) {
@@ -193,7 +193,7 @@ class PaystackService {
       case 'invalid-argument':
         return 'Enter a valid 10-digit account number and select a bank.';
       case 'resource-exhausted':
-        // Paystack rate-limited the lookup — not an outage, just throttled.
+        // Paystack rate-limited the lookup - not an outage, just throttled.
         return 'Too many lookups in a short time. '
             'Please wait a moment and try again.';
       case 'unavailable':
@@ -205,7 +205,7 @@ class PaystackService {
   }
 
   /// Shared mapping for the App-Check-enforced payment callables. Overrides
-  /// the codes whose default/framework message would mislead — notably
+  /// the codes whose default/framework message would mislead - notably
   /// `unauthenticated`, which is what an App Check rejection surfaces as and
   /// must never read as a network error. For other codes it prefers the
   /// server-provided message (the CFs set useful ones, e.g. missing email),

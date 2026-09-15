@@ -6,7 +6,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 
-/// Full issue history for a tenant — all issues ever reported, grouped by
+/// Full issue history for a tenant - all issues ever reported, grouped by
 /// property. Permanent record that survives tenancy changes / landlord removals.
 class TenantIssueHistoryScreen extends StatelessWidget {
   const TenantIssueHistoryScreen({super.key});
@@ -135,7 +135,7 @@ class _PropertyIssueGroupState extends State<_PropertyIssueGroup> {
         border: Border.all(color: AppColors.border),
       ),
       child: Column(children: [
-        // Header — tap to collapse
+        // Header - tap to collapse
         GestureDetector(
           onTap: () => setState(() => _expanded = !_expanded),
           behavior: HitTestBehavior.opaque,
@@ -849,7 +849,7 @@ class _ConfirmFixButtonsState extends State<_ConfirmFixButtons> {
         // `disputeReason` is what the landlord's screen reads
         // (`landlord_issues_screen.dart:761`). This wrote
         // `tenantDisputeReason`, so a dispute raised HERE never surfaced the
-        // reason — the landlord just saw the issue reopen. The other two
+        // reason - the landlord just saw the issue reopen. The other two
         // dispute paths (tenant home, rental dashboard) always wrote the
         // correct name, which is why this stayed hidden.
         'disputeReason': controller.text.trim(),

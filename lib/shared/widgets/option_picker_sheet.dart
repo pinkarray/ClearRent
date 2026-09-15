@@ -4,7 +4,7 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 
 /// A tidy, height-capped bottom-sheet picker for choosing one option from a
-/// list — a nicer replacement for Material's [DropdownButton], whose menu
+/// list - a nicer replacement for Material's [DropdownButton], whose menu
 /// balloons to cover the screen on long lists. Has a grab handle, a search
 /// field, the current selection highlighted, and lifts above the keyboard.
 ///

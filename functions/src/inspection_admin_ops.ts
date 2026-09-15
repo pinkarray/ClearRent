@@ -3,13 +3,13 @@
  *
  * `nudgeInspectionParty` lets an admin send an on-demand reminder push to
  * the tenant or the handler (agent, or the landlord on a self-handled
- * inspection) of an upcoming/awaiting inspection. It complements — does NOT
- * replace — the automatic reminders (`inspectionMorningReminders` 07:00,
+ * inspection) of an upcoming/awaiting inspection. It complements - does NOT
+ * replace - the automatic reminders (`inspectionMorningReminders` 07:00,
  * `inspectionSoonReminders` hourly); this is the manual dimension when an
  * admin is watching the day's schedule and wants to prod one party.
  *
- * Notifications carry `create: if false` in firestore.rules — only the
- * admin SDK (this CF) can write them — so the nudge must go server-side.
+ * Notifications carry `create: if false` in firestore.rules - only the
+ * admin SDK (this CF) can write them - so the nudge must go server-side.
  * Unlike the event-trigger notifications this uses an auto-id create (not
  * writeNotificationOnce): an admin pressing "nudge" twice SHOULD send twice.
  */
@@ -118,7 +118,7 @@ export const nudgeInspectionParty = onCall(callableOptions, async (request) => {
 
 // ── messageInspectionParties ─────────────────────────────────────────────────
 // Admin sends a FREE-TEXT message to the tenant and/or handler of an
-// inspection — the in-app half of "reach out about a dispute". Each message
+// inspection - the in-app half of "reach out about a dispute". Each message
 // becomes a notification doc (→ FCM push + bell inbox) and is audit-logged.
 // Distinct from nudge, which only sends a canned attendance reminder.
 

@@ -4,13 +4,13 @@
  *
  * Two concurrent createRentalInterest calls could both pass the read-then-write
  * dedupe and mint two interests for ONE inspection, which then became two
- * payable rentals on the same property — so the tenant could pay twice and
+ * payable rentals on the same property - so the tenant could pay twice and
  * every server guard (all of which key on the interest id) considered both
  * charges legitimate. The race itself is fixed in rental_interest_ops.ts
  * (deterministic `ri_<inspectionRequestId>` id + `.create()`); this repairs
  * the records that already exist.
  *
- * DRY RUN by default — prints what it WOULD do and writes nothing.
+ * DRY RUN by default - prints what it WOULD do and writes nothing.
  * Pass --confirm to perform the writes.
  *
  *   node scripts/fix_duplicate_rental.js
@@ -47,7 +47,7 @@ async function main() {
   const keep = await db.collection("active_rentals").doc(KEEP).get();
   const drop = await db.collection("active_rentals").doc(DROP).get();
   if (!keep.exists || !drop.exists) {
-    console.log("Aborting — one of the rentals no longer exists. Re-inspect.");
+    console.log("Aborting - one of the rentals no longer exists. Re-inspect.");
     return;
   }
   if (
@@ -56,13 +56,13 @@ async function main() {
     keep.get("propertyId") !== PROPERTY ||
     drop.get("propertyId") !== PROPERTY
   ) {
-    console.log("Aborting — tenant/property do not match. Re-inspect.");
+    console.log("Aborting - tenant/property do not match. Re-inspect.");
     return;
   }
   const user = await db.collection("users").doc(TENANT).get();
   if (user.get("currentRentalId") !== KEEP) {
     console.log(
-      `Aborting — user.currentRentalId is ${user.get("currentRentalId")}, ` +
+      `Aborting - user.currentRentalId is ${user.get("currentRentalId")}, ` +
         `not the rental being kept (${KEEP}). Re-inspect.`,
     );
     return;
@@ -76,7 +76,7 @@ async function main() {
   console.log(`\nNOT DONE HERE: refund ₦25,000 for ${REFUND_REF} in Paystack.`);
 
   if (!CONFIRM) {
-    console.log("\nDry run — nothing written. Re-run with --confirm.\n");
+    console.log("\nDry run - nothing written. Re-run with --confirm.\n");
     return;
   }
 
@@ -90,7 +90,7 @@ async function main() {
     currentTenantsCount: 1,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  // The charge stays on the books — it really happened — but is marked so it
+  // The charge stays on the books - it really happened - but is marked so it
   // is not mistaken for rent owed to the landlord, and so the refund is
   // traceable. Deleting it would hide a real movement of money.
   batch.set(

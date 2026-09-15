@@ -7,7 +7,7 @@ import '../../core/constants/text_styles.dart';
 /// Home screen announcement banner.
 ///
 /// Two key improvements:
-/// 1. Only shows announcements created AFTER the user joined —
+/// 1. Only shows announcements created AFTER the user joined -
 ///    new users never see historic announcements.
 /// 2. Dismissals are persisted to Firestore so they survive app restarts.
 class AnnouncementsBanner extends StatefulWidget {
@@ -55,7 +55,7 @@ class _AnnouncementsBannerState extends State<AnnouncementsBanner> {
 
     setState(() => _dismissed = persistedDismissed);
 
-    // Subscribe — only announcements posted after the user joined
+    // Subscribe - only announcements posted after the user joined
     _sub = FirebaseFirestore.instance
         .collection('announcements')
         .orderBy('createdAt', descending: true)
@@ -91,7 +91,7 @@ class _AnnouncementsBannerState extends State<AnnouncementsBanner> {
     if (!mounted) return;
     setState(() => _dismissed = {..._dismissed, id});
 
-    // Persist to Firestore — awaited so we know if it failed
+    // Persist to Firestore - awaited so we know if it failed
     try {
       await FirebaseFirestore.instance
           .collection('users')

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// caretaker_ops.ts — the caretaker invitation lifecycle.
+// caretaker_ops.ts - the caretaker invitation lifecycle.
 //
 // A caretaker is WHO MANAGES a unit, not a fact about it. They stand in for the
 // landlord on the management surfaces (issues, maintenance, the tenant thread,
@@ -7,15 +7,15 @@
 //
 // `properties.caretakerId` is written ONLY here, on the admin SDK, and never by
 // a client. The owner-update rule in firestore.rules has no `hasOnly`, so every
-// field it doesn't explicitly guard is owner-writable — so a landlord could
+// field it doesn't explicitly guard is owner-writable - so a landlord could
 // otherwise appoint any user as caretaker with a single write, with no invite
 // and no consent. The rule lets the owner CLEAR the field (that is revoking,
 // which is theirs to do) and never set it.
 //
-//   inviteCaretaker            — landlord invites an existing user by phone,
+//   inviteCaretaker            - landlord invites an existing user by phone,
 //                                over one unit or every unit of a building.
-//   respondToCaretakerInvite   — the invitee accepts or declines.
-//   revokeCaretaker            — landlord or caretaker ends the arrangement.
+//   respondToCaretakerInvite   - the invitee accepts or declines.
+//   revokeCaretaker            - landlord or caretaker ends the arrangement.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
@@ -23,12 +23,12 @@ import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {writeNotificationOnce} from "./notification_helpers";
 
-// M4: enforced — the Flutter app sends Play Integrity App Check tokens.
+// M4: enforced - the Flutter app sends Play Integrity App Check tokens.
 const callableOptions = {enforceAppCheck: true, timeoutSeconds: 30};
 
 // A tenant in one of these states still OCCUPIES the unit. Keep in sync with
 // OCCUPYING_RENTAL_STATUSES in index.ts (same duplication rationale as
-// account_ops.ts — importing from index.ts would be a circular entry-module
+// account_ops.ts - importing from index.ts would be a circular entry-module
 // import). Used to stop a landlord appointing their own sitting tenant as
 // caretaker, which would let that tenant resolve their own issues.
 const OCCUPYING_RENTAL_STATUSES = [
@@ -55,7 +55,7 @@ const LOOKUP_WINDOW_MS = 60 * 60 * 1000;
  *
  * A deliberate copy of the identically-named helper in index.ts, which is
  * module-private there. Importing it would make index.ts and this module import
- * each other — the exact cycle notification_helpers.ts was extracted to avoid.
+ * each other - the exact cycle notification_helpers.ts was extracted to avoid.
  *
  * @param {string} raw User-entered phone number, any common format.
  * @return {string | null} Local form, or null when it isn't a valid NG mobile.
@@ -112,7 +112,7 @@ export async function findUserByPhone(
  * Open the three-party caretaker↔tenant thread for one unit, if it is occupied.
  *
  * Done SERVER-SIDE on acceptance, not from the app, because the caretaker has
- * no read access to `active_rentals` — that is where rent amounts and every
+ * no read access to `active_rentals` - that is where rent amounts and every
  * payout figure live, and the whole point of the role is that money is out of
  * reach. Without this they would have no way to discover who the tenant even
  * is. The thread simply appears in their existing inbox, which queries
@@ -178,7 +178,7 @@ export async function openCaretakerThread(
       caretakerName,
       // arrayUnion, not a literal: a re-appointed caretaker was REMOVED from
       // this array on revoke, and a merge write with a literal array would be
-      // fine — but the landlord and tenant may have changed nothing, so union
+      // fine - but the landlord and tenant may have changed nothing, so union
       // keeps this idempotent against a retried accept either way.
       participants: FieldValue.arrayUnion(landlordId, tenantId, caretakerId),
       lastMessage: "",
@@ -188,7 +188,7 @@ export async function openCaretakerThread(
       createdAt: now,
     },
     // Merge so a caretaker re-appointed to the same unit rejoins the existing
-    // thread rather than losing its history — and so `removedParticipants`
+    // thread rather than losing its history - and so `removedParticipants`
     // from a previous revoke is cleared explicitly below rather than by a
     // blind overwrite.
     {merge: true},
@@ -197,7 +197,7 @@ export async function openCaretakerThread(
 
   // Deterministic key, NOT Date.now(): this used to run once, at invite-accept,
   // so a unique key was harmless. It is now also called from the occupancy
-  // triggers, which fire whenever a rental's occupying-ness changes — a
+  // triggers, which fire whenever a rental's occupying-ness changes - a
   // per-call key would send the tenant a fresh "your landlord appointed a
   // caretaker" on every one of those.
   await writeNotificationOnce(`caretaker_thread_${ref.id}`, {
@@ -206,7 +206,7 @@ export async function openCaretakerThread(
     title: "Your landlord appointed a caretaker",
     body:
       `${caretakerName} will handle issues and maintenance for your home. ` +
-      "You can message them here — your landlord is on the thread too.",
+      "You can message them here - your landlord is on the thread too.",
     // The route reads conversationId from the query string; without it the
     // chat route renders _MissingArgsScreen, so a bare "/chat" would have
     // dead-ended every tenant who tapped this push.
@@ -218,7 +218,7 @@ export async function openCaretakerThread(
  * Everything the confirm-first lookup and the invite itself must agree on: who
  * this number belongs to, and whether they may take these units.
  *
- * Shared so the two cannot diverge — a lookup that said "yes, Musa Bello" and
+ * Shared so the two cannot diverge - a lookup that said "yes, Musa Bello" and
  * an invite that then refused would be worse than no confirmation at all.
  *
  * Ownership of the units is checked BEFORE the phone is resolved to a person,
@@ -290,7 +290,7 @@ async function resolveCandidate(
     }
     // Replacement is revoke-then-invite, deliberately. Letting a second invite
     // silently overwrite a sitting caretaker would strand the first invite
-    // pointing at a unit it no longer governs — and revoking THAT invite would
+    // pointing at a unit it no longer governs - and revoking THAT invite would
     // then clear the new caretaker.
     const existing = snap.get("caretakerId") as string | undefined;
     if (existing) {
@@ -327,7 +327,7 @@ async function resolveCandidate(
   if (caretakerId === landlordId) {
     throw new HttpsError(
       "failed-precondition",
-      "That's your own number — you already manage these properties.",
+      "That's your own number - you already manage these properties.",
     );
   }
 
@@ -344,7 +344,7 @@ async function resolveCandidate(
     );
   }
 
-  // The sitting tenant must not become the caretaker — they would be triaging
+  // The sitting tenant must not become the caretaker - they would be triaging
   // and closing their own issues.
   const rentalSnaps = await Promise.all(
     propertyIds.map((id) =>
@@ -378,7 +378,7 @@ async function resolveCandidate(
  * and the invitee would be a real person who could simply accept.
  *
  * Rate-limited per caller, and resolveCandidate requires the caller to already
- * own the units named — so a lookup can only ride along with an appointment the
+ * own the units named - so a lookup can only ride along with an appointment the
  * landlord is entitled to make, never a bare phone-to-name query.
  */
 export const lookupCaretakerCandidate = onCall(
@@ -589,7 +589,7 @@ export const respondToCaretakerInvite = onCall(
       [];
 
     // Guards that held at invite time can stop holding while the invite sits
-    // unanswered. Verification can be revoked, and — the one that matters —
+    // unanswered. Verification can be revoked, and - the one that matters -
     // the invitee may have MOVED IN to one of these units in the meantime, in
     // which case accepting would let them triage and close their own issues.
     const accepterSnap = await db.collection("users").doc(uid).get();
@@ -718,7 +718,7 @@ export const revokeCaretaker = onCall(callableOptions, async (request) => {
   const landlordId = invite.landlordId as string;
   const caretakerId = invite.caretakerId as string;
   // Either side may end it: the landlord removes a caretaker, and a caretaker
-  // may step back — the same shape as agentUnassignFromProperty.
+  // may step back - the same shape as agentUnassignFromProperty.
   const byLandlord = uid === landlordId;
   if (!byLandlord && uid !== caretakerId) {
     throw new HttpsError(
@@ -774,7 +774,7 @@ export const revokeCaretaker = onCall(callableOptions, async (request) => {
   await batch.commit();
 
   // Close the caretaker out of the tenant threads they were added to. The
-  // conversation rules already honour removedParticipants — nothing had ever
+  // conversation rules already honour removedParticipants - nothing had ever
   // written it until now.
   const convSnap = await db
     .collection("conversations")
@@ -790,8 +790,8 @@ export const revokeCaretaker = onCall(callableOptions, async (request) => {
         d.ref.update({
           // Drop them from `participants`, not just into
           // `removedParticipants`. The conversations LIST rule keys on
-          // `participants` alone — only get/update consult
-          // isActiveParticipant() — so a removed caretaker who stayed in the
+          // `participants` alone - only get/update consult
+          // isActiveParticipant() - so a removed caretaker who stayed in the
           // array kept the thread in their inbox, with a live lastMessage
           // preview of what the tenant went on to say.
           participants: FieldValue.arrayRemove(caretakerId),

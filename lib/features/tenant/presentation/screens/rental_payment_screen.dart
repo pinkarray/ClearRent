@@ -36,7 +36,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
   bool _isProcessing = false;
   bool _paymentSuccessful = false;
   String? _paymentReference;
-  /// Shown, never charged — see the note in [_buildPaymentBreakdown].
+  /// Shown, never charged - see the note in [_buildPaymentBreakdown].
   /// Read from the property because `RentalInterest` does not carry it: the
   /// interest holds only what ClearRent actually collects.
   double _cautionDeposit = 0;
@@ -68,7 +68,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
     //
     // `widget.rentalInterest` is a FROZEN snapshot handed over through
     // go_router's `extra`, so it still says "accepted" no matter what has
-    // happened since — including a payment this very screen already took.
+    // happened since - including a payment this very screen already took.
     // recordRentPayment is idempotent, but it runs AFTER the money moves, so
     // idempotency there cannot stop a second charge. This is the only check
     // that sits in front of Paystack.
@@ -90,7 +90,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
       setState(() => _isProcessing = false);
       _showError(
           'Could not confirm your rent status. Check your connection and try '
-          'again — this is to make sure you are never charged twice.');
+          'again - this is to make sure you are never charged twice.');
       return;
     }
 
@@ -168,7 +168,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
       if (success) {
         _showSuccessDialog();
       } else {
-        // Payment succeeded but status update failed — show partial success
+        // Payment succeeded but status update failed - show partial success
         _showUpdateFailureDialog();
       }
     } catch (e) {
@@ -193,7 +193,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
           title: Text('Already paid', style: AppTextStyles.h4),
           content: Text(
             'Your rent for ${widget.rentalInterest.propertyTitle} is already '
-            'paid — we did not charge you again.',
+            'paid - we did not charge you again.',
             style: AppTextStyles.bodyMedium
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -217,7 +217,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
     // The charge is done and recorded, so this screen must stop behaving like
     // a payment form: `_isProcessing` used to stay true forever here, which
     // left the Pay button reading "Processing..." AND the app-bar back arrow
-    // disabled — a dead end whose only exit was killing the app.
+    // disabled - a dead end whose only exit was killing the app.
     setState(() => _isProcessing = false);
     showUndismissibleDialog(
       context: context,
@@ -289,7 +289,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  // Rent is paid — they're a tenant now, so send them to the
+                  // Rent is paid - they're a tenant now, so send them to the
                   // home DASHBOARD (tab 0). The `reset` nonce forces a fresh
                   // home so it doesn't reuse whatever tab (e.g. Profile) the
                   // tenant was last on.
@@ -404,7 +404,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           // Disabled only while a checkout is genuinely in flight. Once the
-          // payment has landed the tenant must always be able to leave — this
+          // payment has landed the tenant must always be able to leave - this
           // arrow staying dead after success is what made the screen a trap.
           onPressed: _isProcessing ? null : () => context.pop(),
         ),
@@ -597,7 +597,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
 
           // The caution deposit, stated but NOT charged.
           //
-          // ClearRent deliberately never holds this money — paymentAmount is
+          // ClearRent deliberately never holds this money - paymentAmount is
           // rent + agent fee + deal fee and nothing else. But until now
           // nothing anywhere told the tenant the deposit existed or that they
           // owed it to the landlord directly, so a tenant could complete this

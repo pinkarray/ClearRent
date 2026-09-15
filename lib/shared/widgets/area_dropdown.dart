@@ -18,7 +18,7 @@ class AreaDropdown extends StatefulWidget {
   final String? selectedArea;
 
   /// Called when the user picks an area.
-  /// Returns the Title Case display name — call
+  /// Returns the Title Case display name - call
   /// `InspectionPricing.normalizeAreaName(value)` if you need the lowercase key.
   final ValueChanged<String> onSelected;
 
@@ -32,7 +32,7 @@ class AreaDropdown extends StatefulWidget {
   final String? helperText;
 
   /// Called when the landlord says their area is not on the list, with the
-  /// name they searched for. Only add-property passes this — it is what files
+  /// name they searched for. Only add-property passes this - it is what files
   /// the unknown-area report, and it must come from THIS field: the street
   /// address box next to it holds addresses, not areas.
   final ValueChanged<String>? onAreaNotFound;
@@ -324,7 +324,7 @@ class _AreaPickerSheet extends StatefulWidget {
   /// unknown-area report should ever come from.
   static const String notFoundHelp =
       'Areas are grouped by local government. If yours is missing, tell us '
-      'and we will add it — usually the same day. In the meantime pick the '
+      'and we will add it - usually the same day. In the meantime pick the '
       'nearest listed area, then set the exact spot with the map pin.';
 
   @override
@@ -338,7 +338,7 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
   bool _reported = false;
 
   /// Shown when the search matches no area. Explains how areas work, and lets
-  /// the landlord report theirs with one deliberate tap — never automatically,
+  /// the landlord report theirs with one deliberate tap - never automatically,
   /// so a half-typed word can't file a request.
   Widget _buildNotFound() {
     final typed = _searchQuery.trim();
@@ -365,7 +365,7 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Thanks — we\'ve got "$typed". Pick the nearest area for '
+                    'Thanks - we\'ve got "$typed". Pick the nearest area for '
                     'now and we\'ll add yours.',
                     style: AppTextStyles.caption
                         .copyWith(color: AppColors.success, height: 1.4),
@@ -651,7 +651,7 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
     });
   }
 
-  /// True when every area shown under this LGA header is already selected —
+  /// True when every area shown under this LGA header is already selected -
   /// drives both the label and what tapping it does.
   bool _clusterFullySelected(List<String> areas) =>
       areas.isNotEmpty && areas.every(_selected.contains);

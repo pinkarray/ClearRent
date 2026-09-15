@@ -42,7 +42,7 @@ dependencies:
   cloudinary_public: ^0.23.1
   firebase_storage: ^13.4.6
   image_picker: ^1.1.2
-  # Phones record property tours at ~9 Mbps, so a 90s clip lands near 100MB —
+  # Phones record property tours at ~9 Mbps, so a 90s clip lands near 100MB -
   # over Cloudinary's cap and painful on Nigerian mobile data. Transcode first.
   video_compress: ^3.1.2
 

@@ -65,7 +65,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
       setState(() => _pendingCount = list.length);
     });
 
-    // Count of approved (upcoming) inspections — drives the Upcoming tab's
+    // Count of approved (upcoming) inspections - drives the Upcoming tab's
     // attention badge, so a newly-approved inspection lights the dot even
     // without tapping the push. Mirrors the Upcoming tab's filter.
     _upcomingSub = _inspectionService.getLandlordRequests().listen((list) {
@@ -114,7 +114,7 @@ class _LandlordInspectionsScreenState extends State<LandlordInspectionsScreen>
         _tabController.animateTo(target);
       }
     } catch (_) {
-      // Non-fatal — keep default Requests tab.
+      // Non-fatal - keep default Requests tab.
     }
   }
 
@@ -197,7 +197,7 @@ class _LandlordPendingTab extends StatefulWidget {
 class _LandlordPendingTabState extends State<_LandlordPendingTab> {
   // Cache the stream once so parent rebuilds (driven by badge-count
   // subscriptions when the other party acts) don't reset StreamBuilder to
-  // ConnectionState.waiting and flash the loading spinner — that's the flicker.
+  // ConnectionState.waiting and flash the loading spinner - that's the flicker.
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getLandlordRequests();
 
@@ -679,7 +679,7 @@ class _LandlordUpcomingTab extends StatefulWidget {
 }
 
 class _LandlordUpcomingTabState extends State<_LandlordUpcomingTab> {
-  // Cached stream — see _LandlordPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _LandlordPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getLandlordRequests();
 
@@ -1233,8 +1233,8 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             // Show arrival status
             // Every state of the visit, not just the part before the handler
             // arrives. This was wrapped in if (!r.handlerArrived), so the
-            // moment they confirmed arrival the whole section — the
-            // met-and-complete cascade included — vanished, leaving only
+            // moment they confirmed arrival the whole section - the
+            // met-and-complete cascade included - vanished, leaving only
             // Cancel & Refund and no way to finish the inspection.
             if (r.tenantArrived) ...[
               Container(
@@ -1295,12 +1295,12 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             ],
             // A landlord who lives in the unit is already there, so being
             // asked to say "I'm on my way" and then "I've arrived" is
-            // nonsense. One confirmation covers both — the tenant still
+            // nonsense. One confirmation covers both - the tenant still
             // needs to know someone is ready to receive them.
             // ...and only until they confirm it. Without the arrived check
             // this branch matched forever, and since the chain is else-if,
             // a resident handler never reached the met/complete cascade
-            // below — so they could never confirm the meeting, never
+            // below - so they could never confirm the meeting, never
             // complete the inspection, and never be credited the handler
             // fee that completion pays.
             if (r.handlerIsResident && !r.handlerArrived) ...[
@@ -1338,7 +1338,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               ),
             // markHandlerArrived does NOT clear handlerOnWay, so without
             // the arrived check this branch also matched forever and every
-            // landlord-handled inspection — not just a resident's — stalled
+            // landlord-handled inspection - not just a resident's - stalled
             // on "I've Arrived" with the cascade below out of reach.
             ] else if (r.handlerOnWay && !r.handlerArrived) ...[
               SizedBox(
@@ -1519,7 +1519,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                   ),
               ],
             ),
-           // Fallback complete — landlord can override complete an
+           // Fallback complete - landlord can override complete an
             // agent-handled inspection, but only after met state.
             if (r.canMarkComplete) ...[
               const SizedBox(height: 16),
@@ -1552,7 +1552,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             ],
           ],
 
-          // Self-handled complete button — only when met confirmed
+          // Self-handled complete button - only when met confirmed
           if (!isAgent && r.canMarkComplete) ...[
             const SizedBox(height: 16),
             SizedBox(
@@ -1631,7 +1631,7 @@ class _LandlordHistoryTab extends StatefulWidget {
 }
 
 class _LandlordHistoryTabState extends State<_LandlordHistoryTab> {
-  // Cached stream — see _LandlordPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _LandlordPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getLandlordRequests();
 
@@ -1723,7 +1723,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         widget.request.id,
       );
       // An accepted interest should already have its rental record. If it
-      // doesn't, the accept only half-completed — surface a "finish setup"
+      // doesn't, the accept only half-completed - surface a "finish setup"
       // action instead of stranding the tenant with no rental.
       final needsRentalCheck =
           interest != null && interest.status == RentalInterestStatus.accepted;
@@ -1875,11 +1875,11 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
     if (confirm != true) return;
 
     // (Multi-rental enabled) A tenant may hold more than one active rental,
-    // so there's no longer a one-rental-per-tenant guard here — an accepted
+    // so there's no longer a one-rental-per-tenant guard here - an accepted
     // application always becomes a real rental. Under pay-after-accept the
     // tenant hasn't paid yet; they pay once the agreement is finalized.
 
-    // Step 2: the tenancy agreement — a deal can't close without one.
+    // Step 2: the tenancy agreement - a deal can't close without one.
     //
     // If the landlord already keeps one against the PROPERTY, use it instead of
     // asking again. createRentalForAcceptedInterest does the same server-side,
@@ -1935,7 +1935,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
       // Create the active rental.
       // `interest` is the copy loaded BEFORE the accept above, so its status is
-      // still pending_acceptance — passing it as-is trips createActiveRental's
+      // still pending_acceptance - passing it as-is trips createActiveRental's
       // "must be accepted" guard and strands the tenant with no rental record.
       // Hand over the post-accept status explicitly.
       final rental = await _activeRentalService.createActiveRental(
@@ -1946,7 +1946,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
       // createActiveRental swallows its errors and returns null on failure.
       // The interest is already flipped to 'accepted' above, so a null here
-      // means a paid+accepted tenant with NO active_rental — dashboard,
+      // means a paid+accepted tenant with NO active_rental - dashboard,
       // issues, health and documents would all be empty. Surface it instead
       // of showing a false "confirmed".
       if (rental == null) {
@@ -1968,7 +1968,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         return;
       }
 
-      // Attach the agreement uploaded above (guaranteed present — the accept
+      // Attach the agreement uploaded above (guaranteed present - the accept
       // aborts earlier if it wasn't).
       await _activeRentalService.uploadAgreement(rental.id, agreementUrl);
 
@@ -2103,7 +2103,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
                                       setDialogState(() => isUploading = true);
                                       try {
-                                        // Private Storage (not Cloudinary) —
+                                        // Private Storage (not Cloudinary) -
                                         // agreements are sensitive PII.
                                         final url = await propertyService
                                             .uploadAgreementDoc(file);
@@ -2227,7 +2227,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
 
     // Pay-after-accept: an applicant awaiting the landlord's decision is UNPAID.
     // Accepting them starts the agreement flow; the tenant pays only after it's
-    // finalized. (Was gated on paymentVerified — tenants no longer pay first.)
+    // finalized. (Was gated on paymentVerified - tenants no longer pay first.)
     final awaitingDecision =
         _rentalInterest?.status == RentalInterestStatus.pendingAcceptance;
 
@@ -2585,7 +2585,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
               ),
             ],
           ),
-          // Accept button — the applicant is awaiting the landlord's decision
+          // Accept button - the applicant is awaiting the landlord's decision
           // (unpaid). Accepting starts the agreement flow; the tenant pays only
           // after it's finalized.
           // Also shown when an ALREADY-accepted interest has no rental record:

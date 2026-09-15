@@ -125,7 +125,7 @@ class NotificationService {
 
   /// Public hook to remove this device's FCM token from the
   /// currently-tracked user's doc. Must be called *before* signing
-  /// the user out — Firestore rules deny the write once auth is
+  /// the user out - Firestore rules deny the write once auth is
   /// cleared.
   Future<void> removeTokenBeforeLogout() async {
     await _unregisterPreviousUser();
@@ -219,7 +219,7 @@ class NotificationService {
   /// registered, the system banner is suppressed.
   ///
   /// Other routes (most notifications) don't need identity
-  /// suppression — being on the inspections screen at all is
+  /// suppression - being on the inspections screen at all is
   /// enough to skip a new-arrival push for any inspection.
   static const Map<String, String> _suppressionKeyByRoute = {
     '/chat': 'conversationId',
@@ -231,7 +231,7 @@ class NotificationService {
 
     final identityKey = _suppressionKeyByRoute[route];
     if (identityKey == null) {
-      // Route doesn't need identity matching — just check we're
+      // Route doesn't need identity matching - just check we're
       // on it.
       return RouteObserverService.instance.isOnRoute(route);
     }
@@ -258,7 +258,7 @@ class NotificationService {
   String? _lastTapKey;
   DateTime? _lastTapAt;
 
-  /// Same notification, twice, within a moment — one physical tap.
+  /// Same notification, twice, within a moment - one physical tap.
   bool _isDuplicateTap(String key) {
     final at = _lastTapAt;
     if (_lastTapKey == key &&
@@ -279,7 +279,7 @@ class NotificationService {
     // main() BEFORE runApp, so navigating here happened while the router had
     // no widget tree: the deep-link target became the ONLY page in the stack,
     // the app opened straight onto it with no home beneath, and Back had
-    // nowhere to pop to — the screen was a dead end. Waiting for the first
+    // nowhere to pop to - the screen was a dead end. Waiting for the first
     // frame lets the router settle on its normal start route first, so the
     // push below lands on top of a real stack.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -336,7 +336,7 @@ class NotificationService {
       // Pass the entire data map as `extra` so target screens can
       // pluck whatever fields they need. FCM values are all strings,
       // so we coerce known integer keys here. Currently just
-      // initialTab — add more keys as needed.
+      // initialTab - add more keys as needed.
       final extra = Map<String, dynamic>.from(data);
       final tabRaw = extra['initialTab'];
       if (tabRaw is String) {
@@ -357,7 +357,7 @@ class NotificationService {
         target = '/chat?conversationId=${Uri.encodeComponent(conversationId)}';
       }
       // Already looking at it. push() does not care, and would stack a second
-      // identical screen on top of the first — tap two inspection notices
+      // identical screen on top of the first - tap two inspection notices
       // while on the inspections screen and Back needs three presses to get
       // home. Nothing to navigate to when you are already there.
       if (_isOnTargetScreen(data)) {

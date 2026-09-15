@@ -3,7 +3,7 @@
  * Rules verification for ownership-document integrity.
  *
  * Proves an owner cannot keep a 'verified' badge over a document the admin
- * never approved — by swapping the file or relabelling the type without
+ * never approved - by swapping the file or relabelling the type without
  * touching ownershipDocStatus. Also probes whether properties.isVerified is
  * self-settable (the adjacent finding).
  *
@@ -93,7 +93,7 @@ async function main() {
       {ownershipDocUrl: "something_else.pdf"})));
 
   // Relabelling an APPROVED doc is not allowed even if the owner also sends it
-  // back for review — the file is what it is; changing the type requires
+  // back for review - the file is what it is; changing the type requires
   // uploading the matching document.
   check("property: CANNOT relabel approved doc without a new file " +
     "(even with status → pending)",
@@ -152,7 +152,7 @@ async function main() {
   check("property: CAN still edit normal listing fields",
     await passes(updateDoc(doc(db, "properties", "p2"), {rent: 1200000})));
 
-  // Before an admin reviews it, a mislabel is just a mistake — let them fix it
+  // Before an admin reviews it, a mislabel is just a mistake - let them fix it
   // without re-uploading. The lock only applies after approval.
   check("property: CAN relabel freely BEFORE review (status pending)",
     await passes(updateDoc(doc(db, "properties", "p2"),
@@ -160,9 +160,9 @@ async function main() {
 
   // ── The create path ───────────────────────────────────────────────────
   // Every guard above is downstream of a review. If a listing can be BORN
-  // approved, none of them matter — this is the hole that made the rest moot.
+  // approved, none of them matter - this is the hole that made the rest moot.
   // Mirrors what PropertyService.createProperty actually sends, `state`
-  // included — ClearRent is Lagos-only and `create` is gated on it.
+  // included - ClearRent is Lagos-only and `create` is gated on it.
   const newProp = {
     landlordId: L1, title: "x", currentTenantsCount: 0,
     rent: 1000000, agentFee: 0, cautionDeposit: 0, state: "Lagos",
@@ -183,7 +183,7 @@ async function main() {
         ownershipDocRejectionReason: "looks fine to me"})));
 
   // The real add-property payloads. Tightening `create` is only safe if the
-  // shapes PropertyService actually sends still get through — a rule that
+  // shapes PropertyService actually sends still get through - a rule that
   // blocks listing creation is worse than the hole it closes.
   check("create: CAN publish a normal standalone listing for review",
     await passes(addDoc(collection(db, "properties"),
@@ -208,7 +208,7 @@ async function main() {
 
   // ── Grouped units: the building's doc is the only reviewed artifact ────
   // These carry ownershipDocStatus 'inherited', which is never the literal
-  // 'verified' — so every status-keyed guard used to pass trivially.
+  // 'verified' - so every status-keyed guard used to pass trivially.
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties", "unit1"), {
       landlordId: L1, buildingId: "b1",
@@ -280,7 +280,7 @@ async function main() {
   // is born isVerified:false / isAvailable:false, so nothing outside Lagos can
   // reach a tenant without a human approving it. Rules enforcement would add
   // nothing and would cost a rules deploy AND an app release the day another
-  // state opens. These two cases exist so the decision is deliberate — if a
+  // state opens. These two cases exist so the decision is deliberate - if a
   // state guard is ever added, they fail loudly rather than the behaviour
   // changing silently.
   check("create: an out-of-state listing IS allowed (admin rejects it, not rules)",

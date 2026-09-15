@@ -9,7 +9,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 
 /**
  * Write a notification doc with a deterministic ID. Used for idempotent
- * creates from event triggers — avoids duplicate pushes when a Firestore
+ * creates from event triggers - avoids duplicate pushes when a Firestore
  * trigger re-fires for the same event.
  *
  * @param {string} notifId Deterministic notification doc ID.
@@ -52,7 +52,7 @@ export async function writeNotificationOnce(
 /**
  * Write an activity-feed row with a deterministic ID.
  *
- * The feed is queried by `landlordId`, which is really "whose feed is this" —
+ * The feed is queried by `landlordId`, which is really "whose feed is this" -
  * `inspection_service._createActivity` writes the recipient's uid there
  * regardless of role, and the read rule accepts landlordId or actorId.
  *
@@ -106,7 +106,7 @@ export async function writeActivityOnce(
  *
  * `properties.caretakerId` is written only by the caretaker callables, so its
  * presence already means the invitee accepted. Returns null on a missing or
- * unreadable property — a notification is never worth failing a trigger for.
+ * unreadable property - a notification is never worth failing a trigger for.
  *
  * Lives here because both the issue trigger and the reminder sweep need it,
  * and a caretaker who hears about a new issue but not its reminders is worse

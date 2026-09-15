@@ -7,7 +7,7 @@
  *        SUPER_ADMIN_UID=<your-uid> npx ts-node scripts/bootstrap-superadmin.ts
  *   3. Sign out of the admin webapp and sign back in to pick up the claim.
  *
- * Idempotent — re-running on the same UID is a no-op.
+ * Idempotent - re-running on the same UID is a no-op.
  * The UID is read from an env var so it never appears in source.
  */
 
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   initializeApp({credential: cert(KEY_PATH)});
   const auth = getAuth();
 
-  // Read existing claims and merge — don't clobber anything Firebase
+  // Read existing claims and merge - don't clobber anything Firebase
   // Auth may have set (e.g. provider-specific metadata).
   const user = await auth.getUser(uid);
   const existing = user.customClaims ?? {};

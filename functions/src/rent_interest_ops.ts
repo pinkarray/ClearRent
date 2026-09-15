@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// rent_interest_ops.ts — strand sweep for rental interests (money-flow gap G1).
+// rent_interest_ops.ts - strand sweep for rental interests (money-flow gap G1).
 //
 // Pay-after-accept: the landlord accepts ONE applicant (unpaid); the interest
 // sits at `accepted` while the tenancy agreement is finalized and the accepted
-// tenant pays. If that stalls — agreement never finalized, or finalized but the
-// tenant never pays — the deal is stranded with no money moved. This daily
+// tenant pays. If that stalls - agreement never finalized, or finalized but the
+// tenant never pays - the deal is stranded with no money moved. This daily
 // sweep, mirroring leaseLifecycleSweep / inspectionLifecycleSweep:
 //   • day 3 & day 6 → remind BOTH parties to complete the rental (deduped).
 //   • day 7 → flag `strandedForReview` on the interest + reassure the tenant.
@@ -77,8 +77,8 @@ export const rentalInterestStrandSweep = onSchedule(
           const couldPay = rental?.agreementStatus === "finalized";
 
           // Only AUTO-RELEASE when the tenant genuinely had the chance to pay
-          // (agreement finalized) and didn't. No money was ever taken —
-          // pay-after-accept means an unpaid accept involves zero charge — so
+          // (agreement finalized) and didn't. No money was ever taken -
+          // pay-after-accept means an unpaid accept involves zero charge - so
           // this is pure cleanup: free the slot and close the reservation.
           if (holding && couldPay) {
             await rentalDoc.ref.update({
@@ -111,7 +111,7 @@ export const rentalInterestStrandSweep = onSchedule(
                 {
                   userId: landlordId,
                   type: "rental_expired",
-                  title: "Reservation released — back on the market",
+                  title: "Reservation released - back on the market",
                   body:
                     `The tenant you accepted for ${propertyTitle} didn't pay ` +
                     "in time. The unit is available again.",
@@ -123,7 +123,7 @@ export const rentalInterestStrandSweep = onSchedule(
           }
 
           // Otherwise the deal stalled for another reason (agreement never
-          // finalized, or no rental record) — don't auto-release, since it may
+          // finalized, or no rental record) - don't auto-release, since it may
           // be the landlord who's slow. Flag it for admin + reassure the tenant.
           if (data.strandedForReview !== true) {
             await doc.ref.update({

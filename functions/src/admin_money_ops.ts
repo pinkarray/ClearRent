@@ -193,7 +193,7 @@ function readAmount(
 
 /**
  * Gate a rent payout on the deal actually being done (G2/G3). The landlord
- * (and agent) are only paid once the tenancy agreement is FINALIZED — i.e. the
+ * (and agent) are only paid once the tenancy agreement is FINALIZED - i.e. the
  * tenant reviewed and accepted it and the landlord finalized. A payout must
  * never leave while the agreement is disputed (money would be irreversibly gone
  * before the dispute is resolved), pending review, or not yet uploaded.
@@ -216,7 +216,7 @@ function assertAgreementFinalized(
   }
   throw new HttpsError(
     "failed-precondition",
-    "The tenancy agreement isn't finalized yet — the tenant must accept it " +
+    "The tenancy agreement isn't finalized yet - the tenant must accept it " +
       "and the landlord must finalize it before a payout can be sent.",
   );
 }
@@ -226,7 +226,7 @@ function assertAgreementFinalized(
  *
  * Under pay-after-accept the active_rental is created UNPAID at acceptance and
  * only becomes paid once the accepted tenant pays (recordRentPayment stamps
- * rentPaymentStatus="paid"). A payout must never leave before the money is in —
+ * rentPaymentStatus="paid"). A payout must never leave before the money is in -
  * previously acceptance implied payment, but it no longer does.
  *
  * Legacy rentals created under the old pay-before-accept flow have no
@@ -239,7 +239,7 @@ function assertRentPaid(data: FirebaseFirestore.DocumentData): void {
   if (status === undefined || status === "paid") return;
   throw new HttpsError(
     "failed-precondition",
-    "The tenant hasn't paid rent for this rental yet — no payout can be sent " +
+    "The tenant hasn't paid rent for this rental yet - no payout can be sent " +
       "until the rent is collected.",
   );
 }
@@ -258,13 +258,13 @@ function readOptionalString(
 }
 
 // ============================================================
-// 1. Inspection agent payout — flips agentPayoutStatus on
+// 1. Inspection agent payout - flips agentPayoutStatus on
 //    inspection_requests/{id}.
 //
 // In-tx side effect (W5): also shifts the handler's earnings counters
 // (pendingEarnings → paidEarnings) on their user doc. Handler is the
 // agent if agent-handled, else the landlord (self-handled). This is
-// the only money side-effect of the three rent/inspection CFs — the
+// the only money side-effect of the three rent/inspection CFs - the
 // rest are display docs.
 //
 // Post-commit side effect: writes a `payout_received` activity so
@@ -308,7 +308,7 @@ export const markInspectionAgentPayoutPaid = onCall(
         const landlordId = data.landlordId as string | undefined;
         const handlerId = agentId ?? landlordId ?? null;
 
-        // Earnings shift on handler's user doc — IN the transaction
+        // Earnings shift on handler's user doc - IN the transaction
         // so a failure rolls back the status flip too. This is money
         // state, not a display doc.
         if (handlerId !== null) {
@@ -318,7 +318,7 @@ export const markInspectionAgentPayoutPaid = onCall(
             paidEarnings: FieldValue.increment(amt),
           });
         } else {
-          // Should never happen — an inspection_request with no
+          // Should never happen - an inspection_request with no
           // agentId AND no landlordId is malformed. Log and proceed
           // with the status flip rather than crashing the admin
           // operation; the absence of a handler means no earnings
@@ -355,7 +355,7 @@ export const markInspectionAgentPayoutPaid = onCall(
       ...(input.paymentNote !== null && {paymentNote: input.paymentNote}),
     });
 
-    // Post-commit: write the activity + payment receipt. Best-effort —
+    // Post-commit: write the activity + payment receipt. Best-effort -
     // log on failure. Both are display-only docs and a failed write
     // should not undo the (already-real) money flip.
     if (sideEffect.handlerId !== null) {
@@ -384,7 +384,7 @@ export const markInspectionAgentPayoutPaid = onCall(
         });
       }
 
-      // Payment receipt — surfaces on the handler's Documents screen.
+      // Payment receipt - surfaces on the handler's Documents screen.
       // Deterministic ID + .create() so a duplicate trigger is a no-op.
       const receiptDocId = `PAYOUT_INSPECTION_${input.docId}`;
       try {
@@ -421,7 +421,7 @@ export const markInspectionAgentPayoutPaid = onCall(
 );
 
 // ============================================================
-// 2. Rent landlord payout — flips landlordPayoutStatus on
+// 2. Rent landlord payout - flips landlordPayoutStatus on
 //    active_rentals/{id}.
 //
 // Post-commit side effects (W5): writes a `rent_payout` activity and
@@ -517,7 +517,7 @@ export const markRentLandlordPayoutPaid = onCall(
 );
 
 // ============================================================
-// 3. Rent agent commission — flips agentPayoutStatus on
+// 3. Rent agent commission - flips agentPayoutStatus on
 //    active_rentals/{id}.
 //
 // Post-commit side effects (W5): writes a `rent_payout` activity and
@@ -553,8 +553,8 @@ export const markRentAgentCommissionPaid = onCall(
         }
         const data = snap.data()!;
         // G2/G3: gate the agent commission on the same finalized-agreement
-        // condition as the landlord payout — no money leaves until the deal is
-        // done and any dispute resolved — and on the rent having been collected.
+        // condition as the landlord payout - no money leaves until the deal is
+        // done and any dispute resolved - and on the rent having been collected.
         assertAgreementFinalized(data);
         assertRentPaid(data);
         guardStatusTransition(
@@ -570,7 +570,7 @@ export const markRentAgentCommissionPaid = onCall(
           agentPaidBy: adminUid,
           agentPaymentReference: input.paymentReference,
           agentPaymentNote: input.paymentNote,
-          // See the landlord branch — transient, cleared by the agent's answer.
+          // See the landlord branch - transient, cleared by the agent's answer.
           agentPayoutReceipt: "awaiting",
         });
 
@@ -612,7 +612,7 @@ export const markRentAgentCommissionPaid = onCall(
 );
 
 // ============================================================
-// 3b. Admin force-finalize a tenancy agreement — the escape hatch for the
+// 3b. Admin force-finalize a tenancy agreement - the escape hatch for the
 //     payout gate (G2/G3). When a deal was settled outside the in-app agreement
 //     flow (offline, tenant unresponsive, legacy doc), admin can deliberately
 //     mark the agreement finalized so the payout can proceed. Audit-logged;
@@ -637,7 +637,7 @@ export const adminForceFinalizeAgreement = onCall(
     if (typeof raw.reason !== "string" || raw.reason.trim().length === 0) {
       throw new HttpsError(
         "invalid-argument",
-        "reason is required — record why the agreement is being force-finalized.",
+        "reason is required - record why the agreement is being force-finalized.",
       );
     }
     const docId = raw.docId.trim();
@@ -683,7 +683,7 @@ export const adminForceFinalizeAgreement = onCall(
 );
 
 // ============================================================
-// 4. Refund — flips status on refunds/{id}.
+// 4. Refund - flips status on refunds/{id}.
 // ============================================================
 export const markRefundPaid = onCall(
   callableOptions,
@@ -741,7 +741,7 @@ export const markRefundPaid = onCall(
     });
 
     // Post-commit: notify the beneficiary + write a payment receipt so the
-    // payout lands in their Documents screen. Both best-effort — a failed
+    // payout lands in their Documents screen. Both best-effort - a failed
     // display write must not undo the (already-real) money mark. Mirrors the
     // three payout CFs above.
     if (sideEffect.beneficiaryId !== null) {
@@ -795,13 +795,13 @@ export const markRefundPaid = onCall(
 );
 
 // ============================================================
-// 4b. Paystack refund — clears refundRequired on payments/{reference}.
+// 4b. Paystack refund - clears refundRequired on payments/{reference}.
 //
 // A charge that must be given BACK to the payer is not the same animal as a
 // `refunds/{id}` doc. Those are inspection refunds: ClearRent owes a tenant
 // money and an admin sends it by bank transfer, which is why they carry a
 // beneficiaryBank. A duplicate CARD charge is reversed in the Paystack
-// dashboard, back to the card that paid — no bank details are involved and no
+// dashboard, back to the card that paid - no bank details are involved and no
 // transfer is made.
 //
 // So the flag lived on the payment (`refundRequired: true`) and NOTHING read
@@ -811,7 +811,7 @@ export const markRefundPaid = onCall(
 // Paystack refund was actually done, with the same immutable audit entry every
 // other money action gets.
 //
-// Deliberately does NOT move money — nothing here can. It marks what a human
+// Deliberately does NOT move money - nothing here can. It marks what a human
 // already did in Paystack.
 // ============================================================
 export const markPaymentRefunded = onCall(
@@ -868,7 +868,7 @@ export const markPaymentRefunded = onCall(
     });
 
     // Money given BACK is not money owed to a landlord. The rent_payment alert
-    // for this reference says "₦X is owed to the landlord" — leave it standing
+    // for this reference says "₦X is owed to the landlord" - leave it standing
     // and an admin working the payout queue can pay out against a charge that
     // was reversed. This is the one alert that must not wait for the hourly
     // hygiene sweep, so it is closed here, by its deterministic id.
@@ -909,7 +909,7 @@ export const markPaymentRefunded = onCall(
 //
 // NOTE on the activity doc's `landlordId` field: the activity service
 // queries by `landlordId` for the user's feed (see activity_service in
-// mobile), so all activities — even agent-targeted ones — set
+// mobile), so all activities - even agent-targeted ones - set
 // `landlordId` to the beneficiary's UID. This is a pre-existing quirk
 // of the activities schema; flagged for a future fix in a dedicated
 // activities refactor ticket. Mirroring the mobile behaviour here so
@@ -1032,7 +1032,7 @@ async function writeRentPayoutSideEffects(
 }
 
 // ============================================================
-// 5. Refund creation trigger — watches inspection_requests for
+// 5. Refund creation trigger - watches inspection_requests for
 //    paymentStatus transitioning to "refunded", creates a
 //    refunds/{requestId} doc with status: "pending".
 //
@@ -1074,7 +1074,7 @@ function deriveRefundReason(
       reason:
         (data.refundReason as string | undefined) ??
         (data.declineReason as string | undefined) ??
-        "Slot conflict — automatic full refund",
+        "Slot conflict - automatic full refund",
     };
   }
 
@@ -1089,7 +1089,7 @@ function deriveRefundReason(
     };
   }
 
-  // Final decline path — system or landlord declined after the window.
+  // Final decline path - system or landlord declined after the window.
   const declinedBy = data.declinedBy as string | undefined;
   if (declinedBy === "landlord") {
     return {
@@ -1108,7 +1108,7 @@ function deriveRefundReason(
     };
   }
 
-  // Reschedule decline path — neither cancelledBy nor declinedBy is set,
+  // Reschedule decline path - neither cancelledBy nor declinedBy is set,
   // but _processRefund still ran. The mobile path sets refundReason
   // explicitly in some cases.
   return {
@@ -1152,17 +1152,17 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
 
     // Refund amount policy. The ₦3,000 platform service charge (=
     // InspectionPricing.clearrentTake) is NON-REFUNDABLE once a booking is
-    // made — when an inspection falls through for reasons not attributable to
+    // made - when an inspection falls through for reasons not attributable to
     // the tenant, only the handler's ₦7,000 portion is returned. Two sources
     // get the FULL fee back:
-    //   • inspection_admin_review — the admin sets the exact refundAmount from
+    //   • inspection_admin_review - the admin sets the exact refundAmount from
     //     the review queue (honored via the override below).
-    //   • inspection_slot_conflict — ClearRent double-booked the handler, so it
+    //   • inspection_slot_conflict - ClearRent double-booked the handler, so it
     //     is our error and we do not keep our cut.
     // An explicit `refundAmount` override still wins when present, clamped to
     // (0, totalFee] so it can only ever REDUCE the refund, never inflate it.
-    // The non-refundable platform charge comes from config/pricing — the same
-    // document the tenant is charged from — so it can never drift from the
+    // The non-refundable platform charge comes from config/pricing - the same
+    // document the tenant is charged from - so it can never drift from the
     // booking fee. Was a hardcoded 3000 kept in sync by hand.
     const platformCharge = (await getPricing()).inspection.platform;
     const fullRefundSource =
@@ -1210,7 +1210,7 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
       });
     } catch (err) {
       // .create() throws ALREADY_EXISTS if the refund doc is already
-      // there — that means the trigger fired twice. Safe to ignore.
+      // there - that means the trigger fired twice. Safe to ignore.
       // The error code can be a numeric gRPC status (6) or a string
       // identifier ("already-exists") depending on the SDK layer.
       const code = (err as {code?: unknown})?.code;
@@ -1226,7 +1226,7 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
   },
 )
 // ============================================================
-// 6. Rental-interest loser refund trigger — watches rental_interests
+// 6. Rental-interest loser refund trigger - watches rental_interests
 //    for status transitioning to "accepted" (landlord picked a winner).
 //    Every OTHER payment_verified interest on the same property is a
 //    loser: the tenant paid in full and was locked in, but the
@@ -1237,7 +1237,7 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
 //    Refunds are MANUAL (no auto-Paystack): the flip surfaces the
 //    loser in the admin payments page exactly like any other rent
 //    refund. The refund must be returned to the originating account
-//    — enforced at admin verification/refund time, NOT here.
+//    - enforced at admin verification/refund time, NOT here.
 //
 //    Idempotency: re-firing on an already-accepted doc re-runs the
 //    sibling query, but losers already flipped to lost_to_other no
@@ -1251,7 +1251,7 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
  * This used to be a client call made only by the Flutter landlord screen
  * (active_rental_service.dart createActiveRental). Web never had it, so a
  * landlord who accepted from the browser left the tenant with an accepted
- * interest and NO rental — nothing to attach an agreement to, and therefore no
+ * interest and NO rental - nothing to attach an agreement to, and therefore no
  * way to pay rent. Doing it here makes it origin-agnostic and removes the
  * app's accept-then-create race, where a failed second step stranded a tenant.
  *
@@ -1289,7 +1289,7 @@ async function createRentalForAcceptedInterest(
       cautionDepositRefundable = p.cautionDepositRefundable !== false;
     }
   } catch (err) {
-    logger.error("Caution-deposit snapshot failed — defaulting to 0", {
+    logger.error("Caution-deposit snapshot failed - defaulting to 0", {
       interestId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -1314,7 +1314,7 @@ async function createRentalForAcceptedInterest(
   // uniquely-named object (`agreement_{millis}`), so a landlord replacing the
   // property's copy later cannot alter the document THIS tenant reviewed.
   //
-  // Skipped when the rent has moved on since the agreement was written —
+  // Skipped when the rent has moved on since the agreement was written -
   // binding a tenant to a document showing the old price is worse than asking
   // the landlord to upload a current one.
   let agreementPath = "";
@@ -1330,7 +1330,7 @@ async function createRentalForAcceptedInterest(
     const rentAtUpload = Number(a?.rentAtUpload ?? 0);
     if (storedPath) {
       if (rentAtUpload > 0 && rentAmount > 0 && rentAtUpload !== rentAmount) {
-        logger.info("Property agreement stale for this rent — not attached", {
+        logger.info("Property agreement stale for this rent - not attached", {
           interestId, rentAtUpload, rentAmount,
         });
       } else {
@@ -1338,7 +1338,7 @@ async function createRentalForAcceptedInterest(
       }
     }
   } catch (err) {
-    // Never block the tenancy on this — the landlord can still upload manually.
+    // Never block the tenancy on this - the landlord can still upload manually.
     logger.error("Property agreement lookup failed", {
       interestId,
       error: err instanceof Error ? err.message : String(err),
@@ -1449,7 +1449,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
     const propertyTitle =
       (after.propertyTitle as string | undefined) ?? "the property";
 
-    // Tell the WINNING tenant they got the place — otherwise acceptance is a
+    // Tell the WINNING tenant they got the place - otherwise acceptance is a
     // silent surprise (only the losing applicants were ever notified). Fires
     // before the propertyId guard so the winner is told regardless.
     const winnerTenantId = after.tenantId as string | undefined;
@@ -1481,7 +1481,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
     const db = getFirestore();
 
     // The tenancy record itself. Wrapped so a failure here still leaves the
-    // losing applicants to be closed out below — and logged loudly, because
+    // losing applicants to be closed out below - and logged loudly, because
     // without a rental the accepted tenant cannot be sent an agreement and
     // cannot pay, which is exactly the dead end this trigger exists to end.
     try {
@@ -1496,7 +1496,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
     // ── Pay-after-accept: close the UNPAID applicants ──
     // Under the current flow only the accepted tenant ever pays, so every other
     // applicant is sitting at "pending_acceptance" having paid nothing. There is
-    // no refund to issue — just mark them "not_selected" and tell them they were
+    // no refund to issue - just mark them "not_selected" and tell them they were
     // not charged. Idempotent: a re-fire re-runs the query, but already-closed
     // siblings no longer match "pending_acceptance", so the second pass no-ops.
     const unpaidSnap = await db
@@ -1528,7 +1528,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
         continue;
       }
 
-      // Push notification — deterministic key so a re-fire is a no-op.
+      // Push notification - deterministic key so a re-fire is a no-op.
       await writeNotificationOnce(
         `interest_${doc.id}_notSelected_${tenantId}`,
         {
@@ -1542,7 +1542,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
         },
       );
 
-      // Activity feed entry (feed queries by landlordId — set to the
+      // Activity feed entry (feed queries by landlordId - set to the
       // recipient regardless of role; same schema quirk documented elsewhere).
       try {
         await db.collection("activities").add({
@@ -1597,7 +1597,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
       const tenantId = loser.tenantId as string | undefined;
 
       const reason =
-        "Property was rented to another applicant — " +
+        "Property was rented to another applicant - " +
         "your payment is being refunded in full.";
 
       try {
@@ -1670,7 +1670,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
         });
       }
 
-      // Push notification — deterministic key so a re-fire is a no-op.
+      // Push notification - deterministic key so a re-fire is a no-op.
       await writeNotificationOnce(
         `interest_${doc.id}_lostToOther_${tenantId}`,
         {
@@ -1690,7 +1690,7 @@ export const onRentalInterestAccepted = onDocumentUpdated(
 
       // Activity feed entry. Mirrors the slot-conflict activity write:
       // the feed queries by `landlordId`, so set it to the recipient
-      // (the losing tenant) regardless of role — same pre-existing
+      // (the losing tenant) regardless of role - same pre-existing
       // schema quirk documented in writeRentPayoutSideEffects.
       try {
         await db.collection("activities").add({

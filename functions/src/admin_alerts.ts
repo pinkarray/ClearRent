@@ -35,7 +35,7 @@ export interface AdminAlert {
 }
 
 /**
- * Strip undefined fields — Firestore rejects `undefined` values, and callers
+ * Strip undefined fields - Firestore rejects `undefined` values, and callers
  * pass optional fields (targetCollection, actors, meta) that may be absent.
  * @param {Record<string, unknown>} obj Object to clean.
  * @return {Record<string, unknown>} Same object without undefined keys.
@@ -116,7 +116,7 @@ export async function writeAdminAlertOnce(
  * inspection lifecycle, where one alert per inspection walks through
  * requested → paid → approved/declined rather than spawning a new alert (and
  * feed row) at every step. Re-opens the alert if a fresh transition arrives
- * after it was dismissed — a new state is new information.
+ * after it was dismissed - a new state is new information.
  *
  * @param {string} alertId Stable id (e.g. "insplc_<requestId>").
  * @param {AdminAlert} alert The latest state of the alert.
@@ -142,7 +142,7 @@ export async function upsertAdminAlert(
 }
 
 /**
- * Close every still-open alert pointing at a given target doc — called when an
+ * Close every still-open alert pointing at a given target doc - called when an
  * admin resolves the underlying case (e.g. an inspection dispute) so the
  * dashboard queue doesn't keep showing it.
  *
@@ -151,7 +151,7 @@ export async function upsertAdminAlert(
  * settles their sign-up and verification notices, but must NOT quietly close
  * the identity-change warning sitting on the same uid.
  *
- * The type filter is applied in memory — a third equality clause would be free
+ * The type filter is applied in memory - a third equality clause would be free
  * in Firestore, but this keeps the query identical for both callers.
  *
  * @param {string} targetId The alerts' targetId (e.g. the inspection id).

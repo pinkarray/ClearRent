@@ -63,7 +63,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   late final TenancyLinkService _tenancyLinkService;
 
   // Cached once (widget.property is immutable) so the screen's frequent
-  // setState()s — image carousel, video position, save toggle — don't recreate
+  // setState()s - image carousel, video position, save toggle - don't recreate
   // the tenant-management streams and flash that section.
   late final Stream<QuerySnapshot> _activeRentalsForPropertyStream;
   late final Stream<List<TenancyLinkModel>> _propertyTenantsStream;
@@ -73,7 +73,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   BuildingModel? _building;
   String? get _buildingDocStatus => _building?.ownershipDocStatus;
 
-  /// "Room 2 · 1st floor · in a duplex" — what this unit is and what it sits
+  /// "Room 2 · 1st floor · in a duplex" - what this unit is and what it sits
   /// in. Empty for a standalone listing, and degrades cleanly while the
   /// building loads or if it carries no structure.
   ///
@@ -88,11 +88,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     if (unit.isNotEmpty) parts.add(unit);
     final b = _building;
     if (b != null) {
-      // On a compound the SITE structure says only "in a compound" — the
+      // On a compound the SITE structure says only "in a compound" - the
       // building the tenant is actually renting in is on the unit, because one
       // C of O can cover a duplex and a bungalow side by side.
       // `unitDescriptor` has ALREADY said "in a storey building" whenever the
-      // unit carries its own structure — and on every non-compound site that
+      // unit carries its own structure - and on every non-compound site that
       // value is copied straight from the site, so naming it again here
       // printed the same phrase twice. Only add what the unit line lacks:
       // the building NAME for an entitled viewer, and the site structure
@@ -134,7 +134,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   bool _isCheckingRequest = true;
   /// This tenant's own inspection on THIS property, live. Null when they have
   /// never inspected it, or when the only ones are cancelled/declined/refunded
-  /// — in which case requesting a fresh inspection is legitimate.
+  /// - in which case requesting a fresh inspection is legitimate.
   InspectionRequest? _myInspection;
   StreamSubscription<List<InspectionRequest>>? _inspectionSub;
   // Address gate: false = approximate (LGA/city/state), true = exact street.
@@ -199,7 +199,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   /// Resolve whether this property currently has a sitting tenant (drives
-  /// whether "Request Rent Change" is offered — occupied only). Only the
+  /// whether "Request Rent Change" is offered - occupied only). Only the
   /// owner sees that menu item, and propertyHasSittingTenant runs an
   /// owner-scoped query, so skip it entirely for non-owner viewers.
   Future<void> _loadOccupancy() async {
@@ -397,7 +397,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   /// the double-charge path stayed open.
   static const _outcomeStatuses = {InspectionStatus.completed};
 
-  /// Booked but not yet visited — no outcome to show, but equally not a reason
+  /// Booked but not yet visited - no outcome to show, but equally not a reason
   /// to book (and pay for) a second visit. `approved` lives here rather than
   /// with the outcome statuses because it means "approved, scheduled": there is
   /// nothing to report until the inspection actually happens.
@@ -429,7 +429,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
       // The address gate is derived from this same stream rather than read
       // once on mount. A tenant sitting on this screen while the handler
-      // approves their request — which is exactly when they are watching it —
+      // approves their request - which is exactly when they are watching it -
       // saw nothing change until they left and came back.
       //
       // Keyed on PAID, not approved. `confirmInspectionPayment` writes the
@@ -465,7 +465,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   /// Opens what the tenant already has, rather than selling them another one.
   ///
   /// A completed or approved inspection goes to the outcome screen, where the
-  /// rent decision lives — the point being that the tenant sees what the visit
+  /// rent decision lives - the point being that the tenant sees what the visit
   /// found before committing any further money. Anything still in flight has no
   /// outcome to show, so it goes to the inspections list.
   void _openMyInspection(InspectionRequest request) {
@@ -482,7 +482,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   /// The owner always sees their own address; a tenant earns it by having an
   /// approved inspection. The tenant half now rides the inspection stream in
-  /// [_subscribeMyInspection] — this only covers the owner, whose entitlement
+  /// [_subscribeMyInspection] - this only covers the owner, whose entitlement
   /// cannot change while they look at the screen.
   ///
   /// Compares uids directly rather than reading `_isOwner`, which is assigned
@@ -825,7 +825,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       return;
     }
 
-    // Block if ownership doc was rejected — landlord must re-submit.
+    // Block if ownership doc was rejected - landlord must re-submit.
     // For a grouped unit this resolves to the building's shared doc status.
     final docStatus = _effectiveDocStatus;
     if (docStatus == 'rejected') {
@@ -838,10 +838,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       return;
     }
 
-    // ALLOWLIST — never a denylist. Only an admin-VERIFIED ownership document
+    // ALLOWLIST - never a denylist. Only an admin-VERIFIED ownership document
     // opens booking, which is the promise the platform is sold on. As a
     // denylist ('rejected'/'none' only), 'inherited', 'not_uploaded' and
-    // 'pending' all fell straight through to booking — exactly the trap
+    // 'pending' all fell straight through to booking - exactly the trap
     // documented on PropertyModel.ownershipDocStatus.
     if (docStatus != 'verified') {
       _showDocBlockedDialog(
@@ -920,7 +920,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Future<void> _toggleAvailability() async {
     final newStatus = !widget.property.isAvailable;
 
-    // Can't put an occupied unit back on the market — a sitting or linked
+    // Can't put an occupied unit back on the market - a sitting or linked
     // tenant means the unit is taken. Only guards the → available direction;
     // marking occupied is always allowed. Mirrors the delete guard below.
     if (newStatus &&
@@ -975,7 +975,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   Future<void> _deleteProperty() async {
-    // Can't delete a property with a sitting/linked tenant — it would strand
+    // Can't delete a property with a sitting/linked tenant - it would strand
     // their dashboard with an orphaned rental/link.
     if (await _propertyService.propertyHasSittingTenant(widget.property.id)) {
       if (!mounted) return;
@@ -1111,7 +1111,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           Text(property.title, style: AppTextStyles.h3),
 
-                          // What this unit is and what it sits in — "Room 2 ·
+                          // What this unit is and what it sits in - "Room 2 ·
                           // 1st floor · in Ade's Compound (Duplex)". Only for a
                           // grouped unit; a standalone listing is its own
                           // building and the line would be noise.
@@ -1164,7 +1164,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           // Exact pin. The real gate is server-side: the
                           // coordinates live in a subdoc only the owner, the
                           // assigned agent, an admin, or a tenant with a reveal
-                          // grant can read — and that grant is written when the
+                          // grant can read - and that grant is written when the
                           // inspection is PAID, not when it is approved. So an
                           // approved-but-unpaid tenant gets null coordinates
                           // here and must be told why, rather than being told
@@ -1225,7 +1225,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                                 !_isCurrentUserVerified)
                               const SizedBox(height: 24),
 
-                            // Ownership doc status banner — shown when doc is not verified
+                            // Ownership doc status banner - shown when doc is not verified
                             if (_effectiveDocStatus != 'verified')
                               _buildDocStatusBanner(property),
 
@@ -1244,7 +1244,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                             _buildFeeBreakdown(property),
                             const SizedBox(height: 24),
 
-                            // Occupancy info card — visible to tenants
+                            // Occupancy info card - visible to tenants
                             _buildOccupancyInfoCard(property),
                             const SizedBox(height: 24),
                           ],
@@ -1773,7 +1773,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 ],
               ),
             ),
-            // Occupied units only — a vacant unit's rent is edited directly on
+            // Occupied units only - a vacant unit's rent is edited directly on
             // Edit Property (no admin review needed without a sitting tenant).
             if (_hasSittingTenant)
               const PopupMenuItem(
@@ -1812,7 +1812,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          // Theme-adaptive to match the back button — a hardcoded white
+          // Theme-adaptive to match the back button - a hardcoded white
           // container made the white dark-mode icon invisible.
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(10),
@@ -2167,7 +2167,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   Widget _buildTenantManagementSection(PropertyModel property) {
     // Outer stream: active rentals for this property (inspection → payment path).
-    // landlordId-scoped for the ownership-constrained list rule — this is the
+    // landlordId-scoped for the ownership-constrained list rule - this is the
     // owner's tenant-management view, so property.landlordId == the caller's uid.
     return StreamBuilder<QuerySnapshot>(
       stream: _activeRentalsForPropertyStream,
@@ -2191,7 +2191,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           stream: _propertyTenantsStream,
           builder: (context, snapshot) {
             // Surface, don't swallow. A stream error here (e.g. a rules/query
-            // regression) previously rendered as "0 tenants" — making the
+            // regression) previously rendered as "0 tenants" - making the
             // failure invisible. Log it and show an inline banner so occupancy
             // never silently understates reality.
             if (snapshot.hasError) {
@@ -2225,7 +2225,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Degraded-state banner — either tenant source failed to
+                  // Degraded-state banner - either tenant source failed to
                   // load, so the occupancy figures below may be incomplete.
                   if (snapshot.hasError || rentalSnapshot.hasError) ...[
                     _buildTenantsErrorBanner(),
@@ -2246,7 +2246,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Active rental tenants (read-only — managed by rental flow)
+                  // Active rental tenants (read-only - managed by rental flow)
                   if (rentalDocs.isNotEmpty) ...[
                     Text(
                       'Active Rental${rentalDocs.length > 1 ? 's' : ''}',
@@ -3156,7 +3156,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Widget _buildActionButtons() {
     return Container(
       // Placed as Scaffold.bottomSheet, which does NOT apply the system nav
-      // inset — so pad the bottom by the raw window inset (viewPadding, which
+      // inset - so pad the bottom by the raw window inset (viewPadding, which
       // an ancestor can't zero out) to keep the buttons above the gesture/nav
       // bar. SafeArea(bottom: false) since we handle the bottom explicitly.
       padding: EdgeInsets.fromLTRB(
@@ -3192,7 +3192,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // Request Inspection button — hidden if tenant already lives here
+            // Request Inspection button - hidden if tenant already lives here
             Expanded(
               flex: 2,
               child: _isLinkedToThisProperty
@@ -3242,7 +3242,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                       // An inspection the tenant already has on THIS property
                       // takes over the button. Previously it stayed
                       // "Request Inspection" once the visit was completed,
-                      // which invited a second — and separately charged —
+                      // which invited a second - and separately charged -
                       // inspection on a place they had already seen.
                       final existing = _myInspection;
                       final hasOutcome = existing != null &&
@@ -3313,7 +3313,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Widget _buildOccupancyInfoCard(PropertyModel property) {
     // Tenant-facing card. Uses the stored currentTenantsCount, which is
     // recomputed server-side (Cloud Function) from both active_rentals and
-    // tenancy_links — so it's authoritative and covers landlord-linked
+    // tenancy_links - so it's authoritative and covers landlord-linked
     // tenants. A browsing tenant no longer lists active_rentals directly
     // (the list rule is now owner-scoped), and never read tenancy_links.
     final storedCount = property.currentTenantsCount ?? 0;
@@ -3321,10 +3321,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   }
 
   Widget _buildOccupancyCard(PropertyModel property, int currentCount) {
-    // Collect info rows — only show fields that have meaningful data
+    // Collect info rows - only show fields that have meaningful data
     final rows = <_OccupancyRow>[];
 
-    // Availability — single-unit listing, so no multi-tenant capacity framing.
+    // Availability - single-unit listing, so no multi-tenant capacity framing.
     rows.add(_OccupancyRow(
       icon: Icons.chair_outlined,
       label: 'Availability',
@@ -3448,7 +3448,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
-  /// One facility. A listing written before this field existed carries null —
+  /// One facility. A listing written before this field existed carries null -
   /// shown as "Not stated" rather than guessed either way, since guessing
   /// "private" would overclaim and "shared" would undersell.
   Widget _facilityItem({
@@ -3478,7 +3478,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   Widget _buildFeaturesRow(PropertyModel property) {
     // A single space is specified by what the tenant gets EXCLUSIVELY, not by
-    // room counts — "1 Bedroom / 1 Bathroom / 1 Toilet" described a shared room
+    // room counts - "1 Bedroom / 1 Bathroom / 1 Toilet" described a shared room
     // and a self-contained flat identically.
     if (property.isSingleSpaceListing) return _buildFacilitiesRow(property);
 
@@ -3546,7 +3546,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ],
             ),
           ],
-          // A multi-room unit can share facilities too — a flat in a compound
+          // A multi-room unit can share facilities too - a flat in a compound
           // whose toilet is outside. The counts above say how many exist, not
           // who else uses them, so without this the listing reads as fully
           // self-contained.
@@ -3568,7 +3568,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ],
             ),
           ],
-          // Ceiling row — a property can mix ceiling types, so list them all.
+          // Ceiling row - a property can mix ceiling types, so list them all.
           if (_visibleCeilingTypes(property).isNotEmpty) ...[
             const SizedBox(height: 16),
             Row(
@@ -3592,7 +3592,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     );
   }
 
-  /// Ceiling types worth showing a tenant — "none" is the absence of a ceiling,
+  /// Ceiling types worth showing a tenant - "none" is the absence of a ceiling,
   /// so it isn't a feature to advertise.
   List<String> _visibleCeilingTypes(PropertyModel property) =>
       property.ceilingTypes.where((t) => t.isNotEmpty && t != 'none').toList();
@@ -3617,7 +3617,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
   }
 
-  /// Whether this listing has a video at all — known before the player is ready.
+  /// Whether this listing has a video at all - known before the player is ready.
   bool get _hasVideo {
     final url = widget.property.videoUrl;
     return url != null && url.isNotEmpty;
@@ -3629,7 +3629,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     return GestureDetector(
       onTap: _videoInitialized ? _openFullscreenVideo : null,
       child: Container(
-        // Was fromLTRB(20, 0, 20, 0) — flush against the carousel above and the
+        // Was fromLTRB(20, 0, 20, 0) - flush against the carousel above and the
         // details below, which is what made it read as dropped in rather than
         // placed.
         margin: const EdgeInsets.fromLTRB(20, 20, 20, 4),
@@ -4765,7 +4765,7 @@ class _LinkTenantSheetState extends State<_LinkTenantSheet> {
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// RENT CONFIG SHEET — landlord sets rent due day before sending link request
+// RENT CONFIG SHEET - landlord sets rent due day before sending link request
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RentConfigSheet extends StatefulWidget {
@@ -4777,12 +4777,12 @@ class _RentConfigSheet extends StatefulWidget {
 }
 
 class _RentConfigSheetState extends State<_RentConfigSheet> {
-  // Yearly only at launch (monthly is v2). Fixed — there is no UI to change it.
+  // Yearly only at launch (monthly is v2). Fixed - there is no UI to change it.
   final String _frequency = 'yearly';
   int _selectedDay = 1;
   // for yearly: month 1-12
   int _selectedMonth = 1;
-  // Lease term is DERIVED from the rent due date — one source of truth, so the
+  // Lease term is DERIVED from the rent due date - one source of truth, so the
   // landlord can't enter a lease date that contradicts when rent is due. The
   // current period began on the most recent past occurrence of the due
   // month/day and runs one year (Lagos yearly advance-rent cap).
@@ -4814,7 +4814,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
   @override
   void initState() {
     super.initState();
-    // Yearly only at launch — monthly is v2 (mirrors add-property; the lease
+    // Yearly only at launch - monthly is v2 (mirrors add-property; the lease
     // lifecycle relies on the Lagos one-year advance-rent cap). _frequency
     // stays 'yearly' regardless of the property's stored value.
   }
@@ -4879,7 +4879,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
             ),
             const SizedBox(height: 20),
 
-            // ── Rent frequency — yearly only at launch (monthly is v2; the
+            // ── Rent frequency - yearly only at launch (monthly is v2; the
             // lease lifecycle relies on the Lagos one-year advance-rent cap).
             // Mirrors the add-property screen. ──
             Text('Rent Frequency', style: AppTextStyles.labelMedium),
@@ -4907,7 +4907,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
             ),
             const SizedBox(height: 20),
 
-            // ── Due date — yearly: pick the month + day rent is due ──
+            // ── Due date - yearly: pick the month + day rent is due ──
               Text('Which month is rent due each year?', style: AppTextStyles.labelMedium),
               const SizedBox(height: 12),
               Wrap(
@@ -4939,7 +4939,7 @@ class _RentConfigSheetState extends State<_RentConfigSheet> {
                 }),
               ),
               const SizedBox(height: 20),
-              // Yearly — also pick the day within that month
+              // Yearly - also pick the day within that month
               Text('Which day of ${_months[_selectedMonth - 1]} is rent due?', style: AppTextStyles.labelMedium),
               const SizedBox(height: 12),
               Wrap(

@@ -21,25 +21,25 @@ class TenancyLinkModel {
   /// Day of month rent is due (1–31)
   final int rentDueDay;
 
-  /// Rent amount in Naira — captured at link time as baseline
+  /// Rent amount in Naira - captured at link time as baseline
   final double rentAmount;
 
-  /// Rent frequency — 'yearly' | 'monthly'
+  /// Rent frequency - 'yearly' | 'monthly'
   final String rentFrequency;
 
   /// Month rent is due each year (1–12). Only relevant when rentFrequency == 'yearly'.
   final int rentDueMonth;
 
-  /// Lease term start — landlord picks this explicitly at link time.
+  /// Lease term start - landlord picks this explicitly at link time.
   /// Null on legacy links created before lease terms existed (treated as
-  /// "no term / never expires" — they never enter grace_locked).
+  /// "no term / never expires" - they never enter grace_locked).
   final DateTime? leaseStartDate;
 
   /// Lease term end. For yearly tenancies this is leaseStartDate + 1 year
   /// (computed at link time, stored explicitly so the scheduled lifecycle CF
   /// can query it directly). Null = legacy link, never expires.
   /// NOTE: monthly tenancies (post-launch) will need a duration picker and a
-  /// different advance-rent cap — not handled here.
+  /// different advance-rent cap - not handled here.
   final DateTime? leaseEndDate;
 
   /// Optional lease-agreement document URL, uploaded by landlord at link time.

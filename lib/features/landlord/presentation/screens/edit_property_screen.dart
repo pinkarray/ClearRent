@@ -63,7 +63,7 @@ class EditPropertyScreen extends StatefulWidget {
   /// A section to scroll to on open, e.g. 'caretaker'.
   ///
   /// This screen is long, and the publish-success dialog sends the landlord
-  /// here specifically to appoint a caretaker — dropping them at the top with
+  /// here specifically to appoint a caretaker - dropping them at the top with
   /// no indication the section exists several screens down made the button
   /// look like it had done nothing.
   final String? focusSection;
@@ -109,7 +109,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late final TextEditingController _addressController;
   late final TextEditingController _cityController;
   late final TextEditingController _stateController;
-  // Unit identity within a building — grouped listings only.
+  // Unit identity within a building - grouped listings only.
   late final TextEditingController _unitLabelController;
   late String _floor;
   // Units inside a building only: what the tenant gets exclusively. A listing
@@ -135,12 +135,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   late String _inspectionHandler;
   late bool _includeAgentFee; // Agent fee is optional
   // Whether the deposit comes back at move-out. Locked while a tenant is
-  // sitting, same as the amount — the promise can't change mid-tenancy.
+  // sitting, same as the amount - the promise can't change mid-tenancy.
   late bool _cautionDepositRefundable;
   final List<String> _ceilingTypes = [];
 
   // Caretaker. Read-only here on purpose: `caretakerId` is admin-SDK-only, so
-  // the screen never writes it — it invites (a callable) and revokes (a
+  // the screen never writes it - it invites (a callable) and revokes (a
   // callable), and re-reads what came back.
   String? _caretakerId;
   String? _caretakerName;
@@ -149,7 +149,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   /// An invite that has been SENT but not yet answered. `caretakerId` only
   /// lands on the property when the invitee accepts, so without this the
   /// section keeps offering "Invite a caretaker" after one is already in
-  /// flight — and the second attempt is rejected with "you already have a
+  /// flight - and the second attempt is rejected with "you already have a
   /// caretaker invite waiting", which reads like a bug rather than the truth.
   CaretakerInvite? _pendingInvite;
   StreamSubscription<List<CaretakerInvite>>? _caretakerInvitesSub;
@@ -264,7 +264,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _rentController = TextEditingController(text: _formatRentForInput(p.rent));
     _agentFeeController = TextEditingController(text: _formatRentForInput(p.agentFee));
     _cautionDepositController = TextEditingController(text: _formatRentForInput(p.cautionDeposit));
-    // Exact street address lives in the gated subdoc — loaded in
+    // Exact street address lives in the gated subdoc - loaded in
     // _loadFreshPropertyData(). Start empty to avoid showing a stale value.
     _addressController = TextEditingController(text: p.address);
     _cityController = TextEditingController(text: p.city);
@@ -341,7 +341,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       final loc = await _propertyService.getExactLocation(widget.property.id);
       if (mounted && loc != null && loc.address.isNotEmpty) {
         _addressController.text = loc.address;
-        // Loading the stored value isn't a user edit — don't flag unsaved.
+        // Loading the stored value isn't a user edit - don't flag unsaved.
         setState(() => _hasChanges = false);
       }
     } catch (e) {
@@ -607,7 +607,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     }
     // An admin approved a specific FILE as a specific type. Relabelling it
     // without uploading the matching document would make the record lie about
-    // what was actually reviewed, so firestore.rules rejects that write —
+    // what was actually reviewed, so firestore.rules rejects that write -
     // catch it here and say why, instead of letting the save fail silently and
     // snap back to the old label.
     if (_ownershipDocType != widget.property.ownershipDocType &&
@@ -627,13 +627,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   /// This listing is a unit inside a building. The building holds the single
   /// ownership document an admin reviews; the unit owns none of its own. A
   /// per-unit doc type could only ever agree with the building's redundantly or
-  /// contradict it misleadingly — which is exactly what happened in production —
+  /// contradict it misleadingly - which is exactly what happened in production -
   /// so the whole doc section is hidden and never written for a grouped unit.
   bool get _isGrouped => widget.property.buildingId != null;
 
   /// The admin has already reviewed and approved the document on file. Grouped
   /// units inherit their building's status, so this only governs standalone
-  /// listings — the same scope the save path uses.
+  /// listings - the same scope the save path uses.
   bool get _isDocApproved =>
       widget.property.ownershipDocStatus == 'verified' && !_isGrouped;
 
@@ -681,7 +681,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         setState(() => _isUploadingDoc = true);
         String? path;
         try {
-          // Private Storage (not Cloudinary) — C of O is sensitive PII.
+          // Private Storage (not Cloudinary) - C of O is sensitive PII.
           path =
               await _propertyService.uploadOwnershipDoc(_newOwnershipDocFile!);
         } catch (e) {
@@ -690,7 +690,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         if (mounted) setState(() => _isUploadingDoc = false);
         // A failed upload must STOP the save.
         //
-        // This used to fall through on null — keeping the OLD url (often none
+        // This used to fall through on null - keeping the OLD url (often none
         // at all) while the update below still stamped ownershipDocStatus
         // 'pending'. The landlord was told the listing saved, went back, and
         // found the document simply absent, with the listing queued for a
@@ -726,11 +726,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'address': _addressController.text.trim(),
         'city': _cityController.text.trim(),
         'state': _stateController.text.trim(),
-        // Unit identity — description only, and meaningless on a standalone
+        // Unit identity - description only, and meaningless on a standalone
         // listing, so it's written only for a grouped unit.
         if (_isGrouped) 'unitLabel': _unitLabelController.text.trim(),
         if (_isGrouped) 'floor': _floor,
-        // Only a unit inside a building carries these — a whole-property
+        // Only a unit inside a building carries these - a whole-property
         // letting has nobody to share with.
         if (_sharingApplies) 'bathroomAccess': _bathroomAccess,
         if (_sharingApplies) 'toiletAccess': _toiletAccess,
@@ -750,14 +750,14 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         'inspectionHandler': _inspectionHandler,
         'inspectionDays': _availableDays,
         'inspectionTimeSlots': _availableTimeSlots,
-        // A grouped unit owns no document — the building's is the reviewed
+        // A grouped unit owns no document - the building's is the reviewed
         // artifact, and firestore.rules now rejects any doc field on a unit.
         if (!_isGrouped && finalDocUrl != null) 'ownershipDocUrl': finalDocUrl,
         if (!_isGrouped && _ownershipDocType != null)
           'ownershipDocType': _ownershipDocType,
       };
 
-      // A changed ownership doc must go back through admin review — never keep
+      // A changed ownership doc must go back through admin review - never keep
       // the old 'verified' status over a document the admin didn't approve.
       // This covers RE-LABELLING too, not just re-uploading: admin approves a
       // file as 'c_of_o' and the owner silently switches it to 'other'/'deed',
@@ -791,7 +791,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
       // Guard: don't strand a tenant mid-inspection. If the agent currently
       // handling this property is being removed or swapped out while they have
-      // a pending or scheduled inspection here, block the change — mirrors the
+      // a pending or scheduled inspection here, block the change - mirrors the
       // agent's own self-unassign guard (agentHasActiveInspectionOnProperty).
       // Query by propertyId only and filter in code, to avoid a composite index.
       final currentAgentId = widget.property.assignedAgentId;
@@ -1265,7 +1265,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Property Type — what the tenant gets. What the whole building is
+        // Property Type - what the tenant gets. What the whole building is
         // lives on the building's `structure`.
         Text(
           _isGrouped ? 'What is this unit?' : 'Property Type',
@@ -1284,7 +1284,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Unit identity — only for a grouped unit. Which BUILDING it belongs to
+        // Unit identity - only for a grouped unit. Which BUILDING it belongs to
         // is fixed at creation (firestore.rules pins buildingId), but what the
         // landlord calls the unit and which floor it's on are just description.
         if (_isGrouped) ...[
@@ -1308,7 +1308,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           const SizedBox(height: 16),
         ],
 
-        // Counts and sharing are independent — see add-property. Counts are a
+        // Counts and sharing are independent - see add-property. Counts are a
         // real question for anything but a single space; sharing is a real
         // question for any unit inside a building, whatever its type.
         if (_showCounters) ...[
@@ -1412,12 +1412,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
-  /// Governs the COUNTERS only — a single space has nothing to count. Sharing
+  /// Governs the COUNTERS only - a single space has nothing to count. Sharing
   /// is deliberately NOT keyed off this: see [_sharingApplies].
   bool get _isSingleSpace => PropertyModel.isSingleSpace(_propertyType);
 
   /// Sharing is a fact about the arrangement, not the type. Only a unit inside
-  /// a building has anyone to share with, and then every type can — a self
+  /// a building has anyone to share with, and then every type can - a self
   /// contain in a face-me-I-face-you bungalow still shares the toilet.
   ///
   /// Unlike add-property there is no "does it share anything?" toggle here:
@@ -1481,7 +1481,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   Widget _buildFloorChip(String label, String value) {
     final isSelected = _floor == value;
-    // Tapping the selected floor clears it — the field is optional.
+    // Tapping the selected floor clears it - the field is optional.
     return _buildFloorChipStyle(label, isSelected, () {
       setState(() {
         _floor = isSelected ? '' : value;
@@ -1496,7 +1496,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       onTap: () {
         setState(() {
           _propertyType = value;
-          // Keep the counts consistent with the type — switching a 3-bedroom
+          // Keep the counts consistent with the type - switching a 3-bedroom
           // flat to Room otherwise leaves bedrooms at 3.
           if (PropertyModel.isSingleSpace(value)) {
             _bedrooms = 1;
@@ -1585,7 +1585,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           textCapitalization: TextCapitalization.words,
         ),
         const SizedBox(height: 8),
-        // Address note — changing it updates the map pin for tenants
+        // Address note - changing it updates the map pin for tenants
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
@@ -1669,7 +1669,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         const SizedBox(height: 8),
 
         if (hasActiveTenants) ...[
-          // Locked rent display — active tenants present
+          // Locked rent display - active tenants present
           _buildLockedAmountDisplay('₦${_rentController.text}', _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month'),
           const SizedBox(height: 8),
           Container(
@@ -1691,14 +1691,14 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             ]),
           ),
         ] else ...[
-          // Editable rent field — no active tenants
+          // Editable rent field - no active tenants
           _buildNairaInput(controller: _rentController),
         ],
         const SizedBox(height: 16),
 
         Text('Rent Period', style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
-        // Frequency is no longer switchable — yearly only at launch (monthly is
+        // Frequency is no longer switchable - yearly only at launch (monthly is
         // v2). Existing monthly properties keep their stored value (shown as-is,
         // not rewritten); new ones are always yearly.
         Container(
@@ -2074,7 +2074,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 ),
               ),
               // A third handler, offered ONLY once a caretaker has actually
-              // accepted. Priced and paid exactly as self-handled — the fee is
+              // accepted. Priced and paid exactly as self-handled - the fee is
               // flat and the handler share still settles to the landlord,
               // because no inspection request carries an agentId unless an
               // agent handles it. It only changes who is asked to open up.
@@ -2297,7 +2297,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                       Text(_pendingInvite!.caretakerName,
                           style: AppTextStyles.labelMedium),
                       Text(
-                        'Invited — waiting for them to accept',
+                        'Invited - waiting for them to accept',
                         style: AppTextStyles.caption
                             .copyWith(color: AppColors.textSecondary),
                       ),
@@ -2375,7 +2375,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   /// Withdraw an invitation that hasn't been answered yet. Same callable as
-  /// removing a sitting caretaker — a pending invite and an accepted one are
+  /// removing a sitting caretaker - a pending invite and an accepted one are
   /// the same arrangement at different stages.
   Future<void> _withdrawInvite() async {
     final invite = _pendingInvite;
@@ -2461,7 +2461,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   /// Owned by the State, not by the sheet. Disposing it the moment the
   /// sheet's future completed tore it down while the exit animation was still
   /// rebuilding the sheet's children, so the TextFormField inside touched a
-  /// disposed controller — "A TextEditingController was used after being
+  /// disposed controller - "A TextEditingController was used after being
   /// disposed", followed by the _dependents assertion and a runaway overflow
   /// from the error widget. Its lifetime now matches the screen's.
   final TextEditingController _caretakerPhoneController =
@@ -2552,7 +2552,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                           // A dialog, not a snackbar. The old snackbar named
                           // nobody and was gone in seconds, so a landlord who
                           // glanced away had nothing telling them the
-                          // invitation had reached the person they meant —
+                          // invitation had reached the person they meant -
                           // and sent another one. The pending card behind it
                           // is driven by a live subscription now, so it is
                           // there when this is dismissed.
@@ -2611,7 +2611,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       if (ids.isNotEmpty) propertyIds = ids;
     }
 
-    // Step 1 — who is this? Throws with a message if the number isn't on
+    // Step 1 - who is this? Throws with a message if the number isn't on
     // ClearRent, isn't verified, is you, or is your sitting tenant.
     final String candidateName;
     try {
@@ -2623,7 +2623,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       return (error: e.message, name: null, caretakerId: null);
     }
 
-    // Step 2 — the landlord confirms the NAME, not the digits.
+    // Step 2 - the landlord confirms the NAME, not the digits.
     if (!mounted) {
       return (
         error: 'Could not continue. Please try again.',
@@ -2676,7 +2676,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   ///
   /// Acceptance is someone else's action and can take days. Until it happens
   /// the landlord's only signal used to be a four-second snackbar, so the
-  /// obvious recovery was to invite again — which the callable then rejects
+  /// obvious recovery was to invite again - which the callable then rejects
   /// with "you already have a caretaker invite waiting", reading like a bug.
   Future<void> _showInviteSentDialog(String name, String? caretakerId) async {
     await showDialog<void>(
@@ -2685,7 +2685,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         title: const Text('Invitation sent'),
         content: Text(
           'We have asked $name to manage this property. They will show up '
-          'here as your caretaker once they accept — you do not need to '
+          'here as your caretaker once they accept - you do not need to '
           'invite them again.',
         ),
         actions: [
@@ -2722,7 +2722,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'Try again in a moment.');
       return;
     }
-    // Resolve the messenger BEFORE the await — this screen can rebuild
+    // Resolve the messenger BEFORE the await - this screen can rebuild
     // underneath, and `mounted` alone does not keep an inherited widget
     // reachable (the crash in the caretaker screens was exactly this).
     final messenger = ScaffoldMessenger.of(context);
@@ -2741,7 +2741,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
       // claim they failed it.
       messenger.showSnackBar(SnackBar(
         content: Text('Could not open a chat with $fallbackName right now. '
-            'Messaging needs a verified account on both sides — check your '
+            'Messaging needs a verified account on both sides - check your '
             'connection and try again.'),
         backgroundColor: AppColors.error,
       ));
@@ -2926,7 +2926,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           ],
         ),
         // Chips alone said nothing about what any option meant. The edit
-        // screen keeps the compact layout — the landlord already chose once —
+        // screen keeps the compact layout - the landlord already chose once -
         // but spells out whichever one is currently selected.
         if (_ownershipDocType != null) ...[
           const SizedBox(height: 8),
@@ -2941,7 +2941,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ],
 
         // Once approved, the label is tied to the file the admin actually
-        // reviewed — say so up front rather than failing on save.
+        // reviewed - say so up front rather than failing on save.
         if (_isDocApproved) ...[
           const SizedBox(height: 10),
           Container(
@@ -3041,7 +3041,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
 
   Future<void> _pickOwnershipDoc() async {
     try {
-      // PDF or image — a title document is rarely one page, and re-uploading
+      // PDF or image - a title document is rarely one page, and re-uploading
       // here is exactly what a landlord does after a rejection for an
       // unreadable or incomplete document.
       final file = await DocumentFilePicker.pick(
@@ -3093,7 +3093,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
-  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling —
+  /// Ceilings are multi-select, but "None" can't coexist with a real ceiling -
   /// picking one clears the other.
   void _toggleCeilingType(String value) {
     if (_ceilingTypes.contains(value)) {

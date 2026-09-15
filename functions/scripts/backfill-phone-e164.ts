@@ -2,7 +2,7 @@
  * One-shot backfill: convert any users.phone stored in local format
  * (e.g. "08053385667") to E.164 (e.g. "+2348053385667").
  *
- * Idempotent — skips docs already in E.164. Logs every change.
+ * Idempotent - skips docs already in E.164. Logs every change.
  * Dry-run by default; pass --apply to actually write.
  *
  * Run:

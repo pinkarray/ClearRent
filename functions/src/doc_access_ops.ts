@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// doc_access_ops.ts — authorized access to private documents that can't be
+// doc_access_ops.ts - authorized access to private documents that can't be
 // gated by Storage rules alone.
 //
 // getSignedAgreementUrl
@@ -10,7 +10,7 @@
 //   the rental/link, verifies the caller is the landlord, the tenant, or an
 //   admin, then returns a short-lived signed URL to the stored object.
 //
-//   Legacy agreements still on Cloudinary are public http URLs — those are
+//   Legacy agreements still on Cloudinary are public http URLs - those are
 //   returned as-is (nothing to sign).
 //
 // getConditionMediaUrl
@@ -37,9 +37,9 @@ const SIGNED_URL_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 // The three documents a tenancy can carry, and the field each lives in.
 //
-//   original     — what the landlord sent, unsigned
-//   tenantSigned — the copy the tenant printed, signed and uploaded
-//   executed     — counter-signed by the landlord; the agreement of record
+//   original     - what the landlord sent, unsigned
+//   tenantSigned - the copy the tenant printed, signed and uploaded
+//   executed     - counter-signed by the landlord; the agreement of record
 //
 // Both signed copies are uploaded under their OWN uid's storage folder, so
 // Storage rules deny the counterparty a direct read. Serving them is exactly
@@ -79,7 +79,7 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
       "A valid collection ('active_rentals' | 'tenancy_links') and docId are required.",
     );
   }
-  // Plain lookup rather than Object.hasOwn — this codebase targets below
+  // Plain lookup rather than Object.hasOwn - this codebase targets below
   // ES2022, where hasOwn does not exist.
   if (AGREEMENT_FIELDS[which] === undefined) {
     throw new HttpsError(
@@ -116,7 +116,7 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     );
   }
 
-  // Legacy Cloudinary docs are public http URLs — return as-is.
+  // Legacy Cloudinary docs are public http URLs - return as-is.
   if (/^https?:\/\//i.test(agreementUrl)) {
     return {url: agreementUrl};
   }
@@ -125,7 +125,7 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
   // getConditionMediaUrl checks the path it is handed. This signs with ADMIN
   // credentials, so without this an `agreementUrl` pointing at
   // `verification/{someone}/nin/…` or `ownership/{someone}/…` would be signed
-  // and returned — every Storage rule bypassed. firestore.rules now also
+  // and returned - every Storage rule bypassed. firestore.rules now also
   // confines the field to the writer's own folder; this is the second lock,
   // and it is the one that covers rows written before that rule existed.
   const segments = agreementUrl.split("/");
@@ -163,7 +163,7 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     );
   }
 
-  // Private Storage path — mint a short-lived signed URL.
+  // Private Storage path - mint a short-lived signed URL.
   try {
     const [url] = await getStorage()
       .bucket()

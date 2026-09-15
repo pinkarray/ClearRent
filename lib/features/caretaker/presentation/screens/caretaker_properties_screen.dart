@@ -10,7 +10,7 @@ import '../../../landlord/presentation/screens/property_health_screen.dart';
 /// properties they already manage.
 ///
 /// Deliberately NOT a fourth shell. A caretaker is an existing tenant, landlord
-/// or agent — accountType still routes them to their own home at splash — so a
+/// or agent - accountType still routes them to their own home at splash - so a
 /// caretaker-only shell would strand whoever wasn't a landlord. This is one
 /// screen reachable from Settings in every shell and from the invitation push.
 class CaretakerPropertiesScreen extends StatefulWidget {
@@ -27,7 +27,7 @@ class _CaretakerPropertiesScreenState extends State<CaretakerPropertiesScreen> {
 
   // Built ONCE. Calling _service.myInvites() inside build() returns a brand new
   // Firestore subscription on every rebuild, so each setState (Accept, Decline,
-  // Step back) tore down the whole StreamBuilder subtree and stood up another —
+  // Step back) tore down the whole StreamBuilder subtree and stood up another -
   // which is what trips '_dependents.isEmpty': an inherited element being
   // unmounted while its dependents are still live. Same discipline the property
   // health screen already used; this screen simply didn't follow it.
@@ -57,7 +57,7 @@ class _CaretakerPropertiesScreenState extends State<CaretakerPropertiesScreen> {
   }
 
   Future<void> _stepBack(CaretakerInvite invite) async {
-    // Before BOTH awaits — the dialog is one gap and the revoke is another.
+    // Before BOTH awaits - the dialog is one gap and the revoke is another.
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -287,7 +287,7 @@ class _CaretakerPropertiesScreenState extends State<CaretakerPropertiesScreen> {
                   ),
                 ],
               ),
-        // Property health IS the caretaker's workbench — issues and
+        // Property health IS the caretaker's workbench - issues and
         // maintenance for this unit, the same screen the owner sees, with the
         // queries switched to the field the caretaker's rule branch reads.
         onTap: () => Navigator.push(
@@ -357,7 +357,7 @@ class LandlordCaretakersScreen extends StatelessWidget {
                       style: AppTextStyles.bodyMedium),
                   subtitle: Text(
                     invite.isPending
-                        ? 'Invitation sent — waiting for their answer'
+                        ? 'Invitation sent - waiting for their answer'
                         : '${invite.propertyIds.length} unit(s)'
                             '${invite.propertyTitles.isNotEmpty ? ' · ${invite.propertyTitles.join(', ')}' : ''}',
                     style: AppTextStyles.bodySmall
@@ -367,7 +367,7 @@ class LandlordCaretakersScreen extends StatelessWidget {
                     onPressed: () async {
                       // Resolve the messenger BEFORE the await. `context` here
                       // belongs to this list ITEM, and revoking makes the
-                      // stream re-emit and rebuild the list — so by the time
+                      // stream re-emit and rebuild the list - so by the time
                       // the call returns this element may be deactivated, and
                       // ScaffoldMessenger.of() on it is precisely the
                       // inherited-widget lookup that trips

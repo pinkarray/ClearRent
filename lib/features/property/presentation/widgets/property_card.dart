@@ -72,8 +72,8 @@ class PropertyCard extends StatelessWidget {
 
                 // Taken by someone else, or delisted.
                 //
-                // Browse never renders these — it filters on the same
-                // `isListable` — but Saved does, because a bookmark the tenant
+                // Browse never renders these - it filters on the same
+                // `isListable` - but Saved does, because a bookmark the tenant
                 // made should not silently disappear when the unit goes. It
                 // must not still look bookable either, hence the scrim. Sits
                 // BELOW the save button in the stack so unsaving still works.
@@ -282,7 +282,7 @@ class PropertyCard extends StatelessWidget {
                   const SizedBox(height: 12),
 
                   // Features. A single space (room / room & parlour / self
-                  // contain) has no meaningful room COUNT — showing
+                  // contain) has no meaningful room COUNT - showing
                   // "1 bed · 1 bath" made a shared room identical to a
                   // self-contained one-bedroom flat. What it gets exclusively
                   // is the real spec, so that is what's shown.
@@ -333,7 +333,7 @@ class PropertyCard extends StatelessWidget {
                         ],
                       ],
                     ),
-                    // A multi-room unit can share too — a flat in a compound
+                    // A multi-room unit can share too - a flat in a compound
                     // whose toilet is outside. Counts alone would read as
                     // fully self-contained, which is the same confusion the
                     // single-space line exists to prevent.

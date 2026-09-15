@@ -233,7 +233,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
         widget.propertyCity!.isNotEmpty &&
         !coversArea;
 
-    // Flat fee — it does not vary by agent or by distance. This used to call a
+    // Flat fee - it does not vary by agent or by distance. This used to call a
     // legacy distance-based estimator that returned ₦3,000/₦5,000 while tenants
     // were actually charged the flat booking fee.
     final inspectionFee = InspectionPricing.inspectionBookingFee;

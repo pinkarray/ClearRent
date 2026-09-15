@@ -8,14 +8,14 @@ import 'package:flutter/widgets.dart';
 /// admin dashboard can show who is currently using the app.
 ///
 /// Deliberately NOT true presence. There is no socket to watch, so a force-kill
-/// or a dead network isn't detectable — `lastSeenAt` simply stops advancing and
+/// or a dead network isn't detectable - `lastSeenAt` simply stops advancing and
 /// the user ages out of the window. Read it as "active in the last few minutes",
 /// never as a hard online/offline signal, and never gate anything on it.
 ///
 /// Last *login* is not written here: Firebase Auth already records
 /// `metadata.lastSignInTime` server-side, which the admin dashboard reads
 /// through the Admin SDK. That can't be forged by a modified client, whereas
-/// anything written from here can — `firestore.rules` lets a user write their
+/// anything written from here can - `firestore.rules` lets a user write their
 /// own doc apart from a denylist of sensitive fields.
 class PresenceService with WidgetsBindingObserver {
   PresenceService._();
@@ -85,7 +85,7 @@ class PresenceService with WidgetsBindingObserver {
         'lastSeenAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      // Best-effort telemetry — never surface or retry.
+      // Best-effort telemetry - never surface or retry.
       developer.log('presence heartbeat failed: $e', name: 'PresenceService');
     }
   }

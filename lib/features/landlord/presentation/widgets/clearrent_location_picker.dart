@@ -14,7 +14,7 @@ import '../../../../shared/widgets/area_dropdown.dart';
 // ============================================================
 // Field order: Street Address → Area/City → State → Pin Location
 //
-// Three separate concerns — they never overwrite each other:
+// Three separate concerns - they never overwrite each other:
 // - Area (city/state): authoritative once picked from the dropdown.
 //   Drives the inspection fee cluster, so a map tap must never
 //   change it. Selecting an area recenters the map on that area,
@@ -41,7 +41,7 @@ class LocationPickerWidget extends StatefulWidget {
   /// list, AND when a search returns nothing at all. Use this to log to
   /// Firestore (e.g. 'admin_requests') so the admin can add the area.
   ///
-  /// Coordinates are null for the no-result case — there is no place to take
+  /// Coordinates are null for the no-result case - there is no place to take
   /// them from, which is exactly the signal that separates "we found it but
   /// don't map it" from "nothing matched what they typed".
   final Function(String rawAreaName, double? lat, double? lng)?
@@ -85,7 +85,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// area is authoritative: no geocode result may rewrite city or state.
   bool _areaExplicitlySet = false;
 
-  /// Centre of the selected area — the map anchor, and what the pin distance
+  /// Centre of the selected area - the map anchor, and what the pin distance
   /// is measured against. Null when the area geocode found nothing.
   LatLng? _areaAnchor;
   bool _isLocatingArea = false;
@@ -95,7 +95,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// it is quoted back as what the MAP says.
   String? _addressSuggestion;
 
-  /// What accepting that suggestion should actually write — the proposal with
+  /// What accepting that suggestion should actually write - the proposal with
   /// the house number the landlord typed folded back in. Held separately from
   /// [_addressSuggestion] so the prompt can quote the map honestly while the
   /// value applied keeps the part the map never knew.
@@ -193,7 +193,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           });
           // Deliberately NOT reported as an unknown area. This field is the
           // STREET address, so the query is "10 Olaginra Street", not a place
-          // admin could ever add to the area list — and it runs on a debounce,
+          // admin could ever add to the area list - and it runs on a debounce,
           // so one typing session filed a row per partial ("10 Ol", "10 Olagin",
           // …). An address we can't geocode is answered by dropping the pin;
           // an area we don't know is reported from the area picker, which is
@@ -213,12 +213,12 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// OSM usually matches a STREET, not a building, so its result carries no
   /// `house_number` and `streetAddress` is just the road. Assigning that over
   /// the field erased the "12" from "12 Allen Ave" the moment a suggestion was
-  /// tapped — the landlord had typed the one part of the address OSM does not
+  /// tapped - the landlord had typed the one part of the address OSM does not
   /// know. Their number survives; the picked street replaces the rest.
   String _keepTypedHouseNumber(String typed, NominatimPlace place) {
     final proposed = place.streetAddress.trim();
     if (place.houseNumber.isNotEmpty || proposed.isEmpty) return proposed;
-    // "12", "12A", "12/14" — a leading number is a house number; anything else
+    // "12", "12A", "12/14" - a leading number is a house number; anything else
     // is part of the street name and is the suggestion's to replace.
     final match = RegExp(r'^(\d+[A-Za-z]?(?:\s*[/-]\s*\d+[A-Za-z]?)?)\s+')
         .firstMatch(typed.trim());
@@ -229,7 +229,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   }
 
   /// Shown when the map search matched nothing. Says so, and points at the one
-  /// thing that still works — dropping the pin by hand.
+  /// thing that still works - dropping the pin by hand.
   Widget _buildNoResultHint() {
     final warn = Colors.orange.shade700;
     return Container(
@@ -307,7 +307,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     setState(() {
       widget.cityController.text = area;
       _areaExplicitlySet = true;
-      // Manually selected — clear auto-match state
+      // Manually selected - clear auto-match state
       _areaMatchedFromPin = false;
       _geocodedRawCity = null;
       if (widget.stateController.text.isEmpty) {
@@ -318,7 +318,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   }
 
   /// Centres the map on the selected area so there is an anchor even when OSM
-  /// has never heard of the street. On a miss the map is left where it is —
+  /// has never heard of the street. On a miss the map is left where it is -
   /// never snapped back to the Lagos default.
   Future<void> _geocodeArea(String area) async {
     setState(() => _isLocatingArea = true);
@@ -338,7 +338,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
 
   /// Where an area sits, according to OSM. Split out from [_geocodeArea] so an
   /// unknown-area report can carry real coordinates: an area missing from OUR
-  /// list is usually still on the map — "Maya" is — and a report with no
+  /// list is usually still on the map - "Maya" is - and a report with no
   /// position left the admin guessing which LGA to file it under.
   Future<LatLng?> _geocodeAreaCoords(String area) async {
     final state =
@@ -377,7 +377,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// A tap moves the pin. What OSM thinks is *there* is only ever a suggestion:
   /// it fills the address when the field is empty, otherwise it is offered for
   /// the landlord to accept. City and state are never rewritten once the area
-  /// has been picked explicitly — that field decides the inspection fee.
+  /// has been picked explicitly - that field decides the inspection fee.
   Future<void> _reverseGeocode(LatLng location) async {
     try {
       final uri = Uri.parse(
@@ -415,7 +415,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
           // Compare what the pin proposes against what the landlord typed
           // ONCE THE HOUSE NUMBER IS PUT BACK. OSM matches a street, not a
           // building, so "16 Oduduwa Street" and a pin on "Oduduwa Street" are
-          // the same place — asking which to keep is asking about a difference
+          // the same place - asking which to keep is asking about a difference
           // the landlord cannot resolve and did not create. Only a genuinely
           // different street is worth a question.
           final reconciled = _keepTypedHouseNumber(currentAddress, place);
@@ -473,7 +473,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
 
   /// Case- and punctuation-insensitive form, so "Oduduwa Street" and
   /// "oduduwa  street," compare equal. Deliberately does NOT expand
-  /// abbreviations — "St" vs "Street" is a real difference worth asking about.
+  /// abbreviations - "St" vs "Street" is a real difference worth asking about.
   String _normalisedAddress(String v) =>
       v.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
 
@@ -503,7 +503,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
 
         const SizedBox(height: 20),
 
-        // 3. State — derived from the pin, never typed. Leaving it editable let
+        // 3. State - derived from the pin, never typed. Leaving it editable let
         // a landlord type "Lagos" over an address the geocoder had placed in
         // another state, which is exactly what the admin reviewer needs to be
         // able to trust. ClearRent operates in Lagos today but does not BLOCK
@@ -533,8 +533,8 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
                   : null,
           onSelected: _onAreaSelected,
           // The ONLY source of unknown-area reports. Coordinates come from the
-          // landlord's own pin when one is down — it IS in the area they are
-          // reporting — and otherwise from geocoding the area name, because
+          // landlord's own pin when one is down - it IS in the area they are
+          // reporting - and otherwise from geocoding the area name, because
           // missing from our list does not mean missing from the map.
           onAreaNotFound: (name) async {
             final at =
@@ -591,7 +591,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       );
     }
 
-    // Unknown area — prompt user to select manually
+    // Unknown area - prompt user to select manually
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -757,7 +757,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Explicit way out. Tapping blank space elsewhere also dismisses the
-          // panel, but only because the parent unfocuses the field — on its own
+          // panel, but only because the parent unfocuses the field - on its own
           // a tap on non-focusable space leaves a TextField focused.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
@@ -827,7 +827,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     );
   }
 
-  /// Read-only State row. Shows whatever the pin resolved to — including a
+  /// Read-only State row. Shows whatever the pin resolved to - including a
   /// state ClearRent doesn't operate in yet, flagged here as a warning rather
   /// than quietly overwritten with 'Lagos'. Not a blocker: an admin reviews
   /// every listing before it can be browsed, and that is where the call is made.
@@ -1028,7 +1028,7 @@ class NominatimPlace {
   final double lng;
   final String displayName;
   final String streetAddress;
-  /// Empty whenever OSM matched a STREET rather than a building — the normal
+  /// Empty whenever OSM matched a STREET rather than a building - the normal
   /// case in Lagos. Kept separate so the caller can tell "this result has no
   /// number" from "the number is part of the string".
   final String houseNumber;

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 
-/// A consistent "nothing here yet — here's what to do next" empty state.
+/// A consistent "nothing here yet - here's what to do next" empty state.
 ///
 /// Use this for every empty list/tab so users are never left on a blank
 /// screen wondering what to do. Pass [actionLabel] + [onAction] to surface a

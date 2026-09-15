@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// property_cleanup_ops.ts — cascade cleanup when a property is deleted.
+// property_cleanup_ops.ts - cascade cleanup when a property is deleted.
 //
 // Deleting a property (property_service.deleteProperty) is a raw doc delete
 // with no cascade, so admin-queue items that pointed at it are left orphaned.
@@ -21,7 +21,7 @@ export const onPropertyDeleted = onDocumentDeleted(
     const propertyId = event.params.propertyId;
     const db = getFirestore();
 
-    // Single-field equality query (auto-indexed — no composite index); filter
+    // Single-field equality query (auto-indexed - no composite index); filter
     // to still-pending in code.
     const snap = await db
       .collection("rent_review_requests")

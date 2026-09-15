@@ -67,7 +67,7 @@ class _MultiRentalDashboardState extends State<MultiRentalDashboard> {
 
     final body = _buildBody(selected);
 
-    // Single rental — no switcher control.
+    // Single rental - no switcher control.
     if (widget.rentals.length == 1) {
       return body;
     }

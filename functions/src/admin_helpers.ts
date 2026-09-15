@@ -13,7 +13,7 @@
  *     admins via claims without redeploying rules/functions.
  *   - Audit writes are best-effort. If the audit write fails after the
  *     money-mark succeeded, we log loudly but do not roll back. The
- *     alternative — failing the whole operation — would block the admin
+ *     alternative - failing the whole operation - would block the admin
  *     from marking a payout paid because of a transient Firestore hiccup,
  *     which is worse than a missing audit row we can reconstruct from logs.
  */
@@ -35,7 +35,7 @@ const SUPER_ADMIN_UID = "hEKsYuKKdzLlPD0QWOP2CvAxYlq2";
  *   (c) their UID matches SUPER_ADMIN_UID.
  *
  * (b) keeps this in lockstep with firestore.rules isAdmin(), which accepts
- * either the admin or superAdmin claim — otherwise a superAdmin-claim holder
+ * either the admin or superAdmin claim - otherwise a superAdmin-claim holder
  * could pass every rule gate yet be denied by these callables.
  * (c) is the bootstrap fallback so admin CFs keep working even if the
  * custom-claim mechanism is misconfigured or a claim is accidentally removed.
@@ -125,7 +125,7 @@ export interface AuditEntry {
  * Write to admin_audit_log. Best-effort: never throws.
  *
  * Returns the new doc id on success, or null on failure. Callers can
- * ignore the return value — failures are logged here.
+ * ignore the return value - failures are logged here.
  */
 export async function writeAuditLog(entry: AuditEntry): Promise<string | null> {
   try {

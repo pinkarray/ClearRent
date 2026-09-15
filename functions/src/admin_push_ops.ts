@@ -2,13 +2,13 @@
  * Web push for admins.
  *
  * The gap this closes: `admin_alerts` was a dashboard-only feed. Nothing left
- * the browser, so an admin learned that a verification was waiting — or a
- * dispute had opened — only by having the dashboard open and looking at it.
+ * the browser, so an admin learned that a verification was waiting - or a
+ * dispute had opened - only by having the dashboard open and looking at it.
  *
  * WHY A DEVICE REGISTRY RATHER THAN A USER QUERY. Admins are identified by the
  * custom claims `admin` / `superAdmin` (firestore.rules:10, admin_helpers.ts).
  * Custom claims live on the auth token, not in Firestore, so there is no query
- * that returns "all admins" — the only alternative is paginating `listUsers()`
+ * that returns "all admins" - the only alternative is paginating `listUsers()`
  * on every alert, which is a full user-directory scan for a push. Instead each
  * admin's browser registers its own FCM token into `admin_devices/{uid}`, which
  * is one cheap read per alert and doubles as a view of who is actually
@@ -16,7 +16,7 @@
  *
  * WHAT GETS PUSHED. Only `warning` and `critical`. `info` alerts (signups,
  * inspection lifecycle, rent payments, the daily digest) are pipeline
- * awareness, not interruptions — they belong in the feed and the daily digest
+ * awareness, not interruptions - they belong in the feed and the daily digest
  * email, not on someone's lock screen at 2am. This is the same split the
  * attention banner already makes.
  */
@@ -110,7 +110,7 @@ export const onAdminAlertCreated = onDocumentCreated(
     const devices = await adminDevices();
     if (devices.length === 0) {
       logger.warn(
-        "Actionable admin alert with no registered admin devices — " +
+        "Actionable admin alert with no registered admin devices - " +
           "nobody was notified outside the dashboard",
         {alertId: event.params.alertId, type: alert.type},
       );

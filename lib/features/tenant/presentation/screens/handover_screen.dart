@@ -25,8 +25,8 @@ import 'condition_capture_screen.dart';
 /// would have duplicated the whole state machine to change two buttons.
 ///
 /// The framing throughout is deliberate: the tenant's tenancy is over and they
-/// are free. What is unresolved is the caution deposit, and the property — not
-/// the tenant — is what stays gated until it is.
+/// are free. What is unresolved is the caution deposit, and the property - not
+/// the tenant - is what stays gated until it is.
 class HandoverScreen extends StatefulWidget {
   final String rentalId;
   const HandoverScreen({super.key, required this.rentalId});
@@ -398,7 +398,7 @@ class _TenantActions extends StatelessWidget {
       final owed = (rental.cautionDeposit - kept).clamp(0, double.infinity);
       // Already reported. Without this the screen looked identical before and
       // after submitting, so a tenant could report the same problem over and
-      // over with no sign any of it had registered — which is exactly how it
+      // over with no sign any of it had registered - which is exactly how it
       // was found. Their own words are echoed back as the receipt.
       if (rental.tenantContested) {
         return Container(
@@ -442,7 +442,7 @@ class _TenantActions extends StatelessWidget {
                   label: const Text('See their proof of payment'),
                 ),
               ],
-              // Still reachable: the answer can change — the money may land
+              // Still reachable: the answer can change - the money may land
               // after the report, and confirming is what frees the property.
               const SizedBox(height: 4),
               TextButton(
@@ -470,7 +470,7 @@ class _TenantActions extends StatelessWidget {
         ),
         // The landlord already attached proof of transfer; the tenant was
         // never shown it. Checking a receipt against your own bank app is a
-        // far better basis for answering than memory — and it turns most of
+        // far better basis for answering than memory - and it turns most of
         // this from a dispute into a look.
         if ((rental.handoverProofUrl ?? '').isNotEmpty) ...[
           const SizedBox(height: 8),

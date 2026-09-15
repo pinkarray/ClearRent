@@ -14,7 +14,7 @@
  *
  * The nudge is stamped onto the rental (`lastHandoverNudgedAt` / count) so the
  * next admin can see it has already been chased instead of piling on. Those
- * fields are written with the admin SDK, which bypasses rules — they are
+ * fields are written with the admin SDK, which bypasses rules - they are
  * deliberately NOT in the active_rentals client allowlist.
  */
 
@@ -101,7 +101,7 @@ function buildNudge(
   if (stage === "closed") {
     return {reason: "This handover is already closed"};
   }
-  // Outside a dispute, only chase the side whose turn it actually is —
+  // Outside a dispute, only chase the side whose turn it actually is -
   // otherwise the nudge reads as a demand on someone who is not blocking.
   if (!contested) {
     const waiting =
@@ -143,7 +143,7 @@ function buildNudge(
   } else {
     title = "Reminder: your move-out needs one more step";
     base = stage === "awaiting_evidence" ?
-      `Please record the condition you left ${propertyTitle} in — it is ` +
+      `Please record the condition you left ${propertyTitle} in - it is ` +
         "what a deduction has to be argued against." :
       `Please confirm whether your caution deposit for ${propertyTitle} ` +
         "arrived.";
@@ -152,7 +152,7 @@ function buildNudge(
   return {
     recipientId,
     title,
-    body: note ? `${base} — ${note}` : base,
+    body: note ? `${base} - ${note}` : base,
     // Both parties land on the same handover screen; it decides what to show
     // from who is signed in, which is why there is one route here.
     payload: {route: `/handover/${rentalId}`, rentalId},

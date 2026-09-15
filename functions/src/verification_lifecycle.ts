@@ -2,7 +2,7 @@
  * Verification lifecycle logic.
  *
  * Deliberately free of firebase-functions *trigger* imports so it can be
- * invoked directly — by the Cloud Function wrappers in verification_ops.ts in
+ * invoked directly - by the Cloud Function wrappers in verification_ops.ts in
  * production, and by scripts/verify_verification_lifecycle.js against the
  * Firestore emulator. `nowMs` is injectable so tests can place a user either
  * side of an expiry boundary without waiting a year.
@@ -35,7 +35,7 @@ export interface SweepCounts {
 
 /**
  * Whether a user holds a platform admin claim. Admin status lives ONLY in
- * Firebase Auth custom claims — setAdminClaim never mirrors it to Firestore —
+ * Firebase Auth custom claims - setAdminClaim never mirrors it to Firestore -
  * so the sweep has to ask Auth. Checked lazily, only for users about to be
  * expired, so the cost is bounded by the (tiny) daily expiry set.
  * @param {string} uid The user id to check.
@@ -48,7 +48,7 @@ async function isPlatformAdmin(uid: string): Promise<boolean> {
     return claims.admin === true || claims.superAdmin === true;
   } catch (err) {
     const code = (err as {code?: string})?.code;
-    // No Auth record at all — definitively not an admin, safe to expire.
+    // No Auth record at all - definitively not an admin, safe to expire.
     if (code === "auth/user-not-found") return false;
     // Auth unreachable: fail SAFE. Skip this user rather than risk
     // soft-locking an admin out; the sweep reruns daily, so expiry for a
@@ -95,7 +95,7 @@ export async function stampVerificationClock(
  * ## Why this does not read every verified user
  *
  * It used to, once a day, forever. Verification lasts a year, so roughly 364
- * of every 365 of those reads decided nothing — the cost grew with total
+ * of every 365 of those reads decided nothing - the cost grew with total
  * users while the work grew only with users actually near expiry. At 10,000
  * verified users that is 3.65M reads a year to do a few thousand updates.
  *
@@ -104,7 +104,7 @@ export async function stampVerificationClock(
  * cannot have crossed a threshold, so reading them is pure waste.
  *
  * [fullScan] restores the whole-collection read, because a RANGE query cannot
- * match documents that lack the field at all — which is exactly what backfill
+ * match documents that lack the field at all - which is exactly what backfill
  * looks for. Backfilling pre-feature users is a one-off that has already run
  * (prod has zero verified users without the stamp, and onVerificationVerified
  * stamps every new one), so the scheduled job pays for it monthly rather than
@@ -185,7 +185,7 @@ export async function runVerificationExpirySweep(
         `verif_expired_${doc.id}_${expiresMs}`,
         {
           userId: doc.id,
-          title: "Verification expired — renew to continue",
+          title: "Verification expired - renew to continue",
           body:
             "Your annual verification has lapsed. Renew now to keep " +
             "booking, listing, and messaging on ClearRent.",

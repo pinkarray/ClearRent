@@ -11,7 +11,7 @@ import 'tenant_inspections_screen.dart';
 ///
 /// Reached from the property detail screen, which used to offer "Request
 /// Inspection" regardless of whether the tenant had already inspected the
-/// place — inviting a second paid inspection fee on the same property. The
+/// place - inviting a second paid inspection fee on the same property. The
 /// tenant sees what the visit found, and decides about renting, before any
 /// further money is involved.
 ///

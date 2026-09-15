@@ -43,8 +43,8 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // Rentals are LIVE. Everything this screen acts on — a move-out request, an
-    // agreement signed, rent paid — is done by the tenant, so a one-shot read
+    // Rentals are LIVE. Everything this screen acts on - a move-out request, an
+    // agreement signed, rent paid - is done by the tenant, so a one-shot read
     // left the landlord looking at a screen that could not tell them anything
     // had happened until they backed out and returned.
     _rentalsSub = _rentalService.streamLandlordRentals().listen(
@@ -112,7 +112,7 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
       .toList()
     ..sort((a, b) => b.leaseEndDate.compareTo(a.leaseEndDate));
 
-  /// Active rentals that need the landlord's attention — leases expiring
+  /// Active rentals that need the landlord's attention - leases expiring
   /// soon or in the post-expiry grace window (renewal / re-list decision).
   int get _expiringCount =>
       _activeRentals.where((r) => r.isExpiringSoon || r.isGraceLocked).length;
@@ -297,7 +297,7 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
 // LINKED TENANT CARD
 // ============================================================
 /// A landlord-linked tenancy. There is no `active_rental` behind it, so it is
-/// rendered separately from the rental cards — but it still belongs in this
+/// rendered separately from the rental cards - but it still belongs in this
 /// list, because to the landlord it is a sitting tenant, and it blocks account
 /// deletion the same way an active rental does.
 class _LinkedTenantCard extends StatelessWidget {
@@ -307,7 +307,7 @@ class _LinkedTenantCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Taps through to the property, which is where Remove Tenant lives — the
+    // Taps through to the property, which is where Remove Tenant lives - the
     // only place a link can be undone, and what a landlord needs to reach
     // before they can delete their account.
     return InkWell(
@@ -487,7 +487,7 @@ class _RentalCardState extends State<_RentalCard> {
 
   /// Opens the end-tenancy sheet. Only reachable on a grace_locked rental.
   /// Records status ended_by_landlord server-side; ClearRent notifies the
-  /// tenant and preserves the record — this is not an eviction.
+  /// tenant and preserves the record - this is not an eviction.
   Future<void> _showEndTenancySheet() async {
     final controller = TextEditingController();
     final confirmed = await showModalBottomSheet<bool>(
@@ -634,7 +634,7 @@ class _RentalCardState extends State<_RentalCard> {
         const SizedBox(height: 10),
         // Answering the notice and confirming the handover are different acts.
         // Confirming is gated to the tenant's move-out date, so until then the
-        // landlord had a notification and no way to respond to it — and the
+        // landlord had a notification and no way to respond to it - and the
         // tenant saw only silence. Acknowledging costs nothing and gates
         // nothing; a landlord who skips it stalls no part of the move-out.
         if (!rental.canConfirmHandover && !rental.isMoveOutAcknowledged) ...[
@@ -642,7 +642,7 @@ class _RentalCardState extends State<_RentalCard> {
             width: double.infinity,
             child: OutlinedButton.icon(
               // The write succeeds quickly and then the button simply vanishes,
-              // replaced by a line of grey text — which reads as nothing
+              // replaced by a line of grey text - which reads as nothing
               // having happened at all. Say so out loud, and say what it did
               // for the tenant, since that is the point of the button.
               onPressed: _acknowledging
@@ -713,7 +713,7 @@ class _RentalCardState extends State<_RentalCard> {
   }
 
   Future<void> _confirmMoveOut() async {
-    // Deposit declaration. The default is "returned in full" — the landlord has
+    // Deposit declaration. The default is "returned in full" - the landlord has
     // to actively state a deduction and give a reason. ClearRent doesn't hold
     // this money; the declaration is the record the tenant can point at.
     final deposit = rental.cautionDeposit;
@@ -1031,7 +1031,7 @@ class _RentalCardState extends State<_RentalCard> {
                   ],
                 ),
 
-                // Scheduled rent change from an approved rent review — the new
+                // Scheduled rent change from an approved rent review - the new
                 // rent applies at the tenant's next renewal (current rent is
                 // protected until then).
                 if (rental.pendingRentForRenewal != null) ...[
@@ -1148,14 +1148,14 @@ class _RentalCardState extends State<_RentalCard> {
                     partyRole: 'landlord',
                   ),
 
-                // Move-out request — the tenant asked to move out. Confirm the
+                // Move-out request - the tenant asked to move out. Confirm the
                 // handover to end the tenancy (auto-confirms after 7 days).
                 if (rental.isMoveoutPending) ...[
                   const SizedBox(height: 12),
                   _buildMoveOutConfirm(),
                 ],
 
-                // End-tenancy — only when the lease has lapsed (grace_locked).
+                // End-tenancy - only when the lease has lapsed (grace_locked).
                 if (widget.isActive && rental.isGraceLocked) ...[
                   const SizedBox(height: 12),
                   SizedBox(
@@ -1313,8 +1313,8 @@ class _RentalCardState extends State<_RentalCard> {
 
   /// Reminds the landlord that the deposit is theirs to collect.
   ///
-  /// ClearRent never charges it — paymentAmount is rent + agent fee + deal fee
-  /// — so the rent landing gave the landlord no signal at all that anything
+  /// ClearRent never charges it - paymentAmount is rent + agent fee + deal fee
+  /// - so the rent landing gave the landlord no signal at all that anything
   /// else was owed. The tenant is told the same thing on their side, at
   /// payment and on the lease, so both parties see one story.
   Widget _buildDepositReminder() {
@@ -1338,7 +1338,7 @@ class _RentalCardState extends State<_RentalCard> {
                     style: AppTextStyles.labelSmall
                         .copyWith(color: AppColors.warning)),
                 Text(
-                  'Collect this from your tenant directly — ClearRent does '
+                  'Collect this from your tenant directly - ClearRent does '
                   'not charge or hold it.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textHint),

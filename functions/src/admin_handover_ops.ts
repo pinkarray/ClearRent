@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// admin_handover_ops.ts — the human in the move-out loop.
+// admin_handover_ops.ts - the human in the move-out loop.
 //
 // Everything else in the handover flow is mechanical: the tenant records the
 // condition, the landlord checks the unit and declares what they are keeping,
@@ -10,9 +10,9 @@
 // is made here by a person. Two consequences exist and neither fires
 // automatically anywhere in the codebase:
 //
-//   suspension — a landlord may be barred from listing, either until a date or
+//   suspension - a landlord may be barred from listing, either until a date or
 //                until an admin lifts it.
-//   rating     — a guilty finding may cost them reputation.
+//   rating     - a guilty finding may cost them reputation.
 //
 // Both are irreversible in practice (you cannot un-tell a market someone was
 // suspended), and the evidence they rest on is uploaded photos nobody has
@@ -109,7 +109,7 @@ export const adminResolveHandover = onCall(callableOptions, async (request) => {
   const propertyTitle =
     (rental.propertyTitle as string | undefined) ?? "the property";
 
-  // Closing the stage is what releases the property — onHandoverClosed reacts
+  // Closing the stage is what releases the property - onHandoverClosed reacts
   // to it, so the gate is lifted by the same path as every other route out.
   await rentalRef.update({
     handoverStage: "closed",
@@ -281,7 +281,7 @@ export const adminSetListingSuspension = onCall(
         body: suspend ?
           `You cannot publish new listings. ${reason}` :
           `You can publish listings again. ${reason}`,
-        // /landlord/properties is not a registered GoRoute — the landlord's
+        // /landlord/properties is not a registered GoRoute - the landlord's
         // properties live on their home screen. The unregistered path put the
         // tap on go_router's error page (there is no errorBuilder).
         payload: {route: "/landlord/home"},

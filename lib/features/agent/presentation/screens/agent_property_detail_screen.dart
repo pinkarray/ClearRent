@@ -89,7 +89,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
 
   Future<void> _loadProperty() async {
     // When we already have data on screen (seeded from cache), this is a silent
-    // background refresh — don't replace good data with an error if it fails.
+    // background refresh - don't replace good data with an error if it fails.
     final hasData = _property != null;
     try {
       final property = await _propertyService.getProperty(widget.propertyId);
@@ -1090,7 +1090,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
   }
 
   /// Build a draft message and open the agent-landlord chat with it
-  /// pre-filled (not auto-sent — agent reviews before sending).
+  /// pre-filled (not auto-sent - agent reviews before sending).
   Future<void> _messageLandlordAboutScheduleChange({
     required PropertyModel property,
     required List<String> newDays,
@@ -1120,7 +1120,7 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
       Navigator.pop(context); // close loading
 
       if (conversationId == null) {
-        // Schedule was saved but we couldn't open chat — non-fatal.
+        // Schedule was saved but we couldn't open chat - non-fatal.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(

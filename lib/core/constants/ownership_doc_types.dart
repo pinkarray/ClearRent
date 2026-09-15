@@ -7,7 +7,7 @@
 /// the same three bare options with nothing explaining any of them.
 ///
 /// `c_of_o`, `deed` and `other` are the ORIGINAL stored values and must keep
-/// their spelling — existing listings and the admin dashboard already read
+/// their spelling - existing listings and the admin dashboard already read
 /// them. The rest are new: they used to be forced into "Other", which told the
 /// reviewer nothing and made every unusual title look identical.
 class OwnershipDocTypes {

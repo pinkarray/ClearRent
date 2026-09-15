@@ -3,7 +3,7 @@
  * One-off: set `structure` on buildings created before the field existed.
  *
  * A building's structure is what the WHOLE thing is (duplex, compound, storey
- * building) — the axis `propertyType` used to swallow. Units listed under a
+ * building) - the axis `propertyType` used to swallow. Units listed under a
  * building read it to say "a room in a duplex" without claiming to BE the
  * duplex. Buildings written before this field carry none, so the app and admin
  * simply omit the line; this fills them in.
@@ -30,7 +30,7 @@ const VALID = new Set([
 ]);
 
 /**
- * Best guess from the building's own name — the two live buildings are called
+ * Best guess from the building's own name - the two live buildings are called
  * "<Name>'s Compound". Anything we can't read confidently is LEFT ALONE rather
  * than guessed: a wrong structure is worse than an absent one, since the app
  * omits the line when it's empty.

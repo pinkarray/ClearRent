@@ -62,7 +62,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
 
     // connectivity_plus only fires when an interface changes. If the Wi-Fi
     // stays associated but the internet dies (data cap, captive portal), no
-    // event arrives — so re-check whenever the user comes back to the app.
+    // event arrives - so re-check whenever the user comes back to the app.
     _lifecycleListener = AppLifecycleListener(
       onResume: () => unawaited(_connectivity.checkConnection()),
     );
@@ -135,7 +135,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
 
     return Column(
       children: [
-        // ── Banner — grows from the top edge, pushing the page down ──
+        // ── Banner - grows from the top edge, pushing the page down ──
         if (_showBanner)
           SizeTransition(
             sizeFactor: _sizeAnimation,
@@ -152,7 +152,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper>
             ),
           ),
 
-        // ── Main content — Expanded gives the navigator a tight height ──
+        // ── Main content - Expanded gives the navigator a tight height ──
         Expanded(
           child: MediaQuery(
             // The banner has already absorbed the status-bar inset in its own
@@ -210,7 +210,7 @@ class _NetworkBanner extends StatelessWidget {
             ),
           ),
 
-          // Retry button — only shown when offline
+          // Retry button - only shown when offline
           if (!isOnline)
             GestureDetector(
               onTap: isRetrying ? null : onRetry,

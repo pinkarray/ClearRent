@@ -85,7 +85,7 @@ class DirectionsLink extends StatelessWidget {
 /// (owner / assigned agent / admin / tenant with a reveal grant) or from the
 /// `propertyLatitude`/`propertyLongitude` copied onto an inspection request when
 /// the tenant pays. This widget renders whatever the caller was entitled to read
-/// — it does no gating of its own, so only give it coordinates the viewer is
+/// - it does no gating of its own, so only give it coordinates the viewer is
 /// allowed to see.
 ///
 /// The map itself is non-interactive by design: these cards sit inside scrolling
@@ -102,7 +102,7 @@ class PropertyLocationMap extends StatelessWidget {
 
   final double height;
 
-  /// Copy for the empty state, which differs by audience — a landlord can go
+  /// Copy for the empty state, which differs by audience - a landlord can go
   /// and fix a missing pin, an agent can only be told it's missing.
   final String emptyMessage;
 

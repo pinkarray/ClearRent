@@ -21,7 +21,7 @@
  * Requirements:
  *   npm install firebase-admin
  *   Place the Firebase service account JSON at ./serviceAccountKey.json
- *   (gitignored — never commit it).
+ *   (gitignored - never commit it).
  */
 
 const admin = require('firebase-admin');
@@ -64,7 +64,7 @@ async function main() {
       continue;
     }
 
-    // 1. Copy to the locked subcollection (merge — preserve any existing).
+    // 1. Copy to the locked subcollection (merge - preserve any existing).
     await db
       .collection('users').doc(uid)
       .collection('private').doc('bank')

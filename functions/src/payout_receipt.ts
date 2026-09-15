@@ -2,14 +2,14 @@
  * Payout receipt confirmation.
  *
  * Marking a payout "paid" only ever recorded that ClearRent *sent* money. The
- * beneficiary's side of that — whether it actually landed — was never captured,
+ * beneficiary's side of that - whether it actually landed - was never captured,
  * so a transfer that silently failed looked identical to one that worked.
  *
  * These two callables close the loop: the beneficiary confirms or disputes, and
  * on a dispute an admin attaches evidence (a transfer screenshot) and resolves.
  *
  * WHY CALLABLES RATHER THAN CLIENT WRITES + A RULES ALLOWLIST:
- * the agent is not a party to `active_rentals` — not in the update rule and not
+ * the agent is not a party to `active_rentals` - not in the update rule and not
  * even in `read`/`list`. Letting an agent confirm their own commission by
  * writing that doc would mean widening both rules to `agentId`, exposing every
  * tenancy field to agents to collect a yes/no. The admin SDK bypasses rules, so
@@ -76,8 +76,8 @@ function fieldsFor(role: PayoutRole) {
 
 /**
  * The deterministic receipt doc written by writeRentPayoutSideEffects. This is
- * the ONLY payout surface an agent can read — `payments` is scoped by `userId`,
- * which is the beneficiary — so the receipt state is mirrored onto it.
+ * the ONLY payout surface an agent can read - `payments` is scoped by `userId`,
+ * which is the beneficiary - so the receipt state is mirrored onto it.
  * @param {PayoutRole} role Which beneficiary.
  * @param {string} rentalId The active_rentals doc id.
  * @return {string} The payments doc id.
@@ -165,7 +165,7 @@ export const confirmPayoutReceipt = onCall(
         "action must be 'confirm' or 'dispute'.",
       );
     }
-    // A dispute without a reason is unactionable — admin would have nothing to
+    // A dispute without a reason is unactionable - admin would have nothing to
     // investigate and nothing to show the beneficiary when resolving.
     const reason = action === "dispute" ?
       requireString(raw.reason, "reason") :
@@ -181,7 +181,7 @@ export const confirmPayoutReceipt = onCall(
       }
       const data = snap.data()!;
 
-      // Role is derived from the doc, never taken from the client — this is
+      // Role is derived from the doc, never taken from the client - this is
       // what stops an agent confirming the landlord's payout or vice versa.
       let role: PayoutRole;
       if (data.landlordId === uid) {
@@ -214,7 +214,7 @@ export const confirmPayoutReceipt = onCall(
       if (current === "disputed") {
         throw new HttpsError(
           "failed-precondition",
-          "You already reported this payout as missing — an admin is " +
+          "You already reported this payout as missing - an admin is " +
             "looking into it.",
         );
       }
@@ -312,8 +312,8 @@ export const resolvePayoutDispute = onCall(
       );
     }
     const note = requireString(raw.note, "note");
-    // Evidence is optional — some disputes resolve because the beneficiary
-    // gave the wrong account and the money is genuinely coming back — but when
+    // Evidence is optional - some disputes resolve because the beneficiary
+    // gave the wrong account and the money is genuinely coming back - but when
     // present it must be an object path in our own bucket, never a URL. The
     // bytes are streamed to admins through /api/verification-image.
     let proofPath: string | null = null;
@@ -365,7 +365,7 @@ export const resolvePayoutDispute = onCall(
       targetCollection: "active_rentals",
       targetId: rentalId,
       amount: resolved.amount,
-      // The disputed payout's own receipt id — the reference this resolution
+      // The disputed payout's own receipt id - the reference this resolution
       // is about. There is no separate bank reference for a resolution.
       paymentReference: receiptDocId(role, rentalId),
       paymentNote: note,
@@ -433,7 +433,7 @@ export const resolvePayoutDispute = onCall(
 // 3. Chase an unanswered payout, then tell an admin.
 //
 // Without this a payout nobody answered reads "awaiting confirmation"
-// forever, which is indistinguishable from a payout that silently failed —
+// forever, which is indistinguishable from a payout that silently failed -
 // the exact ambiguity this whole feature exists to remove.
 //
 // It deliberately does NOT auto-confirm. Auto-confirming would write "the
@@ -488,7 +488,7 @@ export const payoutReceiptSweep = onSchedule(
                 body:
                   `We sent ₦${amount.toLocaleString("en-NG")} for ` +
                   `${propertyTitle}. Tell us whether it reached your bank ` +
-                  "account — if it didn't, we'll trace it.",
+                  "account - if it didn't, we'll trace it.",
                 payload: {
                   route: role === "agent" ?
                     "/agent/documents" :
@@ -501,7 +501,7 @@ export const payoutReceiptSweep = onSchedule(
           }
 
           if (ageDays >= ESCALATE_DAY) {
-            // WARNING, not info — info does not push to admin devices, and
+            // WARNING, not info - info does not push to admin devices, and
             // this is money whose arrival nobody has ever confirmed. Once per
             // rental+role: writeAdminAlertOnce is a no-op after the first.
             const wrote = await writeAdminAlertOnce(

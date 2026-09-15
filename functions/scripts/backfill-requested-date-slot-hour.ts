@@ -71,7 +71,7 @@ async function main() {
     const current = ts.toDate();
     // Already folded (hour matches the slot's start). Be lenient:
     // any non-midnight hour means someone (or an earlier run)
-    // already migrated this doc — leave it alone.
+    // already migrated this doc - leave it alone.
     if (current.getHours() !== 0 || current.getMinutes() !== 0) {
       skippedAlreadyFolded++;
       continue;

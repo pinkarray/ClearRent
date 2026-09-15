@@ -51,7 +51,7 @@ async function main() {
   const res = await call(adminAuth, {
     inspectionId: "insp1",
     target: "both",
-    message: "We're reviewing your report — please share any photos.",
+    message: "We're reviewing your report - please share any photos.",
   });
   check("returns ok, sent=2", res && res.ok === true && res.sent === 2);
   check("tenant got a notification", (await notifsFor("T1")).size === 1);

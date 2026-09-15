@@ -7,7 +7,7 @@ import '../../services/paystack_service.dart';
 
 /// In-app Paystack checkout using WebView.
 ///
-/// Loads the Paystack authorization URL inside the app — no browser switch.
+/// Loads the Paystack authorization URL inside the app - no browser switch.
 /// Automatically detects payment completion via callback URL interception.
 ///
 /// Usage (unchanged from previous version):
@@ -124,7 +124,7 @@ class _PaystackCheckoutScreenState extends State<PaystackCheckoutScreen> {
             AppLogger.i('WebView navigating to: ${request.url}',
                 name: 'Paystack');
 
-            // Intercept callback URL — payment is done
+            // Intercept callback URL - payment is done
             if (request.url.startsWith(widget.callbackUrl)) {
               AppLogger.i('Callback URL intercepted - verifying payment',
                   name: 'Paystack');
@@ -396,7 +396,7 @@ class _PaystackCheckoutScreenState extends State<PaystackCheckoutScreen> {
 
             const SizedBox(height: 8),
 
-            // Manual verify fallback — in case callback interception fails
+            // Manual verify fallback - in case callback interception fails
             SizedBox(
               width: double.infinity,
               child: TextButton.icon(

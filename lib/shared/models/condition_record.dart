@@ -12,18 +12,18 @@ extension ConditionStageX on ConditionStage {
 
 /// One party's record of what a property looked like, at one end of a tenancy.
 ///
-/// Stored at `active_rentals/{rentalId}/condition/{stage}/parties/{uid}` — one
+/// Stored at `active_rentals/{rentalId}/condition/{stage}/parties/{uid}` - one
 /// document per person, deliberately. A caution-deposit deduction is argued
 /// over exactly this evidence, so neither side may overwrite the other's, and
 /// rules seal a record once [capturedAt] is set.
 ///
 /// [pending] is the retry-later state. The tenancy has already ended by the
 /// time a move-out record is written, so a failed upload must never trap
-/// anyone — but until the media actually lands there is nothing to judge a
+/// anyone - but until the media actually lands there is nothing to judge a
 /// deduction on, which is why a pending record does not count as evidence.
 class ConditionRecord {
   final String partyId;
-  /// 'tenant' | 'landlord' — who recorded it, for display without a lookup.
+  /// 'tenant' | 'landlord' - who recorded it, for display without a lookup.
   final String partyRole;
   final List<String> videoPaths;
   final List<String> imagePaths;

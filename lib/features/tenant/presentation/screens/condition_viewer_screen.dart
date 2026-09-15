@@ -9,7 +9,7 @@ import '../../../../shared/models/condition_record.dart';
 /// Plays back one party's condition recording.
 ///
 /// The media lives under the RECORDER's own uid in Storage, so the
-/// counterparty cannot read it directly — Storage rules cannot check tenancy
+/// counterparty cannot read it directly - Storage rules cannot check tenancy
 /// membership. Every URL here is minted by `getConditionMediaUrl`, which does
 /// that check server-side and hands back a short-lived link.
 ///

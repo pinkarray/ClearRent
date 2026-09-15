@@ -305,7 +305,7 @@ class _PropertyAgreementCardState extends State<PropertyAgreementCard> {
       color = AppColors.textSecondary;
       // Deliberately says "reusable", and names the current tenancy when there
       // is one. A landlord whose sitting tenant already signed an agreement
-      // reads a bare "no agreement on file" as data loss — this is about the
+      // reads a bare "no agreement on file" as data loss - this is about the
       // blank copy kept for FUTURE tenants, which is a different document.
       // Says "signed" up front: the landlord signs once here, and the tenant
       // returns that same page signed. Skip it and the executed agreement

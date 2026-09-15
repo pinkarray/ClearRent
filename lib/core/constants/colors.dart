@@ -85,7 +85,7 @@ const _light = _Palette(
   // Status. `success` is derived from the brand teal above rather than lifted
   // from a stock palette: the old #10B981 (Tailwind emerald) was a different
   // hue AND far brighter, so any green next to the brand read as a second
-  // design system — loudest wherever it filled a button.
+  // design system - loudest wherever it filled a button.
   success: Color(0xFF0E8F6B),
   successLight: Color(0xFFD6F0E7),
   error: Color(0xFFEF4444),

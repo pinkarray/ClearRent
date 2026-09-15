@@ -7,7 +7,7 @@ import '../../core/constants/text_styles.dart';
 /// an issue) so they always know what to expect next.
 ///
 /// Matches the existing "Tip for today" info box used in the inspection
-/// screens. [color] tints the icon, text and border — defaults to the brand
+/// screens. [color] tints the icon, text and border - defaults to the brand
 /// primary; pass [AppColors.warning]/[AppColors.success]/[AppColors.info] to
 /// match the tone of the surrounding state.
 class WhatHappensNowHint extends StatelessWidget {

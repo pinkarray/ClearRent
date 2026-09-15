@@ -16,16 +16,16 @@
  * This applies the same formula to the docs already in the database.
  *
  * It also RETIRES zero payouts. markRentLandlordPayoutPaid reads the amount
- * with readAmount(), which throws unless it is > 0 — so a payout of 0 (or a
+ * with readAmount(), which throws unless it is > 0 - so a payout of 0 (or a
  * negative one) can never be marked paid and sits in the admin queue forever.
  * Where the correct payout is 0 there is genuinely nothing to send, so the
  * status becomes `not_applicable` and it leaves the queue.
  *
  * Statuses are only ever touched while they are still `pending`. Anything
- * already `paid` is left exactly as it is — this must not rewrite the record
+ * already `paid` is left exactly as it is - this must not rewrite the record
  * of money that actually moved.
  *
- * DRY RUN by default — prints what it WOULD do and writes nothing.
+ * DRY RUN by default - prints what it WOULD do and writes nothing.
  * Pass --confirm to perform the writes.
  *
  *   node scripts/backfill_payout_splits.js            # dry run
@@ -82,7 +82,7 @@ async function main() {
         patch.clearrentEarnings = want.clearrentEarnings;
       }
 
-      // Retire what can never be sent. Only from `pending` — never rewrite a
+      // Retire what can never be sent. Only from `pending` - never rewrite a
       // status that says money already moved.
       if (col === "active_rentals") {
         if (d.landlordPayoutStatus === "pending" && want.landlordPayout <= 0) {

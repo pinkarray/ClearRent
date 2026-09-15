@@ -6,7 +6,7 @@
  * queue: a tenant who was wronged (misrepresented listing, handler no-show,
  * unprofessional conduct, safety issue, or a plain refund request) files a
  * dispute that (a) flags the inspection, (b) raises an admin_alert the web
- * dashboard sees, and (c) leaves an audit trail — WITHOUT letting the tenant
+ * dashboard sees, and (c) leaves an audit trail - WITHOUT letting the tenant
  * conjure their own refund. The admin decides the outcome from the queue via
  * adminResolveInspection (refund / complete / dismiss).
  *

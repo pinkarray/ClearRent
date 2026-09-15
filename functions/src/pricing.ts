@@ -8,8 +8,8 @@
  *      client could charge itself ₦100 for verification. (The webhook flagged
  *      the mismatch, but only after the money moved.)
  *
- * The schedule now lives in Firestore at config/pricing — admin-writable, and
- * readable by the app for display — and the server derives what it actually
+ * The schedule now lives in Firestore at config/pricing - admin-writable, and
+ * readable by the app for display - and the server derives what it actually
  * charges for fixed-price types.
  */
 
@@ -21,7 +21,7 @@ import {getFirestore} from "firebase-admin/firestore";
  * What a role pays to verify, first time versus every year after.
  *
  * Renewal is cheaper because it re-collects only the role proof, not identity
- * — NIN is permanent and is carried forward. The gap is the discount for
+ * - NIN is permanent and is carried forward. The gap is the discount for
  * already being known to the platform.
  */
 export interface RoleFee {
@@ -39,7 +39,7 @@ export interface PricingConfig {
    * Lowest rent a property may be listed at.
    *
    * At or below `dealFee` the fee consumes the whole rent and the landlord
-   * nets nothing — createRentalInterest clamps the split at zero rather than
+   * nets nothing - createRentalInterest clamps the split at zero rather than
    * letting it go negative, so the listing is not broken, just pointless.
    * Configurable (rather than derived from dealFee) because testing wants tiny
    * rents to keep card charges small while production wants a real floor.
@@ -123,7 +123,7 @@ export async function getPricing(): Promise<PricingConfig> {
         DEFAULT_PRICING.minRent,
     };
   } catch (err) {
-    logger.warn("Pricing config unreadable — using defaults", {
+    logger.warn("Pricing config unreadable - using defaults", {
       error: err instanceof Error ? err.message : String(err),
     });
     return DEFAULT_PRICING;
@@ -134,7 +134,7 @@ export async function getPricing(): Promise<PricingConfig> {
  * Has a successful charge for this exact purpose already gone through?
  *
  * Every other precondition in [resolveServerAmount] reads state that only the
- * CLIENT's follow-up write produces — rentPaymentStatus, the request's paid
+ * CLIENT's follow-up write produces - rentPaymentStatus, the request's paid
  * flag. When the app dies between the charge and that write, all of them still
  * say "unpaid" and the next initialize is waved through, so the same thing gets
  * charged twice. This reads the CHARGE instead, which is recorded either by the
@@ -187,7 +187,7 @@ async function existingSuccessfulCharge(
  * @param {object} metadata Caller metadata (may carry rentalInterestId).
  * @return {Promise<number|null>} Amount in Naira, or null if underivable (which
  *   makes initializePayment fall back to the client amount). The "rent" branch
- *   never returns null — it THROWS on any failure so an unauthorised/unready
+ *   never returns null - it THROWS on any failure so an unauthorised/unready
  *   rent payment can never fall back to a client-supplied amount.
  */
 export async function resolveServerAmount(
@@ -221,7 +221,7 @@ export async function resolveServerAmount(
         throw new HttpsError(
           "failed-precondition",
           "We've already received the fee for this inspection. It is being " +
-            "confirmed — please contact support if it does not unlock " +
+            "confirmed - please contact support if it does not unlock " +
             "shortly. You have not been charged again.",
         );
       }
@@ -232,7 +232,7 @@ export async function resolveServerAmount(
   if (type === "rent") {
     // Rent THROWS on every failure mode instead of returning null. A null here
     // would let initializePayment fall back to the client-supplied amount
-    // (chargeAmount = serverAmount ?? amount) — for rent that is precisely the
+    // (chargeAmount = serverAmount ?? amount) - for rent that is precisely the
     // hole this whole flow closes, so an unauthorised/unready rent payment must
     // hard-fail, never charge an arbitrary number.
     const interestId = typeof metadata?.rentalInterestId === "string" ?
@@ -308,7 +308,7 @@ export async function resolveServerAmount(
       interestId,
     );
     if (priorCharge !== null) {
-      logger.error("Second rent charge blocked — one already succeeded", {
+      logger.error("Second rent charge blocked - one already succeeded", {
         uid,
         interestId,
         existingReference: priorCharge,
@@ -319,7 +319,7 @@ export async function resolveServerAmount(
       throw new HttpsError(
         "failed-precondition",
         "We've already received a rent payment for this property. It is " +
-          "being confirmed — please contact support if your tenancy has not " +
+          "being confirmed - please contact support if your tenancy has not " +
           "activated shortly. You have not been charged again.",
       );
     }
@@ -412,7 +412,7 @@ export async function resolveServerAmount(
       // caller sends. That field is stamped only when an admin approves a
       // verification (verification_ops.ts), so "have they ever been verified"
       // is a fact the client cannot assert its way into. The app's own
-      // `isRenewal` flag — derived from whether a NIN file was attached — is
+      // `isRenewal` flag - derived from whether a NIN file was attached - is
       // fine for choosing which form to show, but it is a client claim and
       // would be a discount anyone could take by omitting a file.
       //
@@ -429,7 +429,7 @@ export async function resolveServerAmount(
     // initializePayment charges `serverAmount ?? amount` (the caller's own
     // number) and verification_ops skips its underpayment comparison on a null
     // expectation. `accountType` lives on the user document and is not in the
-    // users update blocklist, so it is self-writable — which turned "malformed
+    // users update blocklist, so it is self-writable - which turned "malformed
     // profile" into a self-service discount: clear or misspell the field, then
     // initialize a ₦100 verification payment and have it accepted in full.
     //

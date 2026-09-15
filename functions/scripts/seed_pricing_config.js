@@ -3,7 +3,7 @@
  * Seed config/pricing with the current fee schedule.
  *
  * The server already falls back to DEFAULT_PRICING when this document is
- * absent, so seeding changes no behaviour — it exists so prices become
+ * absent, so seeding changes no behaviour - it exists so prices become
  * editable from the console/admin WITHOUT a Play Store release.
  *
  * Dry run by default; pass --write to actually write. Uses merge, so keys not
@@ -47,7 +47,7 @@ async function main() {
   console.log("would write:", JSON.stringify(PRICING, null, 2));
 
   if (!WRITE) {
-    console.log("\nDRY RUN — nothing written. Re-run with --write to apply.");
+    console.log("\nDRY RUN - nothing written. Re-run with --write to apply.");
     return;
   }
 

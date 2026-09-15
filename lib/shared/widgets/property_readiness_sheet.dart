@@ -6,8 +6,8 @@ import '../../services/property_service.dart';
 import '../models/property_model.dart';
 import 'app_button.dart';
 
-/// Handler-facing readiness checklist (Phase 2). The assigned agent — or the
-/// landlord when self-handled — confirms the property meets ClearRent's
+/// Handler-facing readiness checklist (Phase 2). The assigned agent - or the
+/// landlord when self-handled - confirms the property meets ClearRent's
 /// standard before it becomes bookable for inspection. Every item must be
 /// ticked. Returns `true` (via Navigator.pop) once the property is marked ready.
 class PropertyReadinessSheet extends StatefulWidget {

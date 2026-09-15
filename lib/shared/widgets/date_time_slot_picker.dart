@@ -5,7 +5,7 @@ import '../../core/constants/text_styles.dart';
 import '../../services/inspection_service.dart';
 
 /// Horizontal date strip used by inspection request and reschedule
-/// flows. Stateless — the parent owns selection state and the list of
+/// flows. Stateless - the parent owns selection state and the list of
 /// available dates.
 ///
 /// Parent loads availableDates via InspectionService.getAvailableDates
@@ -162,7 +162,7 @@ class DateStrip extends StatelessWidget {
   }
 }
 
-/// Wrap of selectable time slot chips. Stateless — parent owns
+/// Wrap of selectable time slot chips. Stateless - parent owns
 /// availableTimeSlots and selectedTimeSlot.
 class TimeSlotWrap extends StatelessWidget {
   final List<String> availableTimeSlots;

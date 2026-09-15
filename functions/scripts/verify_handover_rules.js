@@ -4,7 +4,7 @@
  *
  * ClearRent never holds the caution deposit, so blocking the RELIST is the only
  * leverage that makes a landlord settle up. That gate is only real if the
- * landlord cannot simply write `isAvailable: true` themselves — which they
+ * landlord cannot simply write `isAvailable: true` themselves - which they
  * could, because the owner-update rule never pinned the occupancy fields.
  *
  * Emulator must be running on 8080:
@@ -85,7 +85,7 @@ async function main() {
       ...baseProperty,
       handoverPending: false,
     });
-    // Pre-dates the field entirely — must behave like "free".
+    // Pre-dates the field entirely - must behave like "free".
     await setDoc(doc(d, "properties", "legacy"), {...baseProperty});
     await setDoc(doc(d, "active_rentals", "r1"), {
       landlordId: L1,
@@ -224,7 +224,7 @@ async function main() {
       listingSuspended: true,
       listingSuspendedUntil: new Date(Date.now() + 7 * day),
     });
-    // Served their time — the suspension must simply lapse, with no sweep.
+    // Served their time - the suspension must simply lapse, with no sweep.
     await setDoc(doc(d, "users", S_LAPSED), {
       verificationStatus: "verified",
       listingSuspended: true,

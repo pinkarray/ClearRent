@@ -16,14 +16,14 @@ const LOOKUP_WINDOW_MS = 60 * 60 * 1000;
  *
  * Replaces the client-side `searchTenantsByName`, which ran an UNBOUNDED
  * `users.where('accountType','==','tenant').get()` and filtered on the device.
- * That pulled every tenant's whole user document — nin, phone, email,
- * incomeRange, employer — to any landlord who opened the sheet, and let a
+ * That pulled every tenant's whole user document - nin, phone, email,
+ * incomeRange, employer - to any landlord who opened the sheet, and let a
  * two-letter query enumerate the user base by name.
  *
  * The guards mirror `lookupCaretakerCandidate`, deliberately: the caller must
  * already OWN the property being linked, so a lookup can only ride along with
- * a tenancy the landlord is entitled to create — never a bare phone-to-name
- * query — and it is rate limited per caller on top of that. Only the three
+ * a tenancy the landlord is entitled to create - never a bare phone-to-name
+ * query - and it is rate limited per caller on top of that. Only the three
  * fields the link sheet actually renders are returned.
  */
 export const lookupTenantByPhone = onCall(callableOptions, async (request) => {
@@ -56,7 +56,7 @@ export const lookupTenantByPhone = onCall(callableOptions, async (request) => {
 
   const db = getFirestore();
 
-  // Ownership BEFORE the lookup — the check is what stops this being a bare
+  // Ownership BEFORE the lookup - the check is what stops this being a bare
   // phone-to-name query, so it must gate the read, not follow it.
   const propSnap = await db.collection("properties").doc(propertyId).get();
   if (!propSnap.exists || propSnap.get("landlordId") !== uid) {

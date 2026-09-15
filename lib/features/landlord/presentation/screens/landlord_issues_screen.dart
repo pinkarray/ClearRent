@@ -16,10 +16,10 @@ import '../../../../shared/widgets/guidance_empty_state.dart';
 /// Shows issues grouped by status: Open, In Progress, Resolved.
 ///
 /// Accepts optional extras from navigation:
-///   - `propertyId` (String?) — filter to a specific property
-///   - `category` (String?) — filter to a specific issue category
-///   - `initialTab` (int?) — which tab to open (0=Open, 1=In Progress, 2=Pending, 3=Resolved)
-///   - `propertyTitle` (String?) — shown in the app bar when filtering
+///   - `propertyId` (String?) - filter to a specific property
+///   - `category` (String?) - filter to a specific issue category
+///   - `initialTab` (int?) - which tab to open (0=Open, 1=In Progress, 2=Pending, 3=Resolved)
+///   - `propertyTitle` (String?) - shown in the app bar when filtering
 class LandlordIssuesScreen extends StatefulWidget {
   final String? propertyId;
   /// Viewing as the property's caretaker rather than its owner. Changes WHICH
@@ -244,7 +244,7 @@ class _LandlordIssuesScreenState extends State<LandlordIssuesScreen>
                           label: 'In Progress', count: _inProgressCount)),
                   // Pending confirmation is still unfinished (awaiting the
                   // tenant), so it carries an attention badge. Resolved is the
-                  // done state — no badge, so it never shows a permanent dot.
+                  // done state - no badge, so it never shows a permanent dot.
                   Tab(child: TabBadge(label: 'Pending', count: _pendingCount)),
                   const Tab(text: 'Resolved'),
                 ],
@@ -323,7 +323,7 @@ class _IssuesTab extends StatefulWidget {
 }
 
 class _IssuesTabState extends State<_IssuesTab> {
-  // Built once — the filters are fixed for this tab instance, so caching the
+  // Built once - the filters are fixed for this tab instance, so caching the
   // query avoids recreating it (and flashing the spinner) whenever the parent
   // issues screen rebuilds.
   late final Stream<QuerySnapshot>? _issuesStream = _buildStream();

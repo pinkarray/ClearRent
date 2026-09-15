@@ -14,7 +14,7 @@ service cloud.firestore {
 
     // Super admin identity check. Used by surfaces that should be
     // gated specifically to super admins (e.g. managing other admins).
-    // Currently no rules reference this — it's available for Workstream
+    // Currently no rules reference this - it's available for Workstream
     // 6 follow-ups and any rule that needs a stricter gate than isAdmin.
     function isSuperAdmin() {
       return (request.auth.token.superAdmin == true);
@@ -22,7 +22,7 @@ service cloud.firestore {
 
     // Read-only admin panel access. A `viewer` custom claim grants the admin
     // dashboard the SAME read surface as a full admin, but never write access.
-    // Used on READ / GET / LIST clauses only — every create/update/delete gate
+    // Used on READ / GET / LIST clauses only - every create/update/delete gate
     // stays on isAdmin(), so a viewer can look at everything and change nothing.
     function isViewer() {
       return request.auth != null && request.auth.token.viewer == true;
@@ -37,12 +37,12 @@ service cloud.firestore {
     //
     // Declared HERE, at the top of the document tree, because rules functions
     // are scoped to the match block that declares them. It used to live inside
-    // match /properties, and the active_rentals rule called it anyway — which
+    // match /properties, and the active_rentals rule called it anyway - which
     // compiles with only a warning ("Invalid function name") and then FAILS AT
     // EVALUATION. That denied every tenant write to active_rentals: accepting
     // an agreement, requesting a move-out, contesting a settlement, advancing
     // handoverStage. Landlords were unaffected, because the call sat in an
-    // `||` whose other side was the landlord check — which masked it.
+    // `||` whose other side was the landlord check - which masked it.
     function changed(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
     }
@@ -54,8 +54,8 @@ service cloud.firestore {
     //
     // These were previously arbitrary strings, and getSignedAgreementUrl signs
     // whatever it finds there using ADMIN credentials. So any user could point
-    // a tenancy they control at ANY object in the bucket — a NIN slip, a C of
-    // O, another tenancy's agreement, admin payout proof — and have the
+    // a tenancy they control at ANY object in the bucket - a NIN slip, a C of
+    // O, another tenancy's agreement, admin payout proof - and have the
     // callable hand back the bytes. Storage rules never entered into it.
     //
     // null passes: clearing the signed copies is how a revision asks for a
@@ -72,8 +72,8 @@ service cloud.firestore {
 
     // The title document (C of O / deed). Same invariant as ownAgreementPath
     // and for the same reason: nothing validated the uid segment, so an owner
-    // could copy another landlord's `ownershipDocUrl` — readable off any
-    // property doc — onto their own listing and have an admin approve their
+    // could copy another landlord's `ownershipDocUrl` - readable off any
+    // property doc - onto their own listing and have an admin approve their
     // listing against somebody else's genuine title.
     //
     // Declared at the document root: properties AND buildings both call it.
@@ -85,7 +85,7 @@ service cloud.firestore {
 
     // One identity document. Paths are `verification/{uid}/{docType}/{version}`,
     // or `verification/{uid}/{docType}` on records predating the versioned
-    // scheme — both shapes are accepted, the uid segment is what matters.
+    // scheme - both shapes are accepted, the uid segment is what matters.
     function ownVerificationDoc(v) {
       return v == null
         || (v is string
@@ -97,7 +97,7 @@ service cloud.firestore {
     //
     // This is the worse half of the substitution bug. The field was a
     // client-written map of Storage paths that an ADMIN later opens to decide
-    // whether to verify the account — so pointing it at another user's real
+    // whether to verify the account - so pointing it at another user's real
     // NIN slip put a genuine identity document in front of a reviewer as
     // evidence for the wrong person's application. Identity fraud with our own
     // review process as the instrument.
@@ -175,7 +175,7 @@ service cloud.firestore {
     // `issues` and `maintenance_logs` are separate match blocks and both need
     // this. A helper called from outside the block that declares it compiles
     // with only a warning ("Invalid function name") and then FAILS AT
-    // EVALUATION, which denies — the failure that took down every tenant write
+    // EVALUATION, which denies - the failure that took down every tenant write
     // for six hours.
     //
     // The exists() guard is load-bearing: get() on a MISSING document yields
@@ -195,7 +195,7 @@ service cloud.firestore {
              .data.get('caretakerId', '') == request.auth.uid;
     }
 
-    // Internal — locked. Only Cloud Functions (admin SDK) write here.
+    // Internal - locked. Only Cloud Functions (admin SDK) write here.
     match /_rate_limits/{docId} {
       allow read, write: if false;
     }
@@ -222,7 +222,7 @@ service cloud.firestore {
     // The minimum-supported-build gate. Read publicly because it has to work
     // on the sign-in screen too: a user stuck on a build we've retired is
     // often the user who cannot get past login, and the generic config rule
-    // above requires auth. Holds a build number, a message and a store URL —
+    // above requires auth. Holds a build number, a message and a store URL -
     // nothing private. Writes stay admin-only via that same rule.
     match /config/app_version {
       allow read: if true;
@@ -254,7 +254,7 @@ service cloud.firestore {
       // Owner self-update, EXCEPT server-authoritative fields:
       //  - verificationStatus may be set to a non-approved value (e.g.
       //    'pending' on verification submit) but NEVER 'verified'/'rejected'
-      //    — those are admin-only (isAdmin clause below). This is the fix for
+      //    - those are admin-only (isAdmin clause below). This is the fix for
       //    audit #1: previously the blanket owner-update let a modified client
       //    self-set verificationStatus='verified' and then list properties
       //    (the properties/create rule reads this field as source of truth)
@@ -277,8 +277,8 @@ service cloud.firestore {
           || request.resource.data.isVerified == false
         )
         // Identity documents must be the caller's own uploads. Guarded on the
-        // field CHANGING so records written before this rule — and any legacy
-        // Cloudinary URLs among them — don't deny unrelated profile edits.
+        // field CHANGING so records written before this rule - and any legacy
+        // Cloudinary URLs among them - don't deny unrelated profile edits.
         && (!changed(['verificationDocs']) || ownVerificationDocs());
 
       // Admin can update any user doc (approve/reject verification, etc.).
@@ -286,11 +286,11 @@ service cloud.firestore {
 
       // rating / ratingRaw / totalRatings are written ONLY by the
       // onInspectionRated Cloud Function (admin SDK, bypasses rules). No client
-      // clause — this closes audit #2 (previously any authed user could set
+      // clause - this closes audit #2 (previously any authed user could set
       // another user's rating). They're also in the owner blocklist above.
 
       // Earnings fields (pendingEarnings, paidEarnings) are written
-      // exclusively by Cloud Functions using admin SDK — the W1
+      // exclusively by Cloud Functions using admin SDK - the W1
       // creditInspectionEarnings CF credits, the W5 markInspection
       // AgentPayoutPaid CF shifts pending→paid. Admin SDK bypasses
       // these rules, so no allow-update clause is needed for them.
@@ -300,7 +300,7 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
 
-      // Private subcollection (C1) — sensitive data that must NOT live on the
+      // Private subcollection (C1) - sensitive data that must NOT live on the
       // user doc (which is readable by any authenticated user). Holds
       // `private/bank` (account number/name/bank). Readable only by the owner
       // and admin (payout pages); writable only by the owner. Cloud Functions
@@ -313,7 +313,7 @@ service cloud.firestore {
       }
     }
     
-    // Verification requests collection. Highly sensitive — contains NIN
+    // Verification requests collection. Highly sensitive - contains NIN
     // URLs, utility bills, and payment references. Closes F1.9 (previously
     // any authenticated user could read every verification request).
     match /verification_requests/{requestId} {
@@ -350,7 +350,7 @@ service cloud.firestore {
     match /properties/{propertyId} {
       allow read: if request.auth != null;
 
-      // A unit may only reference a building the SAME landlord owns — otherwise
+      // A unit may only reference a building the SAME landlord owns - otherwise
       // a modified client could borrow another owner's verified C of O by
       // setting their buildingId. True when no building is referenced.
       function buildingOwnedByCaller() {
@@ -363,7 +363,7 @@ service cloud.firestore {
       }
 
       // True when this write attaches the listing to a building (a "grouped
-      // unit"). Such a unit owns NO document of its own — the building's C of O
+      // unit"). Such a unit owns NO document of its own - the building's C of O
       // is the single artifact an admin reviews, and the unit inherits it.
       function isGrouped() {
         return 'buildingId' in request.resource.data
@@ -379,12 +379,12 @@ service cloud.firestore {
       }
 
       // Rent floor. At or below the deal fee the fee consumes the whole rent
-      // and the landlord nets nothing — createRentalInterest clamps the split
+      // and the landlord nets nothing - createRentalInterest clamps the split
       // at zero rather than going negative, so such a listing isn't broken,
       // just a dead end nobody can be paid from.
       //
       // Read from config/pricing so it can be lowered to test with small card
-      // charges and raised for launch WITHOUT an app release — same reason
+      // charges and raised for launch WITHOUT an app release - same reason
       // config/areas is remote. Defaults to 10000 when the field is absent, so
       // this rule is safe to deploy before the config doc is updated.
       //
@@ -403,7 +403,7 @@ service cloud.firestore {
         );
       }
 
-      // NOTE — there is deliberately NO `state` guard here. ClearRent operates
+      // NOTE - there is deliberately NO `state` guard here. ClearRent operates
       // in Lagos today, but the gate is ADMIN REVIEW, not rules: a listing is
       // born isVerified:false / isAvailable:false and cannot be browsed or
       // booked until an admin approves it, so nothing outside Lagos can reach a
@@ -412,13 +412,13 @@ service cloud.firestore {
       // A rules guard would add nothing to that and would cost a rules deploy
       // AND an app release on the day we open another state. The inspection fee
       // is flat (₦10k; clusters are display-only and fall back when
-      // unresolved), so an out-of-state listing is degraded — no local agents,
-      // area not in the dropdown — not broken. The app flags it to the landlord
+      // unresolved), so an out-of-state listing is degraded - no local agents,
+      // area not in the dropdown - not broken. The app flags it to the landlord
       // and the admin dashboard badges it "Outside Lagos" for the reviewer.
 
-      // One listing = one tenancy. Everything priced on this doc is singular —
+      // One listing = one tenancy. Everything priced on this doc is singular -
       // one rent, one caution deposit, one agent fee, one agreement, one
-      // Paystack split — so a second tenant on the same listing would buy an
+      // Paystack split - so a second tenant on the same listing would buy an
       // unspecified thing at someone else's price. Two lettable units are TWO
       // listings under one `buildingId`, which is also how they share one
       // verified C of O.
@@ -428,7 +428,7 @@ service cloud.firestore {
       // CF both key their slot guard off whatever is stored. Enforced here so
       // the guard can't be widened by a client at all.
       //
-      // Declared inside this match block — a helper called from outside the
+      // Declared inside this match block - a helper called from outside the
       // block that declares it compiles with a warning and then denies at
       // evaluation.
       function oneTenancyPerListing() {
@@ -448,7 +448,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verificationStatus == 'verified'
         // A suspended landlord may not publish. Suspension follows an admin
-        // finding — most often a caution deposit taken and never returned —
+        // finding - most often a caution deposit taken and never returned -
         // and it is the only real consequence available, since ClearRent holds
         // none of the money. `listingSuspendedUntil` is the timed form; a null
         // alongside listingSuspended means until an admin lifts it. Expiry is
@@ -472,12 +472,12 @@ service cloud.firestore {
         && request.resource.data.get('isVerified', false) == false
         && oneTenancyPerListing()
         && ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
-        // The rejection reason is the admin's words — never seeded by the owner.
+        // The rejection reason is the admin's words - never seeded by the owner.
         && !request.resource.data.keys().hasAny(['ownershipDocRejectionReason'])
         // A listing is BORN with no caretaker. The update rule below stops an
         // owner appointing one, but guarding update alone left the front door
         // open: create the listing with caretakerId already set to any uid and
-        // the invite is bypassed entirely — a third party would reach a
+        // the invite is bypassed entirely - a third party would reach a
         // tenant's issues and message thread having never agreed to anything.
         && !request.resource.data.keys().hasAny(['caretakerId', 'caretakerName'])
         // A grouped unit carries no doc fields; a standalone listing has no
@@ -518,7 +518,7 @@ service cloud.firestore {
         // Holds on edit too, or the pin is create-only: list with 1, raise it
         // afterwards, and the slot guard lets a second tenant in.
         && oneTenancyPerListing()
-        // The landlord may still delist or relist at will — that toggle is
+        // The landlord may still delist or relist at will - that toggle is
         // theirs and the web listing editor writes it. What they may NOT do is
         // relist a unit whose handover is unsettled: ClearRent never holds the
         // caution deposit, so relisting is the only leverage that makes a
@@ -527,7 +527,7 @@ service cloud.firestore {
           !changed(['isAvailable'])
           || resource.data.get('handoverPending', false) == false
         )
-        // The rent floor holds on edit too — otherwise it is create-only and
+        // The rent floor holds on edit too - otherwise it is create-only and
         // an owner lists at the floor then drops the rent afterwards. Gated on
         // `rent` actually changing so listings created BEFORE the floor
         // existed stay editable for everything else; they only have to come up
@@ -538,7 +538,7 @@ service cloud.firestore {
         && !changed(['ownershipDocRejectionReason'])
         // A caretaker is INVITED and must accept; `caretakerId` is stamped by
         // respondToCaretakerInvite on the admin SDK. This rule has no hasOnly,
-        // so every field it doesn't name is owner-writable — without this guard
+        // so every field it doesn't name is owner-writable - without this guard
         // a landlord could appoint any user as caretaker of their property in a
         // single write, with no invite and no consent, handing a third party
         // their tenant's issues and message thread. The owner may CLEAR it
@@ -549,7 +549,7 @@ service cloud.firestore {
           || request.resource.data.get('caretakerId', null) == null
         )
         // Owner may move the doc back to review but may NOT self-verify or
-        // self-reject — those are admin-only (the admin clause below bypasses
+        // self-reject - those are admin-only (the admin clause below bypasses
         // this). Allowlisted, so 'inherited'/'not_uploaded' can't slip past.
         && (
           !changed(['ownershipDocStatus'])
@@ -558,7 +558,7 @@ service cloud.firestore {
         // A standalone listing has no building to inherit from. Enforced at
         // create; it must hold on UPDATE too. Otherwise an owner creates
         // legitimately, gets REJECTED by an admin, then relabels the status to
-        // 'inherited' — which is in the owner allowlist, leaves buildingId and
+        // 'inherited' - which is in the owner allowlist, leaves buildingId and
         // isVerified untouched, and resolves (standalone) to its own raw value,
         // so every status-keyed gate downstream passes trivially and the
         // rejection is escaped.
@@ -566,7 +566,7 @@ service cloud.firestore {
           isGrouped()
           || request.resource.data.get('ownershipDocStatus', 'none') != 'inherited'
         )
-        // A grouped unit owns no document — the building's is the reviewed
+        // A grouped unit owns no document - the building's is the reviewed
         // artifact. Its own doc fields must never be written: with status
         // 'inherited' (never the literal 'verified') every status-keyed guard
         // below passes trivially, which is how a unit came to be labelled
@@ -581,7 +581,7 @@ service cloud.firestore {
           || request.resource.data.get('ownershipDocStatus', 'none') == 'pending'
         )
         // Once an admin has APPROVED the document, its type can't be relabelled
-        // on its own — the file is whatever it is, so calling an approved C of O
+        // on its own - the file is whatever it is, so calling an approved C of O
         // a 'deed' just makes the record lie. Changing the type after approval
         // requires uploading the matching document. Before review (pending /
         // none / rejected) the owner is still free to correct the label.
@@ -628,7 +628,7 @@ service cloud.firestore {
 
       // The assigned agent also handles inspection scheduling, so they may set
       // ONLY the inspection-availability fields on a property they handle.
-      // Field-scoped, same as the readiness clause — nothing else can change.
+      // Field-scoped, same as the readiness clause - nothing else can change.
       allow update: if request.auth != null
         && resource.data.assignedAgentId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -638,7 +638,7 @@ service cloud.firestore {
       // caretaker where the assigned agent stands on an agent-handled one: they
       // vet readiness and they set the inspection availability, because they are
       // the person who actually opens the door. Two clauses mirroring the agent
-      // pair above, field-scoped with hasOnly — rent, ownership, availability
+      // pair above, field-scoped with hasOnly - rent, ownership, availability
       // and `caretakerId` itself are all unreachable through them, so this
       // access can neither be widened nor used to extend itself.
       //
@@ -667,7 +667,7 @@ service cloud.firestore {
       // (inquiryCount, viewCount, savedCount) on a property they
       // don't own. These are bumped by non-owners during normal use:
       // viewCount on open, savedCount on save/unsave, inquiryCount on
-      // inspection request. Field-scoped — only these three keys may
+      // inspection request. Field-scoped - only these three keys may
       // change through this clause, so ownership-sensitive fields
       // (rent, landlordId, isAvailable, etc.) remain protected.
       // Values are not delta-checked: these are cosmetic metrics and
@@ -698,7 +698,7 @@ service cloud.firestore {
       }
 
       // NOTE: the sitting tenant is covered by the SAME reveals/{uid} grant as
-      // an inspecting tenant — recordRentPayment writes one on the admin SDK
+      // an inspecting tenant - recordRentPayment writes one on the admin SDK
       // when the rent clears. Deliberately not a rule that reads the caller's
       // own user doc: `users` is guarded by a DENYLIST, not a hasOnly
       // allowlist, so `currentPropertyId` is client-writable and any rule
@@ -725,7 +725,7 @@ service cloud.firestore {
         //
         // The reveal clause explicitly excludes `agreement`. Rules are ORed
         // across every matching path, so the tighter match above cannot
-        // subtract access this one grants — without the docId guard, a reveal
+        // subtract access this one grants - without the docId guard, a reveal
         // (which is about finding the property) would also open the landlord's
         // tenancy agreement. Proven by verify_message_rules.js.
         allow read: if request.auth != null && (
@@ -755,7 +755,7 @@ service cloud.firestore {
       }
     }
 
-    // Buildings — group multiple unit listings of one landlord so a single
+    // Buildings - group multiple unit listings of one landlord so a single
     // ownership document (C of O / deed) is verified ONCE and covers every
     // unit. Units reference buildingId and inherit the building's
     // ownershipDocStatus. A standalone listing has no building.
@@ -766,11 +766,11 @@ service cloud.firestore {
         && request.resource.data.landlordId == request.auth.uid
         && (request.resource.data.ownershipDocStatus == 'none'
             || request.resource.data.ownershipDocStatus == 'pending')
-        // The shared title document must be the caller's own upload — this one
+        // The shared title document must be the caller's own upload - this one
         // covers every unit that later inherits from the building.
         && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null));
 
-      // Readable by any authenticated user — a prospective tenant viewing a
+      // Readable by any authenticated user - a prospective tenant viewing a
       // unit needs the building's doc status for the inspection gate (mirrors
       // properties being readable; the C of O URL is no more sensitive than the
       // per-property ownershipDocUrl already is).
@@ -804,7 +804,7 @@ service cloud.firestore {
         )
         // Changing the DOCUMENT ITSELF (file or type) must send it back for
         // review. Without this, the status guard above only bites when status
-        // is among the changed keys — so an owner could swap the file, or
+        // is among the changed keys - so an owner could swap the file, or
         // relabel c_of_o → deed, while 'verified' silently stuck, keeping an
         // approval the admin never gave to that document.
         && (
@@ -812,7 +812,7 @@ service cloud.firestore {
                 .hasAny(['ownershipDocUrl', 'ownershipDocType'])
           || request.resource.data.ownershipDocStatus == 'pending'
         )
-        // After review, the type can't be relabelled on its own — changing it
+        // After review, the type can't be relabelled on its own - changing it
         // requires uploading the matching document. Mirrors properties.
         && (
           !request.resource.data.diff(resource.data).affectedKeys()
@@ -829,7 +829,7 @@ service cloud.firestore {
           || ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         );
 
-      // No client deletes — a building may have units; admin SDK handles cleanup.
+      // No client deletes - a building may have units; admin SDK handles cleanup.
       allow delete: if isAdmin();
     }
 
@@ -850,7 +850,7 @@ service cloud.firestore {
         isActiveParticipant() || canRead()
       );
       
-      // List/query (M3): the caller must be a party to every matched doc —
+      // List/query (M3): the caller must be a party to every matched doc -
       // a participant, or the landlord/tenant/agent named on it, or admin.
       // Hardened: was `if request.auth != null`, which let any authed user
       // enumerate every conversation. Live queries scope by
@@ -862,7 +862,7 @@ service cloud.firestore {
         resource.data.tenantId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
         // The caretaker↔tenant thread is three-party (landlord, tenant,
-        // caretaker), so the landlord can read it — openly, as a listed
+        // caretaker), so the landlord can read it - openly, as a listed
         // participant rather than a silent observer, which is why no new
         // "observer" concept was introduced. The caretaker's own dedup check
         // queries by caretakerId, exactly as the agent path queries by agentId.
@@ -903,7 +903,7 @@ service cloud.firestore {
         );
         
         // Create: active participant, and either (a) they are the sender AND
-        // verified (or an admin — admin support messages unverified users), OR
+        // verified (or an admin - admin support messages unverified users), OR
         // (b) it's a system status message they're inserting. The isVerified()
         // clause is the server-side half of the messaging gate that was
         // previously enforced only in the client (audit #5).
@@ -935,7 +935,7 @@ service cloud.firestore {
         }
 
         // Edit: the author rewrites their own text. A deleted message stays
-        // deleted, and the text must remain non-empty — an "edit" to '' would
+        // deleted, and the text must remain non-empty - an "edit" to '' would
         // be a delete that skips the deleted flag.
         function isAuthorEdit() {
           return isMessageAuthor()
@@ -957,8 +957,8 @@ service cloud.firestore {
         }
 
         // Update: a strict allowlist, not blanket participant write. Blanket
-        // update let ANY participant rewrite ANY message on the thread —
-        // including the other party's — so edit/delete had to close that at
+        // update let ANY participant rewrite ANY message on the thread -
+        // including the other party's - so edit/delete had to close that at
         // the same time it opened. senderId, senderName, timestamp and the
         // property-share snapshot are unreachable from every branch.
         allow update: if request.auth != null
@@ -973,7 +973,7 @@ service cloud.firestore {
     // Activities collection
     match /activities/{activityId} {
       // Read/list (M1): the landlord whose feed it is, the actor who generated
-      // it, or admin. Hardened — was `if request.auth != null`, which let any
+      // it, or admin. Hardened - was `if request.auth != null`, which let any
       // authed user enumerate the entire activity feed (who viewed/inquired on
       // which property, landlord ids, payment events). Live queries scope by
       // landlordId == uid (the landlord's feed) or actorId == uid (the
@@ -987,18 +987,18 @@ service cloud.firestore {
 
       // Create: any authed user logs an activity. The actor/landlord shapes
       // vary across call sites (some omit actorId), and the sensitive exposure
-      // was the read above — so create stays auth-gated, not field-constrained.
+      // was the read above - so create stays auth-gated, not field-constrained.
       allow create: if request.auth != null;
 
       // Update (M1): only the feed owner, and only to mark an item read
-      // (markAsRead — the sole update site, activity_service.dart).
+      // (markAsRead - the sole update site, activity_service.dart).
       allow update: if request.auth != null
         && resource.data.landlordId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['isRead']);
     }
     
-    // Saved properties (top-level) — DEAD COLLECTION.
+    // Saved properties (top-level) - DEAD COLLECTION.
     // The mobile app uses the per-user /users/{userId}/savedProperties
     // subcollection. No code reads or writes this top-level collection
     // (verified via grep across Flutter app, Next.js webapp, and CFs).
@@ -1020,7 +1020,7 @@ service cloud.firestore {
     //
     // Time-based preconditions (reschedule window, on-the-way cutoff
     // 2hrs before scheduled time) are intentionally NOT enforced in
-    // rules — product logic, not security.
+    // rules - product logic, not security.
     match /inspection_requests/{requestId} {
       
       // ─── Helpers ─────────────────────────────────────────────
@@ -1053,7 +1053,7 @@ service cloud.firestore {
           .affectedKeys().hasOnly(fields);
       }
       
-      // Receiver of the current reschedule proposal — i.e. the
+      // Receiver of the current reschedule proposal - i.e. the
       // opposite side from whoever proposed it. Used by row 17, 18,
       // 19 (counter, approve, decline of an existing proposal).
       function isRescheduleReceiver() {
@@ -1083,7 +1083,7 @@ service cloud.firestore {
             .data.get('readyForInspections', false) == true;
       }
 
-      // Arrival may only be recorded around the scheduled slot — and since
+      // Arrival may only be recorded around the scheduled slot - and since
       // 'confirm met' requires both arrived, and completion requires both
       // confirmed, gating arrival gates the whole chain. Compares absolute
       // instants, so it is timezone-proof: 6h before the slot to 24h after.
@@ -1107,13 +1107,13 @@ service cloud.firestore {
       // that:
       //
       //   • Booking as somebody else, or starting at status 'approved' with
-      //     `tenantConfirmedMet`/`handlerConfirmedMet` already true — then one
+      //     `tenantConfirmedMet`/`handlerConfirmedMet` already true - then one
       //     update to 'completed' passes [Row 6] and fires
       //     creditInspectionEarnings. Repeat per document to mint the handler
       //     fee at will.
       //   • Starting at 'approved' and calling confirmInspectionPayment, which
-      //     checks only tenantId + status — both of which the caller had just
-      //     written — to reveal any property's exact address.
+      //     checks only tenantId + status - both of which the caller had just
+      //     written - to reveal any property's exact address.
       //
       // A booking therefore starts where a booking actually starts: made by the
       // tenant themselves, awaiting the handler, unpaid, with none of the
@@ -1126,7 +1126,7 @@ service cloud.firestore {
              in ['unpaid', 'not_required']
         // Nobody inspects their own listing. Naming yourself as both the
         // tenant and the handler lets one account walk the entire chain
-        // legitimately — approve, arrive, confirm, complete — and collect the
+        // legitimately - approve, arrive, confirm, complete - and collect the
         // handler fee for a visit that never happened. The clients write these
         // keys explicitly (often as null), so this constrains VALUES rather
         // than checking for absence.
@@ -1197,7 +1197,7 @@ service cloud.firestore {
                        'declinedAt', 'landlordOverrideDeadline',
                        'originalDeclineBy', 'updatedAt']);
       
-      // [Row 2] finalDeclineRequest — auto-decline after 12hr
+      // [Row 2] finalDeclineRequest - auto-decline after 12hr
       // deadline. No mobile clause. Will be CF-only when implemented
       // (see parking lot). Admin SDK bypasses these rules.
       
@@ -1259,7 +1259,7 @@ service cloud.firestore {
         && request.resource.data.status == 'cancelled'
         && inspFields(['status', 'updatedAt']);
       
-      // [Row 9] _processRefund — subroutine called after a paid
+      // [Row 9] _processRefund - subroutine called after a paid
       // inspection is declined or cancelled. Inherits caller's auth.
       // Site: inspection_service.dart:2103
       allow update: if (isLandlord() || isTenant() || isHandler())
@@ -1290,7 +1290,7 @@ service cloud.firestore {
                        'updatedAt']);
       
       // [Row 15a] Tenant records THEIR half of the meeting. Both must have
-      // arrived, and the tenant may only set their own flag — the rule's
+      // arrived, and the tenant may only set their own flag - the rule's
       // field allow-list makes it impossible to also flip the handler's.
       // Site: inspection_service.dart markMet
       allow update: if isTenant()
@@ -1395,7 +1395,7 @@ service cloud.firestore {
         && request.resource.data.tenantPassed == true
         && inspFields(['tenantPassed', 'updatedAt']);
       
-      // [Row 25] Tenant reschedules an inspection that expired unapproved —
+      // [Row 25] Tenant reschedules an inspection that expired unapproved -
       // re-enters the approval queue with a new date (payment is kept).
       // Site: inspection_service.dart rescheduleExpiredInspection
       allow update: if isTenant()
@@ -1414,14 +1414,14 @@ service cloud.firestore {
         && inspFields(['status', 'paymentStatus', 'refundReason',
             'refundedAt', 'updatedAt']);
 
-      // Admin override — any legitimate admin intervention.
+      // Admin override - any legitimate admin intervention.
       allow update: if isAdmin();
     }
 
     // Agent ratings collection
     match /agent_ratings/{ratingId} {
       allow read: if request.auth != null;
-      // Create: the rater files under their OWN id (audit #3 — was
+      // Create: the rater files under their OWN id (audit #3 - was
       // unconstrained, which let a client forge raterId / stuff ratings
       // attributed to other users). Matches agent_service.dart which sets
       // raterId to the current uid.
@@ -1436,7 +1436,7 @@ service cloud.firestore {
     match /rental_interests/{interestId} {
       // Create (H2 CLOSED): server-only. The figures on this document decide
       // what the tenant is charged for rent, and a client could previously set
-      // them — minting an interest claiming ₦100 against a ₦1.2m tenancy, which
+      // them - minting an interest claiming ₦100 against a ₦1.2m tenancy, which
       // the rules then froze as immutable and initializePayment charged.
       // Creation now runs through the createRentalInterest callable, which
       // derives every amount from the property and config/pricing (Admin SDK
@@ -1456,7 +1456,7 @@ service cloud.firestore {
       );
 
       // Update (M2): parties may drive the payment + acceptance lifecycle, but
-      // the financial and identity fields are IMMUTABLE post-create — payouts,
+      // the financial and identity fields are IMMUTABLE post-create - payouts,
       // amounts, fees, and the tenant/landlord/agent/property ids can't be
       // rewritten by a client. This is an ALLOWLIST of exactly the fields the
       // live update sites in rental_interest_service.dart touch (upload proof,
@@ -1480,7 +1480,7 @@ service cloud.firestore {
       // Create (H2): only the landlord, finalizing a tenant, and only from a
       // real rental_interest they own that has reached payment_verified/
       // accepted. A modified client can no longer fabricate an active rental
-      // (and its landlord/agent payout rows) out of thin air — it must be
+      // (and its landlord/agent payout rows) out of thin air - it must be
       // backed by a verified interest. Financial fields are still
       // client-denormalized from that interest; fully server-authoritative
       // figures require the Paystack-verification CF (tracked separately).
@@ -1520,9 +1520,9 @@ service cloud.firestore {
       // Tenant/landlord may update their own rental, but ONLY the fields the
       // client app legitimately writes (agreement workflow, payment reminder,
       // and the status / move-out / contest lifecycle). This is an ALLOWLIST,
-      // not a blocklist: every financial and lease field — rentAmount,
+      // not a blocklist: every financial and lease field - rentAmount,
       // pendingRentForRenewal, pendingRentEffectiveDate, agentFee, totalPaid,
-      // all payout amounts/statuses, leaseStartDate/EndDate, nextPaymentDue —
+      // all payout amounts/statuses, leaseStartDate/EndDate, nextPaymentDue -
       // is excluded, so a landlord (or tenant) cannot self-apply a rent change
       // or otherwise bypass the admin-approved rent-review / renewal flow. Those
       // fields are written only by Cloud Functions via the admin SDK, which
@@ -1548,7 +1548,7 @@ service cloud.firestore {
               'agreementUrl', 'agreementUploadedAt', 'agreementStatus',
               'tenantDisputeReason', 'tenantAcceptedAt', 'landlordFinalizedAt',
               // Wet-signature trail. Acceptance used to write a status and a
-              // timestamp and nothing else — leaving the only evidence of
+              // timestamp and nothing else - leaving the only evidence of
               // agreement a row in our own database, which a tenant could
               // simply deny. These hold the actual signed documents: the
               // tenant's signed copy, then the counter-signed copy that
@@ -1559,7 +1559,7 @@ service cloud.firestore {
               // party. The landlord states a revision changes terms only and
               // not the rent; the tenant, who has to read the document to sign
               // it, can contradict that. `tenantFlaggedRentChange` is what an
-              // onActiveRentalUpdated branch turns into an admin alert — a
+              // onActiveRentalUpdated branch turns into an admin alert - a
               // false declaration becomes evidence rather than an argument.
               'agreementRevisedAt', 'agreementRevisionTermsOnly',
               'agreementRevisionDeclaredRent', 'tenantFlaggedRentChange',
@@ -1567,7 +1567,7 @@ service cloud.firestore {
               'status', 'endReason', 'endedBy', 'endedAt',
               'tenantContested', 'tenantContestStatement', 'contestedAt',
               'moveOutRequestedAt', 'moveOutIntendedDate',
-              // "I've seen your notice" — deliberately NOT "you have gone".
+              // "I've seen your notice" - deliberately NOT "you have gone".
               // Confirming handover is gated to the tenant's move-out date, so
               // without this the landlord received a notice they could not
               // respond to for days and the tenant heard silence. Optional: a
@@ -1575,7 +1575,7 @@ service cloud.firestore {
               // already covers a silent one.
               'moveOutAcknowledgedAt',
               // Caution-deposit declaration made by the landlord at handover.
-              // A record only — ClearRent never custodies this money — but it
+              // A record only - ClearRent never custodies this money - but it
               // is what a dispute is judged on, so it is client-writable here
               // and read by the tenant.
               'cautionDeductionAmount', 'cautionDeductionReason',
@@ -1583,18 +1583,18 @@ service cloud.firestore {
               // ── Handover (move-out) ──────────────────────────────────────
               // The tenancy ends on the tenant's timeline; the PROPERTY stays
               // gated until this reaches 'closed'. Stage is advanced by both
-              // parties in turn, which is why it is client-writable — the
+              // parties in turn, which is why it is client-writable - the
               // server trigger reads it to decide when to release the unit.
               'handoverStage',
               // Tenant's condition evidence. Video takes precedence over
               // photos and both are captured live, never picked from a gallery
-              // — a gallery pick could be a video of the place on move-IN day.
+              // - a gallery pick could be a video of the place on move-IN day.
               // 'handoverEvidencePending' is the retry-later state: the
               // tenancy has already ended, but no caution claim can be made
               // until the upload actually lands.
               'handoverEvidenceAt', 'handoverEvidencePending',
               // The landlord attesting they physically checked the unit. This
-              // is the relist lever — nothing frees the property without it.
+              // is the relist lever - nothing frees the property without it.
               'handoverConditionConfirmedAt', 'handoverConditionNotes',
               // Settlement. `handoverSettlementMethod` is the seam for taking
               // the deposit through ClearRent later; today it only ever records
@@ -1618,11 +1618,11 @@ service cloud.firestore {
       // Both sides may record: the tenant's video is what protects their
       // deposit, and the landlord's is what substantiates a deduction. Each
       // party writes their OWN document, so neither can overwrite or delete
-      // what the other recorded — the whole point is that the record survives
+      // what the other recorded - the whole point is that the record survives
       // the disagreement it exists to settle.
       match /condition/{stage}/parties/{partyId} {
         // The caretaker walks the unit at move-out, so they may record what it
-        // looked like — and NOTHING else about the handover. They get no
+        // looked like - and NOTHING else about the handover. They get no
         // clause on the parent active_rental, so the deduction declaration
         // (`cautionDeductionAmount`), the condition confirmation that frees the
         // unit for relisting, and the settlement are all unreachable from here.
@@ -1661,7 +1661,7 @@ service cloud.firestore {
             rentalCaretaker()
           );
 
-        // Amendable only while the upload is still finishing — a large video
+        // Amendable only while the upload is still finishing - a large video
         // on a bad connection is exactly the case the retry-later state
         // exists for. Once `capturedAt` is set the record is sealed, so
         // evidence cannot be quietly swapped after the other side has seen it
@@ -1673,7 +1673,7 @@ service cloud.firestore {
         allow delete: if false;
       }
     }
-    // Rent-review requests — a landlord files to raise rent at renewal.
+    // Rent-review requests - a landlord files to raise rent at renewal.
     // Eligibility (rental ownership + within 6 months of leaseEndDate) is
     // enforced in the mobile form and the CF; rules only ensure the filer
     // owns the request and can't self-approve. Admin decides; on approval
@@ -1711,7 +1711,7 @@ service cloud.firestore {
     match /issues/{issueId} {
       allow create: if request.auth != null;
       
-      // The caretaker of the property is a party to its issues — triaging them
+      // The caretaker of the property is a party to its issues - triaging them
       // is the whole job. Costs one property read per issue evaluated; at this
       // scale that is nothing, and the alternative (denormalising caretakerId
       // onto every issue) goes stale the moment the caretaker changes.
@@ -1732,7 +1732,7 @@ service cloud.firestore {
       // every other field reads as undefined, which is an evaluation error and
       // denies. So a caretaker filters by propertyId (what isPropertyCaretaker
       // reads) while the landlord keeps filtering by landlordId and the tenant
-      // by tenantId — a propertyId-only query is denied for BOTH of them, even
+      // by tenantId - a propertyId-only query is denied for BOTH of them, even
       // though every matching document plainly names them.
       allow list: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
@@ -1750,7 +1750,7 @@ service cloud.firestore {
       // The caretaker's own update clause is an ALLOWLIST, unlike the parties'
       // blanket one above: these are exactly the keys _updateStatus writes, so
       // a caretaker drives the triage lifecycle and cannot rewrite tenantId,
-      // landlordId or propertyId — which would move an issue onto a different
+      // landlordId or propertyId - which would move an issue onto a different
       // unit or reassign whose problem it is.
       allow update: if request.auth != null
         && isPropertyCaretaker(resource.data.get('propertyId', ''))
@@ -1761,7 +1761,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Maintenance logs — proactive maintenance records for a property, written
+    // Maintenance logs - proactive maintenance records for a property, written
     // by whoever manages it (the owner, or their caretaker).
     match /maintenance_logs/{logId} {
       // Only the landlord who owns the property can create logs.
@@ -1770,7 +1770,7 @@ service cloud.firestore {
       // YOURSELF as landlordId satisfied that on its own, so any user could
       // create a log pointing at someone else's propertyId. That was invisible
       // while the only reader queried by landlordId, but the caretaker's feed
-      // queries by propertyId — so without this a stranger could inject a
+      // queries by propertyId - so without this a stranger could inject a
       // maintenance note into the health history of a property they have
       // nothing to do with.
       allow create: if request.auth != null
@@ -1780,8 +1780,8 @@ service cloud.firestore {
              .data.landlordId == request.auth.uid;
 
       // A caretaker logs maintenance on a unit they manage. `landlordId` on the
-      // doc stays the OWNER's uid — the log belongs to the property, not to
-      // whoever happened to type it — so the landlord's existing queries keep
+      // doc stays the OWNER's uid - the log belongs to the property, not to
+      // whoever happened to type it - so the landlord's existing queries keep
       // returning it. `loggedBy` carries who actually did the work, which is
       // the only reason the distinction is recorded at all.
       allow create: if request.auth != null
@@ -1802,7 +1802,7 @@ service cloud.firestore {
       // List/query: the owning landlord, the property's caretaker, or admin.
       // Hardened (H1): was `if request.auth != null`, which let any authed user
       // enumerate every maintenance log. As with issues, the landlord must
-      // filter by landlordId and the caretaker by propertyId — a list rule is
+      // filter by landlordId and the caretaker by propertyId - a list rule is
       // evaluated against the query's constraints, so each principal has to
       // pin the field its own branch reads.
       allow list: if request.auth != null && (
@@ -1818,7 +1818,7 @@ service cloud.firestore {
       allow delete: if request.auth != null &&
         resource.data.landlordId == request.auth.uid;
 
-      // A caretaker corrects or removes a log they wrote themselves — never
+      // A caretaker corrects or removes a log they wrote themselves - never
       // one the landlord wrote. Same principle as the message-edit rules: you
       // may clean up your own entry and nobody else's.
       allow update: if request.auth != null
@@ -1832,7 +1832,7 @@ service cloud.firestore {
         && isPropertyCaretaker(resource.data.get('propertyId', ''));
     }
     // Caretaker invitations. Modelled on tenancy_links: the landlord offers,
-    // the invitee answers, and neither writes the consequence — accepting is
+    // the invitee answers, and neither writes the consequence - accepting is
     // what stamps `caretakerId` onto the properties, and only the admin SDK
     // does that (see caretaker_ops.ts). Clients never create or mutate these
     // directly; every transition runs through a callable, so the only thing
@@ -1860,7 +1860,7 @@ service cloud.firestore {
 
     match /tenancy_links/{linkId} {
       // The landlord may attach an agreement as they send the link request,
-      // but only one they uploaded themselves — create is otherwise
+      // but only one they uploaded themselves - create is otherwise
       // unconstrained, which made this doc a way to name ANY storage object
       // and have getSignedAgreementUrl sign it.
       allow create: if request.auth != null
@@ -1876,7 +1876,7 @@ service cloud.firestore {
       // List queries must satisfy the same ownership constraint as get.
       // The only caller today (landlord_home_screen) filters by
       // landlordId == auth.uid, so this rule passes for that query.
-      // Closes F1.13 — the previous "any authenticated user can list"
+      // Closes F1.13 - the previous "any authenticated user can list"
       // rule allowed any user to enumerate any landlord's or tenant's
       // tenancy history. Admin override preserved.
       allow list: if request.auth != null && (
@@ -1886,7 +1886,7 @@ service cloud.firestore {
       );
 
       // Allowlist (parity with active_rentals): clients drive only the link
-      // lifecycle — accept / reject / remove. Every term + financial field
+      // lifecycle - accept / reject / remove. Every term + financial field
       // (rentAmount, leaseStart/EndDate, rentDue*, rentFrequency) and the
       // admin-only pendingRent* / agreementUrl / promoted* fields are excluded,
       // so a landlord can't self-apply a rent change to a link and bypass the
@@ -1904,7 +1904,7 @@ service cloud.firestore {
       allow delete: if request.auth != null &&
         resource.data.landlordId == request.auth.uid;
     }
-    // Announcements — readable by all authenticated users, managed by
+    // Announcements - readable by all authenticated users, managed by
     // admin only. Create additionally enforces createdBy == auth.uid so
     // the audit trail reflects which admin actually wrote the announcement
     // (matters once multiple admins exist; was a trusted client field
@@ -1916,8 +1916,8 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Transactions — parties involved can read, admin manages.
-    // No client writes — transactions are written by Cloud Functions
+    // Transactions - parties involved can read, admin manages.
+    // No client writes - transactions are written by Cloud Functions
     // only (admin SDK bypasses rules). Closes F1.11.
     match /transactions/{transactionId} {
       allow read: if request.auth != null && (
@@ -1939,7 +1939,7 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if false;
     }
-    // Notifications — writes only by Cloud Functions / admin.
+    // Notifications - writes only by Cloud Functions / admin.
     // Users can read their own and mark them as read, nothing else.
     match /notifications/{notificationId} {
       // Clients cannot create notifications. Cloud Functions and admin SDK
@@ -1963,8 +1963,8 @@ service cloud.firestore {
       // `unreadCount` is part of marking read, not a separate power: chat
       // notifications are one rolling doc per conversation carrying a count of
       // the messages behind them, and opening the row has to clear that count
-      // as well as the flag. It may only be zeroed — a recipient must not be
-      // able to invent a count — and the three still travel as one write, so
+      // as well as the flag. It may only be zeroed - a recipient must not be
+      // able to invent a count - and the three still travel as one write, so
       // this stays an allowlist rather than a general update.
       allow update: if request.auth != null &&
         resource.data.userId == request.auth.uid &&
@@ -1998,7 +1998,7 @@ service cloud.firestore {
 
       allow delete: if false;
     }
-    // Refunds — written by Cloud Functions, read by beneficiaries + admin,
+    // Refunds - written by Cloud Functions, read by beneficiaries + admin,
     // marked paid by markRefundPaid Cloud Function only.
     match /refunds/{refundId} {
       // Created by onInspectionRefundTriggered (admin SDK bypasses).
@@ -2023,7 +2023,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Admin request queue. The app files items here best-effort — currently
+    // Admin request queue. The app files items here best-effort - currently
     // only 'unknown_area' reports, created when a landlord drops a property pin
     // in an area not yet in our list (see add_property / ClearRentLocationPicker).
     // The admin dashboard lists them and marks each added/dismissed.
@@ -2039,7 +2039,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Admin audit log — append-only, written by admin money-ops CFs.
+    // Admin audit log - append-only, written by admin money-ops CFs.
     // Never updated, never deleted. Read by admin only.
     match /admin_audit_log/{entryId} {
       allow create: if false;     // Admin SDK only
@@ -2048,7 +2048,7 @@ service cloud.firestore {
       allow delete: if false;     // Immutable
     }
 
-    // Admin alerts — the web dashboard's ping/queue feed. Written only by the
+    // Admin alerts - the web dashboard's ping/queue feed. Written only by the
     // admin SDK (writeAdminAlert in Cloud Functions). Full admins and read-only
     // viewers can read; only full admins may mark read / resolve or delete.
     match /admin_alerts/{alertId} {
@@ -2058,14 +2058,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Admin push devices — the FCM tokens the dashboard registers so an
+    // Admin push devices - the FCM tokens the dashboard registers so an
     // actionable alert can reach an admin who does NOT have the dashboard open.
     //
     // A registry exists because admin identity is a custom claim, which
     // Firestore cannot query: there is no "select all admins". The alternative
     // was paginating listUsers() on every alert. See admin_push_ops.ts.
     //
-    // Doc id IS the admin's uid, and an admin may only touch their own — so a
+    // Doc id IS the admin's uid, and an admin may only touch their own - so a
     // compromised admin session cannot silence a colleague by clearing their
     // tokens, nor point another admin's push at itself. Only the fan-out
     // function (admin SDK) reads across the collection.
@@ -2074,7 +2074,7 @@ service cloud.firestore {
       allow list: if false;               // Admin SDK only; no enumeration
 
       // Create and update are separate clauses because `resource` is null on
-      // create — calling diff() against it there would error, not just deny.
+      // create - calling diff() against it there would error, not just deny.
       allow create: if isAdmin() && request.auth.uid == uid
         && request.resource.data.keys()
              .hasOnly(['tokens', 'updatedAt', 'userAgent']);
@@ -2085,7 +2085,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && request.auth.uid == uid;
     }
 
-    // Deleted-account tombstones — written by deleteMyAccount (admin SDK) as
+    // Deleted-account tombstones - written by deleteMyAccount (admin SDK) as
     // the account goes. Financial records outlive the account for audit and
     // still reference its uid; this is how the dashboard tells "deleted
     // account" apart from a live party instead of rendering a ghost row.

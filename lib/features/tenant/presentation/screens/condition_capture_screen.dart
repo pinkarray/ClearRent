@@ -28,7 +28,7 @@ class ConditionCaptureScreen extends StatefulWidget {
   final String propertyTitle;
   final ConditionStage stage;
 
-  /// 'tenant' | 'landlord' — recorded on the document so the other side can
+  /// 'tenant' | 'landlord' - recorded on the document so the other side can
   /// see who made it without a second read.
   final String partyRole;
 
@@ -94,7 +94,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
   // ── Surviving the activity being killed ───────────────────────────────────
   //
   // Launching the camera hands the foreground to another activity, and Android
-  // is free to destroy this one to reclaim memory — routine on a low-RAM
+  // is free to destroy this one to reclaim memory - routine on a low-RAM
   // phone. Everything captured so far lives in these two lists, i.e. in
   // memory, so coming back from the camera showed a BLANK screen with the
   // earlier recording gone. A walkthrough is not something anyone should be
@@ -163,14 +163,14 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
   /// Collects a capture that was still in the camera when the activity died.
   ///
   /// image_picker parks that result rather than losing it, but ONLY hands it
-  /// over when asked — which is why the photo being taken at the moment of the
+  /// over when asked - which is why the photo being taken at the moment of the
   /// kill disappeared entirely.
   Future<void> _recoverLostCapture() async {
     if (!Platform.isAndroid) return;
     try {
       final lost = await _picker.retrieveLostData();
       if (lost.isEmpty || lost.file == null) return;
-      // The parked result is a path, not a guarantee — the activity died and
+      // The parked result is a path, not a guarantee - the activity died and
       // the cache may have been reaped since. _restoreDraft already checks
       // this; without the same check here a dead path reached _compressVideo,
       // whose source.length() throws PathNotFoundException.
@@ -192,12 +192,12 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
     }
   }
 
-  /// A sealed record cannot be replaced — rules refuse the write, and that is
+  /// A sealed record cannot be replaced - rules refuse the write, and that is
   /// the entire point of the seal.
   ///
   /// Checked BEFORE the camera is offered. Without this, someone who has
   /// already recorded shoots a second full walkthrough, waits out the
-  /// transcode and the upload, and is then told the upload failed — which is
+  /// transcode and the upload, and is then told the upload failed - which is
   /// false, and which no amount of retrying can fix.
   Future<void> _loadExisting() async {
     ConditionRecord? r;
@@ -205,7 +205,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       r = await _service.myRecord(widget.rentalId, widget.stage);
     } catch (e) {
       // A courtesy check, not a gate. If the read fails, fall through to the
-      // camera rather than trap them behind a spinner that never resolves —
+      // camera rather than trap them behind a spinner that never resolves -
       // the seal is enforced by rules regardless of what this screen believes.
       developer.log('⚠️ Could not check for an existing record: $e',
           name: 'ConditionCapture');
@@ -244,7 +244,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
 
   /// Transcodes to 720p so a walkthrough is uploadable on mobile data.
   ///
-  /// Phones record at roughly 9 Mbps, so three minutes lands near 200 MB —
+  /// Phones record at roughly 9 Mbps, so three minutes lands near 200 MB -
   /// which over a Nigerian mobile connection is not a slow upload so much as
   /// one that never finishes. Mirrors the listing-video path in
   /// add_property_screen.
@@ -356,7 +356,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       await _clearDraft();
       if (!mounted) return;
       // Popping straight back to the dashboard read as nothing having
-      // happened — the recording was sealed and the person had no way to
+      // happened - the recording was sealed and the person had no way to
       // know it. Say so before leaving.
       await _confirmSubmitted();
       if (!mounted) return;
@@ -379,7 +379,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       _submitting = false;
       _uploadProgress = null;
       // The record exists and is marked pending, so this is genuinely a retry
-      // rather than starting again — say so, or people re-shoot everything.
+      // rather than starting again - say so, or people re-shoot everything.
       _error = 'Upload did not finish. Your recording is saved - try again '
           'when you have a better connection.';
     });
@@ -426,7 +426,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
   /// What has been captured so far, each one removable.
   ///
   /// Submitting seals the record permanently, so a blurry photo or a clip
-  /// taken by accident had to be fixable BEFORE that point — until now
+  /// taken by accident had to be fixable BEFORE that point - until now
   /// anything captured was in for good.
   Widget _captureChips(List<File> files, {required bool video}) {
     if (files.isEmpty) return const SizedBox.shrink();
@@ -452,7 +452,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
                   borderRadius: BorderRadius.circular(4),
                   // errorBuilder is not optional here. These are camera temp
                   // files, and Android can purge the cache between capture and
-                  // render — FileImage then throws PathNotFoundException
+                  // render - FileImage then throws PathNotFoundException
                   // ("Cannot retrieve length of file"). Worse, the default
                   // ErrorWidget has no size constraint, so it replaced a 22px
                   // thumbnail and burst the chip's Row: the crash and the
@@ -591,7 +591,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(title: Text(widget.stage.label)),
       body: AbsorbPointer(
-        // Transcoding is as blocking as uploading — a second recording started
+        // Transcoding is as blocking as uploading - a second recording started
         // mid-transcode would fight the first for the encoder.
         absorbing: _submitting || _compressProgress != null,
         child: ListView(
@@ -643,7 +643,7 @@ class _ConditionCaptureScreenState extends State<ConditionCaptureScreen> {
               subtitle: _compressProgress != null
                   ? 'Optimising for upload - '
                       '${(_compressProgress! * 100).round()}%'
-                  // Multiple recordings were always allowed — a small "+" icon
+                  // Multiple recordings were always allowed - a small "+" icon
                   // was the only thing saying so, which read as a limit of one.
                   // A one-room walkthrough is rarely one clip.
                   : _videos.isEmpty

@@ -157,7 +157,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
 
     // Gate: the tenant must have a payout account on file before requesting.
     // If an inspection falls through in dispute (e.g. handler no-show), the
-    // refund needs somewhere to go — and admin can only settle it if the
+    // refund needs somewhere to go - and admin can only settle it if the
     // account exists. Enforced server-side in firestore.rules too. Checked
     // before payment so the tenant is never charged and then blocked.
     final hasBank = await _authService.hasBankDetails();
@@ -180,7 +180,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       return;
     }
 
-    // Build the fee breakdown — use calculated or a sensible fallback
+    // Build the fee breakdown - use calculated or a sensible fallback
     final feeBreakdown = _feeBreakdown ?? (_isAgentHandled
         ? InspectionPricing.calculateFee(
             agentCluster: 'maryland_ikeja',
@@ -315,7 +315,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Not-ready gate — the handler hasn't vetted this property yet.
+                  // Not-ready gate - the handler hasn't vetted this property yet.
                   if (_notReady) ...[
                     Container(
                       padding: const EdgeInsets.all(12),

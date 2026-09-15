@@ -10,7 +10,7 @@
  * Run this only if you want EXISTING listings to keep working (show the exact
  * address to entitled viewers, and stay bookable) after the new rules deploy.
  *
- * Idempotent — skips a property that has no exact fields left on the parent.
+ * Idempotent - skips a property that has no exact fields left on the parent.
  * Dry-run by default; pass --apply to actually write.
  *
  * Run:
@@ -65,7 +65,7 @@ async function main() {
     console.log(`\nMigrations planned:`);
     toMigrate.forEach((p) =>
       console.log(
-        `  ${p.id}: "${p.address}" (${p.latitude ?? "—"}, ${p.longitude ?? "—"})`
+        `  ${p.id}: "${p.address}" (${p.latitude ?? "-"}, ${p.longitude ?? "-"})`
       )
     );
   }

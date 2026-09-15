@@ -1,19 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// issue_reminders_ops.ts — keeps a fixed issue from dying in
+// issue_reminders_ops.ts - keeps a fixed issue from dying in
 // `pending_confirmation`.
 //
 // The lifecycle pushes the tenant exactly once, at the moment the landlord
-// marks a fix ready (onIssueUpdated → "Fix ready — please confirm"). If the
+// marks a fix ready (onIssueUpdated → "Fix ready - please confirm"). If the
 // tenant never opens it, nothing fires again: the issue is neither resolved
 // nor disputed, the landlord has no sign-off, and the report quietly rots.
 //
-//   issuePendingConfirmationReminders — 09:00 WAT daily, one escalating ladder:
+//   issuePendingConfirmationReminders - 09:00 WAT daily, one escalating ladder:
 //     day 3  → remind the tenant
 //     day 7  → remind the tenant again, and tell the landlord it's unconfirmed
 //     day 14 → raise an admin alert; a fortnight of silence needs a human
 //
 // This deliberately does NOT auto-resolve a stale pending issue. Silence is
-// not confirmation — the tenant may have given up precisely because the fix
+// not confirmation - the tenant may have given up precisely because the fix
 // didn't hold, and auto-closing would bury the very case that needs looking
 // at. The ladder ends at an admin, not at a status change.
 //
@@ -41,7 +41,7 @@ const LANDLORD_PENDING_TAB = "2";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Escalation thresholds, in days waiting. Highest reached wins on any run, so
-// a backlog item first seen at day 20 gets one alert — not all three rungs.
+// a backlog item first seen at day 20 gets one alert - not all three rungs.
 const STAGES = [3, 7, 14] as const;
 
 export const issuePendingConfirmationReminders = onSchedule(
@@ -50,7 +50,7 @@ export const issuePendingConfirmationReminders = onSchedule(
     const db = getFirestore();
     const now = Date.now();
 
-    // Single-field equality — no composite index needed. Pending is a
+    // Single-field equality - no composite index needed. Pending is a
     // transient state, so this set stays small.
     const snap = await db
       .collection("issues")
@@ -86,7 +86,7 @@ export const issuePendingConfirmationReminders = onSchedule(
           const body =
             stage === 3 ?
               `Your landlord marked the ${category} issue at ` +
-                `${propertyTitle} as fixed. Please confirm it's sorted — or ` +
+                `${propertyTitle} as fixed. Please confirm it's sorted - or ` +
                 "tell us it isn't." :
               `The ${category} issue at ${propertyTitle} has been waiting ` +
                 `${days} days for your confirmation. If it's still not ` +
@@ -108,7 +108,7 @@ export const issuePendingConfirmationReminders = onSchedule(
         }
 
         // From a week out the landlord deserves to know their fix is still
-        // unsigned-off — they may want to chase the tenant themselves.
+        // unsigned-off - they may want to chase the tenant themselves.
         if (landlordId && stage >= 7) {
           if (
             await writeNotificationOnce(

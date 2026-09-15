@@ -7,7 +7,7 @@ import '../../core/constants/text_styles.dart';
 /// A prompt to confirm the email address on the account.
 ///
 /// `sendEmailVerification()` has always been called when an email is linked,
-/// but nothing anywhere read `emailVerified` — so a mistyped address failed
+/// but nothing anywhere read `emailVerified` - so a mistyped address failed
 /// completely silently. No regex can catch this: `name@gmial.com` and
 /// `name@gmail.con` are both perfectly well-formed, and the second even passes
 /// a strict TLD check. Only a delivered email proves an address is real.
@@ -20,7 +20,7 @@ import '../../core/constants/text_styles.dart';
 /// Deliberately NOT a hard gate. Blocking the app on an unconfirmed address
 /// would lock out anyone whose mail is merely slow, which is a worse failure
 /// than the one being prevented. It nags, it offers a resend, and it can be
-/// dismissed — returning on the next launch, because the address is still
+/// dismissed - returning on the next launch, because the address is still
 /// unconfirmed and that remains worth knowing.
 class EmailVerificationBanner extends StatefulWidget {
   const EmailVerificationBanner({super.key});
@@ -51,7 +51,7 @@ class _EmailVerificationBannerState extends State<EmailVerificationBanner>
     super.dispose();
   }
 
-  /// Confirming the email means LEAVING the app — the link opens in a mail
+  /// Confirming the email means LEAVING the app - the link opens in a mail
   /// client or browser. Checking only on initState meant coming back to the
   /// same banner still telling you to do the thing you had just done, which
   /// reads as broken. Re-checking on resume is what makes it disappear by
@@ -75,7 +75,7 @@ class _EmailVerificationBannerState extends State<EmailVerificationBanner>
     try {
       await user.reload();
     } catch (_) {
-      // Offline or a transient failure — fall through to the cached values
+      // Offline or a transient failure - fall through to the cached values
       // rather than showing a wrong state.
     }
     final fresh = FirebaseAuth.instance.currentUser;

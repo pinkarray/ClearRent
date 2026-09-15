@@ -105,7 +105,7 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
     }
 
     // Move-out. Once it has completed, the outstanding thing is the caution
-    // deposit and a property that cannot be relisted — both of which live on
+    // deposit and a property that cannot be relisted - both of which live on
     // the handover. A request is still confirmed on the rental card.
     if (activity.type == ActivityType.moveoutCompleted &&
         activity.rentalId != null) {
@@ -118,7 +118,7 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
-    // Inspection activities — go to inspections screen
+    // Inspection activities - go to inspections screen
     if (activity.type == ActivityType.inspectionRequest ||
         activity.type == ActivityType.inspectionApproved ||
         activity.type == ActivityType.inspectionDeclined ||
@@ -129,7 +129,7 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
-    // Property views and inquiries — show viewer info sheet (same as home screen)
+    // Property views and inquiries - show viewer info sheet (same as home screen)
     if ((activity.type == ActivityType.propertyViewed ||
             activity.type == ActivityType.inquiry) &&
         activity.actorId != null) {
@@ -137,7 +137,7 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
       return;
     }
 
-    // Payment activities — the landlord accepts the tenant in
+    // Payment activities - the landlord accepts the tenant in
     // Inspections → History (tab 2), not on the property page.
     if (activity.type == ActivityType.payment) {
       context.push('/landlord/inspections', extra: {
@@ -384,7 +384,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ─── Announcement Card — collapsible ─────────────────────────────────────────
+// ─── Announcement Card - collapsible ─────────────────────────────────────────
 
 class _AnnouncementCard extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -445,7 +445,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
         ),
         child: Column(
           children: [
-            // Header — always visible
+            // Header - always visible
             Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
@@ -494,7 +494,7 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
               ),
             ),
 
-            // Body — only when expanded
+            // Body - only when expanded
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,

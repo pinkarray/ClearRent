@@ -6,14 +6,14 @@ import 'package:flutter/material.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
 
-/// Picks a document — a PDF, or a photo of one.
+/// Picks a document - a PDF, or a photo of one.
 ///
 /// Every document flow here was built on `ImagePicker.pickImage`, which takes
 /// exactly ONE gallery photo and cannot select a PDF at all. Tenancy agreements
 /// were fixed first; ownership documents had the same problem and the same
 /// cause. A certificate of occupancy or a deed of assignment runs to several
 /// pages, so a one-image picker made it impossible to submit the real document
-/// — a landlord could only photograph the first page and hope.
+/// - a landlord could only photograph the first page and hope.
 ///
 /// Deliberately does NOT re-compress: the image paths used `imageQuality: 85`
 /// or `90`, which is fine for a property photo and wrong for a page of text

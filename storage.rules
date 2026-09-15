@@ -9,7 +9,7 @@ service firebase.storage {
     }
 
     // Verification documents (NIN slip, proof of income/address, utility bill,
-    // guarantor ID). WRITE-ONCE for the same reason as ownership docs below —
+    // guarantor ID). WRITE-ONCE for the same reason as ownership docs below -
     // an approved document is evidence and must be immutable. Previously the
     // path was fixed per docType, so `allow write` (which covers overwrite) let
     // a user swap the bytes of an already-approved document, and annual
@@ -38,7 +38,7 @@ service firebase.storage {
     }
 
     // Ownership documents (C of O / deed) for standalone listings and buildings.
-    // Title-level PII — owner and admin read. Bytes are streamed to admins via
+    // Title-level PII - owner and admin read. Bytes are streamed to admins via
     // an authenticated route, never a public/signed URL.
     //
     // WRITE-ONCE. `allow write` also covers overwrite and delete, which defeated
@@ -46,7 +46,7 @@ service firebase.storage {
     // approves the C of O, then the owner PUTs different bytes to the same path.
     // ownershipDocUrl never changes, so no firestore rule fires, and the listing
     // stays 'verified' over a file nobody reviewed. An approved document is
-    // evidence — it must be immutable. A new document means a new path (the
+    // evidence - it must be immutable. A new document means a new path (the
     // client already timestamps each upload), which flips the Firestore status
     // back to 'pending' and sends it for review.
     match /ownership/{uid}/{docId} {
@@ -61,7 +61,7 @@ service firebase.storage {
     // Tenancy agreements, uploaded by the landlord under their own uid.
     // Direct reads are limited to the uploader (landlord) + admin. The TENANT
     // (a party to the agreement but not the uploader) can't be authorized by a
-    // storage rule — rules can't read Firestore to check rental membership — so
+    // storage rule - rules can't read Firestore to check rental membership - so
     // tenants get the doc via a short-lived signed URL from the
     // getSignedAgreementUrl CF, which verifies membership server-side.
     match /agreements/{uid}/{docId} {
@@ -70,7 +70,7 @@ service firebase.storage {
         && (request.auth.uid == uid || isAdmin());
     }
 
-    // Proof that a disputed payout was actually delivered — typically a
+    // Proof that a disputed payout was actually delivered - typically a
     // screenshot of the bank transfer, uploaded by an ADMIN resolving the
     // dispute. Admin-only both ways: it is our evidence, not the
     // beneficiary's, and the bytes reach the dashboard through the
@@ -90,7 +90,7 @@ service firebase.storage {
     // tenant's, and a tenant cannot swap a video after a deduction is claimed.
     //
     // The counterparty is a party to the tenancy but not the uploader, and a
-    // storage rule cannot read Firestore to check rental membership — the same
+    // storage rule cannot read Firestore to check rental membership - the same
     // constraint as agreements above. Cross-party reads therefore go through a
     // signed URL from a callable that verifies membership server-side.
     match /condition/{uid}/{rentalId}/{mediaId} {

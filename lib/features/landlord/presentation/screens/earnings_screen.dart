@@ -242,7 +242,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        // Theme-adaptive card surface — a hardcoded white made the
+        // Theme-adaptive card surface - a hardcoded white made the
         // textPrimary amount invisible (white-on-white) in dark mode.
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -512,7 +512,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
     }
   }
 
-  // ₦ rather than "NGN " — every AppTextStyles style carries the bundled
+  // ₦ rather than "NGN " - every AppTextStyles style carries the bundled
   // Roboto glyph fallback (Outfit has no U+20A6), so the symbol renders here
   // exactly as it does on the other 179 call sites. This screen was simply
   // never converted.

@@ -10,7 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///     re-pricing). Applies to property.rent immediately on admin approval.
 ///     No [effectiveDate]. Approved by the approveImmediateRentChange CF.
 ///
-/// Field keys here are the contract the CFs read — do not rename without
+/// Field keys here are the contract the CFs read - do not rename without
 /// updating rent_review_ops.ts.
 class RentReviewRequest {
   final String id;
@@ -27,7 +27,7 @@ class RentReviewRequest {
   // Revised tenancy agreement attached at filing (scheduled only, mandatory).
   // On approval the CF pushes this onto the active_rental's agreementUrl so the
   // sitting tenant reviews the new terms alongside the increase. Empty for
-  // 'immediate' (vacant — no tenant).
+  // 'immediate' (vacant - no tenant).
   final String revisedAgreementUrl;
   final String changeType; // 'scheduled' | 'immediate'
   final String status; // 'pending' | 'approved' | 'rejected'

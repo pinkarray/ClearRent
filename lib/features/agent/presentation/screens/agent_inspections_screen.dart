@@ -62,7 +62,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
       setState(() => _pendingCount = list.length);
     });
 
-    // Count of approved (upcoming, not past) inspections — drives the
+    // Count of approved (upcoming, not past) inspections - drives the
     // Scheduled tab's attention badge, so a newly-approved inspection lights
     // the dot even without tapping the push. Mirrors the Scheduled tab's
     // filter, which excludes past-dated approvals.
@@ -127,7 +127,7 @@ class _AgentInspectionsScreenState extends State<AgentInspectionsScreen>
         _tabController.animateTo(target);
       }
     } catch (_) {
-      // Non-fatal — keep default Requests tab.
+      // Non-fatal - keep default Requests tab.
     }
   }
 
@@ -216,7 +216,7 @@ class _AgentPendingTab extends StatefulWidget {
 class _AgentPendingTabState extends State<_AgentPendingTab> {
   // Cache the stream once so parent rebuilds (driven by badge-count
   // subscriptions when the other party acts) don't reset StreamBuilder to
-  // ConnectionState.waiting and flash the loading spinner — that's the flicker.
+  // ConnectionState.waiting and flash the loading spinner - that's the flicker.
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getAgentRequests();
 
@@ -305,7 +305,7 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
     // Fire the parent callback (switch to Scheduled + clear the deep-link
     // highlight) as soon as the write succeeds. The live stream frequently
     // drops this now-approved card from the Pending list before the future
-    // resolves, disposing this card — gating it on the `mounted` check below
+    // resolves, disposing this card - gating it on the `mounted` check below
     // would silently skip it and strand the emphasis frame on the next tab.
     if (success) widget.onApproved?.call();
 
@@ -754,7 +754,7 @@ class _AgentScheduledTab extends StatefulWidget {
 }
 
 class _AgentScheduledTabState extends State<_AgentScheduledTab> {
-  // Cached stream — see _AgentPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _AgentPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getAgentRequests();
 
@@ -1343,7 +1343,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   ),
                 ),
               ],
-              // On Way / Arrive button — gates on whether we're
+              // On Way / Arrive button - gates on whether we're
               // within 2h cutoff and whether handler has marked
               // themselves on-way yet.
               if (request.canHandlerMarkOnWay) ...[
@@ -1383,7 +1383,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
               ],
             ] else ...[
-              // Agent arrived — show status + met/complete cascade
+              // Agent arrived - show status + met/complete cascade
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
@@ -1483,7 +1483,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 ),
             ],
           ] else ...[
-            // Not today — Mark as Completed still gated on met.
+            // Not today - Mark as Completed still gated on met.
             // If the inspection hasn't been confirmed met,
             // nothing shows here (handler completes on the day).
             if (request.canMarkComplete)
@@ -1562,7 +1562,7 @@ class _AgentCompletedTab extends StatefulWidget {
 }
 
 class _AgentCompletedTabState extends State<_AgentCompletedTab> {
-  // Cached stream — see _AgentPendingTabState for why (avoids the rebuild flicker).
+  // Cached stream - see _AgentPendingTabState for why (avoids the rebuild flicker).
   late final Stream<List<InspectionRequest>> _stream =
       widget.inspectionService.getAgentRequests();
 

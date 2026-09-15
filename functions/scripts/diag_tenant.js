@@ -2,7 +2,7 @@
 /**
  * Read-only diagnostic: dump a tenant's rental/interest/inspection state from
  * the LIVE project, so we can see exactly why the rent flow is stuck instead of
- * guessing. Prints statuses only — writes nothing.
+ * guessing. Prints statuses only - writes nothing.
  *
  *   node scripts/diag_tenant.js syd@gmail.com
  *

@@ -9,7 +9,7 @@ import '../shared/models/tenancy_link_model.dart';
 /// Landlord-initiated rent change requests (scheduled review + immediate).
 /// Writes rent_review_requests; the approveRentReview / approveImmediateRentChange
 /// CFs read those docs. Occupancy checks here MIRROR the CF's server-side
-/// re-check — the client decides which form to show, the CF re-verifies.
+/// re-check - the client decides which form to show, the CF re-verifies.
 class RentReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -61,7 +61,7 @@ class RentReviewService {
         .where('status', whereIn: _occupyingRentalStatuses)
         .snapshots();
 
-    // Confirmed tenancy_links are sitting tenants too — a scheduled review can
+    // Confirmed tenancy_links are sitting tenants too - a scheduled review can
     // target them, and the increase carries through completeLinkedPromotion
     // when they promote to an active rental. Scoped by landlordId to satisfy
     // the tenancy_links list rule (F1.13).
@@ -72,7 +72,7 @@ class RentReviewService {
         .where('status', isEqualTo: 'confirmed')
         .snapshots();
 
-    // Manual combineLatest — hold the latest of each source, emit once both
+    // Manual combineLatest - hold the latest of each source, emit once both
     // have reported and on every subsequent change.
     final controller = StreamController<List<ActiveRental>>();
     QuerySnapshot<Map<String, dynamic>>? latestRentals;
@@ -128,7 +128,7 @@ class RentReviewService {
     return controller.stream;
   }
 
-  /// True if the property has any sitting tenant — an occupying active_rental
+  /// True if the property has any sitting tenant - an occupying active_rental
   /// OR a confirmed tenancy_link. Drives the form's scheduled (true) vs
   /// immediate (false) branch. The CF re-checks this on approval.
   Future<bool> propertyHasSittingTenant(String propertyId) async {

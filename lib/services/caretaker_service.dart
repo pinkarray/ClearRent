@@ -10,12 +10,12 @@ import '../shared/models/property_model.dart';
 /// put them there.
 ///
 /// Every state change runs through a Cloud Function. `properties.caretakerId`
-/// is admin-SDK-only by design — the owner-update rule in firestore.rules lets
+/// is admin-SDK-only by design - the owner-update rule in firestore.rules lets
 /// the landlord CLEAR it (revoking is theirs) and never set it, so a client
 /// cannot appoint a caretaker without the invitee agreeing.
 ///
 /// The callables' error messages are written for the end user, so the mutating
-/// methods return `null` on success and the message to show on failure —
+/// methods return `null` on success and the message to show on failure -
 /// mirroring [PropertyService.agentUnassignFromProperty].
 class CaretakerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -27,7 +27,7 @@ class CaretakerService {
   /// Properties this user manages as caretaker.
   ///
   /// `properties` is readable by any signed-in user, so this needs no rules
-  /// change — but it must still be scoped by caretakerId, which is also the
+  /// change - but it must still be scoped by caretakerId, which is also the
   /// field the caller's rule branch reads elsewhere.
   Stream<List<PropertyModel>> managedProperties() {
     final uid = _uid;
@@ -70,7 +70,7 @@ class CaretakerService {
   }
 
   /// Who does this number belong to? Called before [invite] so the landlord
-  /// confirms a name rather than trusting the digits they typed — a single
+  /// confirms a name rather than trusting the digits they typed - a single
   /// wrong digit would otherwise invite a real stranger, who could accept.
   ///
   /// Returns the candidate's name, or throws with a message to show.
@@ -102,13 +102,13 @@ class CaretakerService {
   /// Invite an existing ClearRent user, by phone, to manage [propertyIds].
   ///
   /// One invite covers many units so a building assignment is a single act on
-  /// both sides — and so revoking it later has one document to close rather
+  /// both sides - and so revoking it later has one document to close rather
   /// than a unit's worth of orphans.
   /// Returns the error to show, or the invitee's uid on success.
   ///
   /// The uid lets the caller open the landlord↔caretaker chat immediately.
   /// Reading it back off `caretaker_invites` instead would race the server
-  /// echo — the document is written by this function, so the client has no
+  /// echo - the document is written by this function, so the client has no
   /// latency compensation for it. Null on an older deployment that doesn't
   /// return the field yet; callers must treat it as optional.
   Future<({String? error, String? caretakerId})> invite({
@@ -181,7 +181,7 @@ class CaretakerService {
 
 /// Thrown by [CaretakerService.lookupCandidate] with a message written for the
 /// landlord. An exception rather than a nullable return because the caller has
-/// to distinguish "this is Musa Bello" from "no such number" — a null name
+/// to distinguish "this is Musa Bello" from "no such number" - a null name
 /// would be indistinguishable from a person with no name on file.
 class CaretakerLookupException implements Exception {
   final String message;
@@ -191,7 +191,7 @@ class CaretakerLookupException implements Exception {
   String toString() => message;
 }
 
-/// A caretaker invitation. Clients only ever READ these — every transition is a
+/// A caretaker invitation. Clients only ever READ these - every transition is a
 /// callable, because a client-written invite would be a client-chosen
 /// caretakerId, which is the one thing the invite exists to prevent.
 class CaretakerInvite {
@@ -227,7 +227,7 @@ class CaretakerInvite {
       landlordName: data['landlordName'] as String? ?? 'Your landlord',
       caretakerId: data['caretakerId'] as String? ?? '',
       caretakerName: data['caretakerName'] as String? ?? 'Your caretaker',
-      // `appliedPropertyIds` is what acceptance ACTUALLY wrote — a unit can
+      // `appliedPropertyIds` is what acceptance ACTUALLY wrote - a unit can
       // drop out between invite and accept (sold, deleted, re-caretakered), so
       // an accepted invite describes itself by what landed, not what was asked.
       propertyIds: List<String>.from(

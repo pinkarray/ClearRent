@@ -25,7 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final AuthService _authService = AuthService();
   final BiometricService _biometricService = BiometricService();
   final CaretakerService _caretakerService = CaretakerService();
-  // Built once — see CaretakerPropertiesScreen. Settings rebuilds on every
+  // Built once - see CaretakerPropertiesScreen. Settings rebuilds on every
   // toggle (theme, biometrics), and a stream created in build() would
   // resubscribe each time.
   late final Stream<List<CaretakerInvite>> _caretakerInvites =
@@ -453,7 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isDeletingAccount = false);
 
     if (error == null) {
-      // Success — navigate to login
+      // Success - navigate to login
       router.go('/');
     } else {
       messenger.showSnackBar(SnackBar(
@@ -683,7 +683,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
-            // Caretaker Section — only for users who actually have a caretaker
+            // Caretaker Section - only for users who actually have a caretaker
             // relationship, so it stays invisible to everyone else. A caretaker
             // can be any accountType, so this cannot live in one shell's menu;
             // Settings is the only surface all three shells share.

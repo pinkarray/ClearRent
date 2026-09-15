@@ -110,7 +110,7 @@ class _AccountTypeScreenState extends State<AccountTypeScreen> {
                   const SizedBox(height: 8),
 
                   // Escape hatch. The splash routes here whenever the profile
-                  // read comes back empty — which also happens to a real,
+                  // read comes back empty - which also happens to a real,
                   // signed-in user when the network is down. Without this they
                   // are stuck on a role picker with no way back, and picking a
                   // role would rewrite the account they already have. Sign out

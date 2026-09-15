@@ -2,7 +2,7 @@ import 'dart:developer' as dev;
 import 'package:flutter/foundation.dart';
 
 /// Lightweight logger for ClearRent.
-/// Uses dart:developer log() in debug mode — no lint warnings, no extra packages.
+/// Uses dart:developer log() in debug mode - no lint warnings, no extra packages.
 /// Silenced automatically in release builds.
 class AppLogger {
   AppLogger._();

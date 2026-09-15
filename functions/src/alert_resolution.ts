@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// alert_resolution.ts — an admin alert is an OPEN TASK, not a log entry.
+// alert_resolution.ts - an admin alert is an OPEN TASK, not a log entry.
 //
 // The feed had 19 alert types and only 10 of them ever closed. The rest were
 // raised and left, so the queue filled with work that was long since done and
-// an admin had to dismiss rows by hand to find the ones that still mattered —
+// an admin had to dismiss rows by hand to find the ones that still mattered -
 // which is exactly backwards: dismissing should be the rare exception, not the
 // routine. Four alerts about ONE tenancy were sitting open at the time this was
 // written, including "₦15,000 is owed to the landlord" for a duplicate charge
@@ -16,14 +16,14 @@
 //      to write its target.
 //   2. It is the only shape that can close an alert whose TARGET WAS DELETED.
 //      A per-collection trigger fires on the delete, but nothing fires for an
-//      alert whose target vanished before the trigger existed — and a target
+//      alert whose target vanished before the trigger existed - and a target
 //      that no longer exists can never be actioned, so the alert is pure noise.
 //   3. It backfills. Alerts raised before any of this existed are closed on the
 //      first run, without hand-patching production documents.
 //
 // The cost of a sweep is latency: an alert can stay open until the next run.
-// That is the right trade for an admin queue — nobody watches a payout alert
-// second by second — and anything that must clear IMMEDIATELY gets a direct
+// That is the right trade for an admin queue - nobody watches a payout alert
+// second by second - and anything that must clear IMMEDIATELY gets a direct
 // call to resolveAdminAlertsForTarget at the point the work finishes
 // (markPaymentRefunded does this for the refund case above).
 //
@@ -43,7 +43,7 @@ type Doc = FirebaseFirestore.DocumentData;
  *
  * `collection` is where its `targetId` lives; null means the type is judged
  * from the alert itself (no target to read). `done` is called with the TARGET
- * document. A target that has been deleted never reaches `done` — it is
+ * document. A target that has been deleted never reaches `done` - it is
  * treated as finished by the sweep, since it can no longer be acted on.
  */
 interface Resolver {
@@ -81,7 +81,7 @@ function payoutsSettled(r: Doc): boolean {
 
 // The lifecycle alert walks one doc through meta.state. Only two states owe an
 // admin anything; the rest are the record of what happened. Mirrors
-// LIFECYCLE_PENDING in the dashboard's src/lib/alerts.ts — if these two lists
+// LIFECYCLE_PENDING in the dashboard's src/lib/alerts.ts - if these two lists
 // disagree, the feed calls a row open work while its status says resolved.
 const LIFECYCLE_OPEN = new Set(["requested", "paid"]);
 
@@ -102,14 +102,14 @@ const RESOLVERS: Record<string, Resolver> = {
 
   rent_payment: {collection: "active_rentals", done: payoutsSettled},
 
-  // Judged from the alert's own meta — no target read needed.
+  // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
     collection: null,
     done: (_t, alert) =>
       !LIFECYCLE_OPEN.has(String(alert.meta?.state ?? "")),
   },
 
-  // "Did this payout ever arrive?" — answered once the beneficiary confirms.
+  // "Did this payout ever arrive?" - answered once the beneficiary confirms.
   // The role is in the alert id (payout_unconfirmed_<role>_<rentalId>), so the
   // right receipt field is checked rather than both.
   payout_unconfirmed: {
@@ -122,7 +122,7 @@ const RESOLVERS: Record<string, Resolver> = {
   },
 
   // A day's inspections, and only that day's. Closed once the day it describes
-  // is over — it is a briefing, not a task, and it should not need dismissing.
+  // is over - it is a briefing, not a task, and it should not need dismissing.
   inspection_today_digest: {
     collection: null,
     done: (_t, alert) => {
@@ -204,7 +204,7 @@ export const alertHygieneSweep = onSchedule(
         }
 
         // The target is gone. Whatever it was asking for, nobody can act on it
-        // now — this is the orphan case a per-collection trigger cannot catch.
+        // now - this is the orphan case a per-collection trigger cannot catch.
         if (target === null) {
           toClose.push({ref: doc.ref, why: `${type}: target gone`});
           continue;

@@ -21,14 +21,14 @@ enum ConditionSubmitResult {
   /// A sealed record is already there. Rules refuse to replace it, by design.
   alreadySealed,
 
-  /// Transient — the upload or the network. Worth another go.
+  /// Transient - the upload or the network. Worth another go.
   failed,
 }
 
 /// Reads and writes the condition of a property at each end of a tenancy.
 ///
 /// This is the evidence layer under the caution deposit. ClearRent never holds
-/// that money — it moves landlord-to-tenant off-platform — so the platform
+/// that money - it moves landlord-to-tenant off-platform - so the platform
 /// cannot return it or compel it. What it can do is make sure the argument is
 /// settled on a record neither side can edit after the fact.
 class ConditionService {
@@ -119,7 +119,7 @@ class ConditionService {
     } catch (e) {
       developer.log('❌ Could not open condition record: $e',
           name: 'ConditionService');
-      // Lost the race against the seal — the pre-check above passed but
+      // Lost the race against the seal - the pre-check above passed but
       // another device finished first.
       if (e is FirebaseException && e.code == 'permission-denied') {
         return ConditionSubmitResult.alreadySealed;
@@ -132,7 +132,7 @@ class ConditionService {
 
     // Progress is ONE number across every file. A bar that restarts per file
     // tells the person nothing about how much is left, and on a Nigerian
-    // mobile connection this step is measured in minutes — long enough that
+    // mobile connection this step is measured in minutes - long enough that
     // without it a working upload is indistinguishable from a frozen screen.
     var totalBytes = 0;
     for (final f in [...videos, ...images]) {
@@ -188,7 +188,7 @@ class ConditionService {
     }
 
     try {
-      // capturedAt seals the record — rules refuse further edits once it is
+      // capturedAt seals the record - rules refuse further edits once it is
       // set, which is what stops evidence being swapped mid-argument.
       await ref.set({
         'videoPaths': videoPaths,

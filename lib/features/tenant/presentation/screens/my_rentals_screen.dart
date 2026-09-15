@@ -49,14 +49,14 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
   }
 
   Future<void> _loadRentals() async {
-    // Live-subscribe so the screen can't go stale — e.g. after paying rent, the
+    // Live-subscribe so the screen can't go stale - e.g. after paying rent, the
     // rental flips pending_payment → active server-side and the card updates on
     // its own instead of still showing "Review Agreement & Pay Rent".
     _rentalsSub ??= _rentalService.streamAllTenantRentals().listen((rentals) {
       if (!mounted) return;
       setState(() {
         // A pending_payment rental (accepted, awaiting rent) is a CURRENT
-        // rental — it must show in the current section with a working Lease
+        // rental - it must show in the current section with a working Lease
         // Details button so the tenant can accept + pay. It was falling into
         // "past", which labelled it "Ended" and hid the Lease Details button.
         _activeRentals = rentals.where((r) => r.isCurrent).toList();
@@ -87,7 +87,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
   Widget build(BuildContext context) {
     final hasCurrent = _activeRentals.isNotEmpty;
     // The lease-summary banner + "days left" reminder only make sense for a
-    // genuinely active (paid) lease — not a pending_payment one that's still in
+    // genuinely active (paid) lease - not a pending_payment one that's still in
     // the agreement/pay stage.
     final activeLeases = _activeRentals.where((r) => r.isActive).toList();
     final hasActiveLease = activeLeases.isNotEmpty;
@@ -116,7 +116,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Quick Stats — only for a genuinely active (paid) lease
+                        // Quick Stats - only for a genuinely active (paid) lease
                         if (hasActiveLease) ...[
                           _buildQuickStats(activeLeases),
                           const SizedBox(height: 8),
@@ -162,7 +162,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
     );
   }
 
-  /// The lease ending first — what "days left" should count down to when a
+  /// The lease ending first - what "days left" should count down to when a
   /// tenant holds several.
   ActiveRental _soonestToEnd(List<ActiveRental> leases) =>
       leases.reduce((a, b) =>
@@ -170,8 +170,8 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
 
   /// Summary card above the rental list.
   ///
-  /// It used to render `activeLeases.first` — one property's title, its days
-  /// left and its rent — beside a "Total Rentals" figure counting every rental
+  /// It used to render `activeLeases.first` - one property's title, its days
+  /// left and its rent - beside a "Total Rentals" figure counting every rental
   /// ever held. Two different scopes in one card, so a tenant renting several
   /// places saw one property's rent next to a 5, and neither number explained
   /// the other. With more than one lease it now describes the portfolio; with
@@ -460,7 +460,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                 ),
               ]),
 
-              // Landlord-ended tenancy — tenant can add their account (contest).
+              // Landlord-ended tenancy - tenant can add their account (contest).
               if (rental.isEndedByLandlord) ...[
                 const SizedBox(height: 16),
                 Container(
@@ -491,7 +491,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                         ),
                       ],
                       // Caution-deposit outcome, once the landlord has declared
-                      // it at handover. ClearRent doesn't move this money — this
+                      // it at handover. ClearRent doesn't move this money - this
                       // is the record of what was agreed.
                       if (rental.cautionDeclaredAt != null &&
                           rental.cautionDeposit > 0) ...[
@@ -578,7 +578,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
               ],
 
               // Pay-after-accept: a pending_payment rental needs an OBVIOUS
-              // path to review the agreement + pay — the outlined "Lease
+              // path to review the agreement + pay - the outlined "Lease
               // Details" button below wasn't reading as "this is how you pay".
               if (rental.isPendingPayment) ...[
                 const SizedBox(height: 16),
@@ -613,7 +613,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
 
               // An ended tenancy whose deposit is unresolved. Shown on the PAST
               // card because that is where the tenant looks for a place they
-              // have left — and the deposit is the one thing still owed to
+              // have left - and the deposit is the one thing still owed to
               // them from it.
               if (rental.isHandoverOpen) ...[
                 const SizedBox(height: 16),
@@ -1013,7 +1013,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
     );
   }
 
-  // Agreements are private — resolve a short-lived signed URL via the CF
+  // Agreements are private - resolve a short-lived signed URL via the CF
   // (which authorizes this tenant) before opening.
   Future<void> _openLinkAgreement(TenancyLinkModel link) async {
     final url = await _agreementAccess.resolveUrl(

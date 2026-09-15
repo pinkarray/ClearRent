@@ -23,7 +23,7 @@ class AppTextField extends StatelessWidget {
 
   /// What a password manager should treat this field as, e.g.
   /// [AutofillHints.newPassword]. Without it Android's autofill service has
-  /// nothing to go on, so nothing ever offers to generate or save a password —
+  /// nothing to go on, so nothing ever offers to generate or save a password -
   /// the app-side equivalent of the web's `autocomplete` attribute.
   final Iterable<String>? autofillHints;
 

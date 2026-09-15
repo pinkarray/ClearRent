@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// moveout_ops.ts — auto-confirm stale tenant move-out requests.
+// moveout_ops.ts - auto-confirm stale tenant move-out requests.
 //
 // The tenant-initiated move-out (request + acknowledge) parks the rental in
 // `moveout_pending` until the landlord confirms handover. If the landlord never
-// acts, the tenant would be trapped — so this sweep confirms any request older
+// acts, the tenant would be trapped - so this sweep confirms any request older
 // than AUTO_CONFIRM_DAYS. There is deliberately NO landlord veto.
 //
 // The status flip to `ended_by_tenant` is all this does. Downstream triggers do
@@ -14,7 +14,7 @@
 //
 // `moveoutPendingReminders` chases the landlord BEFORE that deadline, so
 // auto-confirm is the fallback it was designed to be rather than the normal
-// path — the landlord previously heard nothing at all until the tenancy had
+// path - the landlord previously heard nothing at all until the tenancy had
 // already been ended over their head.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ const AUTO_CONFIRM_DAYS = 7;
  *
  * The grace period runs from the day the tenant actually LEAVES, not the day
  * they gave notice. Counting from `moveOutRequestedAt` meant 30 days' notice
- * ended the tenancy on day 7 — freeing the unit and clearing the tenant's
+ * ended the tenancy on day 7 - freeing the unit and clearing the tenant's
  * active-rental flag while they were still living in it.
  *
  * Falls back to the request time when no intended date is recorded, which is
@@ -125,7 +125,7 @@ const REMIND_DAYS = [2, 5];
  * Daily nudge on move-out requests awaiting landlord confirmation.
  *
  * Runs an hour after the auto-confirm sweep so a request that crossed the
- * deadline this morning is already gone — otherwise a landlord could be asked
+ * deadline this morning is already gone - otherwise a landlord could be asked
  * to confirm a handover that had just been confirmed for them.
  */
 export const moveoutPendingReminders = onSchedule(
@@ -166,7 +166,7 @@ export const moveoutPendingReminders = onSchedule(
               title: "Confirm a move-out",
               body:
                 `Your tenant asked to move out of ${propertyTitle}. Confirm ` +
-                "the handover — if you don't, ClearRent confirms it in " +
+                "the handover - if you don't, ClearRent confirms it in " +
                 `${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
               payload: {route: "/landlord/rentals", rentalId},
             },

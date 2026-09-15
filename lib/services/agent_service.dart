@@ -255,7 +255,7 @@ class AgentService {
   }
 
   // Removed: calculateInspectionFee(). It returned ₦3,000/₦5,000 from a
-  // distance model the platform no longer uses — InspectionPricing is a flat
+  // distance model the platform no longer uses - InspectionPricing is a flat
   // fee, and its calculateFee() records the cluster "for context, not used in
   // math". Its only caller displayed those numbers to landlords as the
   // inspection fee. Read the fee from InspectionPricing instead.

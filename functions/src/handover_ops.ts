@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// handover_ops.ts — resolving a move-out so the property can be relisted.
+// handover_ops.ts - resolving a move-out so the property can be relisted.
 //
 // The tenancy has already ended by the time anything here runs. What is still
 // open is the caution deposit, and ClearRent never holds it: the money moves
@@ -40,7 +40,7 @@ const dayMs = 24 * 60 * 60 * 1000;
  * Records a strike against a landlord whose settlement went unconfirmed.
  *
  * Deliberately NOT a punishment. The tenant may simply have moved on, and the
- * proof of transfer is an uploaded image nobody has verified — so this writes
+ * proof of transfer is an uploaded image nobody has verified - so this writes
  * the claim down and leaves every consequence to a human. Suspension and any
  * rating penalty are admin actions, never automatic: an automatic listing ban
  * driven by unverified photo evidence would eventually hit an honest landlord,
@@ -105,7 +105,7 @@ export const handoverSilenceSweep = onSchedule(
       const settledAt = d.handoverSettledAt as Timestamp | undefined;
       if (!settledAt) continue;
 
-      // A tenant who contested is not silent — that is the admin's to resolve,
+      // A tenant who contested is not silent - that is the admin's to resolve,
       // and closing it here would decide the dispute by timeout.
       if (d.tenantContested === true) continue;
 
@@ -123,7 +123,7 @@ export const handoverSilenceSweep = onSchedule(
           // by uploading it, so nobody is trapped except by their own inaction.
           const proof = (d.handoverProofUrl as string | undefined) ?? "";
           if (!proof) {
-            logger.info("Settlement unconfirmed, no proof — still gated", {
+            logger.info("Settlement unconfirmed, no proof - still gated", {
               rentalId,
             });
             continue;
@@ -165,7 +165,7 @@ export const handoverSilenceSweep = onSchedule(
               body:
                 `The deposit settlement for ${propertyTitle} closed after ` +
                 `${SILENCE_DAYS} days without a reply. If you were not paid, ` +
-                "contact support — the landlord's claim is on record.",
+                "contact support - the landlord's claim is on record.",
               payload: {route: "/tenant/my-rentals", rentalId},
             });
           }
@@ -210,7 +210,7 @@ export const handoverSilenceSweep = onSchedule(
 /**
  * Chases a landlord who has not settled a deposit on a unit they cannot relist.
  *
- * The gate is self-enforcing — an unsettled unit earns nothing — but silence
+ * The gate is self-enforcing - an unsettled unit earns nothing - but silence
  * here is far more often forgetfulness than obstruction, and a landlord who
  * has simply not realised the unit is off-market is badly served by leaving
  * them to work it out.
@@ -294,7 +294,7 @@ export const handoverSettlementReminders = onSchedule(
  * Tells the other party when a condition recording is sealed.
  *
  * The gap this closes: a tenant films the move-out condition while they still
- * have keys, which is DURING the notice period — before the tenancy ends and
+ * have keys, which is DURING the notice period - before the tenancy ends and
  * therefore before the handover screen exists for the landlord at all. Nothing
  * announced it, so a walkthrough could sit unwatched until the landlord
  * happened to open the tenancy days later, by which point they may already
@@ -344,7 +344,7 @@ export const onConditionEvidenceSealed = onDocumentWritten(
           "Move-in condition recorded",
         body: fromTenant ?
           `Your tenant recorded the condition of ${propertyTitle} on ` +
-            "video. It is sealed — neither of you can change it — and any " +
+            "video. It is sealed - neither of you can change it - and any " +
             "claim on the caution deposit is argued against it." :
           `Your landlord recorded the condition of ${propertyTitle} on ` +
             "video. It is sealed, and you can watch it.",

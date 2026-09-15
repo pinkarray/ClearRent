@@ -15,7 +15,7 @@ class AgreementAccessService {
   /// [which] picks which copy: `original` (what the landlord sent),
   /// `tenantSigned` (the tenant's signed upload) or `executed` (counter-signed,
   /// the agreement of record). Each party uploads under their own uid, so
-  /// Storage denies the counterparty a direct read — this callable checks
+  /// Storage denies the counterparty a direct read - this callable checks
   /// membership server-side and signs, which storage rules cannot do.
   Future<String?> resolveUrl({
     required String collection,

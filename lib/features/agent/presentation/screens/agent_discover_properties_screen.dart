@@ -486,7 +486,7 @@ class _AgentDiscoverPropertiesScreenState
       child: Row(children: [
         Expanded(child: _dropdown(_selectedCity, _cities.map((c) => DropdownMenuItem(value: c, child: Text(c, style: AppTextStyles.labelMedium))).toList(), (v) => setState(() => _selectedCity = v ?? 'All Areas'))),
         const SizedBox(width: 10),
-        // Built from PropertyModel's one vocabulary — 'self_contain' here never
+        // Built from PropertyModel's one vocabulary - 'self_contain' here never
         // matched the 'selfContain' that add-property writes.
         Expanded(child: _dropdown(_selectedType, [
           const DropdownMenuItem(value: 'all', child: Text('All Types')),
