@@ -384,9 +384,34 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
 
     try {
+      // Link email + password to the phone account BEFORE saving the profile.
+      //
+      // The other way round, a failed link (the address belongs to another
+      // account) left users.email naming an address this account does not
+      // own, and phone sign-in then resolves to that address. A retry after a
+      // successful link comes back provider-already-linked, which is success.
+      //
+      // Skipped entirely for an email-first signup: that account was CREATED
+      // with this email and password, so there is nothing to link and the call
+      // fails ("email already in use" / "provider already linked").
+      if (!_isEmailFirst) {
+        final linkResult = await _authService.linkEmailToPhoneAccount(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+
+        if (!linkResult.success) {
+          if (!mounted) return;
+          setState(() { _errorMessage = linkResult.error; _isLoading = false; });
+          return;
+        }
+      }
+
       final success = await _authService.saveUserProfile(
         fullName: _nameController.text.trim(),
-        email: _emailController.text.trim(),
+        // The credential's address, never just the typed one: after an
+        // earlier link the field may have been edited to something else.
+        email: _authService.currentUser?.email ?? _emailController.text.trim(),
         accountType: widget.accountType,
         // Only an email-first account supplies one here. A phone signup
         // already has an OTP-verified number on the Firebase user, and
@@ -418,25 +443,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           }
         } catch (e) {
           debugPrint('⚠️ Profile image upload failed (non-blocking): $e');
-        }
-      }
-
-      // Link email + password to the phone account.
-      //
-      // Skipped entirely for an email-first signup: that account was CREATED
-      // with this email and password, so there is nothing to link and the call
-      // fails ("email already in use" / "provider already linked"), which would
-      // strand the user on this screen with their profile already saved.
-      if (!_isEmailFirst) {
-        final linkResult = await _authService.linkEmailToPhoneAccount(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-        );
-
-        if (!linkResult.success) {
-          if (!mounted) return;
-          setState(() { _errorMessage = linkResult.error; _isLoading = false; });
-          return;
         }
       }
     } catch (e) {
