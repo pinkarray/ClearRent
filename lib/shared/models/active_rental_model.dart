@@ -236,6 +236,15 @@ class ActiveRental {
   bool get isHandoverOpen =>
       handoverStage.isNotEmpty && handoverStage != 'closed';
 
+  /// The other party by name, falling back to the role when a legacy record
+  /// carries no name. "Your landlord" is ambiguous the moment someone rents
+  /// from more than one, and it sends them hunting to work out who owes them.
+  String get landlordLabel =>
+      landlordName.trim().isEmpty ? 'Your landlord' : landlordName.trim();
+
+  String get tenantLabel =>
+      tenantName.trim().isEmpty ? 'Your former tenant' : tenantName.trim();
+
   /// Whose turn it is, in plain terms. Empty when nothing is outstanding.
   String get handoverNextStep {
     switch (handoverStage) {
@@ -244,9 +253,9 @@ class ActiveRental {
             ? 'Your recording is still uploading'
             : 'Record the condition you left it in';
       case 'awaiting_condition':
-        return 'Landlord is checking the property';
+        return '$landlordLabel is checking the property';
       case 'awaiting_settlement':
-        return 'Landlord is settling your caution deposit';
+        return '$landlordLabel is settling your caution deposit';
       case 'awaiting_confirm':
         return 'Confirm whether you were paid';
       default:

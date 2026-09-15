@@ -427,7 +427,8 @@ class _TenantActions extends StatelessWidget {
                         .copyWith(fontStyle: FontStyle.italic)),
               const SizedBox(height: 8),
               Text(
-                'Your landlord has been told and ClearRent is reviewing it. '
+                '${rental.landlordLabel} has been told and ClearRent is '
+                'reviewing it. '
                 'This will not close on its own while it is open, so waiting '
                 'costs you nothing.',
                 style: AppTextStyles.caption
@@ -456,11 +457,12 @@ class _TenantActions extends StatelessWidget {
         _ActionCard(
           title: 'Were you paid?',
           body: kept > 0
-              ? 'Your landlord kept '
+              ? '${rental.landlordLabel} kept '
                   '${InspectionPricing.formatNaira(kept)} '
                   '("${rental.cautionDeductionReason ?? ''}") and says they '
                   'sent back ${InspectionPricing.formatNaira(owed.toDouble())}.'
-              : 'Your landlord says they returned your deposit in full - '
+              : '${rental.landlordLabel} says they returned your deposit in '
+                  'full - '
                   '${InspectionPricing.formatNaira(owed.toDouble())}.',
           cta: 'Yes, I was paid',
           busy: busy,
@@ -509,7 +511,8 @@ class _LandlordActions extends StatelessWidget {
     switch (rental.handoverStage) {
       case 'awaiting_evidence':
         return _Waiting(
-          text: 'Waiting for your former tenant to record the condition. You '
+          text: 'Waiting for ${rental.tenantLabel} to record the condition. '
+              'You '
               'can record your own now if you prefer.',
           action: TextButton(
             onPressed: busy ? null : onCapture,
@@ -536,7 +539,8 @@ class _LandlordActions extends StatelessWidget {
         );
       default:
         return _Waiting(
-          text: 'Waiting for your former tenant to confirm they were paid. '
+          text: 'Waiting for ${rental.tenantLabel} to confirm they were '
+              'paid. '
               'If they do not reply within a week, upload proof of transfer '
               'and it closes on its own.',
         );

@@ -160,8 +160,8 @@ class _LandlordRentalsScreenState extends State<LandlordRentalsScreen>
                       : r.handoverStage == 'awaiting_settlement'
                           ? 'Settle the caution deposit'
                           : r.handoverStage == 'awaiting_evidence'
-                              ? 'Waiting on your former tenant to record it'
-                              : 'Waiting on your former tenant to confirm',
+                              ? 'Waiting on ${r.tenantLabel} to record it'
+                              : 'Waiting on ${r.tenantLabel} to confirm',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textSecondary),
                 ),
