@@ -15,6 +15,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../core/constants/ownership_doc_types.dart';
 import '../../../../shared/utils/document_file_picker.dart';
 import '../../../../shared/widgets/app_button.dart';
+import '../../../../shared/widgets/top_alert.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/building_service.dart';
@@ -709,16 +710,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     final subject = joined[0].toUpperCase() + joined.substring(1);
     final isPlural = photos > 1 || (photos > 0 && video);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$subject ${isPlural ? 'are' : 'is'} no longer on this phone, so we '
-          'could not restore ${isPlural ? 'them' : 'it'}. Please add '
-          '${isPlural ? 'them' : 'it'} again.',
-        ),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
-      ),
+    TopAlert.show(
+      context,
+      '$subject ${isPlural ? 'are' : 'is'} no longer on this phone, so we '
+      'could not restore ${isPlural ? 'them' : 'it'}. Please add '
+      '${isPlural ? 'them' : 'it'} again.',
+      duration: const Duration(seconds: 6),
     );
   }
 
@@ -1364,16 +1361,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    // From the top, not the bottom: this form is mostly text fields, and a
+    // SnackBar surfaces exactly where the keyboard already is.
+    TopAlert.show(context, message);
   }
 
   void _showExitConfirmation() {
@@ -1550,13 +1540,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
         if (paymentResult == null || !paymentResult.success) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Listing fee payment is required to publish your property.',
-                ),
-                backgroundColor: AppColors.error,
-              ),
+            TopAlert.show(
+              context,
+              'Listing fee payment is required to publish your property.',
             );
           }
           setState(() => _isPublishing = false);
@@ -5502,12 +5488,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Could not pick document'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        TopAlert.show(context, 'Could not pick document');
       }
     }
   }
