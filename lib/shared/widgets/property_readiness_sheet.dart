@@ -5,6 +5,7 @@ import '../../core/constants/text_styles.dart';
 import '../../services/property_service.dart';
 import '../models/property_model.dart';
 import 'app_button.dart';
+import 'top_alert.dart';
 
 /// Handler-facing readiness checklist (Phase 2). The assigned agent - or the
 /// landlord when self-handled - confirms the property meets ClearRent's
@@ -54,12 +55,9 @@ class _PropertyReadinessSheetState extends State<PropertyReadinessSheet> {
     if (!mounted) return;
     if (error != null) {
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      // Not a SnackBar: it renders behind this sheet, so a refusal (a landlord
+      // abroad, a failed write) left the button looking dead.
+      TopAlert.show(context, error);
       return;
     }
     Navigator.pop(context, true);
