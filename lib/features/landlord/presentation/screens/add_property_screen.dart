@@ -242,6 +242,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   // Ownership document
   File? _ownershipDocFile;
+  // "I live in this building", claimed while listing a unit. The bill is picked
+  // here and uploaded once the listing (and so the building) exists.
+  bool _claimHome = false;
+  File? _homeProofFile;
+  String? _selectedBuildingName;
   String? _ownershipDocType;
 
 
@@ -1340,6 +1345,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please select an agent to handle inspections');
           return false;
         }
+        if (_claimHome && _isInBuilding && _homeProofFile == null) {
+          _showError('Attach a utility bill for this building, or turn off '
+              '"I live in this building".');
+          return false;
+        }
         if (_residence == null) {
           _showError('Tell tenants where you live first. It is asked once.');
           return false;
@@ -1779,7 +1789,32 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       // tenants see. Marking a building as home needs a utility bill, which
       // happens on the listing itself, not in the middle of publishing.
       final residence = _residence;
-      if (residence != null) await _residenceService.save(residence);
+      final homeProof = _homeProofFile;
+      if (residence != null) {
+        String? proofPath;
+        if (_claimHome &&
+            homeProof != null &&
+            buildingId != null &&
+            residence.canMarkHome) {
+          try {
+            proofPath = await _residenceService.uploadHomeProof(homeProof);
+          } catch (e) {
+            // The listing is already live; the claim can be sent again from it.
+            debugPrint('⚠️ Home bill upload failed: $e');
+          }
+        }
+        if (proofPath != null && buildingId != null) {
+          await _residenceService.markHome(
+            buildingId,
+            _creatingNewBuilding
+                ? _buildingNameController.text.trim()
+                : (_selectedBuildingName ?? 'Your building'),
+            proofPath,
+          );
+        } else {
+          await _residenceService.save(residence);
+        }
+      }
       debugPrint(
         '⏳ Property marked as pending admin review (doc: ${hasDoc ? "uploaded" : "not uploaded"}, fee: ${_requiresListingFee ? "pending" : "n/a"})',
       );
@@ -5198,6 +5233,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         // re-reading the stream. A building written before `structure` existed
         // has none, and the line degrades to naming the unit only.
         _selectedBuildingStructure = b.structure;
+        _selectedBuildingName = b.name;
         _existingUnits = const [];
         if (b.structure == 'compound') _loadExistingUnits(b.id);
       }),
@@ -5538,6 +5574,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     });
   }
 
+  Future<void> _pickHomeProof() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final file = await DocumentFilePicker.pick(
+      context,
+      hint: 'A recent utility bill for this building, showing its address.',
+    );
+    if (file != null && mounted) setState(() => _homeProofFile = file);
+  }
+
   Future<void> _editResidence() async {
     FocusManager.instance.primaryFocus?.unfocus();
     await context.push<bool>('/landlord/residence');
@@ -5594,22 +5639,58 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 style: AppTextStyles.caption.copyWith(color: AppColors.warning),
               ),
             // Only a unit in a building can be home: a whole property goes to
-            // one tenant. Claiming it needs a utility bill, sent from the
-            // listing once it exists.
-            if (r.canMarkHome && _isInBuilding)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  r.confirmedAt(_selectedBuildingId)
-                      ? 'This is your home building. Tenants will see that their '
-                          'landlord lives on the premises.'
-                      : 'Live in this building? After publishing, open the listing '
-                          'and turn on "I live in this building". We check a '
-                          'utility bill before tenants are told.',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textSecondary),
+            // one tenant. Claiming it takes a utility bill, which an admin
+            // checks before tenants are told.
+            if (r.canMarkHome && _isInBuilding) ...[
+              if (r.confirmedAt(_selectedBuildingId))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'This is your home building. Tenants will see that their '
+                    'landlord lives on the premises.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                )
+              else if (r.livesAt(_selectedBuildingId))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'We are checking your utility bill for this building.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.warning),
+                  ),
+                )
+              else ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _claimHome,
+                  onChanged: (v) => setState(() => _claimHome = v),
+                  title: Text('I live in this building',
+                      style: AppTextStyles.labelMedium),
+                  subtitle: Text(
+                    '${r.homeBuildingName != null ? 'This moves your home from ${r.homeBuildingName}. ' : ''}'
+                    'We check a utility bill before tenants are told.',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
                 ),
-              ),
+                if (_claimHome)
+                  OutlinedButton.icon(
+                    onPressed: _pickHomeProof,
+                    icon: Icon(
+                      _homeProofFile == null
+                          ? Icons.receipt_long_outlined
+                          : Icons.check_circle,
+                      size: 18,
+                      color: _homeProofFile == null ? null : AppColors.success,
+                    ),
+                    label: Text(_homeProofFile == null
+                        ? 'Attach utility bill for this building'
+                        : 'Bill attached, tap to change'),
+                  ),
+              ],
+            ],
           ],
         ],
       ),
