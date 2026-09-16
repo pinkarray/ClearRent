@@ -173,6 +173,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   double? _latitude;
   double? _longitude;
+  // Picked from the area dropdown, as opposed to filled in from the pin. Kept
+  // here because the location picker is rebuilt every time the step is shown.
+  bool _areaChosenByHand = false;
 
   String _propertyType = '';
   // What the tenant gets exclusively. Asked for any UNIT inside a building -
@@ -482,6 +485,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'state': _stateController.text,
       'latitude': _latitude,
       'longitude': _longitude,
+      'areaChosenByHand': _areaChosenByHand,
       'amenities': _selectedAmenities,
       'rules': _selectedRules,
       'inspectionHandler': _inspectionHandler,
@@ -562,6 +566,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         ..addAll(List<String>.from(draft['ceilingTypes'] ?? []));
       _latitude = draft['latitude'] as double?;
       _longitude = draft['longitude'] as double?;
+      _areaChosenByHand = draft['areaChosenByHand'] ?? false;
 
       // Building / compound grouping
       _isInBuilding = draft['isInBuilding'] ?? false;
@@ -2967,6 +2972,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             addressController: _addressController,
             cityController: _cityController,
             stateController: _stateController,
+            initialLatitude: _latitude,
+            initialLongitude: _longitude,
+            areaChosenByHand: _areaChosenByHand,
+            onAreaChosenByHand: () => _areaChosenByHand = true,
             onLocationSelected: (lat, lng) {
               setState(() {
                 _latitude = lat;

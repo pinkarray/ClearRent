@@ -47,6 +47,17 @@ class LocationPickerWidget extends StatefulWidget {
   final Function(String rawAreaName, double? lat, double? lng)?
   onUnknownAreaDetected;
 
+  /// The pin already placed, when the step is shown again.
+  final double? initialLatitude;
+  final double? initialLongitude;
+
+  /// Whether the area in [cityController] was picked from the dropdown. Only
+  /// then is it authoritative; an area filled in from the pin stays open to
+  /// the next address pick. The owner keeps this across rebuilds and sets it
+  /// from [onAreaChosenByHand].
+  final bool areaChosenByHand;
+  final VoidCallback? onAreaChosenByHand;
+
   const LocationPickerWidget({
     super.key,
     required this.addressController,
@@ -54,6 +65,10 @@ class LocationPickerWidget extends StatefulWidget {
     required this.stateController,
     this.onLocationSelected,
     this.onUnknownAreaDetected,
+    this.initialLatitude,
+    this.initialLongitude,
+    this.areaChosenByHand = false,
+    this.onAreaChosenByHand,
   });
 
   @override
@@ -112,13 +127,20 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   void initState() {
     super.initState();
     widget.addressController.addListener(_onAddressChanged);
-    // Resuming a draft: the area was already chosen, so treat it as
-    // authoritative and re-anchor the map on it.
+    if (widget.initialLatitude != null && widget.initialLongitude != null) {
+      _selectedLocation =
+          LatLng(widget.initialLatitude!, widget.initialLongitude!);
+    }
+    // Coming back to the step, or resuming a draft. This used to mark ANY
+    // restored area as picked by hand, so an area filled in from the pin froze:
+    // going back and choosing a different address moved nothing.
     final restoredArea = widget.cityController.text.trim();
     if (restoredArea.isNotEmpty) {
-      _areaExplicitlySet = true;
+      _areaExplicitlySet = widget.areaChosenByHand;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _geocodeArea(restoredArea);
+        if (mounted) {
+          _geocodeArea(restoredArea, moveCamera: _selectedLocation == null);
+        }
       });
     }
     _addressFocusNode.addListener(() {
@@ -307,6 +329,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     setState(() {
       widget.cityController.text = area;
       _areaExplicitlySet = true;
+      widget.onAreaChosenByHand?.call();
       // Manually selected - clear auto-match state
       _areaMatchedFromPin = false;
       _geocodedRawCity = null;
@@ -320,12 +343,13 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   /// Centres the map on the selected area so there is an anchor even when OSM
   /// has never heard of the street. On a miss the map is left where it is -
   /// never snapped back to the Lagos default.
-  Future<void> _geocodeArea(String area) async {
+  Future<void> _geocodeArea(String area, {bool moveCamera = true}) async {
     setState(() => _isLocatingArea = true);
     try {
       final anchor = await _geocodeAreaCoords(area);
       if (!mounted || anchor == null) return;
       setState(() => _areaAnchor = anchor);
+      if (!moveCamera) return;
       // Keep the landlord's own pin; only move the camera.
       _mapController.move(
         anchor,
