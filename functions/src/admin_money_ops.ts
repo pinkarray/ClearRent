@@ -7,7 +7,7 @@
  *
  *   markInspectionAgentPayoutPaid
  *     Flips agentPayoutStatus on inspection_requests/{id}.
- *     Amount source: agentEarnings on the doc.
+ *     Amount source: earningsAmount, stamped by creditInspectionEarnings.
  *     Side-effects (post-W5): shifts handler's pendingEarnings →
  *     paidEarnings on their user doc (inside tx); writes a
  *     `payout_received` activity and a
@@ -302,7 +302,11 @@ export const markInspectionAgentPayoutPaid = onCall(
           "pending",
           "agentPayoutStatus",
         );
-        const amt = readAmount(data, "agentEarnings");
+        // earningsAmount is what creditInspectionEarnings actually credited,
+        // from config/pricing. agentEarnings is written by the booking client
+        // and was paid out as-is. Absent means nothing was credited, so there
+        // is nothing to pay.
+        const amt = readAmount(data, "earningsAmount");
 
         const agentId = data.agentId as string | null | undefined;
         const landlordId = data.landlordId as string | undefined;

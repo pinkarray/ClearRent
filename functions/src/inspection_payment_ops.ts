@@ -100,7 +100,8 @@ export const confirmInspectionPayment = onCall(
 
     // The fee comes from config/pricing - the same document the handler payout
     // is derived from - never from the client.
-    const expectedFee = (await getPricing()).inspection.total;
+    const fee = (await getPricing()).inspection;
+    const expectedFee = fee.total;
     await verifyAndConsumeReference({
       reference: paymentReference,
       secret: paystackSecret.value(),
@@ -116,6 +117,15 @@ export const confirmInspectionPayment = onCall(
       paymentStatus: "paid",
       paidAt: FieldValue.serverTimestamp(),
       paymentReference,
+      // The money fields were whatever the booking client wrote, and the
+      // refund trigger pays `totalFee` back: book with an inflated figure, pay
+      // the real fee, get declined, and the refund was the inflated one. What
+      // was actually charged is stamped here, over anything the client sent.
+      totalFee: fee.total,
+      agentServiceFee: fee.handler,
+      agentEarnings: fee.handler,
+      transportFee: 0,
+      clearrentFee: fee.platform,
       locationRevealedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
