@@ -30,6 +30,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/utils/sheet_insets.dart';
+import '../../../../services/residence_service.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
   /// Bottom-nav tab to open on. 0 Dashboard · 1 Properties · 2 Messages ·
@@ -74,6 +75,10 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   StreamSubscription? _rentalsSubscription;
   StreamSubscription? _linkedTenantsSubscription;
   StreamSubscription? _unreadCountSubscription;
+  StreamSubscription? _residenceSubscription;
+  // True until the landlord answers "where do you live" once. Live, so the
+  // banner leaves the moment they save.
+  bool _residenceMissing = false;
 
   // Properties - now from Firestore
   List<PropertyModel> _myProperties = [];
@@ -121,6 +126,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _propertyService = PropertyService();
     _activityService = ActivityService();
     _conversationService = ConversationService();
+    _residenceSubscription = ResidenceService().watch().listen((r) {
+      if (mounted) setState(() => _residenceMissing = r == null);
+    });
     _startProfileStream();
     _startPropertiesStream();
     _startActivitiesStream();
@@ -537,6 +545,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     _rentalsSubscription?.cancel();
     _linkedTenantsSubscription?.cancel();
     _unreadCountSubscription?.cancel();
+    _residenceSubscription?.cancel();
     super.dispose();
   }
 
@@ -709,6 +718,9 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             ] else if (!_hasBankDetails && !_isLoadingProfile) ...[
               const SizedBox(height: 16),
               _buildBankDetailsBanner(),
+            ] else if (_residenceMissing && _myProperties.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildResidenceBanner(),
             ] else
               const EmailVerificationBanner(),
 
@@ -1602,6 +1614,47 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     );
   }
 
+  /// Asked once of every landlord with listings, including the ones listed
+  /// before residence existed: their tenant-facing line stays blank until then.
+  Widget _buildResidenceBanner() {
+    return GestureDetector(
+      onTap: () => context.push('/landlord/residence'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withAlpha(20),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primary.withAlpha(77)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.home_outlined, color: AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Where do you live?',
+                      style: AppTextStyles.labelLarge
+                          .copyWith(color: AppColors.primary)),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Tenants want to know if their landlord lives on the '
+                    'premises. Answer once for all your listings.',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.primary),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBankDetailsBanner() {
     return GestureDetector(
       onTap: () => context.push('/landlord/bank-details'),
@@ -2059,6 +2112,12 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
                       title: 'Bank Details',
                       subtitle: 'Manage your payout account',
                       onTap: () => context.push('/landlord/bank-details'),
+                    ),
+                    _ProfileMenuItem(
+                      icon: Icons.home_outlined,
+                      title: 'Where you live',
+                      subtitle: 'What tenants are told about your home',
+                      onTap: () => context.push('/landlord/residence'),
                     ),
                   ],
                 ),

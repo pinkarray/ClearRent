@@ -32,6 +32,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/services.dart';
+import '../../../../shared/models/landlord_residence.dart';
+import '../../../landlord/presentation/widgets/home_building_toggle.dart';
 
 class PropertyDetailScreen extends StatefulWidget {
   final PropertyModel property;
@@ -1206,6 +1208,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                             _buildOwnerStatsCard(property),
                             const SizedBox(height: 24),
                           ],
+
+                          if (_isOwner) HomeBuildingToggle(property: property),
 
                           if (_isOwner) ...[
                             _buildTenantManagementSection(property),
@@ -3332,14 +3336,21 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       valueColor: currentCount > 0 ? AppColors.error : AppColors.success,
     ));
 
-    // Landlord on premises
-    final landlordOnPremises = property.landlordLivesOnPremises ?? false;
-    rows.add(_OccupancyRow(
-      icon: landlordOnPremises ? Icons.person_pin_circle : Icons.person_pin_circle_outlined,
-      label: 'Landlord lives on property',
-      value: landlordOnPremises ? 'Yes' : 'No',
-      valueColor: null,
-    ));
+    // Where the landlord lives, from their profile. This row used to read
+    // landlordLivesOnPremises, which the app never set, so every listing it
+    // created told tenants "No". A listing whose landlord has not answered yet
+    // shows nothing rather than a guess.
+    final landlordLine = ListingResidence.shortLine(
+        property.landlordResidence, property.landlordResidenceRegion);
+    if (landlordLine != null) {
+      rows.add(_OccupancyRow(
+        icon: property.landlordResidence == ListingResidence.onPremises
+            ? Icons.person_pin_circle
+            : Icons.person_pin_circle_outlined,
+        label: 'Landlord',
+        value: landlordLine,
+      ));
+    }
 
     // Caretaker
     final hasCaretaker = property.hasCaretaker ?? false;

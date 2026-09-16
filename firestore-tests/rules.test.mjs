@@ -2419,3 +2419,57 @@ test("tenant lists ANOTHER user's verification payments - denied", async () => {
     )
   );
 });
+
+// ─── Landlord abroad: no self-handled readiness ──────────────────────────────
+//
+// A landlord who lives outside Nigeria cannot open the door, so a listing they
+// handle themselves must not become bookable. The residence record is private
+// (users/{uid}/private/residence); the owner-update rule reads it with get().
+
+async function seedSelfHandledListing(residenceKind) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'properties/propR'), {
+      landlordId: LANDLORD, title: 'Test Flat', rent: 500000, agentFee: 0,
+      cautionDeposit: 0, maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false,
+      ownershipDocStatus: 'pending', inspectionHandler: 'self',
+      readyForInspections: false,
+    });
+    await setDoc(doc(ctx.firestore(), `users/${LANDLORD}/private/residence`), {
+      kind: residenceKind, state: residenceKind === 'abroad' ? null : 'Lagos',
+      country: residenceKind === 'abroad' ? 'United Kingdom' : null,
+    });
+  });
+}
+
+test("abroad landlord marks a self-handled listing ready - denied", async () => {
+  await seedSelfHandledListing('abroad');
+  await assertFails(
+    updateDoc(doc(landlordDb(), 'properties/propR'), {
+      readyForInspections: true,
+      readinessCheckedBy: LANDLORD,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("renting landlord marks a self-handled listing ready - allowed", async () => {
+  await seedSelfHandledListing('rent');
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), 'properties/propR'), {
+      readyForInspections: true,
+      readinessCheckedBy: LANDLORD,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("abroad landlord edits the title of a self-handled listing - allowed", async () => {
+  await seedSelfHandledListing('abroad');
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), 'properties/propR'), {
+      title: 'Renamed Flat',
+      updatedAt: serverTimestamp(),
+    })
+  );
+});

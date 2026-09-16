@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import '../shared/models/property_model.dart';
 import 'activity_service.dart';
+import 'residence_service.dart';
 
 class PropertyService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -1250,6 +1251,20 @@ class PropertyService {
     }
 
     try {
+      // A landlord abroad cannot open the door. firestore.rules refuses this
+      // write too; checking here gives the reason instead of a denial.
+      final prop = await _propertiesRef.doc(propertyId).get();
+      final data = prop.data() as Map<String, dynamic>?;
+      if (data != null &&
+          data['landlordId'] == uid &&
+          (data['inspectionHandler'] ?? 'self') == 'self') {
+        final residence = await ResidenceService().get();
+        if (residence?.isAbroad == true) {
+          return 'You live outside Nigeria, so tenants cannot book viewings '
+              'you handle yourself. Assign an agent or add a caretaker first.';
+        }
+      }
+
       await _propertiesRef.doc(propertyId).update({
         'readyForInspections': true,
         'readinessCheckedAt': FieldValue.serverTimestamp(),

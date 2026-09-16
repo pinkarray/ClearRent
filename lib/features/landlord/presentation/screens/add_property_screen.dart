@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../widgets/clearrent_location_picker.dart';
-import '../../../../shared/widgets/area_dropdown.dart';
 import '../../../../shared/widgets/description_prompts.dart';
 import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
@@ -28,6 +27,8 @@ import '../../../../services/property_draft_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
 import '../../../../shared/utils/sheet_insets.dart';
+import '../../../../services/residence_service.dart';
+import '../../../../shared/models/landlord_residence.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -168,7 +169,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   // Controllers for landlord's own location (when they don't live in the property)
   final _landlordAddressController = TextEditingController();
-  final _landlordCityController = TextEditingController();
   final _landlordStateController = TextEditingController();
 
   double? _latitude;
@@ -222,7 +222,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // Landlord's residence location (if they live elsewhere)
   double? _landlordBaseLatitude;
   double? _landlordBaseLongitude;
-  String? _landlordBaseArea; // Selected from AreaDropdown
+  // Where the landlord lives is answered once, in their profile. This screen
+  // only reads it and offers "I live in this building" (_landlordLivesInProperty).
+  final _residenceService = ResidenceService();
+  LandlordResidence? _residence;
+  bool _residenceLoaded = false;
+  String? _selectedBuildingName;
 
   // Inspection availability
   final List<String> _availableDays = [
@@ -338,6 +343,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   void initState() {
     super.initState();
     _checkVerificationStatus();
+    _loadResidence();
     // Listen to price field changes for real-time total preview
     _rentController.addListener(_onPriceFieldChanged);
     _agentFeeController.addListener(_onPriceFieldChanged);
@@ -475,8 +481,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'rules': _selectedRules,
       'inspectionHandler': _inspectionHandler,
       'landlordLivesInProperty': _landlordLivesInProperty,
-      'landlordBaseArea': _landlordBaseArea,
-      'landlordCity': _landlordCityController.text,
       'selectedAgentId': _selectedAgentId,
       'selectedAgentName': _selectedAgentName,
       'availableDays': _availableDays,
@@ -526,7 +530,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _addressController.text = draft['address'] ?? '';
       _cityController.text = draft['city'] ?? '';
       _stateController.text = draft['state'] ?? '';
-      _landlordCityController.text = draft['landlordCity'] ?? '';
 
       // Booleans and values
       _propertyType = draft['propertyType'] ?? '';
@@ -543,7 +546,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _includeAgentFee = draft['includeAgentFee'] ?? false;
       _inspectionHandler = draft['inspectionHandler'] ?? 'self';
       _landlordLivesInProperty = draft['landlordLivesInProperty'] ?? false;
-      _landlordBaseArea = draft['landlordBaseArea'];
       _selectedAgentId = draft['selectedAgentId'];
       _selectedAgentName = draft['selectedAgentName'];
 
@@ -1053,7 +1055,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _agentFeeController.dispose();
     _cautionDepositController.dispose();
     _landlordAddressController.dispose();
-    _landlordCityController.dispose();
     _landlordStateController.dispose();
     _videoPreviewController?.dispose();
     for (final controller in _duesControllers.values) {
@@ -1337,6 +1338,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         }
         if (_inspectionHandler == 'agent' && _selectedAgentId == null) {
           _showError('Please select an agent to handle inspections');
+          return false;
+        }
+        if (_residence == null) {
+          _showError('Tell tenants where you live first. It is asked once.');
           return false;
         }
         // Grouping-aware ownership validation. WHICH building this unit is in
@@ -1633,7 +1638,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           );
         } else {
           // Use landlord's selected base location
-          final landlordCity = _landlordCityController.text.trim();
+          final landlordCity = _residence?.area ?? '';
           final landlordCluster = InspectionPricing.getClusterForArea(
             landlordCity,
           );
@@ -1767,6 +1772,27 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       }
 
       await _propertyService.updateProperty(propertyId, reviewFields);
+
+      // Stamps this listing (and re-stamps the others) with the residence line
+      // tenants see. "I live in this building" moves the one home here.
+      final residence = _residence;
+      if (residence != null) {
+        final livesHere = _landlordLivesInProperty &&
+            buildingId != null &&
+            residence.canMarkHome;
+        if (livesHere) {
+          await _residenceService.markHome(
+            buildingId,
+            _creatingNewBuilding
+                ? _buildingNameController.text.trim()
+                : (_selectedBuildingName ?? 'Your building'),
+          );
+        } else if (residence.livesAt(buildingId)) {
+          await _residenceService.clearHome();
+        } else {
+          await _residenceService.save(residence);
+        }
+      }
       debugPrint(
         '⏳ Property marked as pending admin review (doc: ${hasDoc ? "uploaded" : "not uploaded"}, fee: ${_requiresListingFee ? "pending" : "n/a"})',
       );
@@ -5180,6 +5206,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       onTap: () => setState(() {
         _creatingNewBuilding = false;
         _selectedBuildingId = b.id;
+        _selectedBuildingName = b.name;
+        _landlordLivesInProperty = _residence?.livesAt(b.id) ?? false;
         // Kept so the details step can say what this unit sits in without
         // re-reading the stream. A building written before `structure` existed
         // has none, and the line degrades to naming the unit only.
@@ -5515,7 +5543,26 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     }
   }
 
+  Future<void> _loadResidence() async {
+    final r = await _residenceService.get();
+    if (!mounted) return;
+    setState(() {
+      _residence = r;
+      _residenceLoaded = true;
+    });
+  }
+
+  Future<void> _editResidence() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await context.push<bool>('/landlord/residence');
+    await _loadResidence();
+  }
+
   Widget _buildLandlordResidenceSection() {
+    final r = _residence;
+    final otherHome = r?.homeBuildingName != null &&
+        r?.homeBuildingId != null &&
+        r?.homeBuildingId != _selectedBuildingId;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -5526,163 +5573,60 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Do you live in this property?',
-            style: AppTextStyles.labelLarge,
-          ),
+          Text('Where you live', style: AppTextStyles.labelLarge),
           const SizedBox(height: 4),
           Text(
-            'This tells tenants whether they would be living with their landlord.',
+            'Tenants are told whether their landlord lives on the premises. '
+            'You answer this once, for all your listings.',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _landlordLivesInProperty = true),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color:
-                          _landlordLivesInProperty
-                              ? AppColors.primary.withAlpha(13)
-                              : AppColors.background,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color:
-                            _landlordLivesInProperty
-                                ? AppColors.primary
-                                : AppColors.border,
-                        width: _landlordLivesInProperty ? 2 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.home,
-                          color:
-                              _landlordLivesInProperty
-                                  ? AppColors.primary
-                                  : AppColors.textSecondary,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Yes, I live here',
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color:
-                                _landlordLivesInProperty
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+          const SizedBox(height: 12),
+          if (!_residenceLoaded)
+            const LinearProgressIndicator()
+          else if (r == null)
+            OutlinedButton.icon(
+              onPressed: _editResidence,
+              icon: const Icon(Icons.home_outlined, size: 18),
+              label: const Text('Tell us where you live'),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(r.summary, style: AppTextStyles.bodyMedium),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _landlordLivesInProperty = false),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color:
-                          !_landlordLivesInProperty
-                              ? AppColors.primary.withAlpha(13)
-                              : AppColors.background,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color:
-                            !_landlordLivesInProperty
-                                ? AppColors.primary
-                                : AppColors.border,
-                        width: !_landlordLivesInProperty ? 2 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.other_houses_outlined,
-                          color:
-                              !_landlordLivesInProperty
-                                  ? AppColors.primary
-                                  : AppColors.textSecondary,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'No, I live elsewhere',
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color:
-                                !_landlordLivesInProperty
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                TextButton(
+                  onPressed: _editResidence,
+                  child: const Text('Change'),
                 ),
-              ),
-            ],
-          ),
-
-          // Show AreaDropdown if landlord doesn't live in property
-          if (!_landlordLivesInProperty) ...[
-            const SizedBox(height: 16),
-            AreaDropdown(
-              label: 'Where do you live?',
-              // The inspection fee is flat - InspectionPricing.calculateFee
-              // records the cluster "for context, not used in math". Saying it
-              // drives the fee was simply untrue.
-              helperText:
-                  'Used to match you with inspections near you. The inspection '
-                  'fee is the same everywhere.',
-              hint: 'Select your area',
-              selectedArea: _landlordBaseArea,
-              onSelected: (area) {
-                setState(() {
-                  _landlordBaseArea = area;
-                  _landlordCityController.text = area;
-                });
-              },
+              ],
             ),
-            if (_landlordBaseArea != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withAlpha(13),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.success.withAlpha(50)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.check_circle_outline,
-                      size: 16,
-                      color: AppColors.success,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Saved as $_landlordBaseArea. Inspections are a flat '
-                        '${InspectionPricing.formatNaira(InspectionPricing.inspectionBookingFee)} '
-                        'anywhere you list - you earn '
-                        '${InspectionPricing.formatNaira(InspectionPricing.handlerEarnings)} '
-                        'for each one you handle yourself.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.success,
-                        ),
-                      ),
-                    ),
-                  ],
+            if (r.isAbroad)
+              Text(
+                'You live outside Nigeria, so tenants can only book viewings '
+                'through an agent or a caretaker. Choose an agent below, or add '
+                'a caretaker after publishing.',
+                style: AppTextStyles.caption.copyWith(color: AppColors.warning),
+              ),
+            // Only a unit in a building can be home: a whole property goes to
+            // one tenant. And only a landlord living in a property they own.
+            if (r.canMarkHome && _isInBuilding)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _landlordLivesInProperty,
+                onChanged: (v) => setState(() => _landlordLivesInProperty = v),
+                title: Text('I live in this building',
+                    style: AppTextStyles.labelMedium),
+                subtitle: Text(
+                  _landlordLivesInProperty && otherHome
+                      ? 'This moves your home from ${r.homeBuildingName}.'
+                      : 'Tenants see that their landlord lives on the premises.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
                 ),
               ),
-            ],
           ],
         ],
       ),

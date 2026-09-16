@@ -195,6 +195,16 @@ service cloud.firestore {
              .data.get('caretakerId', '') == request.auth.uid;
     }
 
+    // The caller told us they live outside Nigeria (users/{uid}/private/residence).
+    // Root-level for the same reason as isPropertyCaretaker: helpers inside a
+    // match block compile but deny at runtime when called from outside it.
+    function callerLivesAbroad() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
+             .data.get('kind', '') == 'abroad';
+    }
+
     // Internal - locked. Only Cloud Functions (admin SDK) write here.
     match /_rate_limits/{docId} {
       allow read, write: if false;
@@ -500,6 +510,13 @@ service cloud.firestore {
         && resource.data.landlordId == request.auth.uid
         && request.resource.data.landlordId == resource.data.landlordId
         && buildingOwnedByCaller()
+        // A landlord abroad cannot open the door, so a listing they handle
+        // themselves may not become bookable. The app and web check first to
+        // say why; this is what makes it hold.
+        && !(request.resource.data.get('readyForInspections', false) == true
+             && resource.data.get('readyForInspections', false) != true
+             && request.resource.data.get('inspectionHandler', 'self') == 'self'
+             && callerLivesAbroad())
         // buildingId is FIXED at creation. A grouped unit's doc status resolves
         // to its building's, so a mutable buildingId is a skeleton key: attach a
         // rejected listing to any building you own that's already approved and

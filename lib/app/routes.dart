@@ -54,6 +54,7 @@ import '../features/tenant/presentation/screens/tenancy_requests_screen.dart';
 import '../services/route_observer_service.dart';
 import '../features/tenant/presentation/screens/renewal_payment_screen.dart';
 import '../features/caretaker/presentation/screens/caretaker_properties_screen.dart';
+import '../features/landlord/presentation/screens/landlord_residence_screen.dart';
 
 /// Coerce a navigation-extra `initialTab` to an int. In-app pushes pass an
 /// `int`, but notification payloads (FCM data + the Firestore inbox doc) carry
@@ -145,6 +146,10 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/landlord/caretakers',
       builder: (context, state) => const LandlordCaretakersScreen(),
+    ),
+    GoRoute(
+      path: '/landlord/residence',
+      builder: (context, state) => const LandlordResidenceScreen(),
     ),
     GoRoute(
       path: '/notifications',

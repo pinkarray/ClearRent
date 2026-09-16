@@ -141,6 +141,11 @@ class PropertyModel {
 
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
+  /// Tenant-facing residence line, derived from the landlord's profile
+  /// (see LandlordResidence): 'on_premises' | 'elsewhere' | 'abroad', or null
+  /// on listings the landlord has not answered for yet.
+  final String? landlordResidence;
+  final String? landlordResidenceRegion;
 
   // Video tour
   final String? videoUrl; // Cloudinary video URL
@@ -239,6 +244,8 @@ class PropertyModel {
     this.inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
     this.inspectionPropertyCluster,
     this.landlordLivesInProperty = false,
+    this.landlordResidence,
+    this.landlordResidenceRegion,
     this.videoUrl,
     this.ceilingTypes = const [],
     this.recurringDues = const [],
@@ -842,6 +849,8 @@ class PropertyModel {
             ['morning', 'afternoon', 'late_afternoon'],
       ),
       landlordLivesInProperty: json['landlordLivesInProperty'] ?? false,
+      landlordResidence: json['landlordResidence'] as String?,
+      landlordResidenceRegion: json['landlordResidenceRegion'] as String?,
       videoUrl: json['videoUrl'] as String?,
       ceilingTypes: _parseCeilingTypes(json),
       recurringDues: (json['recurringDues'] as List<dynamic>?)
@@ -949,6 +958,8 @@ class PropertyModel {
       ),
       inspectionPropertyCluster: data['inspectionPropertyCluster'] as String?,
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
+      landlordResidence: data['landlordResidence'] as String?,
+      landlordResidenceRegion: data['landlordResidenceRegion'] as String?,
       videoUrl: data['videoUrl'] as String?,
       ceilingTypes: _parseCeilingTypes(data),
       recurringDues: (data['recurringDues'] as List<dynamic>?)
@@ -1039,6 +1050,9 @@ class PropertyModel {
       // caretaker on any round-trip save. Revoking is its own act, never a
       // side effect of serialising a property.
       if (caretakerId != null) 'caretakerId': caretakerId,
+      if (landlordResidence != null) 'landlordResidence': landlordResidence,
+      if (landlordResidenceRegion != null)
+        'landlordResidenceRegion': landlordResidenceRegion,
       if (caretakerName != null) 'caretakerName': caretakerName,
       'ownershipDocUrl': ownershipDocUrl,
       'ownershipDocType': ownershipDocType,
@@ -1124,6 +1138,9 @@ class PropertyModel {
       // See toJson: never emit an explicit null, or saving a property would
       // silently revoke its caretaker.
       if (caretakerId != null) 'caretakerId': caretakerId,
+      if (landlordResidence != null) 'landlordResidence': landlordResidence,
+      if (landlordResidenceRegion != null)
+        'landlordResidenceRegion': landlordResidenceRegion,
       if (caretakerName != null) 'caretakerName': caretakerName,
       if (ownershipDocUrl != null) 'ownershipDocUrl': ownershipDocUrl,
       if (ownershipDocType != null) 'ownershipDocType': ownershipDocType,
