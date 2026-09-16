@@ -103,6 +103,10 @@ class LandlordResidence {
       'landlordResidenceRegion': isAbroad || onPremises ? null : state,
       'landlordLivesInProperty': onPremises,
       'landlordLivesOnPremises': onPremises,
+      // Lets admin find claims waiting on a bill check: residence records are
+      // private per user, so they cannot be queried across landlords.
+      'homeProofPending':
+          livesAt(buildingId) && homeProofStatus == proofPending,
     };
   }
 
