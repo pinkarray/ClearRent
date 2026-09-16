@@ -198,6 +198,53 @@ service cloud.firestore {
     // The caller told us they live outside Nigeria (users/{uid}/private/residence).
     // Root-level for the same reason as isPropertyCaretaker: helpers inside a
     // match block compile but deny at runtime when called from outside it.
+    // The caller's home building is buildingId AND an admin has accepted the
+    // utility bill for it. "Lives on the premises" is shown to tenants only then.
+    function callerHomeAccepted(buildingId) {
+      return request.auth != null
+        && buildingId is string
+        && buildingId != ''
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
+             .data.get('homeBuildingId', '') == buildingId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
+             .data.get('homeProofStatus', '') == 'accepted';
+    }
+
+    // An owner writing their own residence record may never grant their own
+    // proof ('accepted' / 'rejected' are admin decisions), and may only keep
+    // such a status while the home building and the bill are unchanged, so an
+    // accepted bill cannot be carried to a different building.
+    function ownResidenceWriteOk() {
+      return request.resource == null
+        || !(request.resource.data.get('homeProofStatus', null) in ['accepted', 'rejected'])
+        || (resource != null
+            && request.resource.data.get('homeProofStatus', null)
+                 == resource.data.get('homeProofStatus', null)
+            && request.resource.data.get('homeBuildingId', null)
+                 == resource.data.get('homeBuildingId', null)
+            && request.resource.data.get('homeProofPath', null)
+                 == resource.data.get('homeProofPath', null)
+            && request.resource.data.get('homeProofRejectionReason', null)
+                 == resource.data.get('homeProofRejectionReason', null));
+    }
+
+    // A listing may only BECOME "landlord lives on the premises" on an accepted
+    // home building. Listings already carrying it are left alone, so older
+    // records still save.
+    function onPremisesClaimOk() {
+      return (request.resource.data.get('landlordResidence', '') != 'on_premises'
+          || (resource != null && resource.data.get('landlordResidence', '') == 'on_premises')
+          || callerHomeAccepted(request.resource.data.get('buildingId', null)))
+        && (resource == null
+          || ((request.resource.data.get('landlordLivesOnPremises', false) != true
+                || resource.data.get('landlordLivesOnPremises', false) == true
+                || callerHomeAccepted(request.resource.data.get('buildingId', null)))
+            && (request.resource.data.get('landlordLivesInProperty', false) != true
+                || resource.data.get('landlordLivesInProperty', false) == true
+                || callerHomeAccepted(request.resource.data.get('buildingId', null)))));
+    }
+
     function callerLivesAbroad() {
       return request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid)/private/residence)
@@ -319,7 +366,10 @@ service cloud.firestore {
         allow read: if request.auth != null && (
           request.auth.uid == userId || canRead()
         );
-        allow write: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId
+          && (docId != 'residence' || ownResidenceWriteOk());
+        // Admins review the "I live here" utility bill on the residence record.
+        allow write: if docId == 'residence' && isAdmin();
       }
     }
     
@@ -501,6 +551,7 @@ service cloud.firestore {
         // The title document must be the caller's own upload, not a path
         // copied off another landlord's listing.
         && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
+        && onPremisesClaimOk()
         && meetsMinRent();
 
       // Update: owner can edit own listing, but cannot reassign
@@ -510,6 +561,7 @@ service cloud.firestore {
         && resource.data.landlordId == request.auth.uid
         && request.resource.data.landlordId == resource.data.landlordId
         && buildingOwnedByCaller()
+        && onPremisesClaimOk()
         // A landlord abroad cannot open the door, so a listing they handle
         // themselves may not become bookable. The app and web check first to
         // say why; this is what makes it hold.

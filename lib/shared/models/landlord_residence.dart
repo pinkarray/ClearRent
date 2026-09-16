@@ -29,6 +29,14 @@ class LandlordResidence {
   final String? homeBuildingId;
   final String? homeBuildingName;
 
+  /// A utility bill for [homeBuildingId]. "Lives on the premises" is the claim
+  /// a tenant decides on, so it is shown only once an admin has checked the
+  /// bill against the building: 'pending' | 'accepted' | 'rejected'. The owner
+  /// cannot set 'accepted' themselves (firestore.rules).
+  final String? homeProofPath;
+  final String? homeProofStatus;
+  final String? homeProofRejectionReason;
+
   const LandlordResidence({
     required this.kind,
     this.state,
@@ -36,7 +44,14 @@ class LandlordResidence {
     this.country,
     this.homeBuildingId,
     this.homeBuildingName,
+    this.homeProofPath,
+    this.homeProofStatus,
+    this.homeProofRejectionReason,
   });
+
+  static const proofPending = 'pending';
+  static const proofAccepted = 'accepted';
+  static const proofRejected = 'rejected';
 
   static const own = 'own';
   static const rent = 'rent';
@@ -53,12 +68,17 @@ class LandlordResidence {
         _ => false,
       };
 
-  /// Does the landlord live on the premises of a listing in [buildingId]?
-  /// A whole property (no building) never counts: one tenant gets all of it.
+  /// Does the landlord SAY they live in [buildingId]? A whole property (no
+  /// building) never counts: one tenant gets all of it.
   bool livesAt(String? buildingId) =>
       kind == own &&
       (buildingId ?? '').isNotEmpty &&
       buildingId == homeBuildingId;
+
+  /// Said, AND the utility bill for it has been accepted. Only this reaches
+  /// tenants as "lives on the premises".
+  bool confirmedAt(String? buildingId) =>
+      livesAt(buildingId) && homeProofStatus == proofAccepted;
 
   /// The landlord's own summary, e.g. "In a place I rent, Lagos (Allen)".
   String get summary {
@@ -74,7 +94,7 @@ class LandlordResidence {
   /// The fields a listing in [buildingId] carries. The two legacy flags are
   /// derived here so they can never disagree again.
   Map<String, dynamic> listingFields(String? buildingId) {
-    final onPremises = livesAt(buildingId);
+    final onPremises = confirmedAt(buildingId);
     return {
       'landlordResidence': onPremises
           ? ListingResidence.onPremises
@@ -93,6 +113,9 @@ class LandlordResidence {
         'country': country,
         'homeBuildingId': homeBuildingId,
         'homeBuildingName': homeBuildingName,
+        'homeProofPath': homeProofPath,
+        'homeProofStatus': homeProofStatus,
+        'homeProofRejectionReason': homeProofRejectionReason,
       };
 
   static LandlordResidence? fromMap(Map<String, dynamic>? m) {
@@ -104,6 +127,9 @@ class LandlordResidence {
       country: m['country'] as String?,
       homeBuildingId: m['homeBuildingId'] as String?,
       homeBuildingName: m['homeBuildingName'] as String?,
+      homeProofPath: m['homeProofPath'] as String?,
+      homeProofStatus: m['homeProofStatus'] as String?,
+      homeProofRejectionReason: m['homeProofRejectionReason'] as String?,
     );
   }
 }

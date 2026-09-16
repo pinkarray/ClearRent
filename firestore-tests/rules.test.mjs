@@ -2473,3 +2473,84 @@ test("abroad landlord edits the title of a self-handled listing - allowed", asyn
     })
   );
 });
+
+// ─── "I live here": proof before tenants are told ────────────────────────────
+
+async function seedHomeUnit(residence) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'buildings/b1'), {
+      landlordId: LANDLORD, name: 'Olu Compound', structure: 'compound',
+      ownershipDocStatus: 'verified',
+    });
+    await setDoc(doc(ctx.firestore(), 'properties/propH'), {
+      landlordId: LANDLORD, title: 'Room 1', rent: 500000, agentFee: 0,
+      cautionDeposit: 0, maxTenants: 1, isVerified: false, isAvailable: true,
+      currentTenantsCount: 0, handoverPending: false, buildingId: 'b1',
+      ownershipDocStatus: 'inherited', inspectionHandler: 'self',
+      landlordResidence: 'elsewhere', landlordLivesInProperty: false,
+      landlordLivesOnPremises: false,
+    });
+    if (residence) {
+      await setDoc(doc(ctx.firestore(), `users/${LANDLORD}/private/residence`), residence);
+    }
+  });
+}
+
+test("owner accepts their own home proof - denied", async () => {
+  await seedHomeUnit({ kind: 'own', state: 'Lagos', homeBuildingId: 'b1', homeProofStatus: 'pending' });
+  await assertFails(
+    setDoc(doc(landlordDb(), `users/${LANDLORD}/private/residence`), {
+      kind: 'own', state: 'Lagos', homeBuildingId: 'b1', homeProofStatus: 'accepted',
+    })
+  );
+});
+
+test("owner submits home proof as pending - allowed", async () => {
+  await seedHomeUnit(null);
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), `users/${LANDLORD}/private/residence`), {
+      kind: 'own', state: 'Lagos', homeBuildingId: 'b1',
+      homeProofPath: 'verification/landlord1/home_proof/1.jpg', homeProofStatus: 'pending',
+    })
+  );
+});
+
+test("owner moves an accepted home to another building - denied", async () => {
+  await seedHomeUnit({ kind: 'own', state: 'Lagos', homeBuildingId: 'b1',
+    homeProofPath: 'p1', homeProofStatus: 'accepted' });
+  await assertFails(
+    setDoc(doc(landlordDb(), `users/${LANDLORD}/private/residence`), {
+      kind: 'own', state: 'Lagos', homeBuildingId: 'b2',
+      homeProofPath: 'p1', homeProofStatus: 'accepted',
+    })
+  );
+});
+
+test("owner re-saves an accepted home unchanged - allowed", async () => {
+  await seedHomeUnit({ kind: 'own', state: 'Lagos', area: null, homeBuildingId: 'b1',
+    homeProofPath: 'p1', homeProofStatus: 'accepted' });
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), `users/${LANDLORD}/private/residence`), {
+      kind: 'own', state: 'Lagos', area: 'Allen', homeBuildingId: 'b1',
+      homeProofPath: 'p1', homeProofStatus: 'accepted',
+    })
+  );
+});
+
+test("owner stamps on_premises without an accepted bill - denied", async () => {
+  await seedHomeUnit({ kind: 'own', state: 'Lagos', homeBuildingId: 'b1', homeProofStatus: 'pending' });
+  await assertFails(
+    updateDoc(doc(landlordDb(), 'properties/propH'), {
+      landlordResidence: 'on_premises', landlordLivesInProperty: true, landlordLivesOnPremises: true,
+    })
+  );
+});
+
+test("owner stamps on_premises with an accepted bill - allowed", async () => {
+  await seedHomeUnit({ kind: 'own', state: 'Lagos', homeBuildingId: 'b1', homeProofStatus: 'accepted' });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), 'properties/propH'), {
+      landlordResidence: 'on_premises', landlordLivesInProperty: true, landlordLivesOnPremises: true,
+    })
+  );
+});

@@ -223,11 +223,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   double? _landlordBaseLatitude;
   double? _landlordBaseLongitude;
   // Where the landlord lives is answered once, in their profile. This screen
-  // only reads it and offers "I live in this building" (_landlordLivesInProperty).
+  // only reads it; _landlordLivesInProperty is true only for a unit in a home
+  // building whose utility bill an admin has already accepted.
   final _residenceService = ResidenceService();
   LandlordResidence? _residence;
   bool _residenceLoaded = false;
-  String? _selectedBuildingName;
 
   // Inspection availability
   final List<String> _availableDays = [
@@ -1682,7 +1682,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         inspectionHandler: _inspectionHandler,
         inspectionDays: _availableDays,
         inspectionTimeSlots: _availableTimeSlots,
-        landlordLivesInProperty: _landlordLivesInProperty,
+        // Recomputed, not the stored flag: a restored draft could carry a
+        // claim that was never checked.
+        landlordLivesInProperty: _residence?.confirmedAt(buildingId) ?? false,
         landlordBaseLatitude: _landlordBaseLatitude,
         landlordBaseLongitude: _landlordBaseLongitude,
         maxTenants: _maxTenants,
@@ -1774,25 +1776,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       await _propertyService.updateProperty(propertyId, reviewFields);
 
       // Stamps this listing (and re-stamps the others) with the residence line
-      // tenants see. "I live in this building" moves the one home here.
+      // tenants see. Marking a building as home needs a utility bill, which
+      // happens on the listing itself, not in the middle of publishing.
       final residence = _residence;
-      if (residence != null) {
-        final livesHere = _landlordLivesInProperty &&
-            buildingId != null &&
-            residence.canMarkHome;
-        if (livesHere) {
-          await _residenceService.markHome(
-            buildingId,
-            _creatingNewBuilding
-                ? _buildingNameController.text.trim()
-                : (_selectedBuildingName ?? 'Your building'),
-          );
-        } else if (residence.livesAt(buildingId)) {
-          await _residenceService.clearHome();
-        } else {
-          await _residenceService.save(residence);
-        }
-      }
+      if (residence != null) await _residenceService.save(residence);
       debugPrint(
         '⏳ Property marked as pending admin review (doc: ${hasDoc ? "uploaded" : "not uploaded"}, fee: ${_requiresListingFee ? "pending" : "n/a"})',
       );
@@ -5206,8 +5193,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       onTap: () => setState(() {
         _creatingNewBuilding = false;
         _selectedBuildingId = b.id;
-        _selectedBuildingName = b.name;
-        _landlordLivesInProperty = _residence?.livesAt(b.id) ?? false;
+        _landlordLivesInProperty = _residence?.confirmedAt(b.id) ?? false;
         // Kept so the details step can say what this unit sits in without
         // re-reading the stream. A building written before `structure` existed
         // has none, and the line degrades to naming the unit only.
@@ -5560,9 +5546,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   Widget _buildLandlordResidenceSection() {
     final r = _residence;
-    final otherHome = r?.homeBuildingName != null &&
-        r?.homeBuildingId != null &&
-        r?.homeBuildingId != _selectedBuildingId;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -5611,18 +5594,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 style: AppTextStyles.caption.copyWith(color: AppColors.warning),
               ),
             // Only a unit in a building can be home: a whole property goes to
-            // one tenant. And only a landlord living in a property they own.
+            // one tenant. Claiming it needs a utility bill, sent from the
+            // listing once it exists.
             if (r.canMarkHome && _isInBuilding)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _landlordLivesInProperty,
-                onChanged: (v) => setState(() => _landlordLivesInProperty = v),
-                title: Text('I live in this building',
-                    style: AppTextStyles.labelMedium),
-                subtitle: Text(
-                  _landlordLivesInProperty && otherHome
-                      ? 'This moves your home from ${r.homeBuildingName}.'
-                      : 'Tenants see that their landlord lives on the premises.',
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  r.confirmedAt(_selectedBuildingId)
+                      ? 'This is your home building. Tenants will see that their '
+                          'landlord lives on the premises.'
+                      : 'Live in this building? After publishing, open the listing '
+                          'and turn on "I live in this building". We check a '
+                          'utility bill before tenants are told.',
                   style: AppTextStyles.caption
                       .copyWith(color: AppColors.textSecondary),
                 ),
