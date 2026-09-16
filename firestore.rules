@@ -1199,8 +1199,10 @@ service cloud.firestore {
         && propertyIsReady()
         && request.resource.data.tenantId == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.get('paymentStatus', '')
-             in ['unpaid', 'not_required']
+        // Always unpaid. 'not_required' was the free-inspection marker, but the
+        // fee is flat and both clients always charge it, so all it did was let
+        // a tenant book a visit that never needs paying for.
+        && request.resource.data.get('paymentStatus', '') == 'unpaid'
         // Nobody inspects their own listing. Naming yourself as both the
         // tenant and the handler lets one account walk the entire chain
         // legitimately - approve, arrive, confirm, complete - and collect the

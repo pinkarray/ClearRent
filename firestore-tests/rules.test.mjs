@@ -2091,6 +2091,16 @@ test("tenant books an inspection normally - allowed", async () => {
   );
 });
 
+test("booking as a free inspection (not_required) - denied", async () => {
+  await seedBookableProperty();
+  await assertFails(
+    setDoc(
+      doc(tenantDb(), "inspection_requests/ir_free"),
+      bookingDoc({ paymentStatus: "not_required", totalFee: 0 })
+    )
+  );
+});
+
 test("booking on someone else's behalf - denied", async () => {
   await seedBookableProperty();
   await assertFails(
