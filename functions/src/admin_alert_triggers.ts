@@ -14,6 +14,7 @@
 import {onDocumentCreated, onDocumentUpdated, onDocumentWritten}
   from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
+import {getFirestore} from "firebase-admin/firestore";
 import {
   writeAdminAlert,
   writeAdminAlertOnce,
@@ -539,5 +540,66 @@ export const onPropertyCreated = onDocumentCreated(
       },
     });
     logger.info("New-listing admin alert raised", {propertyId, docStatus});
+  },
+);
+
+/**
+ * A landlord says a building is their home and sent a utility bill for it
+ * (users/{uid}/private/residence). Tenants are told "lives on the premises"
+ * only once an admin accepts the bill, so until then the landlord is waiting
+ * on us, and the only place to see that was a count on the Properties page.
+ *
+ * One alert per bill: a bill leaving `pending` (accepted, rejected, the home
+ * cleared or moved, a new bill sent) closes the alert for the old one straight
+ * away, and a new pending bill opens a fresh alert. Warning severity, so it
+ * pushes and reaches the attention banner.
+ */
+export const onHomeProofChanged = onDocumentWritten(
+  "users/{uid}/private/residence",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    const pendingPath = (d: Record<string, unknown> | undefined) =>
+      d?.homeProofStatus === "pending" ?
+        ((d.homeProofPath as string | undefined) ?? null) :
+        null;
+    const was = pendingPath(before);
+    const now = pendingPath(after);
+    // The residence doc is rewritten whole on every save; only a change in
+    // which bill is waiting matters.
+    if (was === now) return;
+
+    const uid = event.params.uid;
+    if (was) {
+      const closed = await resolveAdminAlertsForTarget(
+        uid,
+        (after?.homeProofReviewedBy as string | undefined) ?? "system",
+        ["home_proof_submitted"],
+      );
+      logger.info("Home bill alert closed", {uid, closed});
+    }
+    if (!now) return;
+
+    const user = await getFirestore().collection("users").doc(uid).get();
+    const fullName =
+      (user.get("fullName") as string | undefined) ?? "A landlord";
+    const buildingName =
+      (after?.homeBuildingName as string | undefined) ?? "a building";
+    await writeAdminAlert({
+      type: "home_proof_submitted",
+      severity: "warning",
+      title: "Home bill to check",
+      body:
+        `${fullName} says they live in ${buildingName} and sent a utility ` +
+        "bill for it. Tenants there are not told until it is accepted.",
+      targetCollection: "users",
+      targetId: uid,
+      actors: {landlordId: uid},
+      meta: {
+        buildingId: (after?.homeBuildingId as string | undefined) ?? null,
+        buildingName,
+      },
+    });
+    logger.info("Home bill admin alert raised", {uid});
   },
 );

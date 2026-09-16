@@ -94,6 +94,7 @@ export {
   onRentalInterestCreated,
   onPropertyCreated,
   onAgreementReady,
+  onHomeProofChanged,
 } from "./admin_alert_triggers";
 
 /**
