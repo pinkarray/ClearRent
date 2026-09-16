@@ -589,8 +589,10 @@ export const onHomeProofChanged = onDocumentWritten(
             .limit(1)
             .get() :
           null;
-        const reason = (after.homeProofRejectionReason as string | undefined) ??
-          "";
+        // Admins type it without a full stop, and the next sentence follows.
+        const rawReason =
+          (after.homeProofRejectionReason as string | undefined) ?? "";
+        const reason = rawReason.trim().replace(/[.!?]+$/, "");
         const building =
           (after.homeBuildingName as string | undefined) ?? "your building";
         await writeNotificationOnce(
@@ -601,7 +603,7 @@ export const onHomeProofChanged = onDocumentWritten(
             title: "Utility bill not accepted",
             body:
               `We could not accept the bill for ${building}` +
-              `${reason ? `: ${reason}` : "."} ` +
+              `${reason ? `: ${reason}.` : "."} ` +
               "Tenants there still see that you live elsewhere. Send another.",
             payload: {
               route: unit && !unit.empty ?
