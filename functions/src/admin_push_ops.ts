@@ -137,9 +137,11 @@ export const onAdminAlertCreated = onDocumentCreated(
           notification: {title, body},
           data,
           // Urgency drives how aggressively the browser wakes to deliver;
-          // the link is where a click lands.
+          // the link is where a click lands. Every pushed alert is high: at
+          // "normal" an idle Android phone held a home bill alert until
+          // something else woke Chrome.
           webpush: {
-            headers: {Urgency: severity === "critical" ? "high" : "normal"},
+            headers: {Urgency: "high"},
             fcmOptions: {link: "/dashboard/alerts"},
           },
         });
