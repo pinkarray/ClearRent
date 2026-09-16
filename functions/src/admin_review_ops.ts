@@ -20,6 +20,7 @@ import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {assertAdmin, writeAuditLog} from "./admin_helpers";
 import {resolveAdminAlertsForTarget} from "./admin_alerts";
+import {listingFeeOwed} from "./listing_fee_ops";
 
 const callableOptions = {timeoutSeconds: 30, enforceAppCheck: false};
 
@@ -62,6 +63,18 @@ export const adminReviewPropertyDoc = onCall(callableOptions, async (request) =>
     // Server derives the building link (don't trust the client).
     const buildingId = snap.data()!.buildingId as string | undefined;
     const now = FieldValue.serverTimestamp();
+
+    // Going live is where the listing fee is enforced: nothing the landlord
+    // writes can mark it paid, only confirmListingFee can.
+    if (
+      action !== "reject" &&
+      await listingFeeOwed(propertyId, snap.data()!, tx)
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The landlord has not paid the listing fee for this listing yet.",
+      );
+    }
 
     if (action === "verify") {
       if (buildingId) {

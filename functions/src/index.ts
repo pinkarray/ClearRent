@@ -4574,6 +4574,7 @@ export {
 
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
 export {confirmInspectionPayment} from "./inspection_payment_ops";
+export {confirmListingFee} from "./listing_fee_ops";
 
 export {submitNin} from "./nin_ops";
 
