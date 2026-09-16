@@ -144,6 +144,9 @@ class _AreaDropdownState extends State<AreaDropdown> {
   }
 
   void _showAreaPicker(BuildContext context) {
+    // Drop focus first. A text field left focused behind the sheet gets it
+    // back when the sheet closes, and its screen scrolls away to show it.
+    FocusManager.instance.primaryFocus?.unfocus();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -289,6 +292,7 @@ class AreaMultiSelect extends StatelessWidget {
   }
 
   void _showMultiPicker(BuildContext context) {
+    FocusManager.instance.primaryFocus?.unfocus();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

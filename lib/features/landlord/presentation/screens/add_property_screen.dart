@@ -5489,6 +5489,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   Future<void> _pickOwnershipDoc() async {
+    // Same reason as AreaDropdown: returning from the picker handed focus back
+    // to the deposit field and scrolled the pricing step up to it.
+    FocusManager.instance.primaryFocus?.unfocus();
     try {
       // A C of O or deed of assignment is several pages. Picking a single
       // gallery image meant a landlord could submit page one and nothing else,
@@ -5529,7 +5532,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'This helps tenants know if the landlord is a co-resident and affects inspection fee calculation.',
+            'This tells tenants whether they would be living with their landlord.',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -5688,6 +5691,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   /// Show agent picker bottom sheet
   Future<void> _showAgentPicker() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     // Load agents
     final agentService = AgentService();
     List<AgentModel> agents = [];
