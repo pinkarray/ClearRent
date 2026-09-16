@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../services/building_service.dart';
 import '../../../../services/residence_service.dart';
 import '../../../../shared/models/landlord_residence.dart';
 import '../../../../shared/models/property_model.dart';
@@ -66,9 +67,11 @@ class _HomeBuildingToggleState extends State<HomeBuildingToggle> {
     }
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
+    // The building's own name; older units carry no label of their own.
+    final building = on ? await BuildingService().getBuilding(buildingId) : null;
     final error = on
-        ? await _service.markHome(
-            buildingId, widget.property.unitBuildingLabel ?? 'Your building')
+        ? await _service.markHome(buildingId,
+            building?.name ?? widget.property.unitBuildingLabel ?? 'Your building')
         : await _service.clearHome();
     await _load();
     if (!mounted) return;
