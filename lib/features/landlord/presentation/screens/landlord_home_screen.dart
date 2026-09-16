@@ -1676,6 +1676,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     final key = 'notBookableSeen_${_authService.currentUserId ?? ''}';
     if (prefs.getInt(key) == count) return;
     if (!mounted) return;
+    // This listener keeps running under pushed screens, so a publish fired it
+    // on top of add-property's own success dialog and hid "Add a caretaker".
+    // Not marked seen here, so the next check with home in front still shows
+    // it (the next property change, or the next launch).
+    if (ModalRoute.of(context)?.isCurrent != true) return;
     await prefs.setInt(key, count);
     if (!mounted) return;
     await showDialog<void>(
