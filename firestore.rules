@@ -534,6 +534,11 @@ service cloud.firestore {
         && ownerDocStatus(request.resource.data.get('ownershipDocStatus', 'none'))
         // The rejection reason is the admin's words - never seeded by the owner.
         && !request.resource.data.keys().hasAny(['ownershipDocRejectionReason'])
+        // The listing fee is marked paid by confirmListingFee after Paystack
+        // confirms it, never by the landlord. The app used to write 'paid'
+        // itself, and web never charged, so the fee was optional.
+        && !request.resource.data.keys().hasAny(['listingFeeStatus',
+             'listingFeePaymentReference', 'listingFeeAmount', 'listingFeePaidAt'])
         // A listing is BORN with no caretaker. The update rule below stops an
         // owner appointing one, but guarding update alone left the front door
         // open: create the listing with caretakerId already set to any uid and
@@ -605,6 +610,9 @@ service cloud.firestore {
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
+        // Server-written by confirmListingFee; see the create rule.
+        && !changed(['listingFeeStatus', 'listingFeePaymentReference',
+                     'listingFeeAmount', 'listingFeePaidAt'])
         // A caretaker is INVITED and must accept; `caretakerId` is stamped by
         // respondToCaretakerInvite on the admin SDK. This rule has no hasOnly,
         // so every field it doesn't name is owner-writable - without this guard

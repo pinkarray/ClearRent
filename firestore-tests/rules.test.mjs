@@ -649,6 +649,59 @@ test("owner re-uploads their property doc (status → pending) - allowed", async
   );
 });
 
+// ─── listing fee is server-written ───────────────────────────────────────────
+// confirmListingFee marks it paid after Paystack confirms. A landlord writing
+// 'paid' themselves is exactly the bypass this closes.
+
+test("creating a listing already marked fee-paid - denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_feepaid"), {
+      ...newUnit(LANDLORD, null),
+      listingFeeStatus: "paid",
+    })
+  );
+});
+
+test("creating a listing with a fee reference - denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_feeref"), {
+      ...newUnit(LANDLORD, null),
+      listingFeePaymentReference: "CR_LISTING_fake",
+    })
+  );
+});
+
+test("owner marking their listing fee paid - denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_fee_unpaid"), newUnit(LANDLORD, null));
+  });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_fee_unpaid"), {
+      listingFeeStatus: "paid",
+      isAvailable: false,
+    })
+  );
+});
+
+test("owner editing a fee-paid listing without touching the fee - allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/p_fee_paid"), {
+      ...newUnit(LANDLORD, null),
+      listingFeeStatus: "paid",
+      listingFeePaymentReference: "CR_LISTING_real",
+    });
+  });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_fee_paid"), { title: "Renamed" })
+  );
+});
+
+test("owner clearing a paid listing fee - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_fee_paid"), { listingFeeStatus: "unpaid" })
+  );
+});
+
 // ─── owner-scoped list hardening (H1) ────────────────────────────────────────
 // payments / notifications / transactions / refunds each had
 // `allow list: if request.auth != null`, letting any authed user query the
