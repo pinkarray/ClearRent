@@ -577,6 +577,40 @@ export const onHomeProofChanged = onDocumentWritten(
         ["home_proof_submitted"],
       );
       logger.info("Home bill alert closed", {uid, closed});
+      // The reason sat on the listing, where a landlord only finds it by
+      // opening that listing. Tell them, and land them where "Send another"
+      // is.
+      if (after?.homeProofStatus === "rejected") {
+        const buildingId = after.homeBuildingId as string | undefined;
+        const unit = buildingId ?
+          await getFirestore().collection("properties")
+            .where("landlordId", "==", uid)
+            .where("buildingId", "==", buildingId)
+            .limit(1)
+            .get() :
+          null;
+        const reason = (after.homeProofRejectionReason as string | undefined) ??
+          "";
+        const building =
+          (after.homeBuildingName as string | undefined) ?? "your building";
+        await writeNotificationOnce(
+          `home_proof_rejected_${uid}_${was.split("/").pop()}`,
+          {
+            userId: uid,
+            type: "home_proof_rejected",
+            title: "Utility bill not accepted",
+            body:
+              `We could not accept the bill for ${building}` +
+              `${reason ? `: ${reason}` : "."} ` +
+              "Tenants there still see that you live elsewhere. Send another.",
+            payload: {
+              route: unit && !unit.empty ?
+                `/landlord/property/${unit.docs[0].id}` :
+                "/landlord/residence",
+            },
+          },
+        );
+      }
     }
     if (!now) return;
 
