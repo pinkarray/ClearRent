@@ -426,7 +426,6 @@ class PropertyService {
     // compound - one C of O can cover a duplex and a bungalow side by side.
     String? unitBuildingStructure,
     String? unitBuildingLabel,
-    String? listingFeePaymentReference,
     String? assignedAgentId,
     String? assignedAgentName,
     // Pre-calculated inspection fee (stored on property for consistent display)
@@ -560,7 +559,6 @@ class PropertyService {
         'ownershipDocStatus': buildingId != null
             ? 'inherited'
             : (ownershipDocUrl != null ? 'pending' : 'none'),
-        if (listingFeePaymentReference != null) 'listingFeePaymentReference': listingFeePaymentReference,
       };
 
       // Create the parent doc first, then the gated location subdoc. These
@@ -1280,6 +1278,29 @@ class PropertyService {
       developer.log('❌ Failed to mark property ready: $e',
           name: 'PropertyService', error: e, stackTrace: StackTrace.current);
       return 'Could not update the property. Please try again.';
+    }
+  }
+
+  /// Marks a listing's fee paid on the server, after Paystack confirms
+  /// [paymentReference]. Landlords can no longer write that status themselves.
+  /// Returns null on success, or a message to show.
+  Future<String?> confirmListingFee(
+    String propertyId,
+    String paymentReference,
+  ) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('confirmListingFee');
+      await callable.call<Map<String, dynamic>>({
+        'propertyId': propertyId,
+        'paymentReference': paymentReference,
+      });
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      return e.message ?? 'We could not confirm the listing fee.';
+    } catch (e) {
+      developer.log('❌ confirmListingFee failed: $e', name: 'PropertyService');
+      return 'We could not confirm the listing fee.';
     }
   }
 

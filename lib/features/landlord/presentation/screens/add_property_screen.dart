@@ -1737,7 +1737,6 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             _isInBuilding && _isCompoundSite && _unitBuildingStructure.isNotEmpty
                 ? _unitBuildingLabel
                 : null,
-        listingFeePaymentReference: _listingFeePaymentReference,
         assignedAgentId:
             _inspectionHandler == 'agent' ? _selectedAgentId : null,
         assignedAgentName:
@@ -1783,12 +1782,20 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             hasDoc ? 'pending' : 'not_uploaded';
       }
 
-      // If listing fee was also required, flag that too
-      if (_requiresListingFee) {
-        reviewFields['listingFeeStatus'] = 'paid';
-      }
-
       await _propertyService.updateProperty(propertyId, reviewFields);
+
+      // The server marks the fee paid once Paystack confirms the charge; the
+      // app can no longer write that itself. An admin cannot publish the
+      // listing until this has succeeded.
+      final feeReference = _listingFeePaymentReference;
+      if (_requiresListingFee && feeReference != null) {
+        final feeError =
+            await _propertyService.confirmListingFee(propertyId, feeReference);
+        if (feeError != null) {
+          _showError('Your listing is saved, but the fee payment is not linked '
+              'to it yet: $feeError Reference: $feeReference');
+        }
+      }
 
       // Stamps this listing (and re-stamps the others) with the residence line
       // tenants see. Marking a building as home needs a utility bill, which
