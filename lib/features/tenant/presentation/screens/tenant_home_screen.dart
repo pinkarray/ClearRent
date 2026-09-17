@@ -3842,7 +3842,17 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                     _TenantProfileMenuItem(
                       icon: Icons.verified_user_outlined,
                       title: 'Verification',
-                      subtitle: 'Verify your identity',
+                      // Mirrors the landlord profile. A fixed "Verify your
+                      // identity" sat under a "Verified Tenant" badge.
+                      subtitle: switch (_verificationStatus) {
+                        VerificationStatus.none => 'Verify your identity',
+                        VerificationStatus.pending => 'Under review',
+                        VerificationStatus.verified => 'Identity verified',
+                        VerificationStatus.rejected =>
+                          'Verification failed - tap to retry',
+                        VerificationStatus.expired =>
+                          'Verification expired - tap to renew',
+                      },
                       onTap:
                           () => context
                               .push('/tenant/verification')
