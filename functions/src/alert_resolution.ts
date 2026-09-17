@@ -102,6 +102,13 @@ const RESOLVERS: Record<string, Resolver> = {
 
   rent_payment: {collection: "active_rentals", done: payoutsSettled},
 
+  // The landlord confirmed the handover, the sweep auto-confirmed it, or the
+  // request was withdrawn: either way the tenancy is no longer waiting.
+  moveout_requested: {
+    collection: "active_rentals",
+    done: (t) => t.status !== "moveout_pending",
+  },
+
   // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
     collection: null,

@@ -580,8 +580,11 @@ export const onHomeProofChanged = onDocumentWritten(
       // The reason sat on the listing, where a landlord only finds it by
       // opening that listing. Tell them, and land them where "Send another"
       // is.
-      if (after?.homeProofStatus === "rejected") {
-        const buildingId = after.homeBuildingId as string | undefined;
+      // The landlord hears the verdict either way. Rejection carries the
+      // reason; acceptance says what tenants are now told.
+      const verdict = after?.homeProofStatus;
+      if (verdict === "rejected" || verdict === "accepted") {
+        const buildingId = after?.homeBuildingId as string | undefined;
         const unit = buildingId ?
           await getFirestore().collection("properties")
             .where("landlordId", "==", uid)
@@ -591,20 +594,26 @@ export const onHomeProofChanged = onDocumentWritten(
           null;
         // Admins type it without a full stop, and the next sentence follows.
         const rawReason =
-          (after.homeProofRejectionReason as string | undefined) ?? "";
+          (after?.homeProofRejectionReason as string | undefined) ?? "";
         const reason = rawReason.trim().replace(/[.!?]+$/, "");
         const building =
-          (after.homeBuildingName as string | undefined) ?? "your building";
+          (after?.homeBuildingName as string | undefined) ?? "your building";
+        const accepted = verdict === "accepted";
         await writeNotificationOnce(
-          `home_proof_rejected_${uid}_${was.split("/").pop()}`,
+          `home_proof_${verdict}_${uid}_${was.split("/").pop()}`,
           {
             userId: uid,
-            type: "home_proof_rejected",
-            title: "Utility bill not accepted",
-            body:
+            type: accepted ? "home_proof_accepted" : "home_proof_rejected",
+            title: accepted ?
+              "Utility bill accepted" :
+              "Utility bill not accepted",
+            body: accepted ?
+              `Your bill for ${building} was accepted. Tenants there are ` +
+                "now told their landlord lives on the premises." :
               `We could not accept the bill for ${building}` +
-              `${reason ? `: ${reason}.` : "."} ` +
-              "Tenants there still see that you live elsewhere. Send another.",
+                `${reason ? `: ${reason}.` : "."} ` +
+                "Tenants there still see that you live elsewhere. " +
+                "Send another.",
             payload: {
               route: unit && !unit.empty ?
                 `/landlord/property/${unit.docs[0].id}` :
