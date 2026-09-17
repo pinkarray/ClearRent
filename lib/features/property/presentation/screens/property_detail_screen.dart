@@ -3352,14 +3352,16 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
       ));
     }
 
-    // Caretaker
-    final hasCaretaker = property.hasCaretaker ?? false;
+    // Caretaker. From the caretaker actually appointed (an accepted invite
+    // stamps caretakerId), not the yes/no ticked on the add-property form,
+    // which was never updated and told tenants "Off-site caretaker" on
+    // listings that had none, and "No caretaker" on ones that did.
+    final hasCaretaker = (property.caretakerId ?? '').isNotEmpty;
     if (hasCaretaker) {
-      final caretakerLives = property.caretakerLivesOnPremises ?? false;
-      rows.add(_OccupancyRow(
+      rows.add(const _OccupancyRow(
         icon: Icons.manage_accounts_outlined,
         label: 'Caretaker',
-        value: caretakerLives ? 'On-site caretaker' : 'Off-site caretaker',
+        value: 'Has a caretaker',
       ));
     } else {
       rows.add(const _OccupancyRow(
