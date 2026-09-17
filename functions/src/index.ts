@@ -28,6 +28,7 @@ import {
 } from "./notification_helpers";
 import {
   writeAdminAlert,
+  writeAdminAlertOnce,
   upsertAdminAlert,
   resolveAdminAlertsForTarget,
 } from "./admin_alerts";
@@ -741,6 +742,11 @@ export const onIssueCreated = onDocumentCreated(
     const propertyTitle =
       (data.propertyTitle as string | undefined) ?? "your property";
     const category = (data.category as string | undefined) ?? "maintenance";
+    // "a electrical issue", "a other issue": pick the article, and let
+    // "other" read as plain "an issue".
+    const issuePhrase = category === "other" ?
+      "an issue" :
+      `${/^[aeiou]/i.test(category) ? "an" : "a"} ${category} issue`;
     const propertyId = (data.propertyId as string | undefined) ?? "";
 
     await writeNotificationOnce(
@@ -749,7 +755,7 @@ export const onIssueCreated = onDocumentCreated(
         userId: landlordId,
         type: "issue_reported",
         title: "New issue reported",
-        body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+        body: `${tenantName} reported ${issuePhrase} at ${propertyTitle}.`,
         payload: {
           route: "/landlord/issues",
           ...(propertyId ? {propertyId} : {}),
@@ -762,7 +768,7 @@ export const onIssueCreated = onDocumentCreated(
       type: "issue_reported",
       severity: "warning",
       title: "Tenant reported an issue",
-      body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+      body: `${tenantName} reported ${issuePhrase} at ${propertyTitle}.`,
       targetCollection: "issues",
       targetId: event.params.issueId,
       actors: {
@@ -787,7 +793,7 @@ export const onIssueCreated = onDocumentCreated(
           userId: caretakerId,
           type: "issue_reported",
           title: "New issue reported",
-          body: `${tenantName} reported a ${category} issue at ${propertyTitle}.`,
+          body: `${tenantName} reported ${issuePhrase} at ${propertyTitle}.`,
           payload: {
             route: "/caretaker/properties",
             ...(propertyId ? {propertyId} : {}),
@@ -1118,6 +1124,23 @@ export const onActiveRentalUpdated = onDocumentUpdated(
             payload: landlordRentalsRoute,
           },
         );
+        // Admins saw only CONTESTED handovers, so a move-out that simply
+        // stalled with the landlord never reached them. Info, not warning:
+        // the landlord confirms, not the admin. alertHygieneSweep closes it
+        // once the tenancy leaves moveout_pending.
+        await writeAdminAlertOnce(`moveout_requested_${rentalId}_${rev}`, {
+          type: "moveout_requested",
+          severity: "info",
+          title: "Tenant asked to move out",
+          body:
+            `${tenantName} asked to move out of ${propertyTitle}` +
+            `${whenStr}${endReason ? `: "${endReason}"` : "."} ` +
+            "Waiting on the landlord to confirm the handover.",
+          targetCollection: "active_rentals",
+          targetId: rentalId,
+          actors: {tenantId, landlordId},
+          meta: {propertyTitle, reason: endReason},
+        });
       } else if (
         stAfter === "ended_by_tenant" &&
         stBefore === "moveout_pending" &&

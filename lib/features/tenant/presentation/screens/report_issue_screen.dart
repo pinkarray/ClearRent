@@ -224,8 +224,9 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
         'landlordId': widget.landlordId,
         'type': 'issue_reported',
         'title': 'New Issue Reported',
+        // "a electrical issue" - same wording rule as onIssueCreated.
         'message':
-            '${widget.tenantName} reported a $_selectedCategory issue at ${widget.propertyTitle}.',
+            '${widget.tenantName} reported ${_selectedCategory == 'other' ? 'an issue' : '${RegExp(r'^[aeiou]', caseSensitive: false).hasMatch(_selectedCategory) ? 'an' : 'a'} $_selectedCategory issue'} at ${widget.propertyTitle}.',
         'propertyId': widget.propertyId,
         'actorId': widget.tenantId,
         'actorName': widget.tenantName,
