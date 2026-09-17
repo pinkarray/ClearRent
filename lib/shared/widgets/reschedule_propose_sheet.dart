@@ -350,9 +350,18 @@ class _ReschedulePropoSheetState extends State<ReschedulePropoSheet> {
                                 borderSide: BorderSide.none,
                               ),
                               contentPadding: const EdgeInsets.all(16),
-                              counterText:
-                                  '${_reasonController.text.trim().length}'
-                                  ' / $_minReasonLength',
+                              // "27 / 10" read as over a limit. Say what is
+                              // still needed, then show the real maximum.
+                              counterText: _reasonController.text
+                                          .trim()
+                                          .length <
+                                      _minReasonLength
+                                  ? '${_minReasonLength - _reasonController.text.trim().length}'
+                                      ' more character'
+                                      '${_minReasonLength - _reasonController.text.trim().length == 1 ? '' : 's'}'
+                                      ' needed'
+                                  : '${_reasonController.text.trim().length}'
+                                      ' / 200',
                               counterStyle:
                                   AppTextStyles.caption.copyWith(
                                 color: _reasonController.text.trim().length >=
