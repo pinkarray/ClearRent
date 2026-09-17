@@ -1446,7 +1446,17 @@ class ConversationData {
       if (tenantName.isNotEmpty) return tenantName;
       return landlordName.isNotEmpty ? landlordName : 'Unknown';
     }
-    // Tenant (or any fallback) sees the landlord.
+    // Tenant (or any fallback) sees whoever manages the place: the caretaker
+    // on a caretaker thread, otherwise the landlord. Same precedence as
+    // chat_screen.dart, which already opened the caretaker while the inbox row
+    // was labelled with the landlord's name.
+    if (currentUserId == tenantId &&
+        caretakerId != null &&
+        caretakerId!.isNotEmpty &&
+        caretakerName != null &&
+        caretakerName!.isNotEmpty) {
+      return caretakerName!;
+    }
     return landlordName.isNotEmpty ? landlordName : 'Unknown';
   }
 
