@@ -279,10 +279,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
   void _selectPlace(NominatimPlace place) {
     final location = LatLng(place.lat, place.lng);
     // The area, once chosen explicitly, outranks anything OSM returns.
-    final matched =
-        _areaExplicitlySet
-            ? null
-            : InspectionPricing.findMatchingArea(place.city);
+    final matched = _areaExplicitlySet ? null : _matchArea(place);
 
     setState(() {
       _selectedLocation = location;
@@ -333,9 +330,10 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       // Manually selected - clear auto-match state
       _areaMatchedFromPin = false;
       _geocodedRawCity = null;
-      if (widget.stateController.text.isEmpty) {
-        widget.stateController.text = 'Lagos';
-      }
+      // The area decides the state. Setting Lagos only when the field was
+      // empty kept whatever state the pin had filled in, so a Lagos area could
+      // be saved under Ogun.
+      widget.stateController.text = _stateForArea(area);
     });
     _geocodeArea(area);
   }
@@ -392,6 +390,24 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     }
   }
 
+  /// The state an area belongs to. The list is Lagos apart from the
+  /// Obafemi-Owode (Ogun) areas along the border.
+  static String _stateForArea(String area) =>
+      InspectionPricing.getLGAForArea(area) == 'obafemi_owode'
+          ? 'Ogun'
+          : 'Lagos';
+
+  /// Fuzzy-matches OSM's place name onto the area list, but only when the
+  /// area is in the state OSM puts the place in. OSM named an Ogun pin
+  /// "Itamaga", which is also a Lagos (Ikorodu) area, and the listing was
+  /// saved as "Ikorodu, Ogun". An empty state gets the benefit of the doubt.
+  static String? _matchArea(NominatimPlace place) {
+    final matched = InspectionPricing.findMatchingArea(place.city);
+    if (matched == null || place.state.trim().isEmpty) return matched;
+    final areaState = _stateForArea(matched).toLowerCase();
+    return place.state.toLowerCase().contains(areaState) ? matched : null;
+  }
+
   void _onMapTap(TapPosition tapPosition, LatLng location) {
     setState(() => _selectedLocation = location);
     widget.onLocationSelected?.call(location.latitude, location.longitude);
@@ -422,10 +438,7 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
         final place = NominatimPlace.fromJson(data);
         if (!mounted) return;
 
-        final matched =
-            _areaExplicitlySet
-                ? null
-                : InspectionPricing.findMatchingArea(place.city);
+        final matched = _areaExplicitlySet ? null : _matchArea(place);
 
         final currentAddress = widget.addressController.text.trim();
         final proposed = place.streetAddress.trim();
