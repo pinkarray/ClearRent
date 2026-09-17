@@ -1883,6 +1883,16 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       );
     }
 
+    // The decliner's reason, for the tenant decline notifications below. The
+    // app and web both ask for one, and it only reached the inspection
+    // screen. Web stores "No reason given" when the prompt is left empty.
+    const rawDeclineReason =
+      ((after.declineReason as string | undefined) ?? "").trim();
+    const declineReasonLine =
+      rawDeclineReason && rawDeclineReason !== "No reason given" ?
+        ` Reason: ${rawDeclineReason.replace(/[.!?]+$/, "")}.` :
+        "";
+
     // ---- Status: declinedByAgent → declined (final decline) ----
     // Tenant gets pushed. Refund auto-processed by service.
     if (
@@ -1898,8 +1908,8 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           type: "inspection_declined",
           title: "Inspection Declined",
           body:
-            `Your inspection for ${propertyTitle} was declined. ` +
-            "A refund is being processed.",
+            `Your inspection for ${propertyTitle} was declined.` +
+            `${declineReasonLine} A refund is being processed.`,
           payload: {
             route: tenantRoute,
             initialTab: "2",
@@ -1929,7 +1939,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           title: "Inspection Declined",
           body:
             `Your inspection for ${propertyTitle} was declined by ` +
-            "the landlord.",
+            `the landlord.${declineReasonLine}`,
           payload: {
             route: tenantRoute,
             initialTab: "2",
@@ -1956,7 +1966,7 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
             title: "Inspection Declined",
             body:
               `Your inspection for ${propertyTitle} was declined by ` +
-              "the landlord. A refund is being processed.",
+              `the landlord.${declineReasonLine} A refund is being processed.`,
             payload: {
               route: tenantRoute,
               initialTab: "2",
