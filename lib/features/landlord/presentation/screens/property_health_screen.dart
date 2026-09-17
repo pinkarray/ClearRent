@@ -173,7 +173,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   onViewIssues: _navigateToIssues,
                   maintenanceStream: _maintenanceStream,
                 ),
-                _IssueHistoryTab(issues: issues),
+                _IssueHistoryTab(issues: issues, onOpen: _openIssue),
               ],
             ),
           );
@@ -386,6 +386,25 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
       'asCaretaker': _isCaretaker,
       'category': category,
       'initialTab': tab,
+      'propertyTitle': widget.property.title,
+    });
+  }
+
+  /// Opens one Issue History entry: the issues screen for this property and
+  /// the issue's category, on the tab its status lives in. The cards were not
+  /// tappable, so a past issue could be seen here but not acted on.
+  void _openIssue(_IssueData issue) {
+    const tabForStatus = {
+      'open': 0,
+      'in_progress': 1,
+      'pending_confirmation': 2,
+      'resolved': 3,
+    };
+    context.push('/landlord/issues', extra: {
+      'propertyId': widget.property.id,
+      'asCaretaker': _isCaretaker,
+      'category': issue.category,
+      'initialTab': tabForStatus[issue.status] ?? 0,
       'propertyTitle': widget.property.title,
     });
   }
@@ -851,7 +870,8 @@ class _HealthTab extends StatelessWidget {
 
 class _IssueHistoryTab extends StatelessWidget {
   final List<_IssueData> issues;
-  const _IssueHistoryTab({required this.issues});
+  final void Function(_IssueData issue) onOpen;
+  const _IssueHistoryTab({required this.issues, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -901,7 +921,10 @@ class _IssueHistoryTab extends StatelessWidget {
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
       itemCount: sorted.length,
-      itemBuilder: (context, i) => _IssueHistoryCard(issue: sorted[i]),
+      itemBuilder: (context, i) => _IssueHistoryCard(
+        issue: sorted[i],
+        onTap: () => onOpen(sorted[i]),
+      ),
     );
   }
 }
@@ -1092,7 +1115,8 @@ class _MaintenanceLogItem extends StatelessWidget {
 
 class _IssueHistoryCard extends StatelessWidget {
   final _IssueData issue;
-  const _IssueHistoryCard({required this.issue});
+  final VoidCallback onTap;
+  const _IssueHistoryCard({required this.issue, required this.onTap});
 
   Color get _statusColor {
     switch (issue.status) {
@@ -1127,7 +1151,10 @@ class _IssueHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _statusColor;
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1191,7 +1218,10 @@ class _IssueHistoryCard extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(width: 4),
+        Icon(Icons.chevron_right, size: 18, color: AppColors.textHint),
       ]),
+      ),
     );
   }
 
