@@ -417,6 +417,12 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
   Widget build(BuildContext context) {
     final r = widget.request;
     final agentDeclined = r.isDeclinedByAgent;
+    // Only the handler may approve (firestore.rules Row 14a). A landlord whose
+    // listing an agent handles can decline, and can approve only to overrule
+    // the agent's decline (Row 14b); the button used to show regardless and
+    // failed with permission denied.
+    final handledByAgent = r.agentId != null && r.agentId != r.landlordId;
+    final canApprove = !handledByAgent || agentDeclined;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -628,6 +634,17 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
           ],
           const SizedBox(height: 16),
 
+          if (!canApprove) ...[
+            Text(
+              '${r.agentName ?? 'Your agent'} is handling this request. '
+              'You can still decline it.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // Action buttons
           Row(
             children: [
@@ -649,14 +666,16 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AppButton(
-                  text: agentDeclined ? 'Approve Anyway' : 'Approve',
-                  onPressed: _isLoading ? null : _approve,
-                  isLoading: _isLoading,
+              if (canApprove) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppButton(
+                    text: agentDeclined ? 'Approve Anyway' : 'Approve',
+                    onPressed: _isLoading ? null : _approve,
+                    isLoading: _isLoading,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],
@@ -1566,8 +1585,10 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
           ],
 
           // Reschedule button (hidden when proposal pending, past 2h
-          // cutoff, or cap reached)
-          if (r.canInitiateReschedule) ...[
+          // cutoff, or cap reached). Proposing and cancelling are the
+          // handler's (rules Rows 16 and 21), so not offered when an agent
+          // handles the listing.
+          if (!isAgent && r.canInitiateReschedule) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _proposeReschedule,
@@ -1594,8 +1615,8 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
           ],
 
           // Cancel & Refund (handler exit ramp for the tenant)
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
+          if (!isAgent) const SizedBox(height: 8),
+          if (!isAgent) OutlinedButton.icon(
             onPressed: _cancelInspection,
             icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
             label: Text(
