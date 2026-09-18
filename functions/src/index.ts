@@ -2558,6 +2558,36 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       }
     }
 
+    // ============ REFUND ON CANCEL / DECLINE AFTER PAYMENT ============
+    // A paid viewing that is called off must be refunded. The app does it
+    // itself after cancelling (_processRefund, rules Row 9); web never did, so
+    // a cancel there left the money marked paid with no refund queued.
+    // Setting paymentStatus here fires onInspectionRefundTriggered. In a
+    // transaction so it is a no-op when the app already did it.
+    if (
+      beforeStatus !== afterStatus &&
+      (afterStatus === "cancelled" || afterStatus === "declined") &&
+      after.paymentStatus === "paid"
+    ) {
+      const refRef =
+        getFirestore().collection("inspection_requests").doc(requestId);
+      await getFirestore().runTransaction(async (tx) => {
+        const cur = await tx.get(refRef);
+        if (cur.get("paymentStatus") !== "paid") return;
+        tx.update(refRef, {
+          paymentStatus: "refunded",
+          refundedAt: FieldValue.serverTimestamp(),
+          refundReason: afterStatus === "cancelled" ?
+            "Inspection was cancelled" :
+            "Inspection request was declined",
+        });
+      });
+      logger.info("Refund queued for called-off paid inspection", {
+        requestId,
+        afterStatus,
+      });
+    }
+
     // ============ HANDLER CANCEL ============
     // Fires when an agent or landlord cancels an inspection on the
     // tenant's behalf via handlerCancelRequest. Tenant gets pushed.
@@ -2569,7 +2599,13 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       tenantId
     ) {
       const cancelledBy = after.cancelledBy as string | undefined;
-      if (cancelledBy === "agent" || cancelledBy === "landlord") {
+      // Web wrote "handler" rather than the role, so its cancellations never
+      // reached the tenant.
+      if (
+        cancelledBy === "agent" ||
+        cancelledBy === "landlord" ||
+        cancelledBy === "handler"
+      ) {
         const reason =
           (after.cancellationReason as string | undefined) ?? "";
         await writeNotificationOnce(
