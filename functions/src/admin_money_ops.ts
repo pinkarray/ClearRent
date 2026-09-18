@@ -61,6 +61,7 @@ import {
 } from "firebase-admin/firestore";
 import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
+import {writeAdminAlertOnce} from "./admin_alerts";
 import {getPricing} from "./pricing";
 
 interface BeneficiaryBank {
@@ -1211,6 +1212,23 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
         amount,
         beneficiaryId: tenantId,
         source,
+      });
+
+      // Refunds are paid by hand from the Refunds page, and nothing told an
+      // admin one was owed, so it sat until someone happened to look. Closed
+      // by alertHygieneSweep once the refund leaves pending.
+      await writeAdminAlertOnce(`refund_due_${requestId}`, {
+        type: "refund_due",
+        severity: "warning",
+        title: "Refund to pay",
+        body:
+          `Pay ${after.tenantName ?? "the tenant"} ` +
+          `₦${amount.toLocaleString("en-NG")} ` +
+          `for ${after.propertyTitle ?? "an inspection"}: ${reason}`,
+        targetCollection: "refunds",
+        targetId: requestId,
+        actors: {tenantId},
+        meta: {amount, source},
       });
     } catch (err) {
       // .create() throws ALREADY_EXISTS if the refund doc is already

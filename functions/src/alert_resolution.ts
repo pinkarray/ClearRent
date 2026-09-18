@@ -109,6 +109,12 @@ const RESOLVERS: Record<string, Resolver> = {
     done: (t) => t.status !== "moveout_pending",
   },
 
+  // Paid (or otherwise settled) from the Refunds page.
+  refund_due: {
+    collection: "refunds",
+    done: (t) => t.status !== "pending",
+  },
+
   // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
     collection: null,

@@ -1397,8 +1397,13 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     final why = r.hasReachedRescheduleCap
         ? 'This visit has been moved twice already. If the time no longer works'
         : 'Too close to the slot to move it. If you can no longer make it';
+    // The server refunds everything but ClearRent's charge
+    // (onInspectionRefundTriggered), so say exactly that.
+    final naira = NumberFormat('#,###');
+    final back = naira.format(r.totalFee - r.clearrentFee);
     return '$why, message ${r.agentName ?? r.landlordName} and ask them to '
-        'cancel it. You get a refund when they do.';
+        'cancel it. You get ₦$back back when they do. The '
+        '₦${naira.format(r.clearrentFee)} service charge is not refunded.';
   }
 
   Widget _badge(String text, Color color, IconData icon) => Container(
