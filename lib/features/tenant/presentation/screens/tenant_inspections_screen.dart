@@ -931,10 +931,29 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     }
   }
 
+  /// Runs an on-the-day write. Null means it stalled: the connection message
+  /// is already shown, so the caller shows nothing else.
+  Future<bool?> _sendOnTheDay(Future<bool> Function() write) async {
+    try {
+      return await write();
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(InspectionService.notSentMessage),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _markOnWay() async {
-    final ok =
-        await _inspectionService.markTenantOnWay(widget.request.id);
-    if (!mounted) return;
+    final ok = await _sendOnTheDay(
+        () => _inspectionService.markTenantOnWay(widget.request.id));
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -947,9 +966,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   }
 
   Future<void> _markArrived() async {
-    final ok =
-        await _inspectionService.markTenantArrived(widget.request.id);
-    if (!mounted) return;
+    final ok = await _sendOnTheDay(
+        () => _inspectionService.markTenantArrived(widget.request.id));
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -962,9 +981,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
   }
 
   Future<void> _markMet() async {
-    final ok =
-        await _inspectionService.markMet(widget.request.id);
-    if (!mounted) return;
+    final ok = await _sendOnTheDay(
+        () => _inspectionService.markMet(widget.request.id));
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

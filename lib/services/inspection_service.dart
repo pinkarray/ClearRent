@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,6 +14,16 @@ class InspectionService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   String? get _currentUserId => _auth.currentUser?.uid;
+
+  /// On-the-day writes (on the way, arrived, met) wait for the server. On a
+  /// stalled connection Firestore applies them to the local cache, so the card
+  /// moves on, but the await never returns and the other party never sees it.
+  /// These methods rethrow the TimeoutException so the screen can say so; the
+  /// write stays queued and goes through once the connection comes back.
+  static const onTheDayWriteTimeout = Duration(seconds: 15);
+  static const notSentMessage =
+      'Not sent yet. Check your connection, the other person will not see '
+      'this until it goes through.';
 
   // Time slot display mapping
   static const Map<String, String> timeSlotDisplay = {
@@ -1131,7 +1142,7 @@ class InspectionService {
         'tenantArrived': true,
         'tenantArrivedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(onTheDayWriteTimeout);
 
       // Notify the handler
       final requestDoc =
@@ -1169,6 +1180,8 @@ class InspectionService {
         name: 'InspectionService',
       );
       return true;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       developer.log(
         '❌ Error marking tenant arrived: $e',
@@ -1222,7 +1235,7 @@ class InspectionService {
         'handlerArrived': true,
         'handlerArrivedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(onTheDayWriteTimeout);
 
       // Notify the tenant
       final requestDoc =
@@ -1252,6 +1265,8 @@ class InspectionService {
         name: 'InspectionService',
       );
       return true;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       developer.log(
         '❌ Error marking handler arrived: $e',
@@ -1891,7 +1906,7 @@ class InspectionService {
         'tenantOnWay': true,
         'tenantOnWayAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(onTheDayWriteTimeout);
 
       // Tell the handler the tenant is on the way (mirrors markTenantArrived).
       // Self-handled ⇒ agentId is null, so only the landlord is notified.
@@ -1921,6 +1936,8 @@ class InspectionService {
         name: 'InspectionService',
       );
       return true;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       developer.log(
         '❌ Error marking tenant on way: $e',
@@ -1961,7 +1978,7 @@ class InspectionService {
         'handlerOnWay': true,
         'handlerOnWayAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      }).timeout(onTheDayWriteTimeout);
 
       // Tell the tenant the handler is on the way (mirrors markHandlerArrived).
       final handlerName = data['agentId'] != null
@@ -1982,6 +1999,8 @@ class InspectionService {
         name: 'InspectionService',
       );
       return true;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       developer.log(
         '❌ Error marking handler on way: $e',
@@ -2036,13 +2055,16 @@ class InspectionService {
       await _firestore
           .collection('inspection_requests')
           .doc(requestId)
-          .update(update);
+          .update(update)
+          .timeout(onTheDayWriteTimeout);
 
       developer.log(
         '✅ Met half confirmed by $role for $requestId',
         name: 'InspectionService',
       );
       return true;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       developer.log(
         '❌ Error in markMet: $e',

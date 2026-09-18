@@ -864,13 +864,13 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     if (confirm != true) return;
 
     setState(() => _isArrivalLoading = true);
-    final ok = await widget.inspectionService.markHandlerArrived(
-      widget.request.id,
+    final ok = await _sendOnTheDay(
+      () => widget.inspectionService.markHandlerArrived(widget.request.id),
     );
     if (!mounted) return;
     setState(() => _isArrivalLoading = false);
 
-    if (ok) {
+    if (ok == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('You\'ve been marked as arrived!'),
@@ -932,14 +932,14 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
   /// underlying states.
   Future<void> _markReadyAtHome() async {
     setState(() => _isArrivalLoading = true);
-    final onWay = await widget.inspectionService.markHandlerOnWay(
-      widget.request.id,
+    final arrived = await _sendOnTheDay(
+      () async =>
+          await widget.inspectionService.markHandlerOnWay(widget.request.id) &&
+          await widget.inspectionService.markHandlerArrived(widget.request.id),
     );
-    final arrived = onWay &&
-        await widget.inspectionService.markHandlerArrived(widget.request.id);
     if (!mounted) return;
     setState(() => _isArrivalLoading = false);
-    if (!arrived) {
+    if (arrived == false) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Couldn\'t update status, try again'),
@@ -950,11 +950,30 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     }
   }
 
+  /// Runs an on-the-day write. Null means it stalled: the connection message
+  /// is already shown, so the caller shows nothing else.
+  Future<bool?> _sendOnTheDay(Future<bool> Function() write) async {
+    try {
+      return await write();
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(InspectionService.notSentMessage),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _markOnWay() async {
-    final ok = await widget.inspectionService.markHandlerOnWay(
-      widget.request.id,
+    final ok = await _sendOnTheDay(
+      () => widget.inspectionService.markHandlerOnWay(widget.request.id),
     );
-    if (!mounted) return;
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -967,9 +986,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
   }
 
   Future<void> _markMet() async {
-    final ok =
-        await widget.inspectionService.markMet(widget.request.id);
-    if (!mounted) return;
+    final ok = await _sendOnTheDay(
+        () => widget.inspectionService.markMet(widget.request.id));
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

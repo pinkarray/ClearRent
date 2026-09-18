@@ -868,13 +868,13 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
     if (confirm != true) return;
 
     setState(() => _isArrivalLoading = true);
-    final ok = await widget.inspectionService.markHandlerArrived(
-      widget.request.id,
+    final ok = await _sendOnTheDay(
+      () => widget.inspectionService.markHandlerArrived(widget.request.id),
     );
     if (!mounted) return;
     setState(() => _isArrivalLoading = false);
 
-    if (ok) {
+    if (ok == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('You\'ve been marked as arrived! ✓'),
@@ -981,11 +981,30 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
     }
   }
 
+  /// Runs an on-the-day write. Null means it stalled: the connection message
+  /// is already shown, so the caller shows nothing else.
+  Future<bool?> _sendOnTheDay(Future<bool> Function() write) async {
+    try {
+      return await write();
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(InspectionService.notSentMessage),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _markOnWay() async {
-    final ok = await widget.inspectionService.markHandlerOnWay(
-      widget.request.id,
+    final ok = await _sendOnTheDay(
+      () => widget.inspectionService.markHandlerOnWay(widget.request.id),
     );
-    if (!mounted) return;
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -998,9 +1017,9 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
   }
 
   Future<void> _markMet() async {
-    final ok =
-        await widget.inspectionService.markMet(widget.request.id);
-    if (!mounted) return;
+    final ok = await _sendOnTheDay(
+        () => widget.inspectionService.markMet(widget.request.id));
+    if (!mounted || ok == null) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
