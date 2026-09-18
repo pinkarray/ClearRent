@@ -1375,21 +1375,30 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
         ]
         // Say why it went. A confirmed visit simply loses the button at the
-        // cutoff, and the silence reads as a bug rather than a rule.
-        else if (r.isConfirmed && !r.hasPendingReschedule) ...[
+        // cutoff, and the silence reads as a bug rather than a rule. A tenant
+        // cannot cancel a paid visit (only the handler can, which refunds
+        // them), so point them at who can. Moot once anyone has arrived.
+        else if (r.isConfirmed &&
+            !r.hasPendingReschedule &&
+            !r.tenantArrived &&
+            !r.handlerArrived) ...[
           const SizedBox(height: 12),
           Text(
-            r.hasReachedRescheduleCap
-                ? 'This visit has been moved twice already. Cancel it if the '
-                    'time no longer works.'
-                : 'Too close to the slot to move it. Cancel it if you can no '
-                    'longer make it.',
+            _rescheduleClosedNote(r),
             style: AppTextStyles.caption
                 .copyWith(color: AppColors.textSecondary),
           ),
         ],
       ]),
     );
+  }
+
+  String _rescheduleClosedNote(InspectionRequest r) {
+    final why = r.hasReachedRescheduleCap
+        ? 'This visit has been moved twice already. If the time no longer works'
+        : 'Too close to the slot to move it. If you can no longer make it';
+    return '$why, message ${r.agentName ?? r.landlordName} and ask them to '
+        'cancel it. You get a refund when they do.';
   }
 
   Widget _badge(String text, Color color, IconData icon) => Container(
