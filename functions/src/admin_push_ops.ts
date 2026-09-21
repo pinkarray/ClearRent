@@ -143,6 +143,15 @@ export const onAdminAlertCreated = onDocumentCreated(
           webpush: {
             headers: {Urgency: "high"},
             fcmOptions: {link: "/dashboard/alerts"},
+            // The browser draws this banner itself (the service worker only
+            // draws data-only messages), so the icon and the per-type
+            // collapse have to travel here.
+            notification: {
+              icon: "/logos/clearrent_mark_color.svg",
+              badge: "/logos/clearrent_mark_color.svg",
+              tag: data.type || "admin_alert",
+              renotify: true,
+            },
           },
         });
         await pruneTokens(device.uid, device.tokens, response.responses);

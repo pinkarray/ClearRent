@@ -184,20 +184,31 @@ export const onNotificationCreated = onDocumentWritten(
     // Other types stack naturally (one notification per event).
     const type = data.type as string | undefined;
     const conversationId = data.conversationId as string | undefined;
-    let androidConfig;
-    let apnsConfig;
-    if (type === "chat_message" && conversationId) {
-      const tag = `chat_${conversationId}`;
-      androidConfig = {notification: {tag}};
-      apnsConfig = {payload: {aps: {"thread-id": tag}}};
-    }
+    const chatTag = type === "chat_message" && conversationId ?
+      `chat_${conversationId}` :
+      undefined;
 
+    // Title and body ride in the Android and iOS blocks, not a top-level
+    // notification. A top-level one is ALSO drawn by the Firebase SDK inside
+    // the web service worker, which then drew its own copy carrying the deep
+    // link, so web users saw every push twice. Web now gets the message
+    // data-only and its worker draws the single banner from data.title/body.
+    data.title = title;
+    data.body = body;
     const response = await getMessaging().sendEachForMulticast({
       tokens,
-      notification: {title, body},
       data,
-      ...(androidConfig ? {android: androidConfig} : {}),
-      ...(apnsConfig ? {apns: apnsConfig} : {}),
+      android: {
+        notification: {title, body, ...(chatTag ? {tag: chatTag} : {})},
+      },
+      apns: {
+        payload: {
+          aps: {
+            alert: {title, body},
+            ...(chatTag ? {"thread-id": chatTag} : {}),
+          },
+        },
+      },
     });
 
     logger.info("FCM send complete", {
