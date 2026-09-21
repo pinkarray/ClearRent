@@ -1501,6 +1501,14 @@ class InspectionService {
 
   // ============ CANCEL ============
 
+  /// Statuses a tenant may withdraw from, provided nothing has been paid.
+  /// Mirrors rules Row 8.
+  static const tenantWithdrawableStatuses = [
+    'pendingPayment',
+    'pending',
+    'approved',
+  ];
+
   Future<bool> cancelRequest(String requestId) async {
     try {
       final requestDoc =
@@ -1512,16 +1520,21 @@ class InspectionService {
 
       if (requestData == null) return false;
       if (requestData['tenantId'] != _currentUserId) return false;
-      if (requestData['status'] != 'pendingPayment') return false;
+      // The tenant may withdraw while nothing has been paid: awaiting approval,
+      // or approved and not yet paid (rules Row 8). This checked for the old
+      // pay-first 'pendingPayment' only, a status new requests never reach, so
+      // a tenant could not back out of anything. A paid viewing is cancelled
+      // by the handler, which refunds it.
+      if (!tenantWithdrawableStatuses.contains(requestData['status'])) {
+        return false;
+      }
+      if (requestData['paymentStatus'] == 'paid') return false;
 
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'status': 'cancelled',
+        'cancelledBy': 'tenant',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
-      if (requestData['paymentStatus'] == 'paid') {
-        await _processRefund(requestId, requestData);
-      }
 
       developer.log(
         'âœ… Request cancelled: $requestId',

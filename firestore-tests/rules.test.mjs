@@ -2617,3 +2617,74 @@ test("owner stamps on_premises with an accepted bill - allowed", async () => {
     })
   );
 });
+
+// ─── Row 8: tenant withdraws an unpaid inspection request ───────────────────
+// It allowed only the old pay-first 'pendingPayment', which new requests never
+// reach, so a tenant could not back out of anything.
+
+async function seedInspection(id, fields) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `inspection_requests/${id}`), {
+      tenantId: TENANT, landlordId: LANDLORD, agentId: null,
+      propertyId: "prop1", ...fields,
+    });
+  });
+}
+
+const withdraw = (db, id) =>
+  updateDoc(doc(db, `inspection_requests/${id}`), {
+    status: "cancelled", cancelledBy: "tenant", updatedAt: serverTimestamp(),
+  });
+
+test("tenant withdraws a request awaiting approval - allowed", async () => {
+  await seedInspection("w_pending", { status: "pending", paymentStatus: "unpaid" });
+  await assertSucceeds(withdraw(tenantDb(), "w_pending"));
+});
+
+test("tenant withdraws an approved, unpaid request - allowed", async () => {
+  await seedInspection("w_appr", { status: "approved", paymentStatus: "unpaid" });
+  await assertSucceeds(withdraw(tenantDb(), "w_appr"));
+});
+
+test("tenant withdraws without cancelledBy (build 11 shape) - allowed", async () => {
+  await seedInspection("w_old", { status: "pending", paymentStatus: "unpaid" });
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "inspection_requests/w_old"), {
+      status: "cancelled", updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant cancels a PAID inspection - denied", async () => {
+  await seedInspection("w_paid", { status: "approved", paymentStatus: "paid" });
+  await assertFails(withdraw(tenantDb(), "w_paid"));
+});
+
+test("someone else withdraws the tenant's request - denied", async () => {
+  await seedInspection("w_other", { status: "pending", paymentStatus: "unpaid" });
+  await assertFails(withdraw(otherDb(), "w_other"));
+});
+
+test("tenant withdraw claiming the landlord cancelled - denied", async () => {
+  await seedInspection("w_spoof", { status: "pending", paymentStatus: "unpaid" });
+  await assertFails(
+    updateDoc(doc(tenantDb(), "inspection_requests/w_spoof"), {
+      status: "cancelled", cancelledBy: "landlord", updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant withdraw smuggling paymentStatus - denied", async () => {
+  await seedInspection("w_smug", { status: "approved", paymentStatus: "unpaid" });
+  await assertFails(
+    updateDoc(doc(tenantDb(), "inspection_requests/w_smug"), {
+      status: "cancelled", cancelledBy: "tenant", paymentStatus: "refunded",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant withdraws a completed inspection - denied", async () => {
+  await seedInspection("w_done", { status: "completed", paymentStatus: "unpaid" });
+  await assertFails(withdraw(tenantDb(), "w_done"));
+});

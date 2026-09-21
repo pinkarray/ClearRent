@@ -2555,6 +2555,11 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       ) {
         const reason =
           (after.cancellationReason as string | undefined) ?? "";
+        // Only a paid inspection has anything to refund. An approved-but-
+        // unpaid one was also told "Refund processing".
+        const refundLine = before.paymentStatus === "paid" ?
+          " Refund processing." :
+          " You were not charged.";
         await writeNotificationOnce(
           `req_${requestId}_handlerCancelled_${tenantId}`,
           {
@@ -2563,9 +2568,9 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
             title: "Inspection Cancelled",
             body: reason.length > 0 ?
               `Your inspection for ${propertyTitle} was cancelled. ` +
-                `Reason: ${reason}. Refund processing.` :
-              `Your inspection for ${propertyTitle} was cancelled. ` +
-                "Refund processing.",
+                `Reason: ${reason}.${refundLine}` :
+              `Your inspection for ${propertyTitle} was cancelled.` +
+                refundLine,
             payload: {
               route: tenantRoute,
               initialTab: "2",
@@ -2578,6 +2583,38 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           cancelledBy,
           tenantId,
         });
+      }
+    }
+
+    // ============ TENANT WITHDRAW ============
+    // The tenant backed out before paying (rules Row 8). The handler only
+    // got a feed entry, so a slot they had approved emptied silently. Build
+    // 11 does not stamp cancelledBy; its only tenant cancel was the
+    // unreachable pendingPayment one, so absence is not treated as tenant.
+    if (
+      beforeStatus !== "cancelled" &&
+      afterStatus === "cancelled" &&
+      after.cancelledBy === "tenant"
+    ) {
+      const recipients = [agentId, landlordId].filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      );
+      for (const rid of recipients) {
+        await writeNotificationOnce(
+          `req_${requestId}_tenantWithdrew_${rid}`,
+          {
+            userId: rid,
+            type: "inspection_cancelled",
+            title: "Viewing request withdrawn",
+            body:
+              `${tenantName} withdrew their request to view ` +
+              `${propertyTitle}. That time is free again.`,
+            payload: {
+              route: rid === agentId ? agentRoute : landlordRoute,
+              param_requestId: requestId,
+            },
+          },
+        );
       }
     }
 

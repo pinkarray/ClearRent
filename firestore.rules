@@ -1331,12 +1331,19 @@ service cloud.firestore {
                        'ratingSubmittedAt', 'ratedUserId',
                        'ratedUserType', 'ratedUserName', 'updatedAt']);
 
-      // [Row 8] Tenant cancels their unpaid inspection request.
-      // Site: inspection_service.dart:1271
+      // [Row 8] Tenant withdraws a request nothing has been paid for:
+      // waiting for approval, or approved but unpaid. This allowed only the
+      // old pay-first 'pendingPayment', which new requests never reach, so a
+      // tenant could not back out at all and an abandoned approval held the
+      // handler's slot until its date lapsed. A paid inspection is cancelled
+      // by the handler (Row 21), which refunds it.
+      // Site: inspection_service.dart cancelRequest, web lib/inspections.ts
       allow update: if isTenant()
-        && resource.data.status == 'pendingPayment'
+        && resource.data.status in ['pendingPayment', 'pending', 'approved']
+        && resource.data.get('paymentStatus', 'unpaid') != 'paid'
         && request.resource.data.status == 'cancelled'
-        && inspFields(['status', 'updatedAt']);
+        && request.resource.data.get('cancelledBy', 'tenant') == 'tenant'
+        && inspFields(['status', 'cancelledBy', 'updatedAt']);
       
       // [Row 9] _processRefund - subroutine called after a paid
       // inspection is declined or cancelled. Inherits caller's auth.

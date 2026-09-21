@@ -282,27 +282,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
   bool _isMessageLoading = false;
 
   Future<void> _cancelRequest() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancel Request'),
-        content: Text(widget.request.isPaid
-            ? 'Are you sure? Your payment will be refunded.'
-            : 'Are you sure you want to cancel this request?'),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('No, Keep It',
-                  style: TextStyle(color: AppColors.textSecondary))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child:
-                  Text('Yes, Cancel', style: TextStyle(color: AppColors.error))),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
+    if (!await _confirmWithdraw(context, widget.request) || !mounted) return;
 
     setState(() => _isLoading = true);
     final success =
@@ -311,11 +291,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
     setState(() => _isLoading = false);
 
     _showSnack(
-      success
-          ? (widget.request.isPaid
-              ? 'Request cancelled. Refund will be processed.'
-              : 'Request cancelled.')
-          : 'Failed to cancel. Please try again.',
+      success ? 'Request withdrawn.' : 'Failed to withdraw. Please try again.',
       success ? AppColors.success : AppColors.error,
     );
   }
@@ -673,6 +649,14 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               ),
             ]),
           ],
+          // Waiting for approval, nothing paid: the tenant can back out.
+          if (r.isPending && !r.isPaid) ...[
+            const SizedBox(height: 16),
+            _WithdrawButton(
+              loading: _isLoading,
+              onPressed: _cancelRequest,
+            ),
+          ],
           // Expired unapproved - tenant picks reschedule (free) or refund.
           if (r.isExpiredUnapproved) ...[
             const SizedBox(height: 12),
@@ -798,6 +782,25 @@ class _TenantUpcomingCard extends StatefulWidget {
 }
 
 class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
+  bool _isWithdrawing = false;
+
+  Future<void> _withdraw() async {
+    if (!await _confirmWithdraw(context, widget.request) || !mounted) return;
+    setState(() => _isWithdrawing = true);
+    final ok = await _inspectionService.cancelRequest(widget.request.id);
+    if (!mounted) return;
+    setState(() => _isWithdrawing = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Request withdrawn.'
+            : 'Failed to withdraw. Please try again.'),
+        backgroundColor: ok ? AppColors.success : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   final ConversationService _conversationService = ConversationService();
   final InspectionService _inspectionService = InspectionService();
   final PropertyService _propertyService = PropertyService();
@@ -1086,6 +1089,13 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                     onPressed: () => context.push(
                         '/tenant/inspection-payment', extra: {'request': r}),
                   ),
+                ),
+                // Nothing is paid yet, so backing out costs nothing and frees
+                // the handler's slot now instead of when the date lapses.
+                const SizedBox(height: 8),
+                _WithdrawButton(
+                  loading: _isWithdrawing,
+                  onPressed: _withdraw,
                 ),
               ],
             ),
@@ -2686,3 +2696,66 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
 // ============================================================
 // EMPTY STATE
 // ============================================================
+
+/// Confirms a tenant withdrawing an unpaid request. Says plainly that nothing
+/// was charged, since the old dialog offered a refund that could not apply.
+Future<bool> _confirmWithdraw(
+  BuildContext context,
+  InspectionRequest r,
+) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Withdraw request'),
+      content: Text(
+        'Withdraw your request to view ${r.propertyTitle}? You have not been '
+        'charged, and ${r.agentName ?? r.landlordName} will be told the time '
+        'is free again.',
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text('Keep it',
+              style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text('Withdraw', style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    ),
+  );
+  return confirm == true;
+}
+
+class _WithdrawButton extends StatelessWidget {
+  final bool loading;
+  final VoidCallback onPressed;
+
+  const _WithdrawButton({required this.loading, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: loading ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          side: BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : Text('Withdraw request',
+                style: AppTextStyles.labelMedium
+                    .copyWith(color: AppColors.textSecondary)),
+      ),
+    );
+  }
+}
