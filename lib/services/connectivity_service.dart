@@ -41,13 +41,22 @@ class ConnectivityService {
   }
 
   /// Check actual internet reachability (not just WiFi connected)
+  ///
+  /// A DNS lookup is not enough. On a carrier that resolves names but drops
+  /// every route to Google (the IPv6 blackhole this phone hits on mobile
+  /// data), the lookup succeeded and the banner announced "Back online" while
+  /// sign-in could not reach Firebase at all. Opening a socket to the host the
+  /// app actually depends on is what "online" has to mean here.
   Future<bool> checkConnection() async {
     try {
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 5));
-      final online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-      _updateStatus(online);
-      return online;
+      final socket = await Socket.connect(
+        'firestore.googleapis.com',
+        443,
+        timeout: const Duration(seconds: 5),
+      );
+      socket.destroy();
+      _updateStatus(true);
+      return true;
     } on SocketException catch (_) {
       _updateStatus(false);
       return false;

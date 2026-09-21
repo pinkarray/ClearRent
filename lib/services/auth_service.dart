@@ -125,7 +125,8 @@ class AuthService {
         smsCode: smsCode,
       );
 
-      final userCredential = await _auth.signInWithCredential(credential);
+      final userCredential =
+          await _auth.signInWithCredential(credential).timeout(_networkTimeout);
       final user = userCredential.user;
       final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
 
@@ -148,6 +149,11 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       developer.log('❌ OTP verification failed: ${e.code} - ${e.message}');
       return AuthResult(success: false, error: _getPhoneErrorMessage(e.code));
+    } on TimeoutException {
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      return AuthResult(success: false, error: _networkError);
     } catch (e) {
       developer.log('❌ OTP verification error: $e');
       return AuthResult(
@@ -222,7 +228,8 @@ class AuthService {
     PhoneAuthCredential credential,
   ) async {
     try {
-      final userCredential = await _auth.signInWithCredential(credential);
+      final userCredential =
+          await _auth.signInWithCredential(credential).timeout(_networkTimeout);
       final user = userCredential.user;
       final isNew = userCredential.additionalUserInfo?.isNewUser ?? false;
 
@@ -237,6 +244,11 @@ class AuthService {
         isNewUser: isNew,
         hasCompletedProfile: hasProfile,
       );
+    } on TimeoutException {
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      return AuthResult(success: false, error: _networkError);
     } catch (e) {
       developer.log('❌ Credential sign-in error: $e');
       return AuthResult(
@@ -404,16 +416,29 @@ class AuthService {
     }
   }
 
+  /// How long any sign-in step waits before it gives up.
+  ///
+  /// A carrier that blackholes the route to Google leaves the connect in
+  /// SYN-SENT: Firebase retries quietly and the button spins with nothing on
+  /// screen, which reads as a broken app rather than a broken network. The
+  /// phone-number lookup was already bounded for this reason; the sign-in
+  /// itself and the profile read that follows it were not.
+  static const Duration _networkTimeout = Duration(seconds: 20);
+  static const String _networkError =
+      'Could not reach ClearRent. Check your connection and try again.';
+
   // Sign in with email and password
   Future<AuthResult> signIn({
     required String email,
     required String password,
   }) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final credential = await _auth
+          .signInWithEmailAndPassword(
+            email: email,
+            password: password,
+          )
+          .timeout(_networkTimeout);
 
       // Check if user has completed profile setup
       final hasProfile = await _checkUserProfile(credential.user!.uid);
@@ -426,6 +451,14 @@ class AuthService {
       );
     } on FirebaseAuthException catch (e) {
       return AuthResult(success: false, error: _getErrorMessage(e.code));
+    } on TimeoutException {
+      // Auth may have gone through before the profile read stalled, and a
+      // half-signed-in app is worse than none: it would land on a dashboard
+      // with no data. Drop it and let them try again.
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      return AuthResult(success: false, error: _networkError);
     } catch (e) {
       developer.log(
         '❌ Sign in error: $e',
@@ -474,8 +507,17 @@ class AuthService {
   // Check if user has completed profile in Firestore
   Future<bool> _checkUserProfile(String uid) async {
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final doc = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(_networkTimeout);
       return doc.exists && doc.data()?['profileCompleted'] == true;
+    } on TimeoutException {
+      // Never answer "no profile" from a read that never landed - that sends
+      // an existing user to profile setup. The caller turns this into a
+      // connection message.
+      rethrow;
     } catch (e) {
       developer.log(
         '⚠️ Check profile error: $e',
