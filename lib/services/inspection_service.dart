@@ -2340,6 +2340,30 @@ class InspectionService {
     }
   }
 
+  /// Whether the handler of [propertyId] is free at [slot] on [date], judged
+  /// by the same callable that fills the booking sheet. Null means the check
+  /// could not run, which must never be read as "free": accepting a move on a
+  /// failed read is how a handler ends up with two viewings in one slot.
+  Future<bool?> isHandlerFreeAt(
+    String propertyId,
+    DateTime date,
+    String slot,
+  ) async {
+    try {
+      final callable = _functions.httpsCallable('getAvailableInspectionSlots');
+      final result = await callable.call<Map<String, dynamic>>({
+        'propertyId': propertyId,
+        'dateMillis': composeScheduledDateTime(date, slot).millisecondsSinceEpoch,
+      });
+      final slots = result.data['slots'];
+      if (slots is! List) return null;
+      return slots.map((e) => e.toString()).contains(slot);
+    } catch (e) {
+      developer.log('isHandlerFreeAt failed: $e', name: 'InspectionService');
+      return null;
+    }
+  }
+
   String _getWeekdayName(int weekday) {
     const names = [
       'Monday',

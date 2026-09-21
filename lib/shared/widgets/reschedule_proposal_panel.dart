@@ -79,6 +79,31 @@ class _RescheduleProposalPanelState
 
   Future<void> _onApprove() async {
     setState(() => _busy = true);
+    // A proposal can name a slot the handler has since filled, or one sent
+    // from a client that never filtered, so check the calendar at the moment
+    // of accepting rather than trusting the proposal.
+    final p = widget.request.rescheduleProposal!;
+    final free = await _inspectionService.isHandlerFreeAt(
+      widget.request.propertyId,
+      p.proposedDate,
+      p.proposedTimeSlot,
+    );
+    if (!mounted) return;
+    if (free != true) {
+      setState(() => _busy = false);
+      final handlerAccepting = p.proposedBy == 'tenant';
+      _snack(
+        free == null
+            ? 'Couldn\'t check the calendar, try again'
+            : handlerAccepting
+                ? 'You already have a viewing at that time. Suggest another '
+                    'time or decline.'
+                : 'That time is no longer free. Suggest another time or '
+                    'decline.',
+        isError: true,
+      );
+      return;
+    }
     final ok = await _inspectionService
         .approveReschedule(widget.request.id);
     if (!mounted) return;
