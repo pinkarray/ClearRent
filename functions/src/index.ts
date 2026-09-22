@@ -67,6 +67,7 @@ interface NotificationDoc {
 export {nudgeInspectionParty, messageInspectionParties}
   from "./inspection_admin_ops";
 export {reportInspectionIssue} from "./inspection_dispute_ops";
+export {reportTenantNoShow} from "./inspection_noshow_ops";
 export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 // A contested deposit used to be an alert an admin could only dismiss, which
 // changed nothing about the stalled unit. This is the lever.
@@ -2584,6 +2585,67 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           tenantId,
         });
       }
+    }
+
+    // ============ TENANT NO-SHOW → REVIEW ============
+    // Reached from reportTenantNoShow or the nightly sweep. Both used to be
+    // silent: the handler did not know their fee was under review, the tenant
+    // did not know they were marked absent, and admins only saw a banner
+    // count. The admin alert closes itself once the review is decided.
+    if (
+      beforeStatus !== "awaitingOutcome" &&
+      afterStatus === "awaitingOutcome" &&
+      after.tenantNoShow === true
+    ) {
+      const handlerId = agentId || landlordId;
+      const handlerName = agentId ? agentName : landlordName;
+      const earnings = typeof after.agentEarnings === "number" ?
+        `₦${after.agentEarnings.toLocaleString("en-NG")}` :
+        "your fee";
+      if (handlerId) {
+        await writeNotificationOnce(
+          `req_${requestId}_noShowReview_${handlerId}`, {
+            userId: handlerId,
+            type: "inspection_under_review",
+            title: "No-show under review",
+            body:
+              `We've noted that ${tenantName} didn't come to ` +
+              `${propertyTitle}. Our team will confirm it, and ${earnings} ` +
+              "is paid to you once they do.",
+            payload: {
+              route: agentId ? agentRoute : landlordRoute,
+              param_requestId: requestId,
+            },
+          },
+        );
+      }
+      if (tenantId) {
+        await writeNotificationOnce(
+          `req_${requestId}_markedAbsent_${tenantId}`, {
+            userId: tenantId,
+            type: "inspection_under_review",
+            title: "Marked as not attending",
+            body:
+              `${handlerName} reported that you didn't come to the ` +
+              `viewing at ${propertyTitle}. If that's wrong, use Report a ` +
+              "problem on the viewing and our team will look into it.",
+            payload: {route: tenantRoute, param_requestId: requestId},
+          },
+        );
+      }
+      await writeAdminAlertOnce(`inspection_no_show_${requestId}`, {
+        type: "inspection_no_show",
+        severity: "warning",
+        title: "Tenant no-show to confirm",
+        body:
+          `${handlerName} says ${tenantName} didn't come to ` +
+          `${propertyTitle}. Complete it to pay the handler, or refund the ` +
+          "tenant if they did come.",
+        targetCollection: "inspection_requests",
+        targetId: requestId,
+        actors: {tenantId, agentId: agentId || undefined, landlordId},
+        meta: {propertyTitle},
+      });
     }
 
     // ============ TENANT WITHDRAW ============

@@ -398,6 +398,15 @@ class InspectionRequest {
   /// halves of the meeting are confirmed.
   bool get canMarkComplete => met && isConfirmed;
 
+  /// True when the handler may report that the tenant never came: they have
+  /// arrived, the tenant has not, and it is an hour past the start of the
+  /// slot. Mirrors the checks in the reportTenantNoShow callable.
+  bool get canReportTenantNoShow =>
+      isConfirmed &&
+      handlerArrived &&
+      !tenantArrived &&
+      DateTime.now().isAfter(requestedDate.add(const Duration(hours: 1)));
+
   // Reschedule helpers
   bool get hasPendingReschedule => rescheduleProposal != null;
   bool get hasReachedRescheduleCap => rescheduleCount >= 2;

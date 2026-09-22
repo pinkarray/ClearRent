@@ -2031,6 +2031,27 @@ class InspectionService {
   /// confirm once both have physically arrived: the handler can't fake a
   /// meeting with a tenant who never showed, and a tenant's confirmation alone
   /// can no longer unlock the handler's payout.
+  /// Handler reports the tenant never came. Moves the inspection to admin
+  /// review; it pays nobody by itself. Returns null on success, else the
+  /// message to show.
+  Future<String?> reportTenantNoShow(String requestId) async {
+    try {
+      await _functions
+          .httpsCallable('reportTenantNoShow')
+          .call<Map<String, dynamic>>({'requestId': requestId});
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('reportTenantNoShow: ${e.code} ${e.message}',
+          name: 'InspectionService');
+      return e.code == 'failed-precondition' || e.code == 'permission-denied'
+          ? (e.message ?? 'This can\'t be reported yet.')
+          : 'Could not report it. Check your connection and try again.';
+    } catch (e) {
+      developer.log('reportTenantNoShow failed: $e', name: 'InspectionService');
+      return 'Could not report it. Check your connection and try again.';
+    }
+  }
+
   Future<bool> markMet(String requestId) async {
     final userId = _currentUserId;
     if (userId == null) return false;

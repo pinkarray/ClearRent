@@ -15,6 +15,7 @@ import '../../../../shared/widgets/bank_details_gate.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
 import '../../../../shared/widgets/reschedule_propose_sheet.dart';
+import '../../../../shared/widgets/report_no_show_button.dart';
 import 'package:intl/intl.dart';
 import '../../../../shared/widgets/refund_confirm_sheet.dart';
 import '../../../../services/inspection_service.dart';
@@ -1434,6 +1435,11 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   ],
                 ),
               ),
+              if (request.canReportTenantNoShow)
+                ReportNoShowButton(
+                  request: request,
+                  inspectionService: widget.inspectionService,
+                ),
               // Prompt the tenant to confirm meeting. Met state
               // unlocks Mark as Completed.
               if (request.canHandlerMarkMet) ...[
@@ -1544,24 +1550,31 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
             ),
           ],
 
-          // Cancel & Refund (handler exit ramp for the tenant)
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _cancelInspection,
-            icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
-            label: Text(
-              'Cancel & Refund',
-              style: AppTextStyles.labelMedium.copyWith(color: AppColors.error),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: AppColors.error),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          // Cancel & Refund (handler exit ramp for the tenant). Gone once the
+          // handler has arrived: at that point cancelling refunds a tenant who
+          // may simply not have come, and forfeits the handler's fee. A no-show
+          // is reported instead.
+          if (!request.handlerArrived) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _cancelInspection,
+              icon: Icon(Icons.cancel_outlined,
+                  size: 18, color: AppColors.error),
+              label: Text(
+                'Cancel & Refund',
+                style:
+                    AppTextStyles.labelMedium.copyWith(color: AppColors.error),
               ),
-              minimumSize: const Size(double.infinity, 0),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.error),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                minimumSize: const Size(double.infinity, 0),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

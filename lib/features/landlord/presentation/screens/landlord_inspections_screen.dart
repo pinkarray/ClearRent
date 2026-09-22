@@ -17,6 +17,7 @@ import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/reschedule_proposal_panel.dart';
 import '../../../../shared/widgets/reschedule_propose_sheet.dart';
+import '../../../../shared/widgets/report_no_show_button.dart';
 import 'package:intl/intl.dart';
 import '../../../../shared/widgets/refund_confirm_sheet.dart';
 import '../../../../services/property_service.dart';
@@ -1442,6 +1443,11 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                 ],
               ),
             ),
+            if (r.canReportTenantNoShow)
+              ReportNoShowButton(
+                request: r,
+                inspectionService: widget.inspectionService,
+              ),
             // Prompt the tenant to confirm meeting. Met state
             // unlocks Mark as Completed.
             if (r.canHandlerMarkMet) ...[
@@ -1633,9 +1639,12 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             ),
           ],
 
-          // Cancel & Refund (handler exit ramp for the tenant)
-          if (!isAgent) const SizedBox(height: 8),
-          if (!isAgent) OutlinedButton.icon(
+          // Cancel & Refund (handler exit ramp for the tenant). Gone once the
+          // handler has arrived: at that point cancelling refunds a tenant who
+          // may simply not have come, and forfeits the handler's fee. A no-show
+          // is reported instead.
+          if (!isAgent && !r.handlerArrived) const SizedBox(height: 8),
+          if (!isAgent && !r.handlerArrived) OutlinedButton.icon(
             onPressed: _cancelInspection,
             icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
             label: Text(

@@ -109,6 +109,13 @@ const RESOLVERS: Record<string, Resolver> = {
     done: (t) => t.status !== "moveout_pending",
   },
 
+  // Decided from the inspection review queue: completed, refunded or
+  // dismissed all move it out of awaitingOutcome.
+  inspection_no_show: {
+    collection: "inspection_requests",
+    done: (t) => t.status !== "awaitingOutcome",
+  },
+
   // Paid (or otherwise settled) from the Refunds page.
   refund_due: {
     collection: "refunds",
