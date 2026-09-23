@@ -74,7 +74,9 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
       setState(() {
         _upcomingCount = list.where((r) => r.isApproved).length;
         _historyActionableCount =
-            list.where((r) => r.isCompleted && !r.tenantRated).length;
+            list
+                .where((r) => r.isCompleted && !r.tenantRated && !r.tenantNoShow)
+                .length;
       });
     });
 
@@ -113,7 +115,8 @@ class _TenantInspectionsScreenState extends State<TenantInspectionsScreen>
           r.isPendingPayment ||
           r.isPendingVerification ||
           r.isDeclinedByAgent ||
-          r.isExpiredUnapproved);
+          r.isExpiredUnapproved ||
+          r.isRebookOffered);
       final hasScheduled = all.any((r) => r.isApproved);
       final hasCompleted = all.any((r) =>
           r.isCompleted ||
@@ -235,7 +238,8 @@ class _TenantPendingTabState extends State<_TenantPendingTab> {
                 r.isPendingPayment ||
                 r.isPendingVerification ||
                 r.isDeclinedByAgent ||
-                r.isExpiredUnapproved)
+                r.isExpiredUnapproved ||
+                r.isRebookOffered)
             .toList();
         final ordered = pinToFront(pending, (r) => r.id == highlightId);
 
@@ -419,6 +423,10 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
       statusText = 'Verifying Payment';
       statusColor = AppColors.info;
       statusIcon = Icons.hourglass_top;
+    } else if (r.isRebookOffered) {
+      statusText = 'Pick a New Time';
+      statusColor = AppColors.primary;
+      statusIcon = Icons.event_repeat;
     } else if (r.isDeclinedByAgent) {
       statusText = 'Under Review';
       statusColor = AppColors.info;
@@ -658,6 +666,31 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
             ),
           ],
           // Expired unapproved - tenant picks reschedule (free) or refund.
+          // Admin let the tenant rebook a missed or disputed viewing. The fee
+          // carries over, so there is deliberately no refund option here.
+          if (r.isRebookOffered) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(26),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Pick a new time for this viewing. Your payment carries over, '
+                'and ${r.agentName ?? r.landlordName} approves the new time '
+                'as usual.',
+                style:
+                    AppTextStyles.caption.copyWith(color: AppColors.primary),
+              ),
+            ),
+            const SizedBox(height: 12),
+            AppButton(
+              text: 'Pick a New Time',
+              onPressed: _isLoading ? null : _rescheduleExpired,
+            ),
+          ],
           if (r.isExpiredUnapproved) ...[
             const SizedBox(height: 12),
             Container(
@@ -1948,7 +1981,18 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
         ],
 
         // ============ RATING SECTION - optional, scoped to handler conduct ============
-        if (r.isCompleted && !r.isUnderReview) ...[
+        if (r.isCompleted && r.tenantNoShow) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Closed as missed: our team confirmed you did not make this '
+            'viewing. Book again whenever you are ready.',
+            style: AppTextStyles.caption
+                .copyWith(color: AppColors.textSecondary),
+          ),
+        ],
+        // A confirmed no-show is never asked to rate a visit that did not
+        // happen; rating is also what unlocks renting.
+        if (r.isCompleted && !r.isUnderReview && !r.tenantNoShow) ...[
           const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 12),

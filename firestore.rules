@@ -1481,11 +1481,13 @@ service cloud.firestore {
         && request.resource.data.tenantPassed == true
         && inspFields(['tenantPassed', 'updatedAt']);
       
-      // [Row 25] Tenant reschedules an inspection that expired unapproved -
-      // re-enters the approval queue with a new date (payment is kept).
+      // [Row 25] Tenant reschedules an inspection that expired unapproved,
+      // or one an admin let them rebook after a missed or disputed viewing
+      // (adminResolveInspection 'rebook'). Either way it re-enters the
+      // approval queue with a new date and the payment is kept.
       // Site: inspection_service.dart rescheduleExpiredInspection
       allow update: if isTenant()
-        && resource.data.status == 'expiredUnapproved'
+        && resource.data.status in ['expiredUnapproved', 'rebookOffered']
         && request.resource.data.status == 'pending'
         && inspFields(['status', 'requestedDate', 'requestedTimeSlot',
             'updatedAt']);

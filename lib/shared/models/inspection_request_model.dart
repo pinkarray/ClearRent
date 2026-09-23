@@ -14,6 +14,8 @@ enum InspectionStatus {
                        // tenant chooses reschedule or refund
   awaitingOutcome,     // Approved date passed without a clear completion -
                        // admin reviews (no-show / forgot to mark done)
+  rebookOffered,       // Admin let the tenant rebook a missed or disputed
+                       // viewing: the fee carries over, they pick a new time
 }
 
 /// Active reschedule proposal on an inspection request. Lives inside
@@ -200,6 +202,9 @@ class InspectionRequest {
   final bool tenantConfirmedMet;
   final DateTime? tenantConfirmedMetAt;
   final bool handlerConfirmedMet;
+  /// The tenant did not come (the handler reported it, or the sweep found
+  /// only the handler arrived). A no-show is never asked to rate the visit.
+  final bool tenantNoShow;
   final DateTime? handlerConfirmedMetAt;
 
   // Reschedule
@@ -288,6 +293,7 @@ class InspectionRequest {
     this.tenantConfirmedMet = false,
     this.tenantConfirmedMetAt,
     this.handlerConfirmedMet = false,
+    this.tenantNoShow = false,
     this.handlerConfirmedMetAt,
     this.rescheduleProposal,
     this.rescheduleCount = 0,
@@ -307,6 +313,7 @@ class InspectionRequest {
   bool get isRefunded => status == InspectionStatus.refunded;
   bool get isExpiredUnapproved =>
       status == InspectionStatus.expiredUnapproved;
+  bool get isRebookOffered => status == InspectionStatus.rebookOffered;
   bool get isAwaitingOutcome => status == InspectionStatus.awaitingOutcome;
   /// The tenant filed a dispute that an admin hasn't resolved yet.
   bool get isUnderReview => disputed && disputeStatus == 'open';
@@ -450,6 +457,8 @@ class InspectionRequest {
         return 'Expired - Action Needed';
       case InspectionStatus.awaitingOutcome:
         return 'Awaiting Review';
+      case InspectionStatus.rebookOffered:
+        return 'Pick a New Time';
     }
   }
 
@@ -741,6 +750,7 @@ class InspectionRequest {
       tenantConfirmedMetAt:
           (data['tenantConfirmedMetAt'] as Timestamp?)?.toDate(),
       handlerConfirmedMet: data['handlerConfirmedMet'] ?? false,
+      tenantNoShow: data['tenantNoShow'] == true,
       handlerConfirmedMetAt:
           (data['handlerConfirmedMetAt'] as Timestamp?)?.toDate(),
       rescheduleProposal: data['rescheduleProposal'] == null

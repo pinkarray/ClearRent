@@ -105,6 +105,15 @@ export const createRentalInterest = onCall(
         "You can only express interest after the inspection is completed.",
       );
     }
+    // A viewing an admin closed as a tenant no-show is "completed" only so the
+    // handler is paid: the tenant never saw the place, so it cannot lead to a
+    // tenancy. They rebook, or book again.
+    if (insp.tenantNoShow === true) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This viewing was closed as missed. Book a new viewing first.",
+      );
+    }
     if (insp.tenantRated !== true) {
       throw new HttpsError(
         "failed-precondition",

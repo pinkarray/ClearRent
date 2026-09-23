@@ -1966,11 +1966,97 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       }
     }
 
+    // ---- Status: → completed, as a confirmed tenant no-show ----
+    // An admin closed it so the handler is paid. The generic message below
+    // asked the absent tenant to rate a visit that never happened, and the
+    // handler was never told the review went their way.
+    const noShowClosed =
+      statusChanged && afterStatus === "completed" &&
+      after.tenantNoShow === true;
+    if (noShowClosed) {
+      const handlerId = agentId || landlordId;
+      if (tenantId) {
+        await writeNotificationOnce(
+          `req_${requestId}_closedMissed_${tenantId}`,
+          {
+            userId: tenantId,
+            type: "inspection_completed",
+            title: "Viewing closed as missed",
+            body:
+              "Our team confirmed you didn't make the viewing at " +
+              `${propertyTitle}, so it has been closed. Book again ` +
+              "whenever you're ready.",
+            payload: {route: tenantRoute, param_requestId: requestId},
+          },
+        );
+      }
+      if (handlerId) {
+        const earnings = typeof after.agentEarnings === "number" ?
+          `₦${after.agentEarnings.toLocaleString("en-NG")}` :
+          "Your fee";
+        await writeNotificationOnce(
+          `req_${requestId}_noShowPaid_${handlerId}`,
+          {
+            userId: handlerId,
+            type: "inspection_completed",
+            title: "No-show confirmed",
+            body:
+              `We confirmed ${tenantName} didn't come to ${propertyTitle}. ` +
+              `${earnings} has been added to your earnings.`,
+            payload: {
+              route: agentId ? agentRoute : landlordRoute,
+              param_requestId: requestId,
+            },
+          },
+        );
+      }
+    }
+
+    // ---- Status: → rebookOffered ----
+    // Admin let the tenant rebook a missed or disputed viewing. The fee
+    // carries over; nothing is refunded.
+    if (statusChanged && afterStatus === "rebookOffered") {
+      const handlerId = agentId || landlordId;
+      if (tenantId) {
+        await writeNotificationOnce(
+          `req_${requestId}_rebook_${tenantId}`,
+          {
+            userId: tenantId,
+            type: "inspection_rebook",
+            title: "Pick a new time",
+            body:
+              `You can rebook your viewing of ${propertyTitle}. Your ` +
+              "payment carries over, so just choose a new time.",
+            payload: {route: tenantRoute, param_requestId: requestId},
+          },
+        );
+      }
+      if (handlerId) {
+        await writeNotificationOnce(
+          `req_${requestId}_rebookHandler_${handlerId}`,
+          {
+            userId: handlerId,
+            type: "inspection_rebook",
+            title: "Viewing to be rebooked",
+            body:
+              `${tenantName} will pick a new time to view ` +
+              `${propertyTitle}. You approve it as usual, and you're ` +
+              "paid when that visit is completed.",
+            payload: {
+              route: agentId ? agentRoute : landlordRoute,
+              param_requestId: requestId,
+            },
+          },
+        );
+      }
+    }
+
     // ---- Status: → completed ----
     // Tenant only - review prompt. Landlord/agent see it in feed.
     if (
       statusChanged &&
       afterStatus === "completed" &&
+      !noShowClosed &&
       tenantId
     ) {
       await writeNotificationOnce(

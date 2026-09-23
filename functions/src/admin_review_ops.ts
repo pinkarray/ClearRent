@@ -137,7 +137,7 @@ export const adminReviewPropertyDoc = onCall(callableOptions, async (request) =>
 
 interface ResolveInspectionInput {
   requestId?: unknown;
-  action?: unknown; // 'refund' | 'complete' | 'dismiss'
+  action?: unknown; // 'refund' | 'complete' | 'dismiss' | 'rebook'
   refundAmount?: unknown; // required for 'refund', in Naira
 }
 
@@ -148,9 +148,9 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
 
   const requestId = reqString(raw.requestId, "requestId");
   const action = reqString(raw.action, "action");
-  if (!["refund", "complete", "dismiss"].includes(action)) {
+  if (!["refund", "complete", "dismiss", "rebook"].includes(action)) {
     throw new HttpsError(
-      "invalid-argument", "action must be refund|complete|dismiss.");
+      "invalid-argument", "action must be refund|complete|dismiss|rebook.");
   }
 
   const db = getFirestore();
@@ -179,6 +179,46 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
         disputeDismissedAt: now,
         resolvedByAdmin: true,
         updatedAt: now,
+      });
+      return 0;
+    }
+
+    if (action === "rebook") {
+      // A missed or disputed viewing the tenant should get another go at.
+      // No refund: the paid fee carries over to a new time the tenant picks
+      // (rules Row 25), which the handler approves as usual, and the handler
+      // is paid when THAT visit completes. The day's arrival state is cleared
+      // here because the tenant's rebook write may not touch it.
+      if (data.status !== "awaitingOutcome") {
+        throw new HttpsError(
+          "failed-precondition",
+          "Only a viewing under review can be rebooked.",
+        );
+      }
+      if (data.paymentStatus !== "paid") {
+        throw new HttpsError(
+          "failed-precondition", "Only a paid viewing can be rebooked.");
+      }
+      tx.update(ref, {
+        status: "rebookOffered",
+        tenantNoShow: false,
+        tenantArrived: false,
+        tenantArrivedAt: null,
+        handlerArrived: false,
+        handlerArrivedAt: null,
+        tenantOnWay: false,
+        tenantOnWayAt: null,
+        handlerOnWay: false,
+        handlerOnWayAt: null,
+        tenantConfirmedMet: false,
+        tenantConfirmedMetAt: null,
+        handlerConfirmedMet: false,
+        handlerConfirmedMetAt: null,
+        rescheduleProposal: null,
+        rebookOfferedAt: now,
+        resolvedByAdmin: true,
+        updatedAt: now,
+        ...closesDispute,
       });
       return 0;
     }

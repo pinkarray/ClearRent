@@ -2688,3 +2688,38 @@ test("tenant withdraws a completed inspection - denied", async () => {
   await seedInspection("w_done", { status: "completed", paymentStatus: "unpaid" });
   await assertFails(withdraw(tenantDb(), "w_done"));
 });
+
+// ─── Row 25: tenant picks a new time after an admin rebook ──────────────────
+
+const rebookWrite = (db, id) =>
+  updateDoc(doc(db, `inspection_requests/${id}`), {
+    status: "pending",
+    requestedDate: Timestamp.fromDate(new Date(Date.now() + 2 * 86400000)),
+    requestedTimeSlot: "morning",
+    updatedAt: serverTimestamp(),
+  });
+
+test("tenant rebooks a rebookOffered viewing - allowed", async () => {
+  await seedInspection("rb_ok", { status: "rebookOffered", paymentStatus: "paid" });
+  await assertSucceeds(rebookWrite(tenantDb(), "rb_ok"));
+});
+
+test("someone else rebooks the tenant's viewing - denied", async () => {
+  await seedInspection("rb_other", { status: "rebookOffered", paymentStatus: "paid" });
+  await assertFails(rebookWrite(otherDb(), "rb_other"));
+});
+
+test("tenant rebooks straight out of admin review - denied", async () => {
+  await seedInspection("rb_review", { status: "awaitingOutcome", paymentStatus: "paid" });
+  await assertFails(rebookWrite(tenantDb(), "rb_review"));
+});
+
+test("tenant rebook smuggling a refund - denied", async () => {
+  await seedInspection("rb_smug", { status: "rebookOffered", paymentStatus: "paid" });
+  await assertFails(
+    updateDoc(doc(tenantDb(), "inspection_requests/rb_smug"), {
+      status: "pending", requestedTimeSlot: "morning",
+      paymentStatus: "refunded", updatedAt: serverTimestamp(),
+    })
+  );
+});
