@@ -8,6 +8,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../services/issue_draft_service.dart';
 import '../../../../shared/widgets/what_happens_now_hint.dart';
 
 /// Report an issue screen for tenants.
@@ -65,8 +66,52 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
     {'value': 'high', 'label': 'High', 'color': AppColors.error, 'desc': 'Urgent, affects daily life'},
   ];
 
+  /// True once a draft has been put back, so the tenant is told rather than
+  /// wondering why the form is already filled in.
+  bool _restoredDraft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController.addListener(_saveDraft);
+    _descriptionController.addListener(_saveDraft);
+    _restoreDraft();
+  }
+
+  Future<void> _restoreDraft() async {
+    final draft = await IssueDraftService.load(widget.propertyId);
+    if (draft == null || !mounted) return;
+    setState(() {
+      _titleController.text = (draft['title'] as String?) ?? '';
+      _descriptionController.text = (draft['description'] as String?) ?? '';
+      _selectedCategory = (draft['category'] as String?) ?? _selectedCategory;
+      _selectedPriority = (draft['priority'] as String?) ?? _selectedPriority;
+      _imageUrls
+        ..clear()
+        ..addAll(
+          ((draft['imageUrls'] as List?) ?? const []).map((e) => '$e'),
+        );
+      _restoredDraft = true;
+    });
+  }
+
+  /// Saving is deliberately not debounced: a draft is a few hundred bytes to
+  /// local storage, and the case that matters is the tenant leaving mid-word.
+  void _saveDraft() {
+    IssueDraftService.save(
+      widget.propertyId,
+      title: _titleController.text,
+      description: _descriptionController.text,
+      category: _selectedCategory,
+      priority: _selectedPriority,
+      imageUrls: _imageUrls,
+    );
+  }
+
   @override
   void dispose() {
+    _titleController.removeListener(_saveDraft);
+    _descriptionController.removeListener(_saveDraft);
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
@@ -150,6 +195,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
           _imageUrls.add(url);
           _isUploadingImage = false;
         });
+        _saveDraft();
       } else {
         if (mounted) {
           setState(() => _isUploadingImage = false);
@@ -243,6 +289,8 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
 
+      await IssueDraftService.clear(widget.propertyId);
+      if (!mounted) return;
       context.pop();
     } catch (e) {
       developer.log('❌ Error submitting issue: $e', name: 'ReportIssue');
@@ -299,6 +347,39 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                 ]),
               ),
 
+              // Say why the form is already filled in, and offer a clean one.
+              if (_restoredDraft) ...[
+                const SizedBox(height: 12),
+                Row(children: [
+                  Icon(Icons.history, size: 16, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'We kept what you had written.',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      await IssueDraftService.clear(widget.propertyId);
+                      if (!mounted) return;
+                      setState(() {
+                        _titleController.clear();
+                        _descriptionController.clear();
+                        _imageUrls.clear();
+                        _selectedCategory = 'plumbing';
+                        _selectedPriority = 'medium';
+                        _restoredDraft = false;
+                      });
+                    },
+                    child: Text('Start fresh',
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.primary)),
+                  ),
+                ]),
+              ],
+
               const SizedBox(height: 24),
 
               // ── Category ──
@@ -321,8 +402,11 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                       ],
                     ),
                     selected: selected,
-                    onSelected: (_) =>
-                        setState(() => _selectedCategory = cat['value'] as String),
+                    onSelected: (_) {
+                      setState(
+                          () => _selectedCategory = cat['value'] as String);
+                      _saveDraft();
+                    },
                     selectedColor: AppColors.primary,
                     backgroundColor: AppColors.surface,
                     labelStyle: AppTextStyles.labelMedium.copyWith(
@@ -400,7 +484,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: InkWell(
-                    onTap: () => setState(() => _selectedPriority = p['value'] as String),
+                    onTap: () {
+                      setState(() => _selectedPriority = p['value'] as String);
+                      _saveDraft();
+                    },
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       padding: const EdgeInsets.all(16),
@@ -479,7 +566,10 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                           top: 2,
                           right: 2,
                           child: GestureDetector(
-                            onTap: () => setState(() => _imageUrls.removeAt(entry.key)),
+                            onTap: () {
+                              setState(() => _imageUrls.removeAt(entry.key));
+                              _saveDraft();
+                            },
                             child: Container(
                               padding: const EdgeInsets.all(2),
                               decoration: BoxDecoration(
