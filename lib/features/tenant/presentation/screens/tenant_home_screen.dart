@@ -2923,8 +2923,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
 
     final completed = _inspections.where((r) => r.isCompleted).toList();
 
-    // 2 - visited but not rated
-    final unrated = completed.where((r) => !r.tenantRated).toList();
+    // 2 - visited but not rated. A viewing closed as a tenant no-show is
+    // "completed" so the handler is paid, but there was no visit to rate.
+    final unrated =
+        completed.where((r) => !r.tenantRated && !r.tenantNoShow).toList();
     if (unrated.isNotEmpty) {
       final more = unrated.length - 1;
       return _inspectionBanner(
