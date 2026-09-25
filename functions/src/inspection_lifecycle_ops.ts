@@ -188,6 +188,8 @@ async function resolveApproved(
     await ref.update({
       status: "completed",
       completedAt: FieldValue.serverTimestamp(),
+      // Same as adminResolveInspection: without it the payout is unpayable.
+      agentPayoutStatus: "pending",
       autoResolved: true,
       updatedAt: FieldValue.serverTimestamp(),
     });

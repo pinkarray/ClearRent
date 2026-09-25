@@ -227,6 +227,10 @@ export const adminResolveInspection = onCall(callableOptions, async (request) =>
       tx.update(ref, {
         status: "completed",
         completedAt: now,
+        // The handler's payout queue and markInspectionAgentPayoutPaid both
+        // key off this; the client sets it on a normal completion, and
+        // without it here a confirmed no-show was credited but never payable.
+        agentPayoutStatus: "pending",
         resolvedByAdmin: true,
         updatedAt: now,
         ...closesDispute,
