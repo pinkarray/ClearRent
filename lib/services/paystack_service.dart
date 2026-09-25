@@ -194,8 +194,8 @@ class PaystackService {
         return 'Enter a valid 10-digit account number and select a bank.';
       case 'resource-exhausted':
         // Paystack rate-limited the lookup - not an outage, just throttled.
-        return 'Too many lookups in a short time. '
-            'Please wait a moment and try again.';
+        return 'Too many checks in a short time. '
+            'Wait a few minutes and try again.';
       case 'unavailable':
       case 'internal':
         return 'The bank service is unavailable right now. Please try again.';

@@ -452,6 +452,11 @@ class _BankDetailsScreenState extends State<BankDetailsScreen> {
                     decoration: InputDecoration(
                       hintText: 'Enter 10-digit account number',
                       hintStyle: TextStyle(color: AppColors.textHint),
+                      // The name is looked up as soon as 10 digits are in, and
+                      // Paystack caps lookups, so a run of typos locks it out.
+                      helperText: 'Pick the bank first and check all 10 digits. '
+                          'Too many checks in a row pause checking for a few minutes.',
+                      helperMaxLines: 2,
                       prefixIcon: Icon(Icons.numbers, color: AppColors.textHint),
                       suffixIcon: _isResolvingAccount
                           ? const Padding(
