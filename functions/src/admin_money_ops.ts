@@ -421,6 +421,9 @@ export const markInspectionAgentPayoutPaid = onCall(
       }
     }
 
+    // Row written by creditInspectionEarnings.
+    await markEarningsRowPaid(`txn_insp_${input.docId}`);
+
     return {success: true, auditLogId};
   },
 );
@@ -934,9 +937,45 @@ interface RentPayoutSideEffectsInput {
   adminUid: string;
 }
 
+/**
+ * Flip a `transactions` earnings row to completed once its payout is sent.
+ *
+ * The Earnings screens read these rows. They used to be born "completed" the
+ * moment the tenant paid, so a landlord saw rent as settled before any
+ * transfer. Rows are now born "pending" and only this marks them paid.
+ * Display-only, so a missing row (older payments) is logged, not thrown.
+ *
+ * @param {string} rowId transactions doc id.
+ */
+async function markEarningsRowPaid(rowId: string): Promise<void> {
+  try {
+    await getFirestore().collection("transactions").doc(rowId).update({
+      status: "completed",
+      paidAt: FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    logger.warn("Earnings row not marked paid", {
+      rowId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function writeRentPayoutSideEffects(
   input: RentPayoutSideEffectsInput,
 ): Promise<void> {
+  // The earnings row is keyed by the tenant's rent payment reference and the
+  // role (see the rent branch of onPaymentCreated in index.ts).
+  const rental = await getFirestore()
+    .collection("active_rentals").doc(input.rentalId).get();
+  const rentRef = rental.get("rentPaymentReference") as string | undefined;
+  if (rentRef) {
+    const role = input.receiptDocId.startsWith("PAYOUT_AGENT_") ?
+      "agent" :
+      "landlord";
+    await markEarningsRowPaid(`txn_${rentRef}_${role}`);
+  }
+
   // Mirrors the mobile pre-migration behaviour: if there's no
   // beneficiary on the doc, skip activity + receipt entirely. The
   // money flip already succeeded; this is purely display.

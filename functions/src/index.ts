@@ -881,14 +881,16 @@ export const onIssueUpdated = onDocumentUpdated(
     } else if (to === "in_progress") {
       userId = tenantId; // landlord acknowledged
       title = "Issue acknowledged";
-      body = `Your landlord is working on the ${category} issue at ` +
+      // Landlord OR caretaker; the issue doc does not say which, so neither
+      // is named. It said "Your landlord" even when a caretaker acted.
+      body = `Work has started on the ${category} issue at ` +
         `${propertyTitle}.`;
       payload = tenantRoute;
     } else if (to === "pending_confirmation") {
       userId = tenantId; // landlord marked fixed → confirm/dispute
       title = "Fix ready - please confirm";
-      body = `Your landlord says the ${category} issue at ${propertyTitle} ` +
-        "is fixed. Confirm or dispute.";
+      body = `The ${category} issue at ${propertyTitle} has been marked ` +
+        "fixed. Confirm or dispute.";
       payload = tenantRoute;
     } else if (to === "resolved" && from === "pending_confirmation") {
       userId = landlordId; // tenant confirmed
@@ -1380,7 +1382,9 @@ export const onRentPaymentRecorded = onDocumentWritten(
       tenantName,
       propertyId,
       propertyTitle,
-      status: "completed",
+      // Owed, not sent: markRent*PayoutPaid flips it to completed. Was
+      // "completed" here, so Earnings showed rent as settled at payment.
+      status: "pending",
     };
 
     const writeOnce = async (
@@ -4248,6 +4252,23 @@ export const creditInspectionEarnings = onDocumentUpdated(
           earningsCredited: true,
           earningsCreditedAt: FieldValue.serverTimestamp(),
           earningsAmount: handlerEarnings,
+        });
+        // The Earnings screens list `transactions` rows, which only rent used
+        // to write, so a handler never saw their viewing fee. Pending until
+        // markInspectionAgentPayoutPaid flips it. No tenantId: a tenant has
+        // no business reading the handler's earnings.
+        tx.set(db.collection("transactions").doc(`txn_insp_${requestId}`), {
+          reference: requestId,
+          type: "inspection",
+          role: handlerIsAgent ? "agent" : "landlord",
+          [handlerIsAgent ? "agentId" : "landlordId"]: handlerId,
+          amount: handlerEarnings,
+          status: "pending",
+          propertyId: (current?.propertyId as string | undefined) ?? "",
+          propertyTitle:
+            (current?.propertyTitle as string | undefined) ?? "your property",
+          tenantName: (current?.tenantName as string | undefined) ?? "",
+          createdAt: FieldValue.serverTimestamp(),
         });
       });
 
