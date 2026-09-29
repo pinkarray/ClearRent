@@ -10,8 +10,9 @@ void main() {
     final groups = InspectionPricing.getAreasGroupedByLGA();
     final other = groups.firstWhere((g) => g['cluster'] == 'other');
     expect((other['areas'] as List).contains('Abeokuta'), isTrue);
-    // Lagos outskirts must NOT have moved into the new bucket.
-    expect(InspectionPricing.getLGAForArea('epe'), 'outer');
+    // Lagos outskirts must NOT have moved into the new bucket. Epe is its own
+    // LGA since the Outer Lagos split.
+    expect(InspectionPricing.getLGAForArea('epe'), 'epe');
   });
 
   test('an unknown LGA is still dropped', () {

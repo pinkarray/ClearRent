@@ -222,10 +222,19 @@ class PricingService {
   }
 
   void _apply(Map<String, dynamic>? data) {
+    // LGAs first: a published area is dropped unless its LGA is already known,
+    // and a new LGA is how a new state opens without a release.
+    final lgas = data?['lgas'];
+    InspectionPricing.applyRemoteLGAs(
+      lgas is Map ? Map<String, dynamic>.from(lgas) : null,
+    );
     final areas = data?['areas'];
     if (areas is! Map) return;
     InspectionPricing.applyRemoteAreas(Map<String, dynamic>.from(areas));
-    developer.log('Remote areas applied: ${areas.length} published',
-        name: 'PricingService');
+    developer.log(
+      'Remote areas applied: ${areas.length} published'
+      '${lgas is Map ? ', ${lgas.length} extra LGA(s)' : ''}',
+      name: 'PricingService',
+    );
   }
 }

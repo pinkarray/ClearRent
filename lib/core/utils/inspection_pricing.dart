@@ -63,16 +63,28 @@ class InspectionPricing {
   static const double selfHandledBookingFee = 10000.0;
 
   // ══════════════════════════════════════════════
-  //  LGA DEFINITIONS
+  //  LGA + AREA DEFINITIONS
   // ══════════════════════════════════════════════
 
-  /// All Lagos LGAs used in the system.
-  ///
-  /// Order is DISPLAY order - [getAreasGroupedByLGA] walks this list, so it is
-  /// what every area picker opens on. Busiest rental markets first: a landlord
-  /// or tenant in Ikeja or Lekki should not scroll. Nothing computes off the
-  /// order (only membership, via [applyRemoteAreas] and [allLGAs]), so it is
-  /// safe to re-rank.
+  /// Long-distance bucket Badagry, Epe and Ibeju-Lekki used to share. They are
+  /// real LGAs of their own now and nothing compiles into this any more, but it
+  /// stays valid: inspection docs written before the split still carry it.
+  static const String outerLGA = 'outer';
+
+  /// Bucket for areas outside Lagos entirely. Nothing is compiled into it, and
+  /// it deliberately has no state: an area whose LGA has no state does not get
+  /// to claim Lagos. See [stateForArea].
+  static const String otherLGA = 'other';
+
+  // Everything between the markers below is GENERATED from
+  // scripts/lagos_areas.json by scripts/gen_areas.js, which also rewrites the
+  // web copy in clearrent_web/lib/lagos-areas.ts. Edit that JSON and re-run the
+  // generator: hand-editing either list is how app and web drifted apart.
+  //
+  // Areas can also be published live from the admin dashboard (config/areas),
+  // so a missing area never waits on a Play Store release.
+  // GENERATED-AREAS-START
+  /// Lagos LGAs in display order: what every area picker opens on.
   static const List<String> lgas = [
     'ikeja',
     'eti_osa',
@@ -92,249 +104,714 @@ class InspectionPricing {
     'ajeromi_ifelodun',
     'ojo',
     'ikorodu',
+    'badagry',
+    'epe',
+    'ibeju_lekki',
     'obafemi_owode',
   ];
 
-  /// Outer/long-distance LGA (Epe, Badagry, Sango, Ibeju-Lekki)
-  static const String outerLGA = 'outer';
+  /// The state each LGA is in. An area picked from the list decides the
+  /// state, so this is what stops an Ogun area saving as Lagos.
+  static const Map<String, String> _lgaState = {
+    'ikeja': 'Lagos',
+    'eti_osa': 'Lagos',
+    'lagos_island': 'Lagos',
+    'surulere': 'Lagos',
+    'yaba_mainland': 'Lagos',
+    'kosofe': 'Lagos',
+    'oshodi_isolo': 'Lagos',
+    'alimosho': 'Lagos',
+    'ojodu_lcda': 'Lagos',
+    'shomolu': 'Lagos',
+    'agege': 'Lagos',
+    'ifako_ijaiye': 'Lagos',
+    'mushin': 'Lagos',
+    'amuwo_odofin': 'Lagos',
+    'apapa': 'Lagos',
+    'ajeromi_ifelodun': 'Lagos',
+    'ojo': 'Lagos',
+    'ikorodu': 'Lagos',
+    'badagry': 'Lagos',
+    'epe': 'Lagos',
+    'ibeju_lekki': 'Lagos',
+    'obafemi_owode': 'Ogun',
+    outerLGA: 'Lagos',
+  };
 
-  /// Bucket for areas outside Lagos entirely. Kept separate from [outerLGA]
-  /// so Epe and Badagry keep reading as Lagos outskirts. Nothing is compiled
-  /// into it - it exists so `config/areas` can publish an out-of-state area
-  /// without a release, since [applyRemoteAreas] drops any unknown LGA.
-  static const String otherLGA = 'other';
+  static const Map<String, String> _lgaLabels = {
+    'ikeja': 'Ikeja LGA',
+    'eti_osa': 'Eti-Osa LGA',
+    'lagos_island': 'Lagos Island LGA',
+    'surulere': 'Surulere LGA',
+    'yaba_mainland': 'Lagos Mainland LGA (Yaba)',
+    'kosofe': 'Kosofe LGA',
+    'oshodi_isolo': 'Oshodi-Isolo LGA',
+    'alimosho': 'Alimosho LGA',
+    'ojodu_lcda': 'Ojodu LGA',
+    'shomolu': 'Shomolu LGA',
+    'agege': 'Agege LGA',
+    'ifako_ijaiye': 'Ifako-Ijaiye LGA',
+    'mushin': 'Mushin LGA',
+    'amuwo_odofin': 'Amuwo-Odofin LGA',
+    'apapa': 'Apapa LGA',
+    'ajeromi_ifelodun': 'Ajeromi-Ifelodun LGA',
+    'ojo': 'Ojo LGA',
+    'ikorodu': 'Ikorodu LGA',
+    'badagry': 'Badagry LGA',
+    'epe': 'Epe LGA',
+    'ibeju_lekki': 'Ibeju-Lekki LGA',
+    'obafemi_owode': 'Lagos outskirts: Obafemi-Owode (Ogun)',
+    outerLGA: 'Outer Lagos',
+    otherLGA: 'Other areas',
+  };
 
-  // ══════════════════════════════════════════════
-  //  AREA → LGA MAPPING
-  // ══════════════════════════════════════════════
-
-  /// Compiled-in area → LGA map (lowercase keys). The offline baseline.
-  ///
-  /// Adding an area here needs an app release, which is far too slow when a
-  /// landlord is standing in an unmapped part of Lagos right now. Areas can
-  /// therefore also be added at runtime from `config/areas` - see
-  /// [applyRemoteAreas] - exactly as `config/pricing` overrides the fees.
+  /// Compiled-in area to LGA map (lowercase keys). The offline baseline.
   static const Map<String, String> _defaultAreaToLGA = {
-    // ── Ikorodu LGA ──
-    'ikorodu': 'ikorodu',
-    'ikorodu town': 'ikorodu',
-    'benson': 'ikorodu',
-    'itamaga': 'ikorodu',
-    'odogunyan': 'ikorodu',
-    'agric': 'ikorodu',
-    'owutu': 'ikorodu',
-    'igbogbo': 'ikorodu',
-    'ijede': 'ikorodu',
-    'imota': 'ikorodu',
-    'bayeku': 'ikorodu',
-    'ibeshe': 'ikorodu',
-    'erikorodo': 'ikorodu',
-    'agura': 'ikorodu',
-    'isiu': 'ikorodu',
-    'ebute': 'ikorodu',
-    'aga': 'ikorodu',
-    'ishawo': 'ikorodu',
-    'oke-eletu': 'ikorodu',
-    'oreta': 'ikorodu',
-    'ofin': 'ikorodu',
-
-    // ── Kosofe LGA ──
-    'ketu': 'kosofe',
-    'ojota': 'kosofe',
-    'mile 12': 'kosofe',
-    'alapere': 'kosofe',
-    'ogudu-orioke': 'kosofe',
-    'kosofe': 'kosofe',
-    'ogudu': 'kosofe',
-    'anthony': 'kosofe',
-    'anthony village': 'kosofe',
-    'magodo': 'kosofe',
-    'maryland': 'kosofe',
-    'mende': 'kosofe',
-    'shangisha': 'kosofe',
-    'isheri-olowo-ira': 'kosofe',
-
-    // ── Shomolu LGA ──
-    'shomolu': 'shomolu',
-    'somolu': 'shomolu',
-    'bariga': 'shomolu',
-    'gbagada': 'shomolu',
-    'pedro': 'shomolu',
-    'onipanu': 'shomolu',
-    'fadeyi': 'shomolu',
-    'palmgrove': 'shomolu',
-    'akoka': 'shomolu',
-
-    // ── Ikeja LGA ──
+    // Ikeja LGA
+    'adekunle village': 'ikeja',
+    'adeniyi jones': 'ikeja',
+    'aguda ogba': 'ikeja',
+    'airport road': 'ikeja',
+    'alausa': 'ikeja',
+    'allen': 'ikeja',
+    'anifowoshe': 'ikeja',
+    'computer village': 'ikeja',
     'ikeja': 'ikeja',
     'ikeja gra': 'ikeja',
-    'alausa': 'ikeja',
-    'opebi': 'ikeja',
-    'adeniyi jones': 'ikeja',
-    'allen': 'ikeja',
-    'toyin street': 'ikeja',
-    'computer village': 'ikeja',
-    'oregun': 'ikeja',
+    'inilekere': 'ikeja',
+    'ipodo': 'ikeja',
+    'oba akran': 'ikeja',
     'ogba': 'ikeja',
+    'oke-ira': 'ikeja',
+    'olusosun': 'ikeja',
+    'onigbongbo': 'ikeja',
+    'onipetesi': 'ikeja',
+    'opebi': 'ikeja',
+    'oregun': 'ikeja',
+    'seriki aro': 'ikeja',
+    'toyin street': 'ikeja',
+    'wasimi': 'ikeja',
 
-    // ── Ojodu LCDA ──
-    'ojodu': 'ojodu_lcda',
-    'ojodu berger': 'ojodu_lcda',
-    'berger': 'ojodu_lcda',
-    'omole': 'ojodu_lcda',
-    'onigbongbo': 'ojodu_lcda',
-    'agidingbi': 'ojodu_lcda',
-
-    // ── Agege LGA ──
-    'agege': 'agege',
-    'dopemu': 'agege',
-
-    // ── Ifako-Ijaiye LGA ──
-    'ifako-ijaiye': 'ifako_ijaiye',
-    'ifako': 'ifako_ijaiye',
-    'ijaiye': 'ifako_ijaiye',
-    'oko-oba': 'ifako_ijaiye',
-    'pen cinema': 'ifako_ijaiye',
-    'tabon-tabon': 'ifako_ijaiye',
-    'iju': 'ifako_ijaiye',
-    'markaz': 'ifako_ijaiye',
-
-    // ── Alimosho LGA ──
-    'alimosho': 'alimosho',
-    'egbeda': 'alimosho',
-    'ikotun': 'alimosho',
-    'idimu': 'alimosho',
-    'igando': 'alimosho',
-    'akowonjo': 'alimosho',
-    'shasha': 'alimosho',
-    'alakuko': 'alimosho',
-    'kollinton': 'alimosho',
-    'ikola': 'alimosho',
-    'ijegun': 'alimosho',
-    'aboru': 'alimosho',
-    'abesan': 'alimosho',
-
-    // ── Oshodi-Isolo LGA ──
-    'oshodi': 'oshodi_isolo',
-    'isolo': 'oshodi_isolo',
-    'ejigbo': 'oshodi_isolo',
-    'cement': 'oshodi_isolo',
-    'okota': 'oshodi_isolo',
-    'ilasa': 'oshodi_isolo',
-    'oke-afa': 'oshodi_isolo',
-
-    // ── Mushin LGA ──
-    'mushin': 'mushin',
-    'papa-ajao': 'mushin',
-    'idi-araba': 'mushin',
-
-    // ── Surulere LGA ──
-    'surulere': 'surulere',
-    'lawanson': 'surulere',
-    'itire': 'surulere',
-    'ijeshatedo': 'surulere',
-    'ojuelegba': 'surulere',
-    'aguda': 'surulere',
-    'shitta': 'surulere',
-
-    // ── Yaba / Mainland LGA ──
-    'yaba': 'yaba_mainland',
-    'ebute metta': 'yaba_mainland',
-    'jibowu': 'yaba_mainland',
-    'alagomeji': 'yaba_mainland',
-    'obalende': 'yaba_mainland',
-    'oto': 'yaba_mainland',
-    'iwaya': 'yaba_mainland',
-    'abule-oja': 'yaba_mainland',
-    'sabo': 'yaba_mainland',
-    'makoko': 'yaba_mainland',
-
-    // ── Eti-Osa LGA ──
-    'victoria island': 'eti_osa',
-    'vi': 'eti_osa',
-    'ikoyi': 'eti_osa',
-    'oniru': 'eti_osa',
-    'eko atlantic': 'eti_osa',
+    // Eti-Osa LGA
+    'abraham adesanya': 'eti_osa',
+    'addo': 'eti_osa',
+    'agungi': 'eti_osa',
+    'ajah': 'eti_osa',
+    'badore': 'eti_osa',
     'banana island': 'eti_osa',
+    'chevron': 'eti_osa',
+    'dolphin estate': 'eti_osa',
+    'eko atlantic': 'eti_osa',
+    'elegushi': 'eti_osa',
+    'falomo': 'eti_osa',
+    'idado': 'eti_osa',
+    'igbo-efon': 'eti_osa',
+    'ikate lekki': 'eti_osa',
+    'ikota': 'eti_osa',
+    'ikoyi': 'eti_osa',
+    'ilado': 'eti_osa',
+    'ilasan': 'eti_osa',
+    'jakande': 'eti_osa',
+    'kuramo': 'eti_osa',
+    'langbasa': 'eti_osa',
     'lekki': 'eti_osa',
     'lekki phase 1': 'eti_osa',
     'lekki phase 2': 'eti_osa',
-    'ajah': 'eti_osa',
-    'sangotedo': 'eti_osa',
-    'chevron': 'eti_osa',
-    'jakande': 'eti_osa',
-    'ikota': 'eti_osa',
-    'agungi': 'eti_osa',
-    'osapa': 'eti_osa',
-    'idado': 'eti_osa',
-    'vgc': 'eti_osa',
-    'abraham adesanya': 'eti_osa',
-    'langbasa': 'eti_osa',
+    'maroko': 'eti_osa',
+    'obalende': 'eti_osa',
     'ogombo': 'eti_osa',
-    'badore': 'eti_osa',
+    'ologolo': 'eti_osa',
+    'oniru': 'eti_osa',
+    'osapa': 'eti_osa',
+    'osborne': 'eti_osa',
+    'parkview': 'eti_osa',
+    'sangotedo': 'eti_osa',
+    'thomas estate': 'eti_osa',
+    'vgc': 'eti_osa',
+    'victoria island': 'eti_osa',
 
-    // ── Lagos Island LGA ──
+    // Lagos Island LGA
+    'adeniji adele': 'lagos_island',
+    'agarawu': 'lagos_island',
+    'anikantamo': 'lagos_island',
+    'balogun': 'lagos_island',
+    'broad street': 'lagos_island',
+    'campos': 'lagos_island',
+    'cms': 'lagos_island',
+    'ebute ero': 'lagos_island',
+    'eiyekole': 'lagos_island',
+    'elegbata': 'lagos_island',
+    'epetedo': 'lagos_island',
+    'idumota': 'lagos_island',
+    'iduntafa': 'lagos_island',
+    'ilubirin': 'lagos_island',
+    'ilupesi': 'lagos_island',
+    'isale-agbede': 'lagos_island',
+    'isale-eko': 'lagos_island',
+    'kakawa': 'lagos_island',
+    'lafiaji': 'lagos_island',
     'lagos island': 'lagos_island',
     'marina': 'lagos_island',
-    'isale-eko': 'lagos_island',
-    'ologbowo': 'lagos_island',
-    'idumota': 'lagos_island',
+    'obadina': 'lagos_island',
+    'oju-oto': 'lagos_island',
+    'oke arin': 'lagos_island',
+    'oko-awo': 'lagos_island',
+    'oko-faji': 'lagos_island',
+    'olosun': 'lagos_island',
+    'olowogbowo': 'lagos_island',
+    'olushi': 'lagos_island',
+    'oluwole': 'lagos_island',
+    'onikan': 'lagos_island',
+    'popo aguda': 'lagos_island',
+    'sandgrouse': 'lagos_island',
 
-    // ── Apapa LGA ──
-    'apapa': 'apapa',
-    'ajegunle': 'apapa',
-    'marine beach': 'apapa',
-    'tincan': 'apapa',
+    // Surulere LGA
+    'adeniran ogunsanya': 'surulere',
+    'aguda': 'surulere',
+    'akinhanmi': 'surulere',
+    'alaka': 'surulere',
+    'bode thomas': 'surulere',
+    'coker': 'surulere',
+    'cole': 'surulere',
+    'eric moore': 'surulere',
+    'iganmu': 'surulere',
+    'igbaja': 'surulere',
+    'ijeshatedo': 'surulere',
+    'ikate surulere': 'surulere',
+    'iponri': 'surulere',
+    'itire': 'surulere',
+    'lawanson': 'surulere',
+    'masha': 'surulere',
+    'ogunlana drive': 'surulere',
+    'ojuelegba': 'surulere',
+    'shitta': 'surulere',
+    'small london': 'surulere',
+    'stadium': 'surulere',
+    'surulere': 'surulere',
 
-    // ── Amuwo-Odofin LGA ──
-    'festac': 'amuwo_odofin',
+    // Lagos Mainland LGA (Yaba)
+    'abule nla': 'yaba_mainland',
+    'abule-ijesha': 'yaba_mainland',
+    'abule-oja': 'yaba_mainland',
+    'adekunle': 'yaba_mainland',
+    'alagomeji': 'yaba_mainland',
+    'costain': 'yaba_mainland',
+    'ebute metta': 'yaba_mainland',
+    'glover': 'yaba_mainland',
+    'iddo': 'yaba_mainland',
+    'iwaya': 'yaba_mainland',
+    'jibowu': 'yaba_mainland',
+    'makoko': 'yaba_mainland',
+    'oko-baba': 'yaba_mainland',
+    'olaleye village': 'yaba_mainland',
+    'onike': 'yaba_mainland',
+    'oto': 'yaba_mainland',
+    'oyadiran estate': 'yaba_mainland',
+    'oyingbo': 'yaba_mainland',
+    'sabo yaba': 'yaba_mainland',
+    'yaba': 'yaba_mainland',
+    'yaba tech': 'yaba_mainland',
+
+    // Kosofe LGA
+    'agboyi': 'kosofe',
+    'agiliti': 'kosofe',
+    'ajao estate anthony': 'kosofe',
+    'ajelogo': 'kosofe',
+    'akanimodo': 'kosofe',
+    'alapere': 'kosofe',
+    'anthony village': 'kosofe',
+    'ifako-gbagada': 'kosofe',
+    'ikosi': 'kosofe',
+    'isheri-olowo-ira': 'kosofe',
+    'ketu': 'kosofe',
+    'kosofe': 'kosofe',
+    'magodo': 'kosofe',
+    'maryland': 'kosofe',
+    'mende': 'kosofe',
+    'mile 12': 'kosofe',
+    'odo-ogun': 'kosofe',
+    'ogudu': 'kosofe',
+    'ogudu-orioke': 'kosofe',
+    'ojota': 'kosofe',
+    'orisigun': 'kosofe',
+    'oruba': 'kosofe',
+    'owode onirin': 'kosofe',
+    'oworonshoki': 'kosofe',
+    'shangisha': 'kosofe',
+    'shonibare estate': 'kosofe',
+    'soluyi': 'kosofe',
+
+    // Oshodi-Isolo LGA
+    'ago palace': 'oshodi_isolo',
+    'ajao estate': 'oshodi_isolo',
+    'alasia': 'oshodi_isolo',
+    'bolade': 'oshodi_isolo',
+    'bucknor': 'oshodi_isolo',
+    'cement': 'oshodi_isolo',
+    'ejigbo': 'oshodi_isolo',
+    'ilasamaja': 'oshodi_isolo',
+    'ire-akari': 'oshodi_isolo',
+    'ishagatedo': 'oshodi_isolo',
+    'isolo': 'oshodi_isolo',
+    'mafoluku': 'oshodi_isolo',
+    'oke-afa': 'oshodi_isolo',
+    'okota': 'oshodi_isolo',
+    'orile oshodi': 'oshodi_isolo',
+    'oshodi': 'oshodi_isolo',
+    'sogunle': 'oshodi_isolo',
+
+    // Alimosho LGA
+    'abesan': 'alimosho',
+    'aboru': 'alimosho',
+    'abule egba': 'alimosho',
+    'agodo': 'alimosho',
+    'akesan': 'alimosho',
+    'akowonjo': 'alimosho',
+    'alagbado': 'alimosho',
+    'alimosho': 'alimosho',
+    'ayobo': 'alimosho',
+    'baruwa': 'alimosho',
+    'command': 'alimosho',
+    'egan': 'alimosho',
+    'egbe': 'alimosho',
+    'egbeda': 'alimosho',
+    'gowon estate': 'alimosho',
+    'idimu': 'alimosho',
+    'igando': 'alimosho',
+    'ijegun': 'alimosho',
+    'ikola': 'alimosho',
+    'ikotun': 'alimosho',
+    'ipaja': 'alimosho',
+    'isheri olofin': 'alimosho',
+    'isheri oshun': 'alimosho',
+    'iyana ipaja': 'alimosho',
+    'meiran': 'alimosho',
+    'mosan': 'alimosho',
+    'oke odo': 'alimosho',
+    'okunola': 'alimosho',
+    'pleasure': 'alimosho',
+    'shasha': 'alimosho',
+
+    // Ojodu LGA
+    'agidingbi': 'ojodu_lcda',
+    'ojodu': 'ojodu_lcda',
+    'ojodu berger': 'ojodu_lcda',
+    'omole': 'ojodu_lcda',
+    'omole phase 1': 'ojodu_lcda',
+    'omole phase 2': 'ojodu_lcda',
+
+    // Shomolu LGA
+    'abule okuta': 'shomolu',
+    'akoka': 'shomolu',
+    'alade': 'shomolu',
+    'apelehin': 'shomolu',
+    'bajulaiye': 'shomolu',
+    'bariga': 'shomolu',
+    'fadeyi': 'shomolu',
+    'fola agoro': 'shomolu',
+    'gbagada': 'shomolu',
+    'gbagada phase 1': 'shomolu',
+    'gbagada phase 2': 'shomolu',
+    'igbobi': 'shomolu',
+    'ijebutedo': 'shomolu',
+    'ilaje bariga': 'shomolu',
+    'lad-lak': 'shomolu',
+    'mafowoku': 'shomolu',
+    'obanikoro': 'shomolu',
+    'onipanu': 'shomolu',
+    'palmgrove': 'shomolu',
+    'pedro': 'shomolu',
+    'shomolu': 'shomolu',
+
+    // Agege LGA
+    'agbotikuyo': 'agege',
+    'agege': 'agege',
+    'darocha': 'agege',
+    'dopemu': 'agege',
+    'idimangoro': 'agege',
+    'iloro': 'agege',
+    'isale odo': 'agege',
+    'keke': 'agege',
+    'mulero': 'agege',
+    'okekoto': 'agege',
+    'oko-oba': 'agege',
+    'oniwaya': 'agege',
+    'orile agege': 'agege',
+    'oyewole': 'agege',
+    'papa ashafa': 'agege',
+    'papa-uku': 'agege',
+    'pen cinema': 'agege',
+    'tabon-tabon': 'agege',
+
+    // Ifako-Ijaiye LGA
+    'agbado': 'ifako_ijaiye',
+    'ajegunle ifako': 'ifako_ijaiye',
+    'akinde': 'ifako_ijaiye',
+    'akute road': 'ifako_ijaiye',
+    'alakuko': 'ifako_ijaiye',
+    'animashaun': 'ifako_ijaiye',
+    'fagba': 'ifako_ijaiye',
+    'ifako-ijaiye': 'ifako_ijaiye',
+    'ijaiye': 'ifako_ijaiye',
+    'iju': 'ifako_ijaiye',
+    'iju ishaga': 'ifako_ijaiye',
+    'karaole': 'ifako_ijaiye',
+    'kollington': 'ifako_ijaiye',
+    'markaz': 'ifako_ijaiye',
+    'obawole': 'ifako_ijaiye',
+    'ojokoro': 'ifako_ijaiye',
+    'oyemekun': 'ifako_ijaiye',
+    'pamada': 'ifako_ijaiye',
+
+    // Mushin LGA
+    'alakara': 'mushin',
+    'atewolara': 'mushin',
+    'babalosa': 'mushin',
+    'idi-araba': 'mushin',
+    'idi-oro': 'mushin',
+    'ilupeju': 'mushin',
+    'ilupeju industrial estate': 'mushin',
+    'kayode': 'mushin',
+    'ladipo': 'mushin',
+    'mushin': 'mushin',
+    'odi-olowu': 'mushin',
+    'ojuwoye': 'mushin',
+    'olateju': 'mushin',
+    'papa-ajao': 'mushin',
+
+    // Amuwo-Odofin LGA
+    'abule ado': 'amuwo_odofin',
+    'abule osun': 'amuwo_odofin',
+    'agboju': 'amuwo_odofin',
+    'alakija': 'amuwo_odofin',
     'amuwo odofin': 'amuwo_odofin',
+    'festac': 'amuwo_odofin',
+    'ibeshe amuwo': 'amuwo_odofin',
+    'igbologun': 'amuwo_odofin',
+    'ijegun egba': 'amuwo_odofin',
+    'ilashe': 'amuwo_odofin',
+    'irede': 'amuwo_odofin',
+    'kirikiri': 'amuwo_odofin',
+    'mazamaza': 'amuwo_odofin',
     'mile 2': 'amuwo_odofin',
+    'oloti': 'amuwo_odofin',
     'satellite town': 'amuwo_odofin',
+    'tedimuwo': 'amuwo_odofin',
+    'tomaro': 'amuwo_odofin',
+    'trade fair': 'amuwo_odofin',
 
-    // ── Ojo LGA ──
-    'ojo': 'ojo',
-    'okokomaiko': 'ojo',
-    'ajangbadi': 'ojo',
-    'ijanikin': 'ojo',
-    'lasu': 'ojo',
+    // Apapa LGA
+    'afolabi alasia': 'apapa',
+    'apapa': 'apapa',
+    'apapa gra': 'apapa',
+    'badia': 'apapa',
+    'creek road': 'apapa',
+    'gaskiya': 'apapa',
+    'ibafon': 'apapa',
+    'ijora': 'apapa',
+    'ijora olopa': 'apapa',
+    'ijora oloye': 'apapa',
+    'liverpool': 'apapa',
+    'malu road': 'apapa',
+    'marine beach': 'apapa',
+    'orile iganmu': 'apapa',
+    'pelewura crescent': 'apapa',
+    'sari iganmu': 'apapa',
+    'snake island': 'apapa',
+    'tincan': 'apapa',
+    'wharf': 'apapa',
 
-    // ── Ajeromi-Ifelodun LGA ──
-    'orile': 'ajeromi_ifelodun',
-    'mosafejo': 'ajeromi_ifelodun',
+    // Ajeromi-Ifelodun LGA
+    'ago hausa': 'ajeromi_ifelodun',
+    'aiyetoro ajeromi': 'ajeromi_ifelodun',
+    'ajegunle': 'ajeromi_ifelodun',
+    'alaba oro': 'ajeromi_ifelodun',
+    'alakoto': 'ajeromi_ifelodun',
+    'alayabiagba': 'ajeromi_ifelodun',
     'amukoko': 'ajeromi_ifelodun',
+    'araromi ajeromi': 'ajeromi_ifelodun',
+    'awodi-ora': 'ajeromi_ifelodun',
+    'boundary': 'ajeromi_ifelodun',
+    'layeni': 'ajeromi_ifelodun',
+    'mosafejo': 'ajeromi_ifelodun',
+    'ojo road': 'ajeromi_ifelodun',
+    'olodi': 'ajeromi_ifelodun',
+    'onibaba': 'ajeromi_ifelodun',
+    'orile': 'ajeromi_ifelodun',
+    'orodun': 'ajeromi_ifelodun',
+    'temidire': 'ajeromi_ifelodun',
+    'tolu': 'ajeromi_ifelodun',
+    'wilmer': 'ajeromi_ifelodun',
 
-    // ── Obafemi-Owode LGA (Ogun) ──
-    'mowe': 'obafemi_owode',
-    'ibafo': 'obafemi_owode',
+    // Ojo LGA
+    'ajangbadi': 'ojo',
+    'alaba international': 'ojo',
+    'alaba rago': 'ojo',
+    'etegbin': 'ojo',
+    'iba': 'ojo',
+    'idoluwo': 'ojo',
+    'igbo elerin': 'ojo',
+    'ijanikin': 'ojo',
+    'ilogbo': 'ojo',
+    'ilopo': 'ojo',
+    'irewe': 'ojo',
+    'iyana iba': 'ojo',
+    'lasu': 'ojo',
+    'ojo': 'ojo',
+    'ojo barracks': 'ojo',
+    'ojo town': 'ojo',
+    'okokomaiko': 'ojo',
+    'sabo oniba': 'ojo',
+    'shibiri': 'ojo',
+    'tafi': 'ojo',
+
+    // Ikorodu LGA
+    'adamo': 'ikorodu',
+    'adebo': 'ikorodu',
+    'aga': 'ikorodu',
+    'agbala': 'ikorodu',
+    'agbede': 'ikorodu',
+    'agric': 'ikorodu',
+    'agura': 'ikorodu',
+    'bayeku': 'ikorodu',
+    'benson': 'ikorodu',
+    'ebute ikorodu': 'ikorodu',
+    'egbin': 'ikorodu',
+    'elepe': 'ikorodu',
+    'erikorodo': 'ikorodu',
+    'gberigbe': 'ikorodu',
+    'ibeshe': 'ikorodu',
+    'igbaga': 'ikorodu',
+    'igbogbo': 'ikorodu',
+    'igbopa': 'ikorodu',
+    'ijede': 'ikorodu',
+    'ijimu': 'ikorodu',
+    'ikorodu': 'ikorodu',
+    'imota': 'ikorodu',
+    'ipakodo': 'ikorodu',
+    'iponmi': 'ikorodu',
+    'isele': 'ikorodu',
+    'ishawo': 'ikorodu',
+    'isiu': 'ikorodu',
+    'itamaga': 'ikorodu',
+    'itu elepe': 'ikorodu',
+    'itu ojoru': 'ikorodu',
+    'itusopu': 'ikorodu',
+    'ituwaye': 'ikorodu',
+    'majidun': 'ikorodu',
+    'maya': 'ikorodu',
+    'odo iyewa': 'ikorodu',
+    'odogunyan': 'ikorodu',
+    'ofin': 'ikorodu',
+    'ogolonto': 'ikorodu',
+    'oke-eletu': 'ikorodu',
+    'olorunda': 'ikorodu',
+    'oreta': 'ikorodu',
+    'owutu': 'ikorodu',
+    'parafa': 'ikorodu',
+    'sabo ikorodu': 'ikorodu',
+
+    // Badagry LGA
+    'age mowo': 'badagry',
+    'ajara': 'badagry',
+    'ajara agamaden': 'badagry',
+    'ajido': 'badagry',
+    'apa': 'badagry',
+    'aradagun': 'badagry',
+    'awhanjigoh': 'badagry',
+    'badagry': 'badagry',
+    'ibereko': 'badagry',
+    'ikoga': 'badagry',
+    'ilogbo-araromi': 'badagry',
+    'iworo': 'badagry',
+    'iworo gbanko': 'badagry',
+    'iya-afin': 'badagry',
+    'keta east': 'badagry',
+    'kweme': 'badagry',
+    'magbon': 'badagry',
+    'morogbo': 'badagry',
+    'mowo': 'badagry',
+    'oko afo': 'badagry',
+    'pasi': 'badagry',
+    'posukoh': 'badagry',
+    'ropoji': 'badagry',
+    'seme border': 'badagry',
+    'topo': 'badagry',
+    'yewa': 'badagry',
+
+    // Epe LGA
+    'abomiti': 'epe',
+    'agbowa': 'epe',
+    'agbowa ikosi': 'epe',
+    'ago owu': 'epe',
+    'ajaganabe': 'epe',
+    'ebode': 'epe',
+    'ejirin': 'epe',
+    'epe': 'epe',
+    'eredo': 'epe',
+    'etita': 'epe',
+    'ibonwon': 'epe',
+    'idasho': 'epe',
+    'igbogun': 'epe',
+    'ilara': 'epe',
+    'ise': 'epe',
+    'itoikin': 'epe',
+    'ladaba': 'epe',
+    'lagbade': 'epe',
+    'mojoda': 'epe',
+    'noforija': 'epe',
+    'odo-nagun': 'epe',
+    'odomola': 'epe',
+    'odoragunsin': 'epe',
+    'oke-balogun': 'epe',
+    'omu': 'epe',
+    'oriba': 'epe',
+    'orugbo': 'epe',
+    'poka': 'epe',
+    'popo-oba': 'epe',
+
+    // Ibeju-Lekki LGA
+    'abegede': 'ibeju_lekki',
+    'abijo': 'ibeju_lekki',
+    'aiyeteju': 'ibeju_lekki',
+    'akodo': 'ibeju_lekki',
+    'awoyaya': 'ibeju_lekki',
+    'bogije': 'ibeju_lekki',
+    'dangote refinery': 'ibeju_lekki',
+    'ebute lekki': 'ibeju_lekki',
+    'efiran': 'ibeju_lekki',
+    'eleko': 'ibeju_lekki',
+    'eluju': 'ibeju_lekki',
+    'eputu': 'ibeju_lekki',
+    'ibeju': 'ibeju_lekki',
+    'ibeju-lekki': 'ibeju_lekki',
+    'igando oloja': 'ibeju_lekki',
+    'igbekodo': 'ibeju_lekki',
+    'ilagbo': 'ibeju_lekki',
+    'ilege': 'ibeju_lekki',
+    'ilumofin': 'ibeju_lekki',
+    'itagbo': 'ibeju_lekki',
+    'iwerekun': 'ibeju_lekki',
+    'lakowe': 'ibeju_lekki',
+    'lekki free zone': 'ibeju_lekki',
+    'magbon-alade': 'ibeju_lekki',
+    'mobido': 'ibeju_lekki',
+    'mopo onijebu': 'ibeju_lekki',
+    'mosere ikoga': 'ibeju_lekki',
+    'ogogoro': 'ibeju_lekki',
+    'oke egun': 'ibeju_lekki',
+    'okoyogun': 'ibeju_lekki',
+    'okunegun': 'ibeju_lekki',
+    'ololu': 'ibeju_lekki',
+    'orimedu': 'ibeju_lekki',
+    'otolu': 'ibeju_lekki',
+    'siriwon': 'ibeju_lekki',
+    'tiye': 'ibeju_lekki',
+
+    // Lagos outskirts: Obafemi-Owode (Ogun)
     'arepo': 'obafemi_owode',
+    'asese': 'obafemi_owode',
+    'ibafo': 'obafemi_owode',
+    'isheri north': 'obafemi_owode',
     'magboro': 'obafemi_owode',
-    'isheri': 'obafemi_owode',
+    'mowe': 'obafemi_owode',
+    'redemption camp': 'obafemi_owode',
+    'warewa': 'obafemi_owode',
 
-    // ── Outer Lagos ──
-    'epe': 'outer',
-    'badagry': 'outer',
-    'sango': 'outer',
-    'sango ota': 'outer',
-    'ibeju-lekki': 'outer',
-    'ibeju lekki': 'outer',
   };
 
-  /// The live map: compiled defaults plus anything added remotely.
+  /// Spellings and old names that must keep resolving, mapped onto the area
+  /// they mean. They are deliberately NOT offered in the pickers, so one
+  /// place is one row, but a listing or saved preference that used the old
+  /// spelling still finds its LGA.
+  static const Map<String, String> _areaAliases = {
+    'amuwo': 'amuwo odofin',
+    'anthony': 'anthony village',
+    'berger': 'ojodu berger',
+    'ebute': 'ebute ikorodu',
+    'ebute-metta': 'ebute metta',
+    'festac town': 'festac',
+    'gbogije': 'bogije',
+    'gra ikeja': 'ikeja gra',
+    'iba town': 'iba',
+    'ibeju lekki': 'ibeju-lekki',
+    'iberekodo': 'igbekodo',
+    'ifako': 'ifako-ijaiye',
+    'ikorodu town': 'ikorodu',
+    'ilasa': 'ilasamaja',
+    'isheri': 'isheri north',
+    'isheri olowora': 'isheri-olowo-ira',
+    'itokin': 'itoikin',
+    'kollinton': 'kollington',
+    'olodi apapa': 'olodi',
+    'ologbowo': 'olowogbowo',
+    'osapa london': 'osapa',
+    'otto': 'oto',
+    'sabo': 'sabo yaba',
+    'somolu': 'shomolu',
+    'vi': 'victoria island',
+    'victoria garden city': 'vgc',
+  };
+  // GENERATED-AREAS-END
+
+  // ══════════════════════════════════════════════
+  //  THE LIVE LISTS (compiled defaults + config/areas)
+  // ══════════════════════════════════════════════
+
+  /// The live map: compiled defaults plus anything published remotely.
   static Map<String, String> _areaToLGA =
       Map<String, String>.from(_defaultAreaToLGA);
 
-  /// Merge areas published by an admin (Firestore `config/areas`) over the
-  /// compiled defaults, so a missing Lagos area becomes selectable without a
-  /// Play Store release.
+  /// LGAs published remotely, with the label and state each one carries.
   ///
-  /// Entries are ignored unless the LGA is one we actually price - a typo must
-  /// not silently create an unpriceable area, because `city` feeds
-  /// [findMatchingArea] and therefore the inspection fee.
+  /// Without this, opening a new state meant an app release, which is why 39
+  /// out-of-state cities were once filed under [otherLGA] and every one of them
+  /// saved as "Lagos".
+  static final Map<String, String> _remoteLgaLabels = {};
+  static final Map<String, String> _remoteLgaState = {};
+
+  /// Compiled LGAs plus the remote ones, in display order.
+  static List<String> _liveLgas = List<String>.from(lgas);
+
+  /// Lower-cased, punctuation-flattened index of every name that resolves to an
+  /// area: the areas themselves and [_areaAliases]. Rebuilt whenever the live
+  /// map changes.
+  static Map<String, String>? _searchIndex;
+
+  /// Merge LGAs published by an admin (`config/areas` → `lgas`), shaped
+  /// `{ "<key>": { "label": ..., "state": ... } }`.
+  ///
+  /// An entry with no state is dropped: the state is what the listing saves,
+  /// and a stateless LGA is exactly how Ogun and Abuja areas came out as Lagos.
+  static void applyRemoteLGAs(Map<String, dynamic>? raw) {
+    _remoteLgaLabels.clear();
+    _remoteLgaState.clear();
+    raw?.forEach((key, value) {
+      final lga = key.trim().toLowerCase();
+      if (lga.isEmpty || lga == outerLGA || lga == otherLGA) return;
+      if (lgas.contains(lga)) return; // compiled ones win
+      if (value is! Map) return;
+      final label = (value['label'] ?? '').toString().trim();
+      final state = (value['state'] ?? '').toString().trim();
+      if (label.isEmpty || state.isEmpty) return;
+      _remoteLgaLabels[lga] = label;
+      _remoteLgaState[lga] = state;
+    });
+    _liveLgas = [...lgas, ..._remoteLgaLabels.keys];
+    _searchIndex = null;
+  }
+
+  /// Merge areas published by an admin (`config/areas` → `areas`) over the
+  /// compiled defaults, so a missing area becomes selectable without a Play
+  /// Store release.
+  ///
+  /// Entries are ignored unless the LGA is one we know, compiled or remote: an
+  /// area whose LGA we cannot resolve has no state and no group to sit in.
+  /// Call [applyRemoteLGAs] first when the same document carries both.
   static void applyRemoteAreas(Map<String, dynamic>? raw) {
     final merged = Map<String, String>.from(_defaultAreaToLGA);
     if (raw != null) {
-      final valid = {...lgas, outerLGA, otherLGA};
+      final valid = {..._liveLgas, outerLGA, otherLGA};
       raw.forEach((area, lga) {
         if (lga is! String) return;
         final key = area.trim().toLowerCase();
@@ -344,64 +821,140 @@ class InspectionPricing {
       });
     }
     _areaToLGA = merged;
+    _searchIndex = null;
   }
-
-  static const Map<String, String> _lgaLabels = {
-    'ikorodu': 'Ikorodu LGA',
-    'kosofe': 'Kosofe LGA',
-    'shomolu': 'Shomolu LGA',
-    'ikeja': 'Ikeja LGA',
-    'ojodu_lcda': 'Ojodu LGA',
-    'agege': 'Agege LGA',
-    'ifako_ijaiye': 'Ifako-Ijaiye LGA',
-    'alimosho': 'Alimosho LGA',
-    'oshodi_isolo': 'Oshodi-Isolo LGA',
-    'mushin': 'Mushin LGA',
-    'surulere': 'Surulere LGA',
-    'yaba_mainland': 'Yaba / Mainland LGA',
-    'eti_osa': 'Eti-Osa LGA',
-    'lagos_island': 'Lagos Island LGA',
-    'apapa': 'Apapa LGA',
-    'amuwo_odofin': 'Amuwo-Odofin LGA',
-    'ojo': 'Ojo LGA',
-    'ajeromi_ifelodun': 'Ajeromi-Ifelodun LGA',
-    'obafemi_owode': 'Obafemi-Owode LGA (Ogun)',
-    'outer': 'Outer Lagos',
-    'other': 'Other areas',
-  };
 
   // ══════════════════════════════════════════════
   //  LOOKUP METHODS
   // ══════════════════════════════════════════════
 
-  /// Resolve an area name to its LGA.
-  /// Returns null if the area is not recognized.
+  /// Resolve an area name to its LGA. Null when we do not recognise the area.
   static String? getLGAForArea(String area) {
-    if (area.isEmpty) return null;
-    final normalized = area.trim().toLowerCase();
+    final key = canonicalArea(area);
+    return key == null ? null : _areaToLGA[key];
+  }
 
-    // Direct match
-    if (_areaToLGA.containsKey(normalized)) {
-      return _areaToLGA[normalized];
+  /// The area an arbitrary name means: itself, the area an old spelling stands
+  /// for, or the longest area name contained in it as whole words.
+  ///
+  /// It used to take the first key that appeared anywhere inside the name, in
+  /// map order, which read "Gbagada Phase 2" as Aga in Ikorodu, "Ebute-Metta"
+  /// as Ebute in Ikorodu, and any address segment containing "Lagos" as Lagos
+  /// Island. Whole words only, and the longest match wins, so "Isheri Olowora"
+  /// can no longer collapse to "Isheri".
+  static String? canonicalArea(String area) {
+    final form = _matchForm(area);
+    if (form.isEmpty) return null;
+
+    final direct = _index[form];
+    if (direct != null) return direct;
+
+    for (final suffix in const [
+      ' lga',
+      ' lcda',
+      ' local government',
+      ' local government area',
+      ' area',
+    ]) {
+      if (!form.endsWith(suffix)) continue;
+      final trimmed = form.substring(0, form.length - suffix.length).trim();
+      final hit = _index[trimmed];
+      if (hit != null) return hit;
     }
 
-    // Partial match
-    for (final entry in _areaToLGA.entries) {
-      if (normalized.contains(entry.key) || entry.key.contains(normalized)) {
-        return entry.value;
-      }
+    String? best;
+    for (final candidate in _index.keys) {
+      if (!_containsWholeWords(form, candidate)) continue;
+      if (best == null || candidate.length > best.length) best = candidate;
     }
+    return best == null ? null : _index[best];
+  }
 
-    return null;
+  /// The state an area is in, taken from its LGA. Null when the area is unknown
+  /// or its LGA has no state, because the caller must then keep whatever the
+  /// map pin resolved instead of assuming Lagos.
+  static String? stateForArea(String area) {
+    final lga = getLGAForArea(area);
+    return lga == null ? null : stateForLGA(lga);
+  }
+
+  /// The state an LGA sits in. Null for [otherLGA] and for a remote LGA that
+  /// arrived without one.
+  static String? stateForLGA(String lga) {
+    final state = _lgaState[lga] ?? _remoteLgaState[lga];
+    return (state == null || state.isEmpty) ? null : state;
+  }
+
+  /// Old spellings of an area, so a picker search for "Somolu" still finds
+  /// Shomolu even though only one of them is a row.
+  static List<String> alternativeNames(String area) {
+    final canonical = canonicalArea(area);
+    if (canonical == null) return const [];
+    return _areaAliases.entries
+        .where((e) => e.value == canonical)
+        .map((e) => e.key)
+        .toList();
+  }
+
+  /// Whether a picker search for [query] should show [area]. Matches the area's
+  /// own name or any name it used to go by.
+  static bool areaMatchesQuery(String area, String query) {
+    final wanted = _matchForm(query);
+    if (wanted.isEmpty) return true;
+    if (_matchForm(area).contains(wanted)) return true;
+    return alternativeNames(area)
+        .any((alt) => _matchForm(alt).contains(wanted));
+  }
+
+  static Map<String, String> get _index {
+    final cached = _searchIndex;
+    if (cached != null) return cached;
+    final index = <String, String>{};
+    for (final area in _areaToLGA.keys) {
+      final form = _matchForm(area);
+      if (form.isNotEmpty) index[form] = area;
+    }
+    // Aliases never overwrite a real area of the same name.
+    _areaAliases.forEach((alias, target) {
+      if (!_areaToLGA.containsKey(target)) return;
+      final form = _matchForm(alias);
+      if (form.isNotEmpty) index.putIfAbsent(form, () => target);
+    });
+    return _searchIndex = index;
+  }
+
+  /// Comparison form: diacritics stripped, everything but letters and digits
+  /// flattened to single spaces, so "Ebute-Metta", "ebute metta" and
+  /// "Ẹbùtẹ́ Mettá" are one key and hyphens stop hiding a match.
+  static String _matchForm(String input) {
+    return _stripDiacritics(input.trim().toLowerCase())
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim();
+  }
+
+  /// True when [needle] appears in [haystack] on word boundaries. Both are
+  /// already in [_matchForm], so a boundary is a space or an end.
+  static bool _containsWholeWords(String haystack, String needle) {
+    if (needle.isEmpty) return false;
+    var from = 0;
+    while (true) {
+      final at = haystack.indexOf(needle, from);
+      if (at < 0) return false;
+      final endsAt = at + needle.length;
+      final startOk = at == 0 || haystack[at - 1] == ' ';
+      final endOk = endsAt == haystack.length || haystack[endsAt] == ' ';
+      if (startOk && endOk) return true;
+      from = at + 1;
+    }
   }
 
   /// Backward-compatible alias for [getLGAForArea].
   /// Used by existing code that calls getClusterForArea.
   static String? getClusterForArea(String area) => getLGAForArea(area);
 
-  /// Get human-readable label for an LGA.
+  /// Get human-readable label for an LGA, including remotely added ones.
   static String getLGALabel(String lga) {
-    return _lgaLabels[lga] ?? lga;
+    return _lgaLabels[lga] ?? _remoteLgaLabels[lga] ?? lga;
   }
 
   /// Backward-compatible alias for [getLGALabel].
@@ -419,8 +972,28 @@ class InspectionPricing {
   /// Backward-compatible alias for [getAreasForLGA].
   static List<String> getAreasForCluster(String lga) => getAreasForLGA(lga);
 
-  /// Get all LGA names (for dropdowns, etc.)
-  static List<String> get allLGAs => [...lgas, outerLGA, otherLGA];
+  /// Get all LGA names (for dropdowns, etc.), remotely added ones included.
+  static List<String> get allLGAs => [..._liveLgas, outerLGA, otherLGA];
+
+  /// The LGAs of one state, in display order. Drives the area pickers once a
+  /// state has been chosen, so a landlord living in Lagos is not offered an
+  /// Ogun area, and vice versa.
+  static List<String> lgasForState(String state) {
+    final wanted = state.trim().toLowerCase();
+    return allLGAs
+        .where((lga) => (stateForLGA(lga) ?? '').toLowerCase() == wanted)
+        .toList();
+  }
+
+  /// States we carry areas for, in display order (Lagos first).
+  static List<String> get statesWithAreas {
+    final states = <String>[];
+    for (final lga in allLGAs) {
+      final state = stateForLGA(lga);
+      if (state != null && !states.contains(state)) states.add(state);
+    }
+    return states;
+  }
 
   /// Backward-compatible alias.
   static List<String> get allClusters => allLGAs;
@@ -433,9 +1006,11 @@ class InspectionPricing {
   }
 
   /// Get all areas grouped by LGA, with LGA labels as headers.
-  static List<Map<String, dynamic>> getAreasGroupedByLGA() {
+  ///
+  /// Pass [state] to show only that state's LGAs.
+  static List<Map<String, dynamic>> getAreasGroupedByLGA({String? state}) {
     final groups = <Map<String, dynamic>>[];
-    for (final lga in allLGAs) {
+    for (final lga in state == null ? allLGAs : lgasForState(state)) {
       final areas = getAreasForLGA(lga);
       if (areas.isNotEmpty) {
         groups.add({
@@ -449,38 +1024,15 @@ class InspectionPricing {
   }
 
   /// Backward-compatible alias.
-  static List<Map<String, dynamic>> getAreasGroupedByCluster() =>
-      getAreasGroupedByLGA();
+  static List<Map<String, dynamic>> getAreasGroupedByCluster({String? state}) =>
+      getAreasGroupedByLGA(state: state);
 
-  /// Try to fuzzy-match a geocoded city name to a known area.
-  /// Handles diacritics (Ìkòròdú → Ikorodu) and LGA suffixes.
+  /// Try to match a geocoded city name to a known area, returning the display
+  /// name the pickers show. Handles diacritics (Ìkòròdú → Ikorodu), LGA
+  /// suffixes and old spellings (Somolu → Shomolu).
   static String? findMatchingArea(String rawCityName) {
-    if (rawCityName.isEmpty) return null;
-
-    // Strip diacritics
-    final stripped = _stripDiacritics(rawCityName.trim().toLowerCase());
-
-    // Direct match
-    if (_areaToLGA.containsKey(stripped)) {
-      return _titleCase(stripped);
-    }
-
-    // Try removing common suffixes
-    for (final suffix in [' lga', ' lcda', ' local government', ' area']) {
-      final withoutSuffix = stripped.replaceAll(suffix, '').trim();
-      if (_areaToLGA.containsKey(withoutSuffix)) {
-        return _titleCase(withoutSuffix);
-      }
-    }
-
-    // Partial match
-    for (final key in _areaToLGA.keys) {
-      if (stripped.contains(key) || key.contains(stripped)) {
-        return _titleCase(key);
-      }
-    }
-
-    return null;
+    final key = canonicalArea(rawCityName);
+    return key == null ? null : _titleCase(key);
   }
 
   // ══════════════════════════════════════════════
@@ -581,6 +1133,8 @@ class InspectionPricing {
     return '₦${formatAmount(amount)}';
   }
 
+  /// Display form of an area key. Capitalises after a hyphen or slash too, or
+  /// the picker reads "Isale-eko" and "Oke-afa".
   static String _titleCase(String input) {
     if (input.isEmpty) return input;
     return input.split(' ').map((word) {
@@ -588,7 +1142,13 @@ class InspectionPricing {
       if ({'vi', 'vgc', 'gra', 'bq', 'lasu', 'cms'}.contains(word.toLowerCase())) {
         return word.toUpperCase();
       }
-      return '${word[0].toUpperCase()}${word.substring(1)}';
+      final buffer = StringBuffer();
+      var capitalise = true;
+      for (final char in word.split('')) {
+        buffer.write(capitalise ? char.toUpperCase() : char);
+        capitalise = char == '-' || char == '/';
+      }
+      return buffer.toString();
     }).join(' ');
   }
 

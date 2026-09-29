@@ -330,10 +330,12 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
       // Manually selected - clear auto-match state
       _areaMatchedFromPin = false;
       _geocodedRawCity = null;
-      // The area decides the state. Setting Lagos only when the field was
-      // empty kept whatever state the pin had filled in, so a Lagos area could
-      // be saved under Ogun.
-      widget.stateController.text = _stateForArea(area);
+      // The area decides the state, through its LGA. Setting Lagos only when
+      // the field was empty kept whatever state the pin had filled in, so a
+      // Lagos area could be saved under Ogun. An area whose LGA has no state
+      // leaves the pin's answer alone rather than claiming Lagos.
+      final state = InspectionPricing.stateForArea(area);
+      if (state != null) widget.stateController.text = state;
     });
     _geocodeArea(area);
   }
@@ -390,21 +392,16 @@ class _LocationPickerWidgetState extends State<LocationPickerWidget> {
     }
   }
 
-  /// The state an area belongs to. The list is Lagos apart from the
-  /// Obafemi-Owode (Ogun) areas along the border.
-  static String _stateForArea(String area) =>
-      InspectionPricing.getLGAForArea(area) == 'obafemi_owode'
-          ? 'Ogun'
-          : 'Lagos';
-
-  /// Fuzzy-matches OSM's place name onto the area list, but only when the
-  /// area is in the state OSM puts the place in. OSM named an Ogun pin
-  /// "Itamaga", which is also a Lagos (Ikorodu) area, and the listing was
-  /// saved as "Ikorodu, Ogun". An empty state gets the benefit of the doubt.
+  /// Matches OSM's place name onto the area list, but only when the area is in
+  /// the state OSM puts the place in. OSM named an Ogun pin "Itamaga", which is
+  /// also a Lagos (Ikorodu) area, and the listing was saved as "Ikorodu, Ogun".
+  /// An empty state, or an area whose LGA has no state, gets the benefit of the
+  /// doubt: there is nothing to compare.
   static String? _matchArea(NominatimPlace place) {
     final matched = InspectionPricing.findMatchingArea(place.city);
     if (matched == null || place.state.trim().isEmpty) return matched;
-    final areaState = _stateForArea(matched).toLowerCase();
+    final areaState = InspectionPricing.stateForArea(matched)?.toLowerCase();
+    if (areaState == null) return matched;
     return place.state.toLowerCase().contains(areaState) ? matched : null;
   }
 

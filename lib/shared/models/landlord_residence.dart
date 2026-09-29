@@ -19,7 +19,8 @@ class LandlordResidence {
   /// Nigerian state, for [own] and [rent].
   final String? state;
 
-  /// Area inside Lagos, when [state] is Lagos.
+  /// Area inside [state], for any state we carry areas for (Lagos, and the
+  /// Ogun outskirts).
   final String? area;
 
   /// Country, for [abroad].
