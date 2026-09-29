@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/area_dropdown.dart';
 
@@ -25,52 +26,9 @@ class _AgentServiceAreasScreenState extends State<AgentServiceAreasScreen> {
   String _baseLocation = '';
   String _searchQuery = '';
 
-  // Popular Lagos areas (can be expanded)
-  final List<String> _lagosAreas = [
-    'Ikeja',
-    'Lekki',
-    'Victoria Island',
-    'Ikoyi',
-    'Surulere',
-    'Yaba',
-    'Gbagada',
-    'Maryland',
-    'Ojodu',
-    'Ogba',
-    'Magodo',
-    'Ajah',
-    'Sangotedo',
-    'Ikorodu',
-    'Festac',
-    'Amuwo Odofin',
-    'Apapa',
-    'Isolo',
-    'Oshodi',
-    'Mushin',
-    'Ikotun',
-    'Egbeda',
-    'Alimosho',
-    'Agege',
-    'Ifako-Ijaiye',
-    'Berger',
-    'Omole',
-    'Isheri',
-    'Oregun',
-    'Alausa',
-    'Anthony',
-    'Palmgrove',
-    'Bariga',
-    'Shomolu',
-    'Ogudu',
-    'Ketu',
-    'Mile 12',
-    'Ojota',
-    'Obalende',
-    'Marina',
-    'Lagos Island',
-    'Epe',
-    'Badagry',
-  ];
+  /// Every area the app knows, from the one list in InspectionPricing, so an
+  /// agent can serve an area an admin published after this release.
+  final List<String> _lagosAreas = InspectionPricing.getAllAreas();
 
   @override
   void initState() {

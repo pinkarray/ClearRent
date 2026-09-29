@@ -53,34 +53,10 @@ final List<Map<String, String>> propertyTypes = [
   ),
 ];
 
-const List<String> lagosAreas = [
-  'All Areas',
-  'Ikeja',
-  'Victoria Island',
-  'Lekki',
-  'Ajah',
-  'Surulere',
-  'Yaba',
-  'Maryland',
-  'Magodo',
-  'GRA Ikeja',
-  'Gbagada',
-  'Ikoyi',
-  'Oniru',
-  'Ikorodu',
-  'Badagry',
-  'Epe',
-  'Ojota',
-  'Ketu',
-  'Mile 12',
-  'Agege',
-  'Alimosho',
-  'Isolo',
-  'Mushin',
-  'Oshodi',
-  'Apapa',
-  'Ajegunle',
-];
+/// Areas offered in the filter: every area the app knows, from the one list in
+/// InspectionPricing, so an area an admin publishes shows up here too. It used
+/// to be a 28-name const that no addition ever reached.
+List<String> get lagosAreas => ['All Areas', ...InspectionPricing.getAllAreas()];
 
 class TenantHomeScreen extends StatefulWidget {
   /// Which bottom-nav tab to open on (0 = Home/dashboard). Lets callers land the

@@ -31,6 +31,11 @@ class AreaDropdown extends StatefulWidget {
   /// Optional helper text below the label
   final String? helperText;
 
+  /// Show only the LGAs of this state. Null lists everything, which is what
+  /// add-property wants; the residence screen passes the state the landlord
+  /// picked, so a Lagos answer cannot offer an Ogun area.
+  final String? state;
+
   /// Called when the landlord says their area is not on the list, with the
   /// name they searched for. Only add-property passes this - it is what files
   /// the unknown-area report, and it must come from THIS field: the street
@@ -45,6 +50,7 @@ class AreaDropdown extends StatefulWidget {
     this.label,
     this.helperText,
     this.onAreaNotFound,
+    this.state,
   });
 
   @override
@@ -153,6 +159,7 @@ class _AreaDropdownState extends State<AreaDropdown> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _AreaPickerSheet(
         selectedArea: widget.selectedArea,
+        state: widget.state,
         onSelected: (area) {
           Navigator.pop(ctx);
           widget.onSelected(area);
@@ -317,10 +324,14 @@ class _AreaPickerSheet extends StatefulWidget {
 
   final ValueChanged<String>? onAreaNotFound;
 
+  /// Limits the groups to one state's LGAs. See [AreaDropdown.state].
+  final String? state;
+
   const _AreaPickerSheet({
     this.selectedArea,
     required this.onSelected,
     this.onAreaNotFound,
+    this.state,
   });
 
   /// Areas are grouped by LGA, so an area we don't carry has no row to tap.
@@ -406,7 +417,7 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
   @override
   void initState() {
     super.initState();
-    _groups = InspectionPricing.getAreasGroupedByCluster();
+    _groups = InspectionPricing.getAreasGroupedByCluster(state: widget.state);
   }
 
   @override
@@ -418,8 +429,10 @@ class _AreaPickerSheetState extends State<_AreaPickerSheet> {
   List<Map<String, dynamic>> get _filteredGroups {
     if (_searchQuery.isEmpty) return _groups;
     return _groups.map((group) {
+      // Matches old spellings too, so searching "Somolu" finds Shomolu even
+      // though only one of the two is a row.
       final areas = (group['areas'] as List<String>)
-          .where((a) => a.toLowerCase().contains(_searchQuery.toLowerCase()))
+          .where((a) => InspectionPricing.areaMatchesQuery(a, _searchQuery))
           .toList();
       return {...group, 'areas': areas};
     }).where((g) => (g['areas'] as List).isNotEmpty).toList();
@@ -609,8 +622,10 @@ class _AreaMultiPickerSheetState extends State<_AreaMultiPickerSheet> {
   List<Map<String, dynamic>> get _filteredGroups {
     if (_searchQuery.isEmpty) return _groups;
     return _groups.map((group) {
+      // Matches old spellings too, so searching "Somolu" finds Shomolu even
+      // though only one of the two is a row.
       final areas = (group['areas'] as List<String>)
-          .where((a) => a.toLowerCase().contains(_searchQuery.toLowerCase()))
+          .where((a) => InspectionPricing.areaMatchesQuery(a, _searchQuery))
           .toList();
       return {...group, 'areas': areas};
     }).where((g) => (g['areas'] as List).isNotEmpty).toList();

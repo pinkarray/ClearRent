@@ -7,7 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as developer;
 import '../../core/constants/colors.dart';
 import '../../core/constants/text_styles.dart';
-import '../widgets/option_picker_sheet.dart';
+import '../widgets/area_dropdown.dart';
 import '../../services/auth_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -45,19 +45,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   List<String> _preferredAreas = [];
   bool _tenantProfileDirty = false;
 
-  // Lagos areas for dropdowns
-  static const List<String> _lagosAreas = [
-    'Victoria Island', 'Ikoyi', 'Lekki Phase 1', 'Lekki Phase 2', 'Lekki',
-    'Ajah', 'Sangotedo', 'Chevron', 'Ilasan', 'Oniru', 'Obalende',
-    'Marina', 'Lagos Island', 'Ibeju-Lekki', 'Epe',
-    'Ikeja', 'GRA Ikeja', 'Alausa', 'Oregun', 'Omole', 'Ojodu', 'Ogba',
-    'Berger', 'Isheri', 'Maryland', 'Anthony', 'Palmgrove', 'Gbagada', 'Ogudu',
-    'Yaba', 'Surulere', 'Bariga', 'Shomolu', 'Fadeyi', 'Mushin', 'Isolo',
-    'Ikotun', 'Egbeda', 'Alimosho', 'Oshodi', 'Mafoluku', 'Festac',
-    'Amuwo-Odofin', 'Apapa', 'Ajegunle',
-    'Ketu', 'Mile 12', 'Ojota', 'Agege', 'Magodo', 'Ifako-Ijaiye',
-    'Ikorodu', 'Badagry', 'Ojo',
-  ];
+
 
   static const List<Map<String, String>> _incomeRanges = [
     {'id': 'below_100k', 'label': 'Below ₦100K'},
@@ -509,11 +497,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         if (_workMode == 'commute' || _workMode == 'hybrid') ...[
           Text('Where do you work?', style: AppTextStyles.labelMedium),
           const SizedBox(height: 8),
-          _buildDropdown(
-            value: _workplaceArea,
+          AreaDropdown(
             hint: 'Select workplace area',
-            items: _lagosAreas,
-            onChanged: (v) {
+            selectedArea: _workplaceArea,
+            onSelected: (v) {
               setState(() => _workplaceArea = v);
               _markDirty();
             },
@@ -605,68 +592,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         Text('Where are you looking to rent?',
             style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 8),
-        if (_preferredAreas.isNotEmpty) ...[
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _preferredAreas.map((area) => Chip(
-              label: Text(area, style: AppTextStyles.bodySmall.copyWith(color: AppColors.primary)),
-              backgroundColor: AppColors.primary.withAlpha(26),
-              deleteIcon: const Icon(Icons.close, size: 16),
-              deleteIconColor: AppColors.primary,
-              onDeleted: () {
-                setState(() => _preferredAreas.remove(area));
-                _markDirty();
-              },
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            )).toList(),
-          ),
-          const SizedBox(height: 8),
-        ],
-        Container(
-          padding: const EdgeInsets.all(12),
-          constraints: const BoxConstraints(maxHeight: 200),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: SingleChildScrollView(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: _lagosAreas.map((area) {
-                final isSelected = _preferredAreas.contains(area);
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isSelected) {
-                        _preferredAreas.remove(area);
-                      } else {
-                        _preferredAreas.add(area);
-                      }
-                    });
-                    _markDirty();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppColors.primary : AppColors.background,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isSelected ? AppColors.primary : AppColors.border),
-                    ),
-                    child: Text(
-                      area,
-                      style: AppTextStyles.caption.copyWith(
-                        color: isSelected ? Colors.white : AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
+        AreaMultiSelect(
+          label: 'Areas',
+          selectedAreas: _preferredAreas,
+          onChanged: (areas) {
+            setState(() => _preferredAreas = areas);
+            _markDirty();
+          },
         ),
         const SizedBox(height: 24),
 
@@ -747,48 +679,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
             )),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdown({
-    required String? value,
-    required String hint,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return GestureDetector(
-      onTap: () => showOptionPicker(
-        context,
-        title: hint,
-        options: items,
-        selected: value,
-        onSelected: (v) => onChanged(v),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                value ?? hint,
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: value == null
-                      ? AppColors.textSecondary
-                      : AppColors.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Icon(Icons.keyboard_arrow_down, color: AppColors.textSecondary),
-          ],
         ),
       ),
     );

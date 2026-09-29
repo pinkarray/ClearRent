@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
+import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../services/residence_service.dart';
 import '../../../../shared/models/landlord_residence.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../../shared/widgets/area_dropdown.dart';
+import '../../../../shared/widgets/state_dropdown.dart';
 
 /// "Where do you live?" - asked once, here, rather than on every listing.
 ///
@@ -66,7 +68,9 @@ class _LandlordResidenceScreenState extends State<LandlordResidenceScreen> {
     final error = await _service.save(LandlordResidence(
       kind: kind,
       state: kind == LandlordResidence.abroad ? null : _state,
-      area: _state == 'Lagos' && kind != LandlordResidence.abroad ? _area : null,
+      // _area is cleared whenever the state changes, so it always belongs to
+      // the state above it.
+      area: kind == LandlordResidence.abroad ? null : _area,
       country:
           kind == LandlordResidence.abroad ? _country.text.trim() : null,
       homeBuildingId: keepHome ? _existing?.homeBuildingId : null,
@@ -174,23 +178,26 @@ class _LandlordResidenceScreenState extends State<LandlordResidenceScreen> {
                 ),
                 const SizedBox(height: 10),
                 if (_kind != null && !abroad) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: _state,
-                    decoration: const InputDecoration(labelText: 'State'),
-                    items: nigerianStates
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
-                    onChanged: (v) => setState(() {
+                  StateDropdown(
+                    label: 'State',
+                    selectedState: _state,
+                    onSelected: (v) => setState(() {
+                      // Areas belong to one state, so a state change drops an
+                      // area picked under the old one.
+                      if (v != _state) _area = null;
                       _state = v;
-                      if (v != 'Lagos') _area = null;
                     }),
                   ),
-                  if (_state == 'Lagos') ...[
+                  // Shown for any state we carry areas for, not Lagos alone, so
+                  // a landlord in Mowe can say so as precisely as one in Ikeja.
+                  if (_state != null &&
+                      InspectionPricing.lgasForState(_state!).isNotEmpty) ...[
                     const SizedBox(height: 16),
                     AreaDropdown(
                       label: 'Area (optional)',
                       hint: 'Select area',
                       selectedArea: _area,
+                      state: _state,
                       onSelected: (a) => setState(() => _area = a),
                     ),
                   ],
