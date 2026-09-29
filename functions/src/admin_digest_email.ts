@@ -3,10 +3,15 @@
  *
  * WHY THIS EXISTS AND WHY IT IS NOT PER-EVENT. Web push (admin_push_ops)
  * handles the interruptions: warning/critical alerts that need someone now.
- * This is the other half - the picture. One send a day covering what happened,
- * what is still outstanding, and who is doing what next. A mail per event would
- * bury the recipient and get filtered within a week, which is the failure mode
- * this deliberately avoids.
+ * This is the other half - the picture. A mail per event would bury the
+ * recipient and get filtered within a week, which is the failure mode this
+ * deliberately avoids.
+ *
+ * TWO SENDS, ONE BODY. Morning (07:00) covers the last 24 hours and what is
+ * booked today. Evening (21:00) covers the day just gone, so something that
+ * happens at 2pm is read the same night instead of the next morning. Same
+ * builder, four differences: the window, the activity heading, the header line
+ * and the subject.
  *
  * Sent through Resend over plain fetch (Node 22 has it global) rather than
  * adding the SDK - one HTTP call does not justify a dependency, and the repo
@@ -110,14 +115,18 @@ function section(heading: string, lines: string[], empty: string): string {
   }</h3>${inner}`;
 }
 
-export const adminDailyDigestEmail = onSchedule(
+/** Which of the two daily sends this is. */
+type Edition = "morning" | "evening";
+
+/**
+ * Builds and sends one edition of the digest.
+ *
+ * @param {Edition} edition Morning (last 24h) or evening (today).
+ * @return {Promise<void>} Resolves once sent, or skipped as empty.
+ */
+async function sendDigest(edition: Edition): Promise<void> {
   {
-    schedule: "every day 07:00",
-    timeZone: "Africa/Lagos",
-    timeoutSeconds: 300,
-    secrets: [resendApiKey],
-  },
-  async () => {
+    const evening = edition === "evening";
     const db = getFirestore();
     const now = Date.now();
     const todayKey = watDayKey(now);
@@ -162,8 +171,12 @@ export const adminDailyDigestEmail = onSchedule(
       .filter((i) => i.dayKey > tomorrowKey)
       .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 
-    // ── What happened in the last 24h, from the alert feed ──
-    const since = Timestamp.fromMillis(now - DAY_MS);
+    // ── What happened, from the alert feed ──
+    // Morning looks back 24h. Evening looks back to midnight WAT, so the
+    // heading it carries ("Today") is literally true and nothing is counted
+    // twice across the two sends.
+    const dayStartMs = Date.parse(todayKey + "T00:00:00Z") - WAT_OFFSET_MS;
+    const since = Timestamp.fromMillis(evening ? dayStartMs : now - DAY_MS);
     const recentSnap = await db
       .collection("admin_alerts")
       .where("createdAt", ">=", since)
@@ -213,6 +226,7 @@ export const adminDailyDigestEmail = onSchedule(
     ) {
       logger.info("Admin digest skipped - nothing to report", {
         day: todayKey,
+        edition,
       });
       return;
     }
@@ -220,11 +234,14 @@ export const adminDailyDigestEmail = onSchedule(
     const html = `
 <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;
   max-width:600px;margin:0 auto;color:#1A1A2E">
-  <h2 style="margin:0;font-size:18px">ClearRent - ${esc(watDayLabel(now))}</h2>
+  <h2 style="margin:0;font-size:18px">ClearRent - ${esc(watDayLabel(now))}${
+  evening ? " (evening)" : ""
+}</h2>
   <p style="margin:4px 0 0;color:#6B7280;font-size:14px">
     ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} need
-    your attention · ${today.length} inspection${
-  today.length === 1 ? "" : "s"} today
+    your attention · ${evening ? tomorrow.length : today.length} inspection${
+  (evening ? tomorrow.length : today.length) === 1 ? "" : "s"
+} ${evening ? "tomorrow" : "today"}
   </p>
 
   ${section(
@@ -258,27 +275,32 @@ export const adminDailyDigestEmail = onSchedule(
   )}
 
   ${section(
-    "Last 24 hours",
+    evening ? "Today" : "Last 24 hours",
     [...byType.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => `${count} × ${esc(type.replace(/_/g, " "))}`),
-    "No activity in the last 24 hours."
+    evening ?
+      "Nothing happened today." :
+      "No activity in the last 24 hours."
   )}
 
   <p style="margin:28px 0 0;font-size:12px;color:#9CA3AF">
     Urgent items are also pushed to your devices as they happen. This summary
-    is sent once a day.
+    is sent twice a day, morning and evening.
   </p>
 </div>`.trim();
 
+    const lead = evening ? "ClearRent tonight" : "ClearRent";
+    const count = evening ? tomorrow.length : today.length;
+    const when = evening ? "tomorrow" : "today";
     const subject =
       outstanding.length > 0 ?
-        `ClearRent: ${outstanding.length} need${
+        `${lead}: ${outstanding.length} need${
           outstanding.length === 1 ? "s" : ""
-        } attention, ${today.length} inspection${
-          today.length === 1 ? "" : "s"} today` :
-        `ClearRent: ${today.length} inspection${
-          today.length === 1 ? "" : "s"} today`;
+        } attention, ${count} inspection${
+          count === 1 ? "" : "s"} ${when}` :
+        `${lead}: ${count} inspection${
+          count === 1 ? "" : "s"} ${when}`;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -307,10 +329,40 @@ export const adminDailyDigestEmail = onSchedule(
 
     logger.info("Admin digest email sent", {
       todayKey,
+      edition,
       outstanding: outstanding.length,
       today: today.length,
       tomorrow: tomorrow.length,
       later: later.length,
     });
+  }
+}
+
+/** The morning picture: the last 24 hours and what is booked today. */
+export const adminDailyDigestEmail = onSchedule(
+  {
+    schedule: "every day 07:00",
+    timeZone: "Africa/Lagos",
+    timeoutSeconds: 300,
+    secrets: [resendApiKey],
+  },
+  async () => {
+    await sendDigest("morning");
+  },
+);
+
+/**
+ * The evening one: the day just gone, plus tomorrow's bookings. Without it,
+ * something that happens at 2pm is not read until the next morning.
+ */
+export const adminEveningDigestEmail = onSchedule(
+  {
+    schedule: "every day 21:00",
+    timeZone: "Africa/Lagos",
+    timeoutSeconds: 300,
+    secrets: [resendApiKey],
+  },
+  async () => {
+    await sendDigest("evening");
   },
 );

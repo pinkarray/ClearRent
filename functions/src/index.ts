@@ -85,7 +85,8 @@ export {
 } from "./admin_handover_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
-export {adminDailyDigestEmail} from "./admin_digest_email";
+export {adminDailyDigestEmail, adminEveningDigestEmail} from
+  "./admin_digest_email";
 export {
   onRentReviewRequested,
   onUserProfileUpdated,
