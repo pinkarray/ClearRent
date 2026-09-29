@@ -172,7 +172,7 @@ class _AreaDropdownState extends State<AreaDropdown> {
 
 // ─── Multi-select variant for tenant preferred areas & agent service areas ───
 
-class AreaMultiSelect extends StatelessWidget {
+class AreaMultiSelect extends StatefulWidget {
   /// Currently selected areas (Title Case display names)
   final List<String> selectedAreas;
 
@@ -198,7 +198,22 @@ class AreaMultiSelect extends StatelessWidget {
   });
 
   @override
+  State<AreaMultiSelect> createState() => _AreaMultiSelectState();
+}
+
+class _AreaMultiSelectState extends State<AreaMultiSelect> {
+  /// How many chips to show before folding the rest away. A tenant who picked
+  /// a whole LGA had 170 chips between the label and the field below it, which
+  /// is most of a screen of scrolling to get past their own answer.
+  static const int _previewCount = 8;
+
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final selectedAreas = widget.selectedAreas;
+    final label = widget.label;
+    final helperText = widget.helperText;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -216,7 +231,7 @@ class AreaMultiSelect extends StatelessWidget {
         if (helperText != null) ...[
           const SizedBox(height: 4),
           Text(
-            helperText!,
+            helperText,
             style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
           ),
         ],
@@ -271,30 +286,67 @@ class AreaMultiSelect extends StatelessWidget {
             ),
           ),
         ),
-        // Show selected chips
+        // Selected chips: a handful, then folded. Expanding scrolls inside a
+        // fixed box rather than growing the page without limit.
         if (selectedAreas.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: selectedAreas.map((area) {
-              return Chip(
-                label: Text(area, style: AppTextStyles.caption),
-                deleteIcon: Icon(Icons.close, size: 14),
-                onDeleted: () {
-                  final updated = List<String>.from(selectedAreas)..remove(area);
-                  onChanged(updated);
-                },
-                backgroundColor: AppColors.primary.withAlpha(20),
-                deleteIconColor: AppColors.primary,
-                side: BorderSide(color: AppColors.primary.withAlpha(50)),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              );
-            }).toList(),
-          ),
+          _buildSelectedChips(selectedAreas),
         ],
       ],
+    );
+  }
+
+  Widget _buildSelectedChips(List<String> selectedAreas) {
+    final hidden = selectedAreas.length - _previewCount;
+    final showAll = _expanded || hidden <= 0;
+    final shown =
+        showAll ? selectedAreas : selectedAreas.take(_previewCount).toList();
+
+    final wrap = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        ...shown.map(_chip),
+        if (hidden > 0)
+          ActionChip(
+            label: Text(
+              _expanded ? 'Show less' : '+$hidden more',
+              style: AppTextStyles.caption.copyWith(color: AppColors.primary),
+            ),
+            avatar: Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 14,
+              color: AppColors.primary,
+            ),
+            onPressed: () => setState(() => _expanded = !_expanded),
+            backgroundColor: Colors.transparent,
+            side: BorderSide(color: AppColors.primary.withAlpha(50)),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          ),
+      ],
+    );
+
+    if (!_expanded) return wrap;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 180),
+      child: SingleChildScrollView(child: wrap),
+    );
+  }
+
+  Widget _chip(String area) {
+    return Chip(
+      label: Text(area, style: AppTextStyles.caption),
+      deleteIcon: Icon(Icons.close, size: 14),
+      onDeleted: () {
+        final updated = List<String>.from(widget.selectedAreas)..remove(area);
+        widget.onChanged(updated);
+      },
+      backgroundColor: AppColors.primary.withAlpha(20),
+      deleteIconColor: AppColors.primary,
+      side: BorderSide(color: AppColors.primary.withAlpha(50)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -305,11 +357,11 @@ class AreaMultiSelect extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _AreaMultiPickerSheet(
-        selectedAreas: selectedAreas,
-        maxSelections: maxSelections,
+        selectedAreas: widget.selectedAreas,
+        maxSelections: widget.maxSelections,
         onDone: (areas) {
           Navigator.pop(ctx);
-          onChanged(areas);
+          widget.onChanged(areas);
         },
       ),
     );

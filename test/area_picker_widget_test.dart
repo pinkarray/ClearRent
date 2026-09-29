@@ -65,6 +65,39 @@ void main() {
     expect(picked, 'Ishagatedo');
   });
 
+  testWidgets('a long selection folds instead of flooding the page',
+      (tester) async {
+    final chosen = InspectionPricing.getAllAreas().take(20).toList();
+    await tester.pumpWidget(host(
+      AreaMultiSelect(selectedAreas: chosen, onChanged: (_) {}),
+    ));
+
+    // 8 chips, then one fold control standing in for the other 12.
+    expect(find.text(chosen.first), findsOneWidget);
+    expect(find.text(chosen[7]), findsOneWidget);
+    expect(find.text(chosen[8]), findsNothing);
+    expect(find.text('+12 more'), findsOneWidget);
+
+    await tester.tap(find.text('+12 more'));
+    await tester.pumpAndSettle();
+    expect(find.text(chosen[8]), findsOneWidget);
+    expect(find.text('Show less'), findsOneWidget);
+  });
+
+  testWidgets('a short selection shows every chip', (tester) async {
+    final chosen = InspectionPricing.getAllAreas().take(5).toList();
+    await tester.pumpWidget(host(
+      AreaMultiSelect(selectedAreas: chosen, onChanged: (_) {}),
+    ));
+    for (final area in chosen) {
+      expect(find.text(area), findsOneWidget);
+    }
+    // The field summarises ("Abegede, Abesan, Abijo +2 more"); what must NOT
+    // appear is the fold control under it, since nothing is hidden.
+    expect(find.text('+2 more'), findsNothing);
+    expect(find.text('Show less'), findsNothing);
+  });
+
   testWidgets('the state sheet leads with the states we cover', (tester) async {
     String? picked;
     await tester.pumpWidget(host(StateDropdown(onSelected: (s) => picked = s)));
