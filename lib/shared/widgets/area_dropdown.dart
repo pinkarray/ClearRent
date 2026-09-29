@@ -307,30 +307,43 @@ class _AreaMultiSelectState extends State<AreaMultiSelect> {
       runSpacing: 6,
       children: [
         ...shown.map(_chip),
-        if (hidden > 0)
-          ActionChip(
-            label: Text(
-              _expanded ? 'Show less' : '+$hidden more',
-              style: AppTextStyles.caption.copyWith(color: AppColors.primary),
-            ),
-            avatar: Icon(
-              _expanded ? Icons.expand_less : Icons.expand_more,
-              size: 14,
-              color: AppColors.primary,
-            ),
-            onPressed: () => setState(() => _expanded = !_expanded),
-            backgroundColor: Colors.transparent,
-            side: BorderSide(color: AppColors.primary.withAlpha(50)),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-          ),
+        // Folded, the control is the last chip in the row. Expanded, it moves
+        // below the box: inside, it would sit past every chip, so folding again
+        // would mean scrolling the whole selection to reach it.
+        if (hidden > 0 && !_expanded) _foldToggle(hidden),
       ],
     );
 
     if (!_expanded) return wrap;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 180),
-      child: SingleChildScrollView(child: wrap),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 180),
+          child: SingleChildScrollView(child: wrap),
+        ),
+        const SizedBox(height: 6),
+        _foldToggle(hidden),
+      ],
+    );
+  }
+
+  Widget _foldToggle(int hidden) {
+    return ActionChip(
+      label: Text(
+        _expanded ? 'Show less' : '+$hidden more',
+        style: AppTextStyles.caption.copyWith(color: AppColors.primary),
+      ),
+      avatar: Icon(
+        _expanded ? Icons.expand_less : Icons.expand_more,
+        size: 14,
+        color: AppColors.primary,
+      ),
+      onPressed: () => setState(() => _expanded = !_expanded),
+      backgroundColor: Colors.transparent,
+      side: BorderSide(color: AppColors.primary.withAlpha(50)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     );
   }
 
