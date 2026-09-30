@@ -1783,8 +1783,15 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // backs the handler's inspection payment - so it's required either way, not
     // only when the tenant goes on to rent. createRentalInterest enforces the
     // same gate server-side.
+    //
+    // A viewing an admin closed as a MISSED visit is completed only so the
+    // handler is paid: the tenant never saw the place. The card said exactly
+    // that and then offered "I Want to Rent This Property" underneath, a
+    // button the server refuses every time, which is how a tenant ended up
+    // reading "this viewing was closed" as a fault rather than an answer.
     final decisionOpen = r.isCompleted &&
         r.tenantRated &&
+        !r.tenantNoShow &&
         _hasCheckedInterest &&
         _rentalInterest == null &&
         !_hasPassed;
@@ -2649,11 +2656,12 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // Amounts are derived server-side by the createRentalInterest CF from the
     // property and config/pricing - the client no longer decides what the
     // tenant will be charged for rent (HANDOVER H2).
-    final interest = await _rentalInterestService.createRentalInterest(
+    final result = await _rentalInterestService.createRentalInterest(
       inspectionRequest: widget.request,
     );
 
     if (mounted) {
+      final interest = result.interest;
       if (interest != null) {
         setState(() => _rentalInterest = interest);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2664,10 +2672,14 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
       } else {
+        // The server's own words. "Please try again" was advice that could not
+        // work: rating the viewing, or the place being taken, is not something
+        // a second tap fixes.
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Failed to express interest. Please try again.'),
+          content: Text(result.error ?? 'We could not start this rental.'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
       }

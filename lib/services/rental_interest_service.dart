@@ -22,7 +22,16 @@ class RentalInterestService {
   /// `create` on rental_interests is now denied by rule, so this MUST go
   /// through the callable. Eligibility (caller is the tenant, inspection
   /// completed + rated) is re-checked server-side.
-  Future<RentalInterest?> createRentalInterest({
+  /// Creates the interest, or explains why it could not be created.
+  ///
+  /// The server refuses for reasons the tenant can act on: the viewing has not
+  /// been rated, the place has been taken, the rent is below the floor. Those
+  /// messages used to be logged and thrown away, and every one of them reached
+  /// the tenant as "Failed to express interest. Please try again." - advice
+  /// that is wrong in every case, and unreadable from the outside: a release
+  /// build logs nothing, so the same sentence covered a data problem, a
+  /// precondition and a real fault alike.
+  Future<({RentalInterest? interest, String? error})> createRentalInterest({
     required InspectionRequest inspectionRequest,
   }) async {
     try {
@@ -32,7 +41,9 @@ class RentalInterestService {
       });
 
       final interestId = result.data['interestId'] as String?;
-      if (interestId == null) return null;
+      if (interestId == null) {
+        return (interest: null, error: 'We could not start this rental.');
+      }
 
       final doc = await _firestore
           .collection('rental_interests')
@@ -41,20 +52,35 @@ class RentalInterestService {
       if (doc.exists) {
         developer.log('✅ Rental interest ready: $interestId',
             name: 'RentalInterestService');
-        return RentalInterest.fromFirestore(doc.data()!, doc.id);
+        return (
+          interest: RentalInterest.fromFirestore(doc.data()!, doc.id),
+          error: null,
+        );
       }
-      return null;
+      return (interest: null, error: 'We could not start this rental.');
     } on FirebaseFunctionsException catch (e) {
-      // Server rejected it (not the tenant, inspection not completed/rated,
-      // property missing a rent). Logged with the real reason; the caller's
-      // contract is unchanged - null means "couldn't create".
       developer.log('❌ createRentalInterest rejected: ${e.code} ${e.message}',
           name: 'RentalInterestService');
-      return null;
+      // The server writes these for the tenant to read. Anything else is ours
+      // to explain, not theirs to decipher.
+      final refusal = e.code == 'failed-precondition' ||
+          e.code == 'permission-denied' ||
+          e.code == 'not-found';
+      final message = e.message;
+      return (
+        interest: null,
+        error: refusal && message != null && message.isNotEmpty ?
+            message :
+            'We could not start this rental. Please try again.',
+      );
     } catch (e) {
       developer.log('❌ Error creating rental interest: $e',
           name: 'RentalInterestService');
-      return null;
+      return (
+        interest: null,
+        error: 'We could not reach ClearRent. Check your connection and '
+            'try again.',
+      );
     }
   }
 

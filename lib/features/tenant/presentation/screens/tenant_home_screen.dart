@@ -2926,8 +2926,12 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     // property the tenant has already turned down.
     if (!_interestsLoaded) return const SizedBox.shrink();
     final decided = _interests.map((i) => i.inspectionRequestId).toSet();
+    // A no-show is excluded for the same reason it is excluded from rating:
+    // there was no visit, so there is no decision to make. Without this the
+    // banner invited the tenant to rent a place they never saw, and the only
+    // thing waiting for them was the server refusing it.
     final undecided = completed
-        .where((r) => r.tenantRated && !r.tenantPassed)
+        .where((r) => r.tenantRated && !r.tenantPassed && !r.tenantNoShow)
         .where((r) => !decided.contains(r.id))
         .toList();
     if (undecided.isEmpty) return const SizedBox.shrink();
