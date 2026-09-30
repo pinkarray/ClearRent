@@ -20,6 +20,7 @@ import '../../../landlord/presentation/widgets/property_agreement_card.dart';
 import '../../../../services/building_service.dart';
 import '../../../../shared/models/building_model.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../services/active_rental_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../services/verification_service.dart';
@@ -500,10 +501,14 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
   Future<void> _unlockAddressForSittingTenant() async {
     final uid = _authService.currentUser?.uid;
     if (uid == null) return;
-    final profile = await _authService.getUserProfile();
-    if (!mounted) return;
-    if (profile == null) return;
-    if (profile['currentPropertyId'] != widget.property.id) return;
+    // Asks whether they hold a tenancy on THIS property, rather than reading
+    // the single `currentPropertyId` pointer: that field names one home, so a
+    // tenant with two had one address locked, and a pointer left on an ended
+    // tenancy kept revealing the address of a place they had moved out of.
+    final occupies = await ActiveRentalService().tenantOccupies(
+      widget.property.id,
+    );
+    if (!mounted || !occupies) return;
     setState(() {
       _sittingTenantUnlock = true;
       _addressUnlocked = true;

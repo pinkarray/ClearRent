@@ -132,6 +132,38 @@ class ActiveRentalService {
   /// Scoped to the calling landlord - see [hasRentalForInterest]. A property
   /// has exactly one landlord, so this loses no rentals. Unscoped, the list was
   /// denied and the catch below reported every property as full.
+  /// Whether this tenant currently holds an occupying tenancy on [propertyId].
+  ///
+  /// Asked instead of reading `users.currentPropertyId`, which holds ONE
+  /// property: a tenant with two homes had one of them unlocked and the other
+  /// not, and when a tenancy ended the pointer could stay on the place they
+  /// had just left. Their own rentals are readable by them, so this needs no
+  /// extra permission.
+  Future<bool> tenantOccupies(String propertyId) async {
+    final uid = _authService.currentUser?.uid;
+    if (uid == null) return false;
+    try {
+      const holding = [
+        'active',
+        'expiring_soon',
+        'grace_locked',
+        'pending_payment',
+        'moveout_pending',
+      ];
+      final snap = await _firestore
+          .collection('active_rentals')
+          .where('tenantId', isEqualTo: uid)
+          .where('propertyId', isEqualTo: propertyId)
+          .get();
+      return snap.docs.any((d) => holding.contains(d.data()['status']));
+    } catch (e) {
+      developer.log('❌ tenantOccupies failed: $e',
+          name: 'ActiveRentalService');
+      // Fail closed: no unlock rather than a wrong one.
+      return false;
+    }
+  }
+
   Future<bool> propertyHasOpenSlot(String propertyId, String tenantId) async {
     final landlordId = _authService.currentUserId;
     if (landlordId == null) return false;

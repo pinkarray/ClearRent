@@ -4514,12 +4514,53 @@ async function clearTenantActiveRentalFlag(
     .collection("active_rentals")
     .where("tenantId", "==", tenantId)
     .get();
-  const stillOccupying = snap.docs.some(
+  const stillOccupying = snap.docs.filter(
     (d) =>
       d.id !== endedRentalId &&
       OCCUPYING_RENTAL_STATUSES.includes(d.get("status") as string),
   );
-  if (stillOccupying) return;
+
+  // A tenant who still holds something keeps the flag, but the POINTER has to
+  // move with them. Returning here left currentPropertyId on the tenancy that
+  // just ended, and that field is what unlocks the exact street address for a
+  // sitting tenant - so they kept the address of the place they moved out of
+  // and could be denied the one they now live in. It only shows up for a
+  // tenant with more than one tenancy, which is why it went unseen.
+  if (stillOccupying.length > 0) {
+    const current = await db.collection("users").doc(tenantId).get();
+    const pointer = current.get("currentPropertyId") as string | undefined;
+    const stale =
+      !pointer ||
+      !stillOccupying.some((d) => d.get("propertyId") === pointer);
+    if (!stale) return;
+
+    // Prefer a live tenancy over one still awaiting rent, then the one that
+    // runs longest - the tenant's main home rather than an incidental one.
+    const rank = (d: FirebaseFirestore.QueryDocumentSnapshot) =>
+      d.get("status") === "active" ? 0 : 1;
+    const ends = (d: FirebaseFirestore.QueryDocumentSnapshot) =>
+      (d.get("leaseEndDate") as Timestamp | undefined)?.toMillis() ?? 0;
+    const next = [...stillOccupying].sort(
+      (a, b) => rank(a) - rank(b) || ends(b) - ends(a),
+    )[0];
+
+    await db.collection("users").doc(tenantId).set(
+      {
+        hasActiveRental: true,
+        currentPropertyId: next.get("propertyId") ?? null,
+        currentRentalId: next.id,
+        rentEndDate: next.get("leaseEndDate") ?? null,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      {merge: true},
+    );
+    logger.info("Tenant home pointer moved to a tenancy they still hold", {
+      tenantId,
+      endedRentalId,
+      movedTo: next.id,
+    });
+    return;
+  }
   await db.collection("users").doc(tenantId).set(
     {
       hasActiveRental: false,
