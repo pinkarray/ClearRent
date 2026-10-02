@@ -78,28 +78,15 @@ class RentalInterest {
   // Status helpers
   bool get isPendingAcceptance =>
       status == RentalInterestStatus.pendingAcceptance;
-  bool get isPendingPayment => status == RentalInterestStatus.pendingPayment;
-  bool get isPaymentUploaded => status == RentalInterestStatus.paymentUploaded;
-  bool get isPaymentVerified => status == RentalInterestStatus.paymentVerified;
-  bool get isRejected => status == RentalInterestStatus.rejected;
   bool get isAccepted => status == RentalInterestStatus.accepted;
   bool get isRentPaid => status == RentalInterestStatus.rentPaid;
   bool get isNotSelected => status == RentalInterestStatus.notSelected;
   bool get isExpired => status == RentalInterestStatus.expired;
-  bool get isLostToOther => status == RentalInterestStatus.lostToOther;
   
   String get statusDisplay {
     switch (status) {
       case RentalInterestStatus.pendingAcceptance:
         return 'Awaiting Landlord';
-      case RentalInterestStatus.pendingPayment:
-        return 'Awaiting Payment';
-      case RentalInterestStatus.paymentUploaded:
-        return 'Verifying Payment';
-      case RentalInterestStatus.paymentVerified:
-        return 'Payment Confirmed';
-      case RentalInterestStatus.rejected:
-        return 'Payment Rejected';
       case RentalInterestStatus.accepted:
         return 'Accepted - Finalize Agreement';
       case RentalInterestStatus.rentPaid:
@@ -108,8 +95,6 @@ class RentalInterest {
         return 'Not Selected';
       case RentalInterestStatus.expired:
         return 'Reservation Expired';
-      case RentalInterestStatus.lostToOther:
-        return 'Refund Processing';
     }
   }
   
@@ -256,14 +241,6 @@ class RentalInterest {
     switch (status) {
       case 'pending_acceptance':
         return RentalInterestStatus.pendingAcceptance;
-      case 'pending_payment':
-        return RentalInterestStatus.pendingPayment;
-      case 'payment_uploaded':
-        return RentalInterestStatus.paymentUploaded;
-      case 'payment_verified':
-        return RentalInterestStatus.paymentVerified;
-      case 'rejected':
-        return RentalInterestStatus.rejected;
       case 'accepted':
         return RentalInterestStatus.accepted;
       case 'rent_paid':
@@ -272,8 +249,6 @@ class RentalInterest {
         return RentalInterestStatus.notSelected;
       case 'expired':
         return RentalInterestStatus.expired;
-      case 'lost_to_other':
-        return RentalInterestStatus.lostToOther;
       default:
         return RentalInterestStatus.pendingAcceptance;
     }
@@ -283,14 +258,6 @@ class RentalInterest {
     switch (status) {
       case RentalInterestStatus.pendingAcceptance:
         return 'pending_acceptance';
-      case RentalInterestStatus.pendingPayment:
-        return 'pending_payment';
-      case RentalInterestStatus.paymentUploaded:
-        return 'payment_uploaded';
-      case RentalInterestStatus.paymentVerified:
-        return 'payment_verified';
-      case RentalInterestStatus.rejected:
-        return 'rejected';
       case RentalInterestStatus.accepted:
         return 'accepted';
       case RentalInterestStatus.rentPaid:
@@ -299,8 +266,6 @@ class RentalInterest {
         return 'not_selected';
       case RentalInterestStatus.expired:
         return 'expired';
-      case RentalInterestStatus.lostToOther:
-        return 'lost_to_other';
     }
   }
 }
@@ -312,15 +277,17 @@ class RentalInterest {
 /// The pre-accept states below (pendingPayment/paymentUploaded/paymentVerified)
 /// are retained for legacy in-flight interests created under the old
 /// pay-before-accept flow; new interests never enter them.
+/// The pay-AFTER-accept lifecycle, and only that.
+///
+/// The pay-first states (pendingPayment, paymentUploaded, paymentVerified,
+/// rejected, lostToOther) are gone. Nothing had written them since the
+/// re-sequencing and no document carried one, but they kept five dead branches
+/// of user-facing copy alive - including one that told a tenant "the landlord
+/// can now accept your rental" AFTER acceptance, which is the wrong order.
 enum RentalInterestStatus {
   pendingAcceptance, // Tenant expressed interest, UNPAID, awaiting landlord pick
-  pendingPayment,   // LEGACY: tenant declared interest, hasn't paid yet
-  paymentUploaded,  // LEGACY: tenant uploaded payment receipt
-  paymentVerified,  // LEGACY: admin verified payment (landlord locked in)
-  rejected,         // Payment rejected by admin
-  accepted,         // Landlord accepted; active rental created; UNPAID until rentPaid
-  rentPaid,         // Accepted tenant paid rent after agreement finalized (terminal)
-  notSelected,      // Unpaid applicant closed out because landlord picked another
-  expired,          // Accepted but never paid in time; reservation released, slot freed
-  lostToOther,      // LEGACY paid loser: property rented to another; full refund due
+  accepted,          // Landlord accepted; active rental created; UNPAID until rentPaid
+  rentPaid,          // Accepted tenant paid rent after agreement finalized (terminal)
+  notSelected,       // Unpaid applicant closed out because landlord picked another
+  expired,           // Accepted but never paid in time; reservation released
 }

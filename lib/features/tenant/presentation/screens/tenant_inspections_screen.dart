@@ -1727,14 +1727,6 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
           }
         });
       }
-      // A loser (lost_to_other) is owed a refund tracked at
-      // refunds/{interestId} - stream it so the card shows Processing → Paid.
-      if (interest != null && interest.isLostToOther && _refundSub == null) {
-        _refundSub =
-            _refundService.streamForRental(interest.id).listen((refund) {
-          if (mounted) setState(() => _refund = refund);
-        });
-      }
     }, onError: (e) {
       developer.log('❌ Error streaming rental interest: $e',
           name: 'TenantHistory');
@@ -2202,54 +2194,6 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
             'you\'re accepted. You are not charged unless you\'re accepted.';
         action = null;
         break;
-      case RentalInterestStatus.pendingPayment:
-        // LEGACY (old pay-before-accept flow). New interests never enter here.
-        statusColor = AppColors.warning;
-        statusIcon = Icons.payment;
-        title = 'Payment Pending';
-        subtitle = 'Complete your rental payment to secure this property';
-        action = SizedBox(
-            width: double.infinity,
-            child: AppButton(
-                text: 'Complete Payment',
-                onPressed: () => context.push('/tenant/rental-payment',
-                    extra: {
-                      'rentalInterest': interest,
-                      'inspectionRequest': widget.request
-                    })));
-        break;
-      case RentalInterestStatus.paymentUploaded:
-        statusColor = AppColors.info;
-        statusIcon = Icons.hourglass_top;
-        title = 'Payment Processing';
-        subtitle =
-            'Your payment is being processed. This should only take a moment.';
-        action = null;
-        break;
-      case RentalInterestStatus.paymentVerified:
-        statusColor = AppColors.success;
-        statusIcon = Icons.verified;
-        title = 'Payment Confirmed!';
-        subtitle =
-            'Your payment has been confirmed. The landlord can now accept your rental.';
-        action = null;
-        break;
-      case RentalInterestStatus.rejected:
-        statusColor = AppColors.error;
-        statusIcon = Icons.error_outline;
-        title = 'Payment Rejected';
-        subtitle = interest.paymentRejectionReason ??
-            'Your payment could not be verified. Please re-upload.';
-        action = SizedBox(
-            width: double.infinity,
-            child: AppButton(
-                text: 'Re-upload Payment',
-                onPressed: () => context.push('/tenant/rental-payment',
-                    extra: {
-                      'rentalInterest': interest,
-                      'inspectionRequest': widget.request
-                    })));
-        break;
       case RentalInterestStatus.accepted:
         statusColor = AppColors.success;
         statusIcon = Icons.how_to_reg;
@@ -2311,15 +2255,6 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
         subtitle =
             'Rent wasn\'t paid in time, so this reservation was released and '
             'the property is available again. You were not charged.';
-        action = null;
-        break;
-      case RentalInterestStatus.lostToOther:
-        statusColor = AppColors.info;
-        statusIcon = Icons.info_outline;
-        title = 'Property Rented to Another Applicant';
-        subtitle =
-            'The landlord accepted another tenant for this property. '
-            'Your full payment is being refunded - you don\'t need to do anything.';
         action = null;
         break;
     }

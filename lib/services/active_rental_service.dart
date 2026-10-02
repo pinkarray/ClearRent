@@ -207,9 +207,8 @@ class ActiveRentalService {
     try {
       // Pay-after-accept: the rental record is created when the landlord
       // ACCEPTS (still unpaid) - the tenant pays only after the agreement is
-      // finalized. Legacy pay-first interests (payment_verified) still qualify.
-      if (!rentalInterest.isPaymentVerified &&
-          rentalInterest.status != RentalInterestStatus.accepted) {
+      // finalized.
+      if (rentalInterest.status != RentalInterestStatus.accepted) {
         throw Exception(
           'Rental interest must be accepted before creating the rental',
         );
@@ -340,9 +339,8 @@ class ActiveRentalService {
     // Create a dummy inspection request since the legacy call doesn't have one
     // For new code, use createActiveRental() instead
     try {
-      if (!interest.isPaymentVerified &&
-          interest.status != RentalInterestStatus.accepted) {
-        throw Exception('Payment must be verified before creating rental');
+      if (interest.status != RentalInterestStatus.accepted) {
+        throw Exception('The landlord must accept before creating the rental');
       }
 
       final now = DateTime.now();

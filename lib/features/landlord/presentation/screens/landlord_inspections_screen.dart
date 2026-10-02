@@ -2542,31 +2542,6 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
             '${interest.tenantName} wants to rent. Accept below to start the '
             'agreement - they pay after it\'s finalized.';
         break;
-      case RentalInterestStatus.pendingPayment:
-        statusColor = AppColors.warning;
-        statusIcon = Icons.payment;
-        title = 'Tenant Interested - Payment Pending';
-        subtitle = '${interest.tenantName} wants to rent. Waiting for payment.';
-        break;
-      case RentalInterestStatus.paymentUploaded:
-        statusColor = AppColors.info;
-        statusIcon = Icons.hourglass_top;
-        title = 'Payment Processing';
-        subtitle = 'The tenant\'s payment is being processed.';
-        break;
-      case RentalInterestStatus.paymentVerified:
-        statusColor = AppColors.success;
-        statusIcon = Icons.lock;
-        title = 'Payment Verified - Accept Rental';
-        subtitle =
-            '${interest.tenantName}\'s payment has been confirmed. Accept below.';
-        break;
-      case RentalInterestStatus.rejected:
-        statusColor = AppColors.error;
-        statusIcon = Icons.error_outline;
-        title = 'Payment Rejected';
-        subtitle = 'Tenant needs to re-upload payment proof.';
-        break;
       case RentalInterestStatus.accepted:
         statusColor = AppColors.info;
         statusIcon = Icons.description_outlined;
@@ -2595,14 +2570,6 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
         subtitle =
             '${interest.tenantName} didn\'t pay in time. The reservation was '
             'released and the property is back on the market.';
-        break;
-      case RentalInterestStatus.lostToOther:
-        statusColor = AppColors.textSecondary;
-        statusIcon = Icons.history;
-        title = 'Not Selected';
-        subtitle =
-            '${interest.tenantName} was refunded because you accepted '
-            'another applicant for this property.';
         break;
     }
 
