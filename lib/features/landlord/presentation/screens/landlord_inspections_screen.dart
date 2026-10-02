@@ -1860,10 +1860,16 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                         style: AppTextStyles.labelMedium,
                       ),
                       const SizedBox(height: 4),
+                      // NOT "payment verified": under pay-after-accept the
+                      // tenant has paid nothing at this point. The banner above
+                      // this dialog already says so, and a landlord who reads
+                      // "verified" here accepts believing the money is in.
                       Text(
-                        'Payment of ₦${_formatAmount(interest.paymentAmount)} verified.',
+                        '₦${_formatAmount(interest.paymentAmount)}, which '
+                        '${interest.tenantName} pays once the agreement is '
+                        'finalized.',
                         style: AppTextStyles.caption.copyWith(
-                          color: AppColors.success,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ],
@@ -1887,7 +1893,8 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'This will mark the property as rented and create an active rental record.',
+                          'This holds the property for them and starts the '
+                          'agreement. Nothing is charged until they pay.',
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textSecondary,
                           ),
