@@ -374,7 +374,11 @@ export const onRentalInterestCreated = onDocumentCreated(
           body:
             `${tenantName} wants to rent ${propertyTitle}. ` +
             "Review them and accept to start the tenancy.",
-          payload: {route: "/landlord/rentals"},
+          // Inspections → History, NOT /landlord/rentals: Active Rentals lists
+          // tenancies that already exist and carries no accept button, so the
+          // tap landed the landlord on a screen where the thing they had just
+          // been told to do was not possible.
+          payload: {route: "/landlord/inspections", initialTab: "2"},
         },
       );
     }

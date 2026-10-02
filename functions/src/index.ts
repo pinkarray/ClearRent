@@ -1530,10 +1530,14 @@ export const onRentalInterestPaid = onDocumentUpdated(
       {
         userId: landlordId,
         type: "rental_interest_paid",
-        title: "Tenant paid to rent your property",
+        title: "Rent paid for your property",
+        // NOT "review and accept them": this fires on the move INTO a paid
+        // state, which under pay-after-accept happens AFTER the landlord has
+        // already accepted. Telling them to go and accept sent them looking
+        // for a button that is no longer there.
         body:
-          `${tenantName} has paid to rent ${propertyTitle}. ` +
-          "Review and accept them as your tenant.",
+          `${tenantName} has paid the rent on ${propertyTitle}. ` +
+          "They are now your tenant, and your payout is being prepared.",
         payload: {
           route: "/landlord/inspections",
           initialTab: "2",
@@ -1552,10 +1556,10 @@ export const onRentalInterestPaid = onDocumentUpdated(
         .create({
           landlordId,
           type: "payment",
-          title: "New tenant paid to rent",
+          title: "Rent paid",
           subtitle:
-            `${tenantName} paid to rent ${propertyTitle}. ` +
-            "Accept them in Inspections → History.",
+            `${tenantName} paid the rent on ${propertyTitle}. ` +
+            "The tenancy is active and your payout is being prepared.",
           propertyId,
           ...(inspectionRequestId ? {relatedId: inspectionRequestId} : {}),
           actorId: tenantId,
