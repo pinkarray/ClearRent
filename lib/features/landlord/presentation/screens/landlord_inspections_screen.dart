@@ -1613,11 +1613,15 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               ),
             ),
           ],
+        ],
 
-          // Reschedule button (hidden when proposal pending, past 2h
-          // cutoff, or cap reached). Proposing and cancelling are the
-          // handler's (rules Rows 16 and 21), so not offered when an agent
-          // handles the listing.
+          // Reschedule and Cancel & Refund are NOT day-of actions. They sat
+          // inside `if (!isAgent && today)` with the arrival controls, so a
+          // landlord who knew on Monday they could not make Thursday had no
+          // way to say so until Thursday - while the TENANT could reschedule
+          // the same booking freely. Both carry their own guards:
+          // canInitiateReschedule holds the 2h cutoff and the move cap, and
+          // cancelling is withdrawn once the handler has arrived.
           if (!isAgent && r.canInitiateReschedule) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -1665,7 +1669,6 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               minimumSize: const Size(double.infinity, 0),
             ),
           ),
-        ],
       ]),
     );
   }
