@@ -1829,7 +1829,11 @@ class InspectionService {
 
       // Refund only if payment was actually taken.
       if (data['paymentStatus'] == 'paid') {
-        await _processRefund(requestId, data);
+        await _processRefund(
+          requestId,
+          data,
+          reason: 'Reschedule was declined',
+        );
       }
 
       developer.log(
@@ -2151,7 +2155,11 @@ class InspectionService {
       });
 
       if (data['paymentStatus'] == 'paid') {
-        await _processRefund(requestId, data);
+        await _processRefund(
+          requestId,
+          data,
+          reason: 'Inspection was cancelled',
+        );
       }
 
       developer.log(
@@ -2442,10 +2450,14 @@ class InspectionService {
     }
   }
 
+  /// [reason] is what ends up on the request - the server's trigger bails out
+  /// once this flips paymentStatus, so a wrong value here is the one that
+  /// sticks. Cancels were being filed as declines.
   Future<void> _processRefund(
     String requestId,
-    Map<String, dynamic> requestData,
-  ) async {
+    Map<String, dynamic> requestData, {
+    String reason = 'Inspection request was declined',
+  }) async {
     try {
       developer.log(
         'ðŸ’° Processing refund for request: $requestId',
@@ -2455,7 +2467,7 @@ class InspectionService {
       await _firestore.collection('inspection_requests').doc(requestId).update({
         'paymentStatus': 'refunded',
         'refundedAt': FieldValue.serverTimestamp(),
-        'refundReason': 'Inspection request was declined',
+        'refundReason': reason,
       });
 
       await _createActivity(

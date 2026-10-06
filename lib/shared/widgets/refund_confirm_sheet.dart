@@ -194,7 +194,7 @@ class _RefundConfirmSheetState extends State<RefundConfirmSheet> {
                       maxLength: 200,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Why are you declining?',
+                        hintText: 'Give a short reason',
                         hintStyle: AppTextStyles.bodyMedium.copyWith(
                           color: AppColors.textHint,
                         ),
@@ -205,9 +205,14 @@ class _RefundConfirmSheetState extends State<RefundConfirmSheet> {
                           borderSide: BorderSide.none,
                         ),
                         contentPadding: const EdgeInsets.all(16),
+                        // A min length shown as '31 / 10' reads as 21 over
+                        // the limit. Say what is still missing instead.
                         counterText:
-                            '${_reasonController.text.trim().length}'
-                            ' / $_minReasonLength',
+                            _reasonController.text.trim().length >=
+                                    _minReasonLength
+                                ? ''
+                                : '${_minReasonLength - _reasonController.text.trim().length}'
+                                    ' more characters needed',
                         counterStyle: AppTextStyles.caption.copyWith(
                           color: _reasonController.text.trim().length >=
                                   _minReasonLength

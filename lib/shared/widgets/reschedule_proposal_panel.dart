@@ -141,13 +141,18 @@ class _RescheduleProposalPanelState
 
   Future<void> _onDecline() async {
     final r = widget.request;
-    final feeText = NumberFormat('#,###').format(r.totalFee);
+    final naira = NumberFormat('#,###');
+    // The server keeps ClearRent's charge on a handler cancel - the
+    // booking did happen - so promise what actually goes back.
+    final backText = naira.format(r.totalFee - r.clearrentFee);
+    final keptText = naira.format(r.clearrentFee);
     final reason = await RefundConfirmSheet.show(
       context,
       title: 'Decline Reschedule',
       warningMessage:
           'Declining will end this inspection for '
-          '${r.propertyTitle} and refund ₦$feeText to the tenant.',
+          '${r.propertyTitle} and refund ₦$backText to the tenant. '
+          'The ₦$keptText service charge is not refunded.',
       confirmButtonText: 'Decline & Refund',
     );
     if (reason == null || !mounted) return;
