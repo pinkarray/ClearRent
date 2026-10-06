@@ -2359,10 +2359,10 @@ class InspectionService {
       });
       final slots = result.data['slots'];
       if (slots is List) {
-        return slots
+        return _chronological(slots
             .map((e) => e.toString())
             .where((s) => isSlotBookable(date, s))
-            .toList();
+            .toList());
       }
       return const [];
     } catch (e) {
@@ -2376,10 +2376,20 @@ class InspectionService {
       // The lead-time filter is applied here too. This path bypasses the
       // callable entirely, so without it a failed call would re-offer slots
       // that have already started.
-      return property.inspectionTimeSlots
+      return _chronological(property.inspectionTimeSlots
           .where((s) => isSlotBookable(date, s))
-          .toList();
+          .toList());
     }
+  }
+
+  /// Slots in the order the day runs, not the order they happen to sit in the
+  /// property's `inspectionTimeSlots` array. That array is whatever the
+  /// landlord tapped first, so Evening (6 PM) was being offered above Late
+  /// Afternoon (3 PM) on both the booking sheet and the reschedule sheet.
+  static List<String> _chronological(List<String> slots) {
+    final sorted = [...slots]..sort((a, b) =>
+        (timeSlotStartHour[a] ?? 99).compareTo(timeSlotStartHour[b] ?? 99));
+    return sorted;
   }
 
   /// Whether the handler of [propertyId] is free at [slot] on [date], judged
