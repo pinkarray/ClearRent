@@ -372,7 +372,8 @@ export const markInspectionAgentPayoutPaid = onCall(
           type: "payout_received",
           title: "Payment Received",
           message:
-            `You've been paid ₦${sideEffect.amount.toFixed(0)} for ` +
+            `You've been paid ₦${sideEffect.amount.toLocaleString("en-NG")} ` +
+        `for ` +
             `inspection at ${propertyTitle}`,
           relatedId: input.docId,
           propertyId: sideEffect.propertyId,
@@ -514,7 +515,8 @@ export const markRentLandlordPayoutPaid = onCall(
       receiptDocId: `PAYOUT_LANDLORD_${input.docId}`,
       activityTitle: "Rent Payout Sent",
       activityMessageBuilder: (a, p) =>
-        `Your rent payout of ₦${a.toFixed(0)} for ${p} has been sent ` +
+        `Your rent payout of ₦${a.toLocaleString("en-NG")} for ${p} ` +
+        `has been sent ` +
         "to your bank account.",
       receiptDescription: (p) => `Rent payout for ${p}`,
       adminUid,
@@ -609,7 +611,8 @@ export const markRentAgentCommissionPaid = onCall(
       receiptDocId: `PAYOUT_AGENT_${input.docId}`,
       activityTitle: "Agent Fee Payout Sent",
       activityMessageBuilder: (a, p) =>
-        `Your agent fee payout of ₦${a.toFixed(0)} for ${p} has been ` +
+        `Your agent fee payout of ₦${a.toLocaleString("en-NG")} for ${p} ` +
+        `has been ` +
         "sent to your bank account.",
       receiptDescription: (p) => `Agent fee payout for ${p}`,
       adminUid,
@@ -762,7 +765,7 @@ export const markRefundPaid = onCall(
           type: "refund_paid",
           title: "Refund Sent",
           body:
-            `Your refund of ₦${sideEffect.amount.toFixed(0)} for ` +
+            `Your refund of ₦${sideEffect.amount.toLocaleString("en-NG")} for ` +
             `${propertyTitle} has been sent to your bank account.`,
           payload: {route: "/tenant/documents"},
         },
