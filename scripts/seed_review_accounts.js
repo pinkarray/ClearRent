@@ -27,8 +27,12 @@
 //  - Ownership review. Listings are written the way adminReviewPropertyDoc
 //    leaves an approved one (ownershipDocStatus 'verified', isVerified,
 //    isAvailable) but there is no ownership document behind them.
-//  - Images. Storage is empty and nothing is hotlinked; cards show the
-//    placeholder.
+//  - Real photos. Each listing carries a BRANDED STAND-IN generated for the
+//    review (scratchpad/gen.js, uploaded to Cloudinary under
+//    clearrent/properties/review_seed). It states "Photo pending - sample
+//    listing" on its face: a reviewer must never take it for a photograph of
+//    the unit. Swap in real photos before these listings are used for anything
+//    but review.
 const admin = require("firebase-admin");
 admin.initializeApp({projectId: "clearrent-app"});
 const auth = admin.auth();
@@ -80,6 +84,15 @@ const LISTINGS = [
     bedrooms: 2, bathrooms: 2, toilets: 2, livingRooms: 1, kitchens: 1,
     rent: 1500000, cautionDeposit: 150000, agentFee: 0,
     amenities: ["Running Water", "Parking Space", "Garden"]},
+];
+
+const PLACEHOLDERS = [
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358009/clearrent/properties/review_seed/eteoygpnbplu4kkezukn.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358011/clearrent/properties/review_seed/jq9tbd4dapr3pg72zxpn.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358013/clearrent/properties/review_seed/oar5nsyk1fhwgv1nw5sg.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358015/clearrent/properties/review_seed/ibeeqoltiqzvnzun5by0.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358017/clearrent/properties/review_seed/wa3zpwtv7afdcdc8pbdh.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358019/clearrent/properties/review_seed/caapzvertkhqmazedvdj.png",
 ];
 
 const BANK = {
@@ -141,7 +154,7 @@ async function seedListing(l, i, landlordUid, landlordName) {
     landlordPhone: null,
     description: `${l.title}. Seeded for payment review; photos to follow.`,
     guestRooms: 0,
-    images: [],
+    images: [PLACEHOLDERS[i]],
     state: "Lagos",
     lga: "",
     rentFrequency: "yearly",
