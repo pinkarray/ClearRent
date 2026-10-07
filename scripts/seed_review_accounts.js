@@ -11,6 +11,11 @@
 // accounts get it, and any refund or handler payout settles to us. Pass the
 // bank code as Paystack lists it; this script does not resolve it.
 //
+// The addresses MUST sit on a real TLD. initializePayment sends the Auth
+// account's own email to Paystack, and Paystack rejects a reserved TLD with
+// '"email" must be a valid email', so clearrent.test accounts could browse and
+// book but never pay. Verified on device 2026-10-07.
+//
 // Safe to re-run: accounts are looked up by email, listings use fixed doc ids,
 // and every write merges. Everything it writes carries `seededForReview: true`
 // so it can be found and removed before launch.
@@ -34,10 +39,10 @@ const TS = admin.firestore.Timestamp;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 const ACCOUNTS = [
-  {key: "tenant", email: "paystack.tenant@clearrent.test",
+  {key: "tenant", email: "paystack.tenant@verealtytech.com",
     fullName: "Paystack Reviewer (Tenant)", accountType: "tenant",
     password: process.env.REVIEW_TENANT_PASSWORD},
-  {key: "landlord", email: "paystack.landlord@clearrent.test",
+  {key: "landlord", email: "paystack.landlord@verealtytech.com",
     fullName: "Paystack Reviewer (Landlord)", accountType: "landlord",
     password: process.env.REVIEW_LANDLORD_PASSWORD},
 ];
