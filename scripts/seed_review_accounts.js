@@ -45,33 +45,33 @@ const ACCOUNTS = [
 // cluster = the LGA key scripts/lagos_areas.json maps the area to.
 const LISTINGS = [
   {title: "2 Bedroom Flat in Yaba", propertyType: "flat", city: "Yaba",
-    cluster: "yaba_mainland", address: "Off Herbert Macaulay Way, Yaba",
+    cluster: "yaba_mainland", address: "Off Herbert Macaulay Way, Yaba", lat: 6.5095, lng: 3.3711,
     bedrooms: 2, bathrooms: 2, toilets: 3, livingRooms: 1, kitchens: 1,
     rent: 1800000, cautionDeposit: 200000, agentFee: 0,
     amenities: ["Running Water", "Prepaid Meter", "Tiled Floor", "Kitchen Cabinets"]},
   {title: "Self Contain in Surulere", propertyType: "selfContain", city: "Surulere",
-    cluster: "surulere", address: "Off Adeniran Ogunsanya Street, Surulere",
+    cluster: "surulere", address: "Off Adeniran Ogunsanya Street, Surulere", lat: 6.4969, lng: 3.3481,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 0, kitchens: 1,
     rent: 650000, cautionDeposit: 65000, agentFee: 0,
     amenities: ["Running Water", "Prepaid Meter", "Wardrobe"]},
   {title: "3 Bedroom Flat in Gbagada", propertyType: "flat", city: "Gbagada",
-    cluster: "shomolu", address: "Off Diya Street, Gbagada Phase 1",
+    cluster: "shomolu", address: "Off Diya Street, Gbagada Phase 1", lat: 6.555, lng: 3.387,
     bedrooms: 3, bathrooms: 3, toilets: 4, livingRooms: 1, kitchens: 1,
     rent: 2800000, cautionDeposit: 300000, agentFee: 0,
     amenities: ["Running Water", "Security", "Parking Space", "Prepaid Meter"]},
   {title: "Room & Parlour in Ikeja GRA", propertyType: "roomAndParlour", city: "Ikeja GRA",
-    cluster: "ikeja", address: "Off Isaac John Street, Ikeja GRA",
+    cluster: "ikeja", address: "Off Isaac John Street, Ikeja GRA", lat: 6.5833, lng: 3.3517,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 1, kitchens: 1,
     rent: 1200000, cautionDeposit: 120000, agentFee: 0,
     amenities: ["Running Water", "Security", "Tiled Floor"]},
-  {title: "4 Bedroom Semi-Detached Duplex in Lekki Phase 1",
-    propertyType: "semiDetachedDuplex", city: "Lekki Phase 1",
-    cluster: "eti_osa", address: "Off Admiralty Way, Lekki Phase 1",
+  {title: "4 Bedroom Duplex in Lekki Phase 1",
+    propertyType: "duplex", city: "Lekki Phase 1",
+    cluster: "eti_osa", address: "Off Admiralty Way, Lekki Phase 1", lat: 6.4409, lng: 3.471,
     bedrooms: 4, bathrooms: 4, toilets: 5, livingRooms: 2, kitchens: 1,
     rent: 9000000, cautionDeposit: 1000000, agentFee: 0,
     amenities: ["24/7 Power Supply", "Running Water", "Security", "Parking Space", "CCTV"]},
   {title: "2 Bedroom Bungalow in Ajah", propertyType: "bungalow", city: "Ajah",
-    cluster: "eti_osa", address: "Off Addo Road, Ajah",
+    cluster: "eti_osa", address: "Off Addo Road, Ajah", lat: 6.4667, lng: 3.5667,
     bedrooms: 2, bathrooms: 2, toilets: 2, livingRooms: 1, kitchens: 1,
     rent: 1500000, cautionDeposit: 150000, agentFee: 0,
     amenities: ["Running Water", "Parking Space", "Garden"]},
@@ -128,7 +128,7 @@ async function upsertAccount(a) {
 
 async function seedListing(l, i, landlordUid, landlordName) {
   const ref = db.collection("properties").doc(`review_seed_${i + 1}`);
-  const {cluster, address, ...fields} = l;
+  const {cluster, address, lat, lng, ...fields} = l;
   await ref.set({
     ...fields,
     landlordId: landlordUid,
@@ -173,8 +173,12 @@ async function seedListing(l, i, landlordUid, landlordName) {
     createdAt: FV.serverTimestamp(),
     updatedAt: FV.serverTimestamp(),
   }, {merge: true});
+  // onInspectionPaid copies address AND coords from here onto the request,
+  // which is what draws the map pin and the Directions button after payment.
   await ref.collection("private").doc("location").set({
     address,
+    latitude: lat,
+    longitude: lng,
     updatedAt: FV.serverTimestamp(),
   });
   console.log(`listing ${ref.id}: ${l.title}`);
