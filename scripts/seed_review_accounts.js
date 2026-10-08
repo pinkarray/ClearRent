@@ -59,6 +59,8 @@ const LISTINGS = [
     rent: 1800000, cautionDeposit: 200000, agentFee: 0,
     amenities: ["Running Water", "Prepaid Meter", "Tiled Floor", "Kitchen Cabinets"]},
   {title: "Self Contain in Surulere", propertyType: "selfContain", city: "Surulere",
+    bathroomAccess: "private", toiletAccess: "private",
+    kitchenAccess: "private", livingRoomAccess: "private",
     cluster: "surulere", address: "Off Adeniran Ogunsanya Street, Surulere", lat: 6.4969, lng: 3.3481,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 0, kitchens: 1,
     rent: 650000, cautionDeposit: 65000, agentFee: 0,
@@ -69,6 +71,8 @@ const LISTINGS = [
     rent: 2800000, cautionDeposit: 300000, agentFee: 0,
     amenities: ["Running Water", "Security", "Parking Space", "Prepaid Meter"]},
   {title: "Room & Parlour in Ikeja GRA", propertyType: "roomAndParlour", city: "Ikeja GRA",
+    bathroomAccess: "private", toiletAccess: "private",
+    kitchenAccess: "private", livingRoomAccess: "private",
     cluster: "ikeja", address: "Off Isaac John Street, Ikeja GRA", lat: 6.5833, lng: 3.3517,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 1, kitchens: 1,
     rent: 1200000, cautionDeposit: 120000, agentFee: 0,
@@ -87,12 +91,12 @@ const LISTINGS = [
 ];
 
 const PLACEHOLDERS = [
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358009/clearrent/properties/review_seed/eteoygpnbplu4kkezukn.png",
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358011/clearrent/properties/review_seed/jq9tbd4dapr3pg72zxpn.png",
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358013/clearrent/properties/review_seed/oar5nsyk1fhwgv1nw5sg.png",
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358015/clearrent/properties/review_seed/ibeeqoltiqzvnzun5by0.png",
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358017/clearrent/properties/review_seed/wa3zpwtv7afdcdc8pbdh.png",
-  "https://res.cloudinary.com/den5t1dai/image/upload/v1791358019/clearrent/properties/review_seed/caapzvertkhqmazedvdj.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429641/clearrent/properties/review_seed/bpppqi5ka9q7lezx7nag.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429643/clearrent/properties/review_seed/t8j9oglhyymvlnz2ubs0.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429645/clearrent/properties/review_seed/vazpegk2azzjplxa2pn1.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429646/clearrent/properties/review_seed/fnvxuurtthcpuqxpdxt6.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429648/clearrent/properties/review_seed/xoc1feopambyx6tbwkyz.png",
+  "https://res.cloudinary.com/den5t1dai/image/upload/v1791429650/clearrent/properties/review_seed/nqa3zibif9hyoe9lzbuf.png",
 ];
 
 const BANK = {
