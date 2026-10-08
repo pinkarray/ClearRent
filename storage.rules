@@ -3,9 +3,15 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // Reads the claims with get() defaults. Addressing request.auth.token.admin
+    // directly RAISES for any caller without the claim - including every
+    // unauthenticated request, where request.auth is null - so those evaluated
+    // through an error path. It failed closed, so nothing was exposed, but an
+    // errored clause is indistinguishable from a deliberate deny in logs.
     function isAdmin() {
-      return (request.auth.token.admin == true)
-        || (request.auth.token.superAdmin == true);
+      return request.auth != null
+        && (request.auth.token.get('admin', false) == true
+            || request.auth.token.get('superAdmin', false) == true);
     }
 
     // Verification documents (NIN slip, proof of income/address, utility bill,
@@ -64,8 +70,24 @@ service firebase.storage {
     // storage rule - rules can't read Firestore to check rental membership - so
     // tenants get the doc via a short-lived signed URL from the
     // getSignedAgreementUrl CF, which verifies membership server-side.
+    // WRITE-ONCE, like every other evidence prefix here. `allow write` also
+    // covers overwrite and delete, and the executed agreement is the legal
+    // record of the tenancy: once the tenant has signed, the landlord could PUT
+    // different bytes at the same path, and because `agreementUrl` never
+    // changes no Firestore rule fires and the tenancy silently references a
+    // document the tenant never agreed to. The tenant could do the same to
+    // their own signed copy. Verified against the emulator 2026-10-08:
+    // overwrite and delete were both ALLOWED here while `ownership/` correctly
+    // denied them.
+    //
+    // Safe to tighten because the client already timestamps every upload
+    // (`agreement_<millis>.<ext>` in PropertyService.uploadAgreementDoc), so a
+    // revision is a NEW path, which is also what sends it back for signature.
     match /agreements/{uid}/{docId} {
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null;
+      allow update, delete: if false;
       allow read: if request.auth != null
         && (request.auth.uid == uid || isAdmin());
     }
