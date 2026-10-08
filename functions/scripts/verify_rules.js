@@ -32,6 +32,11 @@ async function main() {
         path.join(__dirname, "..", "..", "firestore.rules"), "utf8"),
     },
   });
+  // All four rules suites share projectId "demo-clearrent" and none of them
+  // cleared state, so they contaminated each other AND successive runs: a doc
+  // sealed by an earlier test made a later setDoc an overwrite, and the same
+  // suite would fail different assertions run to run. Start from empty.
+  await env.clearFirestore();
 
   // Seed one alert with admin privileges (rules bypassed in this context).
   await env.withSecurityRulesDisabled(async (ctx) => {

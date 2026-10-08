@@ -54,6 +54,11 @@ async function main() {
         path.join(__dirname, "..", "..", "firestore.rules"), "utf8"),
     },
   });
+  // All four rules suites share projectId "demo-clearrent" and none of them
+  // cleared state, so they contaminated each other AND successive runs: a doc
+  // sealed by an earlier test made a later setDoc an overwrite, and the same
+  // suite would fail different assertions run to run. Start from empty.
+  await env.clearFirestore();
 
   // Seed an APPROVED property + building owned by L1 (rules bypassed).
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -61,7 +66,7 @@ async function main() {
     await setDoc(doc(d, "users", L1), {verificationStatus: "verified"});
     await setDoc(doc(d, "properties", "p1"), {
       landlordId: L1,
-      ownershipDocUrl: "approved.pdf",
+      ownershipDocUrl: `ownership/${L1}/approved.pdf`,
       ownershipDocType: "c_of_o",
       ownershipDocStatus: "verified",
       isVerified: true,
@@ -74,7 +79,7 @@ async function main() {
       landlordId: L1,
       name: "Block A",
       address: "1 Lekki Rd",
-      ownershipDocUrl: "approved.pdf",
+      ownershipDocUrl: `ownership/${L1}/approved.pdf`,
       ownershipDocType: "c_of_o",
       ownershipDocStatus: "verified",
     });
@@ -90,7 +95,7 @@ async function main() {
 
   check("property: CANNOT swap doc file while 'verified'",
     await denies(updateDoc(doc(db, "properties", "p1"),
-      {ownershipDocUrl: "something_else.pdf"})));
+      {ownershipDocUrl: `ownership/${L1}/something_else.pdf`})));
 
   // Relabelling an APPROVED doc is not allowed even if the owner also sends it
   // back for review - the file is what it is; changing the type requires
@@ -103,7 +108,7 @@ async function main() {
   // Legit path: new file + new type + back for review.
   check("property: CAN change type when a NEW FILE is uploaded",
     await passes(updateDoc(doc(db, "properties", "p1"),
-      {ownershipDocUrl: "new.pdf", ownershipDocType: "deed",
+      {ownershipDocUrl: `ownership/${L1}/new.pdf`, ownershipDocType: "deed",
         ownershipDocStatus: "pending"})));
 
   // ── buildings: same holes ─────────────────────────────────────────────
@@ -113,7 +118,7 @@ async function main() {
 
   check("building: CANNOT swap doc file while 'verified'",
     await denies(updateDoc(doc(db, "buildings", "b1"),
-      {ownershipDocUrl: "something_else.pdf"})));
+      {ownershipDocUrl: `ownership/${L1}/something_else.pdf`})));
 
   check("building: CANNOT relabel approved doc without a new file",
     await denies(updateDoc(doc(db, "buildings", "b1"),
@@ -121,7 +126,7 @@ async function main() {
 
   check("building: CAN change type when a NEW FILE is uploaded",
     await passes(updateDoc(doc(db, "buildings", "b1"),
-      {ownershipDocUrl: "new.pdf", ownershipDocType: "deed",
+      {ownershipDocUrl: `ownership/${L1}/new.pdf`, ownershipDocType: "deed",
         ownershipDocStatus: "pending"})));
 
   // ── self-verification, tested from a genuinely UNVERIFIED property ────
@@ -130,7 +135,7 @@ async function main() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties", "p2"), {
       landlordId: L1,
-      ownershipDocUrl: "unreviewed.pdf",
+      ownershipDocUrl: `ownership/${L1}/unreviewed.pdf`,
       ownershipDocType: "c_of_o",
       ownershipDocStatus: "pending",
       isVerified: false,
@@ -170,7 +175,7 @@ async function main() {
 
   check("create: CANNOT be born ownershipDocStatus 'verified'",
     await denies(addDoc(collection(db, "properties"),
-      {...newProp, ownershipDocUrl: "never_reviewed.pdf",
+      {...newProp, ownershipDocUrl: `ownership/${L1}/never_reviewed.pdf`,
         ownershipDocType: "c_of_o", ownershipDocStatus: "verified"})));
 
   check("create: CANNOT be born isVerified true",
@@ -187,7 +192,7 @@ async function main() {
   // blocks listing creation is worse than the hole it closes.
   check("create: CAN publish a normal standalone listing for review",
     await passes(addDoc(collection(db, "properties"),
-      {...newProp, ownershipDocUrl: "mine.pdf", ownershipDocType: "c_of_o",
+      {...newProp, ownershipDocUrl: `ownership/${L1}/mine.pdf`, ownershipDocType: "c_of_o",
         ownershipDocStatus: "pending", isVerified: false})));
 
   check("create: CAN publish a standalone listing with NO doc yet",
@@ -223,12 +228,12 @@ async function main() {
 
   check("grouped unit: CANNOT attach its own doc file",
     await denies(updateDoc(doc(db, "properties", "unit1"),
-      {ownershipDocUrl: "unit_cofo.pdf"})));
+      {ownershipDocUrl: `ownership/${L1}/unit_cofo.pdf`})));
 
   check("grouped unit: CANNOT be created carrying its own doc",
     await denies(addDoc(collection(db, "properties"),
       {...newProp, buildingId: "b1", ownershipDocStatus: "inherited",
-        ownershipDocUrl: "mine.pdf", ownershipDocType: "c_of_o"})));
+        ownershipDocUrl: `ownership/${L1}/mine.pdf`, ownershipDocType: "c_of_o"})));
 
   check("grouped unit: CAN still edit normal listing fields",
     await passes(updateDoc(doc(db, "properties", "unit1"), {rent: 1500000})));
@@ -237,7 +242,7 @@ async function main() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), "properties", "rejected1"), {
       landlordId: L1,
-      ownershipDocUrl: "bad.pdf", ownershipDocType: "c_of_o",
+      ownershipDocUrl: `ownership/${L1}/bad.pdf`, ownershipDocType: "c_of_o",
       ownershipDocStatus: "rejected",
       ownershipDocRejectionReason: "Not a real C of O",
       isVerified: false,
@@ -303,9 +308,33 @@ async function main() {
     await passes(updateDoc(doc(db, "buildings", "b1"),
       {structure: "duplex", totalFloors: 2})));
 
-  check("building: CANNOT self-verify while setting structure",
-    await denies(updateDoc(doc(db, "buildings", "b1"),
+  // b1 is ALREADY 'verified', so writing 'verified' is a no-op: the value never
+  // enters affectedKeys, the status guard never fires, and only `structure`
+  // actually changes - which the check above proves is allowed. The old
+  // assertion therefore failed against correct rules. Test the real escalation
+  // instead, from a genuinely unverified building.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "buildings", "b2"), {
+      landlordId: L1,
+      name: "Block B",
+      ownershipDocStatus: "pending",
+      ownershipDocUrl: `ownership/${L1}/b2.pdf`,
+      ownershipDocType: "c_of_o",
+      structure: "block_of_flats",
+    });
+  });
+
+  check("building: CAN send a pending doc back for review",
+    await passes(updateDoc(doc(db, "buildings", "b2"),
+      {structure: "compound", ownershipDocStatus: "pending"})));
+
+  check("building: CANNOT self-verify (pending -> verified)",
+    await denies(updateDoc(doc(db, "buildings", "b2"),
       {structure: "compound", ownershipDocStatus: "verified"})));
+
+  check("building: CANNOT self-verify even on its own (no other field)",
+    await denies(updateDoc(doc(db, "buildings", "b2"),
+      {ownershipDocStatus: "verified"})));
 
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);

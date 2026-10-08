@@ -57,6 +57,11 @@ async function main() {
         path.join(__dirname, "..", "..", "firestore.rules"), "utf8"),
     },
   });
+  // All four rules suites share projectId "demo-clearrent" and none of them
+  // cleared state, so they contaminated each other AND successive runs: a doc
+  // sealed by an earlier test made a later setDoc an overwrite, and the same
+  // suite would fail different assertions run to run. Start from empty.
+  await env.clearFirestore();
 
   const baseProperty = {
     landlordId: L1,
@@ -232,12 +237,21 @@ async function main() {
     });
   });
 
+  // Must satisfy the WHOLE properties/create rule, not just the suspension
+  // clause under test: `rent` clears meetsMinRent() (10,000 unless
+  // config/pricing says otherwise) and `maxTenants: 1` clears
+  // oneTenancyPerListing(). Both post-date this suite, and without them the two
+  // positive controls below were denied for reasons that had nothing to do with
+  // suspension - which is exactly how a suspension regression would have hidden.
   const newListing = (uid) => ({
     landlordId: uid,
     title: "A flat",
     isVerified: false,
+    rent: 1000000,
+    maxTenants: 1,
+    currentTenantsCount: 0,
     ownershipDocStatus: "pending",
-    ownershipDocUrl: "d.pdf",
+    ownershipDocUrl: `ownership/${uid}/d.pdf`,
     ownershipDocType: "deed",
   });
   const listingAs = (uid, id) =>
