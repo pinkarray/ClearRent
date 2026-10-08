@@ -20,6 +20,14 @@
 // and every write merges. Everything it writes carries `seededForReview: true`
 // so it can be found and removed before launch.
 //
+// RENTS ARE DELIBERATELY UNDER 500,000. Paystack's TEST card tops out between
+// 500k and 650k: measured 2026-10-08, 500,000 succeeded and 650,000 returned
+// "Insufficient Funds". Every rent here started above that, so a reviewer could
+// book and pay for a viewing but never complete a RENT payment. The viewing fee
+// (10k), listing fee (10k), deal fee (5k) and verification fees are all far
+// below the ceiling and were never affected. Real Lagos rents are several times
+// these figures; raise them once live keys are in.
+//
 // What it skips, on purpose:
 //  - NIN. Both accounts are written straight to verificationStatus 'verified'
 //    (the field every gate reads) plus verificationExempt, so the expiry sweep
@@ -56,37 +64,37 @@ const LISTINGS = [
   {title: "2 Bedroom Flat in Yaba", propertyType: "flat", city: "Yaba",
     cluster: "yaba_mainland", address: "Off Herbert Macaulay Way, Yaba", lat: 6.5095, lng: 3.3711,
     bedrooms: 2, bathrooms: 2, toilets: 3, livingRooms: 1, kitchens: 1,
-    rent: 1800000, cautionDeposit: 200000, agentFee: 0,
+    rent: 420000, cautionDeposit: 42000, agentFee: 0,
     amenities: ["Running Water", "Prepaid Meter", "Tiled Floor", "Kitchen Cabinets"]},
   {title: "Self Contain in Surulere", propertyType: "selfContain", city: "Surulere",
     bathroomAccess: "private", toiletAccess: "private",
     kitchenAccess: "private", livingRoomAccess: "private",
     cluster: "surulere", address: "Off Adeniran Ogunsanya Street, Surulere", lat: 6.4969, lng: 3.3481,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 0, kitchens: 1,
-    rent: 650000, cautionDeposit: 65000, agentFee: 0,
+    rent: 250000, cautionDeposit: 25000, agentFee: 0,
     amenities: ["Running Water", "Prepaid Meter", "Wardrobe"]},
   {title: "3 Bedroom Flat in Gbagada", propertyType: "flat", city: "Gbagada",
     cluster: "shomolu", address: "Off Diya Street, Gbagada Phase 1", lat: 6.555, lng: 3.387,
     bedrooms: 3, bathrooms: 3, toilets: 4, livingRooms: 1, kitchens: 1,
-    rent: 2800000, cautionDeposit: 300000, agentFee: 0,
+    rent: 460000, cautionDeposit: 46000, agentFee: 0,
     amenities: ["Running Water", "Security", "Parking Space", "Prepaid Meter"]},
   {title: "Room & Parlour in Ikeja GRA", propertyType: "roomAndParlour", city: "Ikeja GRA",
     bathroomAccess: "private", toiletAccess: "private",
     kitchenAccess: "private", livingRoomAccess: "private",
     cluster: "ikeja", address: "Off Isaac John Street, Ikeja GRA", lat: 6.5833, lng: 3.3517,
     bedrooms: 1, bathrooms: 1, toilets: 1, livingRooms: 1, kitchens: 1,
-    rent: 1200000, cautionDeposit: 120000, agentFee: 0,
+    rent: 320000, cautionDeposit: 32000, agentFee: 0,
     amenities: ["Running Water", "Security", "Tiled Floor"]},
   {title: "4 Bedroom Duplex in Lekki Phase 1",
     propertyType: "duplex", city: "Lekki Phase 1",
     cluster: "eti_osa", address: "Off Admiralty Way, Lekki Phase 1", lat: 6.4409, lng: 3.471,
     bedrooms: 4, bathrooms: 4, toilets: 5, livingRooms: 2, kitchens: 1,
-    rent: 9000000, cautionDeposit: 1000000, agentFee: 0,
+    rent: 495000, cautionDeposit: 49500, agentFee: 0,
     amenities: ["24/7 Power Supply", "Running Water", "Security", "Parking Space", "CCTV"]},
   {title: "2 Bedroom Bungalow in Ajah", propertyType: "bungalow", city: "Ajah",
     cluster: "eti_osa", address: "Off Addo Road, Ajah", lat: 6.4667, lng: 3.5667,
     bedrooms: 2, bathrooms: 2, toilets: 2, livingRooms: 1, kitchens: 1,
-    rent: 1500000, cautionDeposit: 150000, agentFee: 0,
+    rent: 380000, cautionDeposit: 38000, agentFee: 0,
     amenities: ["Running Water", "Parking Space", "Garden"]},
 ];
 
