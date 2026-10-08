@@ -2,14 +2,8 @@
 // Seeds the two Paystack reviewer accounts and six bookable listings.
 //
 //   REVIEW_TENANT_PASSWORD=... REVIEW_LANDLORD_PASSWORD=... \
-//   REVIEW_BANK_NAME=... REVIEW_BANK_CODE=... \
-//   REVIEW_ACCOUNT_NUMBER=... REVIEW_ACCOUNT_NAME=... \
 //     node scripts/seed_review_accounts.js
 //
-// The bank account is ClearRent's own: firestore.rules refuse an inspection
-// request (tenant) or acceptance (handler) without hasBankDetails, so both
-// accounts get it, and any refund or handler payout settles to us. Pass the
-// bank code as Paystack lists it; this script does not resolve it.
 //
 // The addresses MUST sit on a real TLD. initializePayment sends the Auth
 // account's own email to Paystack, and Paystack rejects a reserved TLD with
@@ -109,11 +103,19 @@ const PLACEHOLDERS = [
   "https://res.cloudinary.com/den5t1dai/image/upload/v1791429650/clearrent/properties/review_seed/nqa3zibif9hyoe9lzbuf.png",
 ];
 
+// DELIBERATELY NOT A REAL ACCOUNT. These details exist only to satisfy
+// actorHasBankDetails() in firestore.rules, which gates requesting and
+// accepting an inspection. No payout is ever made to a reviewer account.
+//
+// It MUST stay fake: the credentials for these accounts go to an outside
+// review team in a document, and a user can read their own private/bank
+// subdoc, so a real account number and account name would be readable by
+// anyone holding that shared password.
 const BANK = {
-  bankName: process.env.REVIEW_BANK_NAME,
-  bankCode: process.env.REVIEW_BANK_CODE,
-  accountNumber: process.env.REVIEW_ACCOUNT_NUMBER,
-  accountName: process.env.REVIEW_ACCOUNT_NAME,
+  bankName: "Access Bank",
+  bankCode: "044",
+  accountNumber: "0000000000",
+  accountName: "CLEARRENT REVIEW ACCOUNT (NOT FOR PAYOUT)",
 };
 
 async function upsertAccount(a) {
@@ -217,10 +219,6 @@ async function seedListing(l, i, landlordUid, landlordName) {
 }
 
 (async () => {
-  if (Object.values(BANK).some((v) => !v) || !/^\d{10}$/.test(BANK.accountNumber)) {
-    throw new Error("Set REVIEW_BANK_NAME, REVIEW_BANK_CODE, REVIEW_ACCOUNT_NAME " +
-      "and a 10-digit REVIEW_ACCOUNT_NUMBER");
-  }
   const uids = {};
   for (const a of ACCOUNTS) uids[a.key] = await upsertAccount(a);
   const landlord = ACCOUNTS.find((a) => a.key === "landlord");
