@@ -7,9 +7,16 @@ service cloud.firestore {
     // the setAdminClaim Cloud Function (which itself requires superAdmin
     // to invoke). The bootstrap superAdmin is set out-of-band via the
     // local scripts/bootstrap-superadmin.ts script.
+    // Reads the claims with get() defaults. Addressing request.auth.token.admin
+    // directly RAISES on any account that lacks the claim - i.e. every ordinary
+    // user - so each such request evaluated through an error path. It failed
+    // closed, so nothing was exposed, but an errored clause is indistinguishable
+    // from a deliberate deny when reading logs, and it buried the real reason a
+    // write was refused. Also guards request.auth being null.
     function isAdmin() {
-      return (request.auth.token.admin == true)
-        || (request.auth.token.superAdmin == true);
+      return request.auth != null
+        && (request.auth.token.get('admin', false) == true
+            || request.auth.token.get('superAdmin', false) == true);
     }
 
     // Super admin identity check. Used by surfaces that should be
@@ -17,7 +24,8 @@ service cloud.firestore {
     // Currently no rules reference this - it's available for Workstream
     // 6 follow-ups and any rule that needs a stricter gate than isAdmin.
     function isSuperAdmin() {
-      return (request.auth.token.superAdmin == true);
+      return request.auth != null
+        && request.auth.token.get('superAdmin', false) == true;
     }
 
     // Read-only admin panel access. A `viewer` custom claim grants the admin
@@ -305,6 +313,10 @@ service cloud.firestore {
         && request.resource.data.get('pendingEarnings', 0) == 0
         && request.resource.data.get('paidEarnings', 0) == 0
         && !('verificationExempt' in request.resource.data)
+        // Readable by every signed-in account: see the update rule below.
+        && !('bvn' in request.resource.data)
+        && !('bankDetails' in request.resource.data)
+        && !('nin' in request.resource.data)
         // Identity documents must be the caller's own uploads.
         && ownVerificationDocs();
 
@@ -322,7 +334,16 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == userId
         && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny(['pendingEarnings', 'paidEarnings', 'verificationExempt',
-                       'rating', 'ratingRaw', 'totalRatings'])
+                       'rating', 'ratingRaw', 'totalRatings',
+                       // This doc is readable by EVERY signed-in account, so
+                       // identity and payout data must never sit on it.
+                       // `bvn` and `bankDetails` were legacy copies that
+                       // survived the move to users/{uid}/private/bank and
+                       // defeated it: a reviewer account was able to read the
+                       // super-admin's BVN over the REST API (2026-10-08).
+                       // `nin` belongs here only as server-written versioned
+                       // ciphertext (nin_ops.ts), never from a client.
+                       'bvn', 'bankDetails', 'nin'])
         && (
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['verificationStatus'])
