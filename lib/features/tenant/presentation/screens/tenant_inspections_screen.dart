@@ -2600,8 +2600,13 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
       if (interest != null) {
         setState(() => _rentalInterest = interest);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          // Pay-before-accept wording that outlived the re-sequencing: it sat
+          // directly under a card correctly saying "You are not charged unless
+          // you're accepted", telling the tenant to go and pay for a decision
+          // the landlord has not made yet.
           content: const Text(
-              'Great choice! Complete your payment to secure the property.'),
+              'Interest sent. The landlord decides next, '
+              'and nothing is charged until they accept.'),
           backgroundColor: AppColors.success,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
