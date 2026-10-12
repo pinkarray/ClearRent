@@ -245,6 +245,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   // Ownership document
   File? _ownershipDocFile;
+  // The publish dialog's caption. It is one dialog whose text changes, not
+  // a dialog per step: popping and re-pushing painted the next caption over
+  // the outgoing one, so neither could be read.
+  final ValueNotifier<String> _publishStatus = ValueNotifier<String>('');
   // "I live in this building", claimed while listing a unit. The bill is picked
   // here and uploaded once the listing (and so the building) exists.
   bool _claimHome = false;
@@ -1075,6 +1079,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _buildingNameController.dispose();
     _unitLabelController.dispose();
     _draftSaveTimer?.cancel();
+    _publishStatus.dispose();
     super.dispose();
   }
 
@@ -1859,6 +1864,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   void _showUploadProgress(String message) {
+    _publishStatus.value = message;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1869,7 +1875,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               children: [
                 CircularProgressIndicator(color: AppColors.primary),
                 const SizedBox(height: 16),
-                Text(message, style: AppTextStyles.bodyMedium),
+                ValueListenableBuilder<String>(
+                  valueListenable: _publishStatus,
+                  builder:
+                      (context, status, _) =>
+                          Text(status, style: AppTextStyles.bodyMedium),
+                ),
               ],
             ),
             shape: RoundedRectangleBorder(
@@ -1880,10 +1891,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   void _updateUploadProgress(String message) {
-    if (mounted) {
-      Navigator.pop(context);
-      _showUploadProgress(message);
-    }
+    if (mounted) _publishStatus.value = message;
   }
 
   void _showPendingReviewDialog({
