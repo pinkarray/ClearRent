@@ -250,6 +250,10 @@ class ActivityService {
   static const Map<String, ActivityType> _notificationFeedTypes = {
     'inspection_request': ActivityType.inspectionRequest,
     'inspection_arrival': ActivityType.inspectionRequest,
+    // Video viewings: the tenant is waiting for the host to start the call,
+    // and a host who never started. Both open the request itself.
+    'video_tenant_ready': ActivityType.inspectionApproved,
+    'video_host_no_show': ActivityType.inspectionDeclined,
     'issue_reported': ActivityType.issueReported,
     'issue_updated': ActivityType.issueReported,
     'issue_pending_reminder': ActivityType.issueReported,
