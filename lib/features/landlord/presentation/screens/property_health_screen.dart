@@ -9,6 +9,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
+import '../../../../shared/widgets/pin_confirmation_card.dart';
 
 /// Property Health Dashboard - the landlord's "back office" view of a property.
 ///
@@ -172,6 +173,7 @@ class _PropertyHealthScreenState extends State<PropertyHealthScreen>
                   onLogMaintenance: _showMaintenanceLogSheet,
                   onViewIssues: _navigateToIssues,
                   maintenanceStream: _maintenanceStream,
+                  showPinCard: _isCaretaker,
                 ),
                 _IssueHistoryTab(issues: issues, onOpen: _openIssue),
               ],
@@ -647,6 +649,9 @@ class _HealthTab extends StatelessWidget {
   final void Function(String category, _CategoryIssueState issueState) onViewIssues;
   // Cached by the parent so rebuilds don't recreate it.
   final Stream<QuerySnapshot> maintenanceStream;
+  // The caretaker is often the one at the property to confirm the pin. The
+  // owner has the same card on their property page.
+  final bool showPinCard;
 
   const _HealthTab({
     required this.property,
@@ -655,6 +660,7 @@ class _HealthTab extends StatelessWidget {
     required this.onLogMaintenance,
     required this.onViewIssues,
     required this.maintenanceStream,
+    this.showPinCard = false,
   });
 
   @override
@@ -668,6 +674,11 @@ class _HealthTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (showPinCard) ...[
+              PinConfirmationCard(propertyId: property.id),
+              const SizedBox(height: 24),
+            ],
+
             // Amenities present on this property
             if (property.amenities.isNotEmpty) ...[
               _buildAmenitiesStrip(),

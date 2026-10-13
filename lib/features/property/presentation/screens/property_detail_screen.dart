@@ -13,6 +13,7 @@ import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/property_location_map.dart';
+import '../../../../shared/widgets/pin_confirmation_card.dart';
 import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../shared/widgets/share_property_sheet_external.dart';
 import '../../../../services/property_service.dart';
@@ -1184,6 +1185,13 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                               emptyMessage: _isOwner
                                   ? 'You have not dropped a map pin for this property. Tenants and agents will have to find it from the address alone.'
                                   : 'The exact pin unlocks once your inspection payment is confirmed.',
+                            ),
+                          ],
+                          if (_isOwner) ...[
+                            const SizedBox(height: 12),
+                            PinConfirmationCard(
+                              propertyId: property.id,
+                              onConfirmed: _loadExactAddressIfEntitled,
                             ),
                           ],
 

@@ -10,6 +10,7 @@ import 'package:cloudinary_public/cloudinary_public.dart';
 import '../shared/models/property_model.dart';
 import 'activity_service.dart';
 import 'residence_service.dart';
+import 'location_service.dart';
 
 class PropertyService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -40,6 +41,62 @@ class PropertyService {
 
   DocumentReference _exactLocationRef(String propertyId) =>
       _propertiesRef.doc(propertyId).collection('private').doc('location');
+
+  /// Whether the pin was confirmed by someone standing at the property, and
+  /// whether it has been moved by hand since. Null when the caller can't read
+  /// the location.
+  Future<PinStatus?> getPinStatus(String propertyId) async {
+    try {
+      final snap = await _exactLocationRef(propertyId).get();
+      final d = snap.data() as Map<String, dynamic>? ?? {};
+      final lat = (d['latitude'] as num?)?.toDouble();
+      final lng = (d['longitude'] as num?)?.toDouble();
+      final c = d['confirmedPin'] as Map<String, dynamic>?;
+      return PinStatus(
+        hasPin: lat != null && lng != null,
+        confirmedAt: (c?['confirmedAt'] as Timestamp?)?.toDate(),
+        confirmedRole: c?['role'] as String?,
+        accuracyM: (c?['accuracyM'] as num?)?.toInt(),
+        // confirmPropertyPin writes the pin and confirmedPin together, so any
+        // difference means the pin was moved by hand afterwards.
+        stillMatches: c != null &&
+            (c['latitude'] as num?)?.toDouble() == lat &&
+            (c['longitude'] as num?)?.toDouble() == lng,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Set the pin from a GPS reading taken at the property and mark it
+  /// confirmed (confirmPropertyPin CF). Returns null on success, otherwise a
+  /// message for the user.
+  Future<String?> confirmPinOnSite(
+    String propertyId,
+    LocationReading reading,
+  ) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable(
+            'confirmPropertyPin',
+            options: HttpsCallableOptions(
+              timeout: const Duration(seconds: 20),
+            ),
+          )
+          .call<Map<String, dynamic>>({
+        'propertyId': propertyId,
+        ...reading.toCallableData(),
+      });
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'deadline-exceeded' || e.code == 'unavailable') {
+        return 'Could not reach ClearRent. Check your connection and try again.';
+      }
+      return e.message ?? 'Could not confirm the pin. Please try again.';
+    } catch (e) {
+      return 'Could not confirm the pin. Please try again.';
+    }
+  }
 
   /// Reads the exact street address + coordinates for [propertyId]. Returns
   /// null when the caller isn't entitled (rules deny the read) or the subdoc
@@ -1623,4 +1680,27 @@ class PropertyAgreement {
   /// True when the property's rent has moved on since this was uploaded.
   bool isStaleFor(double currentRent) =>
       rentAtUpload > 0 && currentRent > 0 && rentAtUpload != currentRent;
+}
+
+/// Where a listing's pin came from. See [PropertyService.getPinStatus].
+class PinStatus {
+  final bool hasPin;
+  final DateTime? confirmedAt;
+
+  /// "landlord", "agent" or "caretaker": who stood there and confirmed it.
+  final String? confirmedRole;
+  final int? accuracyM;
+
+  /// The current pin is the one confirmed on site, not moved since.
+  final bool stillMatches;
+
+  const PinStatus({
+    required this.hasPin,
+    this.confirmedAt,
+    this.confirmedRole,
+    this.accuracyM,
+    required this.stillMatches,
+  });
+
+  bool get isConfirmed => confirmedAt != null && stillMatches;
 }

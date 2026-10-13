@@ -11,6 +11,7 @@ import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/models/property_model.dart';
 import '../../../../shared/widgets/property_location_map.dart';
+import '../../../../shared/widgets/pin_confirmation_card.dart';
 import '../../../../shared/widgets/property_readiness_sheet.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -541,6 +542,11 @@ class _AgentPropertyDetailScreenState extends State<AgentPropertyDetailScreen> {
                         emptyMessage:
                             'The landlord did not drop a map pin for this property. '
                             'Use the address, or message them for directions.',
+                      ),
+                      const SizedBox(height: 12),
+                      PinConfirmationCard(
+                        propertyId: widget.propertyId,
+                        onConfirmed: _loadProperty,
                       ),
                       const SizedBox(height: 16),
                       Text(
