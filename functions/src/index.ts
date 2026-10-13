@@ -87,6 +87,11 @@ export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
 export {requestPhoneOtp, verifyPhoneOtp} from "./phone_otp_ops";
 export {confirmPropertyPin} from "./property_pin_ops";
+export {
+  startVideoViewing,
+  joinVideoViewing,
+  recordVideoPresence,
+} from "./video_viewing_ops";
 export {adminDailyDigestEmail, adminEveningDigestEmail} from
   "./admin_digest_email";
 export {

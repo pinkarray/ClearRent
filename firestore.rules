@@ -1259,7 +1259,12 @@ service cloud.firestore {
         && request.resource.data.get('paymentVerifiedAt', null) == null
         && request.resource.data.get('locationRevealedAt', null) == null
         && request.resource.data.get('earningsCredited', false) == false
-        && request.resource.data.get('tenantRated', false) == false;
+        && request.resource.data.get('tenantRated', false) == false
+        // A video viewing's evidence (`video`) is written only by
+        // video_viewing_ops; the mode itself is the tenant's choice.
+        && request.resource.data.get('viewingMode', 'in_person')
+             in ['in_person', 'video']
+        && request.resource.data.get('video', null) == null;
       
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
@@ -1331,13 +1336,20 @@ service cloud.firestore {
       allow update: if isTenant()
         && resource.data.status == 'approved'
         && withinInspectionWindow()
+        && resource.data.get('viewingMode', 'in_person') != 'video'
         && inspFields(['tenantArrived', 'tenantArrivedAt', 'updatedAt']);
 
       // [Row 5] Handler marks themselves arrived.
       // Site: inspection_service.dart:961
+      //
+      // Neither tap applies to a video viewing: there the server records
+      // arrival itself, the handler's only after a GPS check against the
+      // property's confirmed pin (startVideoViewing) and the tenant's on
+      // joining the call. A tap would let a handler "arrive" from home.
       allow update: if isHandler()
         && resource.data.status == 'approved'
         && withinInspectionWindow()
+        && resource.data.get('viewingMode', 'in_person') != 'video'
         && inspFields(['handlerArrived', 'handlerArrivedAt', 'updatedAt']);
       
       // [Row 6] Handler marks inspection complete. Triggers W1
