@@ -1338,6 +1338,18 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                 ),
               ),
             ],
+            // A video viewing is started (and, after a dropped call, rejoined)
+            // from its own button, which checks the landlord is at the
+            // property. Kept for as long as the viewing is open (the button
+            // hides itself once it is no longer approved): a call can drop
+            // after both have confirmed the meeting, mid-walkthrough.
+            if (r.isVideo) ...[
+              VideoViewingButton(
+                request: r,
+                isHost: r.agentId == null || r.agentId!.isEmpty,
+              ),
+              const SizedBox(height: 12),
+            ],
             // A landlord who lives in the unit is already there, so being
             // asked to say "I'm on my way" and then "I've arrived" is
             // nonsense. One confirmation covers both - the tenant still
@@ -1348,14 +1360,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             // below - so they could never confirm the meeting, never
             // complete the inspection, and never be credited the handler
             // fee that completion pays.
-            // A video viewing is started from its own button (it checks the
-            // landlord is at the property); none of these taps apply to it.
-            if (r.isVideo && !r.handlerArrived) ...[
-              VideoViewingButton(
-                request: r,
-                isHost: r.agentId == null || r.agentId!.isEmpty,
-              ),
-            ] else if (r.handlerIsResident && !r.handlerArrived) ...[
+            if (!r.isVideo && r.handlerIsResident && !r.handlerArrived) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(

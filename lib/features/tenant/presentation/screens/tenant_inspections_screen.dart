@@ -1335,8 +1335,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           ),
         ],
 
-        // A video viewing: joining the call is the tenant's arrival.
-        if (r.isVideo && !r.met) ...[
+        // A video viewing: joining the call is the tenant's arrival. Kept
+        // while the viewing is open, so a dropped call can be rejoined.
+        if (r.isVideo) ...[
           const SizedBox(height: 12),
           VideoViewingButton(request: r, isHost: false),
         ],
