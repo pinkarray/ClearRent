@@ -25,11 +25,12 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
-        <!-- Agora screen sharing, and geolocator background tracking: neither
-             is used (location is read only while the app is open). -->
+        <!-- Agora screen sharing: not used. (GeolocatorLocationService must
+             stay: geolocator binds to it even for on-screen position updates.
+             Removing it broke every reading, 2026-10-13. It never runs in the
+             background without FOREGROUND_SERVICE, which is removed above.) -->
         <activity android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenCaptureAssistantActivity" tools:node="remove"/>
         <service android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenSharingService" tools:node="remove"/>
-        <service android:name="com.baseflow.geolocator.GeolocatorLocationService" tools:node="remove"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
