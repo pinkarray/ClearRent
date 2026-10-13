@@ -45,7 +45,9 @@ class LocationUnavailable implements Exception {
 class LocationService {
   /// A fix this good ends the wait early.
   static const double _goodEnoughM = 15;
-  static const Duration _maxWait = Duration(seconds: 15);
+  // A cold GPS start (no fix for days) can need 30s+ even outdoors; tested
+  // 2026-10-13, 15s indoors returned nothing at all.
+  static const Duration _maxWait = Duration(seconds: 45);
 
   /// Ask for permission if needed, then return the most accurate reading seen
   /// within [_maxWait]. Throws [LocationUnavailable].
