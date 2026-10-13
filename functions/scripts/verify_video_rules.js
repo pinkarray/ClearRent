@@ -35,7 +35,8 @@ const denied = (p) => assertFails(p).then(() => true, () => false);
   });
   await env.withSecurityRulesDisabled(async (c) => {
     const f = c.firestore();
-    await f.doc(`properties/${PID}`).set({landlordId: LANDLORD, readyForInspections: true});
+    await f.doc(`properties/${PID}`).set({landlordId: LANDLORD, readyForInspections: true, videoViewingAvailable: true});
+    await f.doc("properties/prop_nopin").set({landlordId: LANDLORD, readyForInspections: true});
     await f.doc(`users/${TENANT}`).set({hasBankDetails: true});
     await f.doc("inspection_requests/in_person").set(approved(null));
     await f.doc("inspection_requests/video").set(approved("video"));
@@ -62,9 +63,21 @@ const denied = (p) => assertFails(p).then(() => true, () => false);
     await ok(setDoc(doc(tdb, "inspection_requests/new2"), booking({viewingMode: "video"}))));
   check("create: unknown viewingMode is denied",
     await denied(setDoc(doc(tdb, "inspection_requests/new3"), booking({viewingMode: "zoom"}))));
+  check("create: video booking on a listing without a confirmed pin is denied",
+    await denied(setDoc(doc(tdb, "inspection_requests/new5"),
+      {...booking({viewingMode: "video"}), propertyId: "prop_nopin"})));
+  check("create: in-person booking on that same listing (positive control)",
+    await ok(setDoc(doc(tdb, "inspection_requests/new6"),
+      {...booking({}), propertyId: "prop_nopin"})));
   check("create: planting video evidence is denied",
     await denied(setDoc(doc(tdb, "inspection_requests/new4"),
       booking({viewingMode: "video", video: {startedAt: now}}))));
+
+  // THE FLAG ITSELF is server-maintained
+  check("property: owner edits an ordinary field (positive control)",
+    await ok(updateDoc(doc(ldb, "properties/prop_nopin"), {readinessNote: "x"})));
+  check("property: owner cannot switch videoViewingAvailable on",
+    await denied(updateDoc(doc(ldb, "properties/prop_nopin"), {videoViewingAvailable: true})));
 
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASS" : failures + " FAILED"}`);

@@ -566,6 +566,8 @@ service cloud.firestore {
         // the invite is bypassed entirely - a third party would reach a
         // tenant's issues and message thread having never agreed to anything.
         && !request.resource.data.keys().hasAny(['caretakerId', 'caretakerName'])
+        // Server-maintained from the confirmed pin (onPropertyLocationWritten).
+        && !request.resource.data.keys().hasAny(['videoViewingAvailable'])
         // A grouped unit carries no doc fields; a standalone listing has no
         // building to inherit from, so it may not claim 'inherited'.
         && (
@@ -634,6 +636,9 @@ service cloud.firestore {
         // Server-written by confirmListingFee; see the create rule.
         && !changed(['listingFeeStatus', 'listingFeePaymentReference',
                      'listingFeeAmount', 'listingFeePaidAt'])
+        // True only while the pin is the one confirmed on site; a video viewing
+        // proves presence against it. Server-maintained, see the create rule.
+        && !changed(['videoViewingAvailable'])
         // A caretaker is INVITED and must accept; `caretakerId` is stamped by
         // respondToCaretakerInvite on the admin SDK. This rule has no hasOnly,
         // so every field it doesn't name is owner-writable - without this guard
@@ -1264,6 +1269,11 @@ service cloud.firestore {
         // video_viewing_ops; the mode itself is the tenant's choice.
         && request.resource.data.get('viewingMode', 'in_person')
              in ['in_person', 'video']
+        // Video only where the host's presence can be checked: the property's
+        // pin must have been confirmed on site and not moved since.
+        && (request.resource.data.get('viewingMode', 'in_person') != 'video'
+            || get(/databases/$(database)/documents/properties/$(request.resource.data.propertyId))
+                 .data.get('videoViewingAvailable', false) == true)
         && request.resource.data.get('video', null) == null;
       
       allow read: if request.auth != null && (

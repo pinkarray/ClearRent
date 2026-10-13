@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 
@@ -99,5 +100,34 @@ export const confirmPropertyPin = onCall(
       propertyId, role, accuracyM: Math.round(accuracy),
     });
     return {ok: true, latitude: lat, longitude: lng};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// onPropertyLocationWritten - keeps `videoViewingAvailable` on the listing in
+// step with the pin. Tenants can't read private/location (it is the exact
+// address), so the booking sheet needs a public answer to "can this be viewed
+// by video?". True only while the live pin is the one confirmed on site; a
+// hand-moved pin turns it off. firestore.rules make it server-only and refuse
+// a video booking without it.
+// ─────────────────────────────────────────────────────────────────────────────
+export const onPropertyLocationWritten = onDocumentWritten(
+  "properties/{propertyId}/private/location",
+  async (event) => {
+    const d = event.data?.after.data();
+    const c = d?.confirmedPin as
+      {latitude?: number; longitude?: number} | undefined;
+    const available = !!c &&
+      c.latitude === d?.latitude && c.longitude === d?.longitude;
+
+    const propRef = getFirestore().collection("properties")
+      .doc(event.params.propertyId);
+    const prop = await propRef.get();
+    if (!prop.exists) return; // the listing itself is being deleted
+    if ((prop.get("videoViewingAvailable") === true) === available) return;
+    await propRef.update({videoViewingAvailable: available});
+    logger.info("videoViewingAvailable updated", {
+      propertyId: event.params.propertyId, available,
+    });
   },
 );

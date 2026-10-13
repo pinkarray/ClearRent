@@ -86,7 +86,10 @@ export {
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
 export {requestPhoneOtp, verifyPhoneOtp} from "./phone_otp_ops";
-export {confirmPropertyPin} from "./property_pin_ops";
+export {
+  confirmPropertyPin,
+  onPropertyLocationWritten,
+} from "./property_pin_ops";
 export {
   startVideoViewing,
   joinVideoViewing,
@@ -2150,6 +2153,8 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
       );
     }
 
+    const isVideo = after.viewingMode === "video";
+
     // ---- Field: tenantArrived false → true ----
     // Notify the handler(s). Self-handled = landlord. Agent-handled
     // = agent + landlord (matches existing activity-feed pattern).
@@ -2171,8 +2176,11 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
           {
             userId: rid,
             type: "tenant_arrived",
-            title: "Tenant Arrived",
-            body: `${tenantName} arrived at ${propertyTitle}`,
+            // On a video viewing, "arriving" is joining the call.
+            title: isVideo ? "Tenant Joined the Call" : "Tenant Arrived",
+            body: isVideo ?
+              `${tenantName} joined the video viewing of ${propertyTitle}` :
+              `${tenantName} arrived at ${propertyTitle}`,
             payload: {
               route,
               initialTab: "1",
@@ -2197,8 +2205,14 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
         {
           userId: tenantId,
           type: "handler_arrived",
-          title: "Your Inspection Host Arrived",
-          body: `${handlerName} arrived at ${propertyTitle}`,
+          // On a video viewing the host has just opened the call from the
+          // property, and the tenant can only join after this.
+          title: isVideo ?
+            "Your Video Viewing Has Started" :
+            "Your Inspection Host Arrived",
+          body: isVideo ?
+            `${handlerName} is at ${propertyTitle}. Join the call now.` :
+            `${handlerName} arrived at ${propertyTitle}`,
           payload: {
             route: tenantRoute,
             initialTab: "1",
