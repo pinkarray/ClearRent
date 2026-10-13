@@ -31,6 +31,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../shared/widgets/user_avatar.dart';
 import '../../../../shared/utils/sheet_insets.dart';
 import '../../../../services/residence_service.dart';
+import 'landlord_inspections_screen.dart';
 
 class LandlordHomeScreen extends StatefulWidget {
   /// Bottom-nav tab to open on. 0 Dashboard · 1 Properties · 2 Messages ·
@@ -1028,7 +1029,15 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
         activity.type == ActivityType.inspectionDeclined ||
         activity.type == ActivityType.inspectionCompleted ||
         activity.type == ActivityType.inspectionRated) {
-      context.push('/landlord/inspections');
+      await LandlordInspectionsScreen.openFor(
+        context,
+        requestId: activity.relatedId,
+        fallbackTab: activity.type == ActivityType.inspectionRequest
+            ? 0
+            : activity.type == ActivityType.inspectionApproved
+                ? 1
+                : 2,
+      );
       return;
     }
 

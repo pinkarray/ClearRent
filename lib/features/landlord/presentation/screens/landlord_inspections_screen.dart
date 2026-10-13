@@ -41,6 +41,44 @@ class LandlordInspectionsScreen extends StatefulWidget {
   const LandlordInspectionsScreen(
       {super.key, this.initialTab, this.initialRequestId});
 
+  /// Where a request with this status is listed: 0 Pending, 1 Upcoming,
+  /// 2 History. Mirrors the tab filters below.
+  static int tabForStatus(String status) {
+    switch (status) {
+      case 'pending':
+      case 'pendingPayment':
+      case 'pendingVerification':
+      case 'declinedByAgent':
+        return 0;
+      case 'approved':
+        return 1;
+      default:
+        return 2;
+    }
+  }
+
+  /// Opens the inspections screen on the tab [requestId] is on NOW, with it
+  /// highlighted. A feed entry is a moment in the past: the request it names
+  /// may since have been approved or cancelled, so its type alone opened the
+  /// wrong tab, often an empty one. [fallbackTab] covers entries written
+  /// before they carried the request id.
+  static Future<void> openFor(
+    BuildContext context, {
+    String? requestId,
+    int? fallbackTab,
+  }) async {
+    int? tab = fallbackTab;
+    if (requestId != null) {
+      final status = await InspectionService().getRequestStatus(requestId);
+      if (status != null) tab = tabForStatus(status);
+    }
+    if (!context.mounted) return;
+    context.push('/landlord/inspections', extra: {
+      if (tab != null) 'initialTab': tab,
+      if (requestId != null) 'param_requestId': requestId,
+    });
+  }
+
   @override
   State<LandlordInspectionsScreen> createState() =>
       _LandlordInspectionsScreenState();

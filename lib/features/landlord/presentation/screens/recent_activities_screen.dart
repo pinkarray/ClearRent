@@ -9,6 +9,7 @@ import '../../../../services/activity_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/conversation_service.dart';
+import 'landlord_inspections_screen.dart';
 
 class RecentActivitiesScreen extends StatefulWidget {
   const RecentActivitiesScreen({super.key});
@@ -125,7 +126,15 @@ class _RecentActivitiesScreenState extends State<RecentActivitiesScreen> {
         activity.type == ActivityType.inspectionCompleted ||
         activity.type == ActivityType.inspectionRated ||
         activity.type == ActivityType.payoutReceived) {
-      context.push('/landlord/inspections');
+      await LandlordInspectionsScreen.openFor(
+        context,
+        requestId: activity.relatedId,
+        fallbackTab: activity.type == ActivityType.inspectionRequest
+            ? 0
+            : activity.type == ActivityType.inspectionApproved
+                ? 1
+                : 2,
+      );
       return;
     }
 

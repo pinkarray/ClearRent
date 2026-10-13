@@ -629,6 +629,20 @@ class InspectionService {
     }
   }
 
+  /// The request's current status, or null when it can't be read (deleted,
+  /// or the caller isn't a party). Used to open the tab a request lives on now.
+  Future<String?> getRequestStatus(String requestId) async {
+    try {
+      final snap = await _firestore
+          .collection('inspection_requests')
+          .doc(requestId)
+          .get();
+      return snap.data()?['status'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Stream<List<InspectionRequest>> getLandlordRequests() {
     if (_currentUserId == null) return Stream.value([]);
 

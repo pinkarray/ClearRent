@@ -300,7 +300,11 @@ class ActivityService {
           title: (data['title'] as String?) ?? '',
           subtitle: (data['body'] as String?) ?? '',
           propertyId: payload['propertyId'] as String?,
-          relatedId: payload['issueId'] as String?,
+          // Issue notifications carry issueId; inspection ones param_requestId.
+          // Without the latter a tap could only open the inspections screen,
+          // never the request itself.
+          relatedId: (payload['issueId'] ?? payload['param_requestId'])
+              as String?,
           isRead: data['read'] == true,
           createdAt: created,
         ));
