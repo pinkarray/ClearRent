@@ -85,6 +85,7 @@ export {
 } from "./admin_handover_ops";
 export {inspectionTodayAdminDigest} from "./admin_digest_ops";
 export {onAdminAlertCreated} from "./admin_push_ops";
+export {requestPhoneOtp, verifyPhoneOtp} from "./phone_otp_ops";
 export {adminDailyDigestEmail, adminEveningDigestEmail} from
   "./admin_digest_email";
 export {
