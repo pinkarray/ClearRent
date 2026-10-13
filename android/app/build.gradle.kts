@@ -60,6 +60,27 @@ android {
         }
     }
 
+    // Agora ships optional extensions we never enable (lip sync, beauty,
+    // face tracking, spatial audio, screen share, ...). They only load when
+    // switched on in code, and dropping them saves ~18MB per phone. Kept: AI
+    // noise suppression, echo cancellation and the standard video codec,
+    // which help calls on weak Nigerian networks.
+    packaging {
+        jniLibs {
+            excludes += "**/libagora_lip_sync_extension.so"
+            excludes += "**/libagora_clear_vision_extension.so"
+            excludes += "**/libagora_spatial_audio_extension.so"
+            excludes += "**/libagora_segmentation_extension.so"
+            excludes += "**/libagora_face_capture_extension.so"
+            excludes += "**/libagora_audio_beauty_extension.so"
+            excludes += "**/libagora_content_inspect_extension.so"
+            excludes += "**/libagora_video_quality_analyzer_extension.so"
+            excludes += "**/libagora_face_detection_extension.so"
+            excludes += "**/libagora_video_av1_encoder_extension.so"
+            excludes += "**/libagora_screen_capture_extension.so"
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
