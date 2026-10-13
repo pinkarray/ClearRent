@@ -1086,6 +1086,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
           else if (tomorrow)
             _badge('TOMORROW', AppColors.info, Icons.upcoming),
           _badge('Approved', AppColors.success, Icons.check_circle),
+          if (r.isVideo) const VideoViewingBadge(),
         ]),
         const SizedBox(height: 12),
 
@@ -1305,7 +1306,11 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
               const SizedBox(width: 10),
               Expanded(
                   child: Text(
-                      'Remember to bring a valid ID and arrive 5 minutes early!',
+                      r.isVideo
+                          ? 'Your host will start the call from the property. '
+                              'Join from a good connection: mobile data is '
+                              'often better than weak Wi-Fi.'
+                          : 'Remember to bring a valid ID and arrive 5 minutes early!',
                       style: AppTextStyles.bodySmall
                           .copyWith(color: AppColors.primary))),
             ]),
@@ -1321,7 +1326,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
             icon: r.handlerIsResident ? Icons.home : Icons.where_to_vote,
             color: AppColors.success,
             // "has arrived" reads oddly about someone who lives there.
-            text: r.handlerIsResident
+            text: r.isVideo
+                ? '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} has started the call from the property'
+                : r.handlerIsResident
                 ? '${r.landlordName} is at the property and ready'
                 : '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} has arrived',
           ),
@@ -1359,9 +1366,11 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
         ] else if (r.canTenantMarkMet) ...[
           const SizedBox(height: 12),
           AppButton(
-            text: (r.agentId != null && r.agentId!.isNotEmpty)
-                ? 'I\'ve met the agent'
-                : 'I\'ve met the landlord',
+            text: r.isVideo
+                ? 'I watched the video viewing'
+                : (r.agentId != null && r.agentId!.isNotEmpty)
+                    ? 'I\'ve met the agent'
+                    : 'I\'ve met the landlord',
             onPressed: _markMet,
           ),
         ] else if (r.tenantAwaitingHandlerMet) ...[
@@ -1371,7 +1380,7 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
             color: AppColors.info,
             text:
                 'Waiting for the ${r.isAgentHandled ? 'agent' : 'landlord'} to '
-                'confirm you met',
+                '${r.isVideo ? 'confirm the video viewing took place' : 'confirm you met'}',
           ),
         ] else if (r.met) ...[
           const SizedBox(height: 12),
@@ -1393,7 +1402,9 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    'Inspection in progress',
+                    r.isVideo
+                        ? 'Video viewing in progress'
+                        : 'Inspection in progress',
                     style: AppTextStyles.labelMedium
                         .copyWith(color: AppColors.success),
                     textAlign: TextAlign.center,

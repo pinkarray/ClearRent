@@ -98,3 +98,36 @@ class _VideoViewingButtonState extends State<VideoViewingButton> {
     );
   }
 }
+
+/// Marks a viewing as a video call on every card, whatever the day, so the
+/// mode is never a surprise on the day itself.
+class VideoViewingBadge extends StatelessWidget {
+  const VideoViewingBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.info.withAlpha(26),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.videocam_outlined, size: 16, color: AppColors.info),
+          const SizedBox(width: 6),
+          Text(
+            'Video viewing',
+            style: TextStyle(
+              color: AppColors.info,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -141,6 +141,11 @@ class PropertyModel {
 
   // Landlord residence (for inspection travel calculation)
   final bool landlordLivesInProperty;
+
+  /// The pin was confirmed on site and not moved since, so the host's presence
+  /// can be checked and a video viewing can be booked. Server-maintained
+  /// (onPropertyLocationWritten); never written by the app.
+  final bool videoViewingAvailable;
   /// Tenant-facing residence line, derived from the landlord's profile
   /// (see LandlordResidence): 'on_premises' | 'elsewhere' | 'abroad', or null
   /// on listings the landlord has not answered for yet.
@@ -244,6 +249,7 @@ class PropertyModel {
     this.inspectionTimeSlots = const ['morning', 'afternoon', 'late_afternoon'],
     this.inspectionPropertyCluster,
     this.landlordLivesInProperty = false,
+    this.videoViewingAvailable = false,
     this.landlordResidence,
     this.landlordResidenceRegion,
     this.videoUrl,
@@ -702,6 +708,7 @@ class PropertyModel {
       inspectionPropertyCluster:
           inspectionPropertyCluster ?? this.inspectionPropertyCluster,
       landlordLivesInProperty: landlordLivesInProperty ?? this.landlordLivesInProperty,
+      videoViewingAvailable: videoViewingAvailable,
       videoUrl: videoUrl ?? this.videoUrl,
       ceilingTypes: ceilingTypes ?? this.ceilingTypes,
       recurringDues: recurringDues ?? this.recurringDues,
@@ -849,6 +856,7 @@ class PropertyModel {
             ['morning', 'afternoon', 'late_afternoon'],
       ),
       landlordLivesInProperty: json['landlordLivesInProperty'] ?? false,
+      videoViewingAvailable: json['videoViewingAvailable'] == true,
       landlordResidence: json['landlordResidence'] as String?,
       landlordResidenceRegion: json['landlordResidenceRegion'] as String?,
       videoUrl: json['videoUrl'] as String?,
@@ -958,6 +966,7 @@ class PropertyModel {
       ),
       inspectionPropertyCluster: data['inspectionPropertyCluster'] as String?,
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
+      videoViewingAvailable: data['videoViewingAvailable'] == true,
       landlordResidence: data['landlordResidence'] as String?,
       landlordResidenceRegion: data['landlordResidenceRegion'] as String?,
       videoUrl: data['videoUrl'] as String?,
@@ -1039,6 +1048,7 @@ class PropertyModel {
       'inspectionDays': inspectionDays,
       'inspectionTimeSlots': inspectionTimeSlots,
       'landlordLivesInProperty': landlordLivesInProperty,
+      'videoViewingAvailable': videoViewingAvailable,
       if (videoUrl != null) 'videoUrl': videoUrl,
       if (ceilingTypes.isNotEmpty) 'ceilingTypes': ceilingTypes,
       if (recurringDues.isNotEmpty) 'recurringDues': recurringDues,

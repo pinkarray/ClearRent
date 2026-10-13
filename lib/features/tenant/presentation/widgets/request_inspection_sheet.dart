@@ -41,6 +41,9 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
   final TextEditingController _notesController = TextEditingController();
 
   DateTime? _selectedDate;
+  // 'in_person' or 'video'. Video is offered only where the pin was
+  // confirmed on site (PropertyModel.videoViewingAvailable).
+  String _viewingMode = 'in_person';
   String? _selectedTimeSlot;
   List<DateTime> _availableDates = [];
   List<String> _availableTimeSlots = [];
@@ -205,6 +208,7 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
       requestedTimeSlot: _selectedTimeSlot!,
       notes: notes,
       feeBreakdown: feeBreakdown,
+      viewingMode: _viewingMode,
     );
 
     if (!mounted) return;
@@ -384,6 +388,28 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
                   _buildHandlerInfo(),
                   const SizedBox(height: 24),
 
+                  if (widget.property.videoViewingAvailable) ...[
+                    Text('How would you like to view it?',
+                        style: AppTextStyles.labelLarge),
+                    const SizedBox(height: 12),
+                    _buildModeOption(
+                      mode: 'in_person',
+                      icon: Icons.directions_walk,
+                      title: 'Visit in person',
+                      subtitle: 'Meet your host at the property.',
+                    ),
+                    const SizedBox(height: 8),
+                    _buildModeOption(
+                      mode: 'video',
+                      icon: Icons.videocam_outlined,
+                      title: 'Video viewing',
+                      subtitle: 'Your host walks you through the property '
+                          'on a live video call, from the property itself. '
+                          'Same fee.',
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
                   // Date selection
                   Text('Select Date', style: AppTextStyles.labelLarge),
                   const SizedBox(height: 12),
@@ -468,6 +494,53 @@ class _RequestInspectionSheetState extends State<RequestInspectionSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModeOption({
+    required String mode,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = _viewingMode == mode;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _viewingMode = mode),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.08)
+              : AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: selected ? AppColors.primary : AppColors.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTextStyles.labelLarge),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: AppTextStyles.bodySmall),
+                ],
+              ),
+            ),
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? AppColors.primary : AppColors.textHint,
+            ),
+          ],
+        ),
       ),
     );
   }

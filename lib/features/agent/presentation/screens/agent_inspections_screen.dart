@@ -1136,6 +1136,12 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
               ),
             ),
 
+          if (request.isVideo)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: VideoViewingBadge(),
+            ),
+
           // Reschedule proposal panel (only when a proposal is active)
           if (request.hasPendingReschedule)
             RescheduleProposalPanel(
@@ -1337,7 +1343,9 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${request.tenantName} has arrived and is waiting!',
+                          request.isVideo
+                              ? '${request.tenantName} has joined the call.'
+                              : '${request.tenantName} has arrived and is waiting!',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.info,
                             fontWeight: FontWeight.w600,
@@ -1438,7 +1446,9 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                         !request.tenantArrived
                             ? 'You\'re here. Waiting for tenant...'
                             : request.met
-                                ? 'Inspection in progress'
+                                ? (request.isVideo
+                                    ? 'Video viewing in progress'
+                                    : 'Inspection in progress')
                                 : 'Both arrived - ready to inspect!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.success,
@@ -1482,7 +1492,9 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                 SizedBox(
                   width: double.infinity,
                   child: AppButton(
-                    text: 'I\'ve met the tenant',
+                    text: request.isVideo
+                        ? 'The video viewing took place'
+                        : 'I\'ve met the tenant',
                     onPressed: _markMet,
                   ),
                 ),

@@ -1111,6 +1111,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     ],
                   ),
                 ),
+              if (r.isVideo) const VideoViewingBadge(),
               if (isAgent)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -1299,7 +1300,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${r.tenantName} has arrived and is waiting!',
+                        r.isVideo
+                            ? '${r.tenantName} has joined the call.'
+                            : '${r.tenantName} has arrived and is waiting!',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.info,
                           fontWeight: FontWeight.w600,
@@ -1451,7 +1454,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
                       !r.tenantArrived
                           ? 'You\'re here. Waiting for tenant...'
                           : r.met
-                              ? 'Inspection in progress'
+                              ? (r.isVideo
+                                  ? 'Video viewing in progress'
+                                  : 'Inspection in progress')
                               : 'Both arrived - ready to inspect!',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: AppColors.success,
@@ -1495,7 +1500,9 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
               SizedBox(
                 width: double.infinity,
                 child: AppButton(
-                  text: 'I\'ve met the tenant',
+                  text: r.isVideo
+                      ? 'The video viewing took place'
+                      : 'I\'ve met the tenant',
                   onPressed: _markMet,
                 ),
               ),

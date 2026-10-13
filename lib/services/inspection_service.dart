@@ -284,6 +284,9 @@ class InspectionService {
     required String requestedTimeSlot,
     String? notes,
     InspectionFeeBreakdown? feeBreakdown,
+    // 'in_person' or 'video'. Rules refuse 'video' unless the property's
+    // pin is confirmed on site (videoViewingAvailable).
+    String viewingMode = 'in_person',
   }) async {
     try {
       if (_currentUserId == null) {
@@ -429,6 +432,7 @@ class InspectionService {
           composeScheduledDateTime(requestedDate, requestedTimeSlot),
         ),
         'requestedTimeSlot': requestedTimeSlot,
+        'viewingMode': viewingMode,
         'requestedTimeDisplay':
             timeSlotDisplay[requestedTimeSlot] ?? requestedTimeSlot,
         'notes': notes,
