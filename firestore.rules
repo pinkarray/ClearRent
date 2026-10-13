@@ -832,11 +832,25 @@ service cloud.firestore {
           || propertyAgent()
           || (docId != 'agreement'
               && exists(/databases/$(database)/documents/properties/$(propertyId)/reveals/$(request.auth.uid)))
+          // The accepted caretaker looks after the place and is often the one
+          // standing there to confirm the pin (confirmPropertyPin). Location
+          // only: the agreement and anything else private stay closed.
+          || (docId == 'location' && isPropertyCaretaker(propertyId))
         );
         // Only the handler (owner or assigned agent) can write the exact
         // location. Requires the parent to already exist (created first).
+        //
+        // `confirmedPin` is the GPS reading confirmPropertyPin took while
+        // someone stood at the property; video viewings check the handler's
+        // presence against it. Only that CF writes it. A hand-moved pin simply
+        // stops matching it, so no client ever has to clear a flag.
         allow write: if request.auth != null
-          && (propertyOwner() || propertyAgent());
+          && (propertyOwner() || propertyAgent())
+          && (request.resource == null || docId != 'location'
+              || (resource == null
+                  ? !request.resource.data.keys().hasAny(['confirmedPin'])
+                  : !request.resource.data.diff(resource.data).affectedKeys()
+                      .hasAny(['confirmedPin'])));
       }
 
       match /reveals/{tenantId} {
