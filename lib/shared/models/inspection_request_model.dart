@@ -373,14 +373,14 @@ class InspectionRequest {
   /// [tenantOnWay], and the app then offered them "I'm on my way" while they
   /// were standing at the property having already confirmed the meeting.
   ///
-  /// Never on a video viewing: nobody travels to the tenant's side of it, and
-  /// arrival there is recorded by the server (video_viewing_ops.ts).
+  /// The tenant never travels to a video viewing. The host still does (the
+  /// call can only start from the property), so their "on my way" stays: it
+  /// tells the tenant, waiting at home, that someone is coming.
   bool get canTenantMarkOnWay =>
       !isVideo &&
       isConfirmed && !tenantOnWay && !tenantArrived && isWithinOnWayWindow;
 
   bool get canHandlerMarkOnWay =>
-      !isVideo &&
       isConfirmed && !handlerOnWay && !handlerArrived && isWithinOnWayWindow;
 
   /// A live call with the handler at the property, instead of a visit.

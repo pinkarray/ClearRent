@@ -1400,7 +1400,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             // the arrived check this branch also matched forever and every
             // landlord-handled inspection - not just a resident's - stalled
             // on "I've Arrived" with the cascade below out of reach.
-            ] else if (r.handlerOnWay && !r.handlerArrived) ...[
+            ] else if (!r.isVideo && r.handlerOnWay && !r.handlerArrived) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(

@@ -1392,7 +1392,7 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
                   text: 'I\'m on my way',
                   onPressed: _markOnWay,
                 ),
-              ] else if (request.handlerOnWay) ...[
+              ] else if (!request.isVideo && request.handlerOnWay) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
