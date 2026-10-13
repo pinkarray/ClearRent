@@ -18,7 +18,7 @@
 // subcollection; Agora's own join/leave notifications are added separately.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {onCall, onRequest, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {defineSecret} from "firebase-functions/params";
 import {
@@ -29,6 +29,7 @@ import {
 } from "firebase-admin/firestore";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {RtcTokenBuilder, RtcRole} from "agora-token";
+import {createHmac, timingSafeEqual} from "crypto";
 import {writeNotificationOnce} from "./notification_helpers";
 
 const agoraCertificate = defineSecret("AGORA_APP_CERTIFICATE");
@@ -625,5 +626,98 @@ export const videoViewingNoShowSweep = onSchedule(
       });
     }
     logger.info("Video viewing sweep", {checked: snap.size, ...counts});
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// agoraWebhook - Agora's own record of who joined each call, and for how long.
+//
+// Everything else about a video viewing is reported by our own apps. This is
+// Agora's independent account (Notifications, "107 user joined" / "108 user
+// left"), so a dispute over whether a call happened has evidence neither
+// party controls. Channel `insp_{requestId}`, uid 1 = tenant, 2 = host.
+//
+// Signed with HMAC-SHA256 over the raw body (Agora-Signature-V2). Agora needs
+// a 200 within 10s and retries otherwise, so this always answers 200 and
+// simply refuses to RECORD anything unsigned. Events can repeat and arrive
+// out of order: each is stored once under its noticeId.
+// ─────────────────────────────────────────────────────────────────────────────
+const agoraNcsSecret = defineSecret("AGORA_NCS_SECRET");
+
+export const agoraWebhook = onRequest(
+  {secrets: [agoraNcsSecret], timeoutSeconds: 10},
+  async (req, res) => {
+    const signature = String(req.get("Agora-Signature-V2") ?? "");
+    const expected = createHmac("sha256", agoraNcsSecret.value())
+      .update(req.rawBody ?? Buffer.alloc(0))
+      .digest("hex");
+    const a = Buffer.from(signature, "utf8");
+    const b = Buffer.from(expected, "utf8");
+    const valid = a.length === b.length && timingSafeEqual(a, b);
+
+    const body = (req.body ?? {}) as {
+      noticeId?: string;
+      eventType?: number;
+      payload?: {
+        channelName?: string;
+        uid?: number;
+        ts?: number;
+        duration?: number;
+        reason?: number;
+        platform?: number;
+        clientSeq?: number;
+      };
+    };
+    if (!valid) {
+      logger.warn("agoraWebhook: unsigned or bad signature, not recorded", {
+        eventType: body.eventType,
+      });
+      res.status(200).json({ok: true});
+      return;
+    }
+
+    const p = body.payload ?? {};
+    const requestId = p.channelName?.startsWith("insp_") ?
+      p.channelName.slice(5) : null;
+    if (!requestId || !body.noticeId ||
+        (body.eventType !== 107 && body.eventType !== 108)) {
+      res.status(200).json({ok: true});
+      return;
+    }
+
+    const who = p.uid === TENANT_UID ? "tenant" :
+      p.uid === HANDLER_UID ? "host" : "other";
+    try {
+      const reqRef = getFirestore().collection("inspection_requests")
+        .doc(requestId);
+      await reqRef.collection("video_events").doc(body.noticeId).create({
+        event: body.eventType === 107 ? "joined" : "left",
+        who,
+        uid: p.uid ?? null,
+        agoraTs: p.ts ?? null,
+        durationS: p.duration ?? null,
+        reason: p.reason ?? null,
+        platform: p.platform ?? null,
+        clientSeq: p.clientSeq ?? null,
+        receivedAt: FieldValue.serverTimestamp(),
+      });
+      // Running total of time in the call per party, from Agora's own
+      // durations. create() above already refused a duplicate noticeId.
+      if (body.eventType === 108 && typeof p.duration === "number" &&
+          who !== "other") {
+        await reqRef.update({
+          [`video.agora.${who}Seconds`]: FieldValue.increment(p.duration),
+        });
+      }
+    } catch (err) {
+      // ALREADY_EXISTS is a repeat delivery: fine. Anything else is logged
+      // but still acknowledged, so Agora does not hammer us with retries.
+      if ((err as {code?: number}).code !== 6) {
+        logger.error("agoraWebhook: failed to record", {
+          requestId, error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    res.status(200).json({ok: true});
   },
 );

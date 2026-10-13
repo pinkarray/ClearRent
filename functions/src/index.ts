@@ -95,6 +95,7 @@ export {
   joinVideoViewing,
   recordVideoPresence,
   checkInVideoViewing,
+  agoraWebhook,
   markVideoViewingReady,
   videoViewingNoShowSweep,
 } from "./video_viewing_ops";
