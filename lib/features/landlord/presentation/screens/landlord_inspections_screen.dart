@@ -323,6 +323,11 @@ class _LandlordPendingCardState extends State<_LandlordPendingCard> {
 
     final ready = await confirmInspectionReadiness(context);
     if (!ready || !mounted) return;
+    if (widget.request.isVideo &&
+        !await confirmVideoViewingTerms(context, widget.request)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _isLoading = true);
     final ok = await widget.inspectionService.approveRequest(widget.request.id);
     if (!mounted) return;

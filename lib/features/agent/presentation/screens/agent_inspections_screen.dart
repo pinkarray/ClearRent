@@ -298,6 +298,11 @@ class _AgentPendingCardState extends State<_AgentPendingCard> {
 
     final ready = await confirmInspectionReadiness(context);
     if (!ready || !mounted) return;
+    if (widget.request.isVideo &&
+        !await confirmVideoViewingTerms(context, widget.request)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     final success = await widget.inspectionService.approveRequest(

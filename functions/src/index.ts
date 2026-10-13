@@ -94,6 +94,7 @@ export {
   startVideoViewing,
   joinVideoViewing,
   recordVideoPresence,
+  checkInVideoViewing,
   markVideoViewingReady,
   videoViewingNoShowSweep,
 } from "./video_viewing_ops";
@@ -2207,13 +2208,15 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
         {
           userId: tenantId,
           type: "handler_arrived",
-          // On a video viewing the host has just opened the call from the
-          // property, and the tenant can only join after this.
+          // On a video viewing this is the host checking in at the property
+          // (checkInVideoViewing); "join now" is sent separately when they
+          // actually start the call.
           title: isVideo ?
-            "Your Video Viewing Has Started" :
+            "Your Host Is at the Property" :
             "Your Inspection Host Arrived",
           body: isVideo ?
-            `${handlerName} is at ${propertyTitle}. Join the call now.` :
+            `${handlerName} is at ${propertyTitle}. You can join as soon ` +
+              "as they start the call." :
             `${handlerName} arrived at ${propertyTitle}`,
           payload: {
             route: tenantRoute,

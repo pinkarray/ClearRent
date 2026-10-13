@@ -208,6 +208,10 @@ class InspectionRequest {
   /// With no call started by the end of the slot, the host is a proven no-show.
   final DateTime? tenantReadyAt;
 
+  /// The host checked in at the property by GPS (checkInVideoViewing). This,
+  /// not starting the call, is what the 30-minute rule and payouts look at.
+  final DateTime? videoCheckedInAt;
+
   // Met confirmation - a meeting is a two-person fact, so each party records
   // only their OWN half. `met` (which gates completion) is derived: true only
   // when both have confirmed. Neither side can assert the meeting alone.
@@ -305,6 +309,7 @@ class InspectionRequest {
     this.viewingMode = 'in_person',
     this.videoStartedAt,
     this.tenantReadyAt,
+    this.videoCheckedInAt,
     this.tenantConfirmedMet = false,
     this.tenantConfirmedMetAt,
     this.handlerConfirmedMet = false,
@@ -688,6 +693,7 @@ class InspectionRequest {
       viewingMode: viewingMode,
       videoStartedAt: videoStartedAt,
       tenantReadyAt: tenantReadyAt,
+      videoCheckedInAt: videoCheckedInAt,
     );
   }
 
@@ -776,6 +782,8 @@ class InspectionRequest {
       videoStartedAt:
           ((data['video'] as Map?)?['startedAt'] as Timestamp?)?.toDate(),
       tenantReadyAt: (data['tenantReadyAt'] as Timestamp?)?.toDate(),
+      videoCheckedInAt:
+          ((data['video'] as Map?)?['checkedInAt'] as Timestamp?)?.toDate(),
       handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
       tenantConfirmedMet: data['tenantConfirmedMet'] ?? false,
       tenantConfirmedMetAt:

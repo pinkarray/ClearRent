@@ -46,17 +46,45 @@ class VideoViewingService {
         options: HttpsCallableOptions(timeout: const Duration(seconds: 25)),
       );
 
-  /// Host only. Reads GPS, then asks the server to open the call.
-  Future<VideoCallCredentials> start(String requestId) async {
-    final LocationReading reading;
+  Future<LocationReading> _reading() async {
     try {
-      reading = await _location.currentReading();
+      return await _location.currentReading();
     } on LocationUnavailable catch (e) {
       throw VideoViewingException(e.message, needsSettings: e.needsSettings);
     }
+  }
+
+  /// Host: "I'm at the property". One small request with a GPS reading, so it
+  /// gets through on a weak connection where video would not. This is what
+  /// the 30-minute rule and the payouts check.
+  Future<void> checkIn(String requestId) async {
+    final reading = await _reading();
+    try {
+      await _callable('checkInVideoViewing').call<Map<String, dynamic>>({
+        'requestId': requestId,
+        ...reading.toCallableData(),
+      });
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'deadline-exceeded' || e.code == 'unavailable') {
+        throw const VideoViewingException(
+          'Could not reach ClearRent. Check your connection and try again.',
+        );
+      }
+      throw VideoViewingException(
+        e.message ?? 'Could not check you in. Please try again.',
+      );
+    }
+  }
+
+  /// Host only: opens the call. A host who already checked in needs no second
+  /// GPS reading; one who skipped the check-in is checked here instead.
+  Future<VideoCallCredentials> start(
+    String requestId, {
+    required bool checkedIn,
+  }) async {
     return _credentials('startVideoViewing', {
       'requestId': requestId,
-      ...reading.toCallableData(),
+      if (!checkedIn) ...(await _reading()).toCallableData(),
     });
   }
 

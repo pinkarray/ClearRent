@@ -162,11 +162,101 @@ function callCredentials(requestId: string, uid: number, req: DocumentData) {
   return {appId: AGORA_APP_ID, channel, uid, token, expiresAtMs};
 }
 
+/**
+ * Check the host is at the property: their GPS against the confirmed pin.
+ * Every attempt is logged, failed ones too: a host trying from far away is
+ * itself evidence. Throws a user-facing error when the check fails.
+ * @param {string} requestId Inspection request id.
+ * @param {DocumentData} req Request data.
+ * @param {Reading} reading The host's GPS reading.
+ * @param {string} stage "checkin" or "start", for the log.
+ * @return {Promise<{dist: number, accuracy: number}>} Rounded metres.
+ */
+async function verifyPresence(
+  requestId: string,
+  req: DocumentData,
+  reading: Reading,
+  stage: string,
+): Promise<{dist: number; accuracy: number}> {
+  const db = getFirestore();
+  const loc = (await db.collection("properties").doc(req.propertyId)
+    .collection("private").doc("location").get()).data();
+  const pin = loc?.confirmedPin as {latitude: number; longitude: number} |
+    undefined;
+  if (!pin) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This property's pin has not been confirmed on site, so a video " +
+        "viewing can't prove you are there.",
+    );
+  }
+
+  const dist =
+    distanceM(reading.lat, reading.lng, pin.latitude, pin.longitude);
+  const effective = Math.max(0, dist - reading.accuracyM);
+  const ok = !reading.isMocked &&
+    reading.accuracyM <= MAX_PRESENCE_ACCURACY_M &&
+    effective <= PRESENCE_RADIUS_M;
+
+  await db.collection("inspection_requests").doc(requestId)
+    .collection("video_presence").add({
+      stage,
+      ok,
+      distanceM: Math.round(dist),
+      accuracyM: Math.round(reading.accuracyM),
+      isMocked: reading.isMocked,
+      at: FieldValue.serverTimestamp(),
+    });
+
+  if (reading.isMocked) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Your phone is reporting a simulated location. Turn off any mock " +
+        "location app and try again.",
+    );
+  }
+  if (reading.accuracyM > MAX_PRESENCE_ACCURACY_M) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Your location is only accurate to about " +
+        `${Math.round(reading.accuracyM)}m. Step outside, at the gate or ` +
+        "in the compound, and try again.",
+    );
+  }
+  if (!ok) {
+    throw new HttpsError(
+      "failed-precondition",
+      `You seem to be about ${Math.round(dist)}m from the property. ` +
+        "Check in when you are there.",
+    );
+  }
+  return {dist: Math.round(dist), accuracy: Math.round(reading.accuracyM)};
+}
+
+/**
+ * Refuse anyone but the host of a request.
+ * @param {DocumentData} req Request data.
+ * @param {string} uid Caller.
+ */
+function assertHost(req: DocumentData, uid: string): void {
+  if (handlerOf(req) !== uid) {
+    throw new HttpsError(
+      "permission-denied",
+      "Only the person hosting this viewing can do this.",
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// startVideoViewing - the handler, at the property, opens the call.
+// checkInVideoViewing - "I'm at the property".
+//
+// Split from starting the call on purpose: this is one tiny request that gets
+// through on weak 2G, where video would not. It is what the 30-minute grace
+// rule and the automatic payouts look at, so a host who is there but cannot
+// get a video connection is never treated as absent.
 // ─────────────────────────────────────────────────────────────────────────────
-export const startVideoViewing = onCall(
-  {enforceAppCheck: true, timeoutSeconds: 30, secrets: [agoraCertificate]},
+export const checkInVideoViewing = onCall(
+  {enforceAppCheck: true, timeoutSeconds: 30},
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -178,86 +268,83 @@ export const startVideoViewing = onCall(
     const reading = readReading(data);
 
     const req = await loadLiveVideoViewing(requestId);
-    if (handlerOf(req) !== uid) {
-      throw new HttpsError(
-        "permission-denied",
-        "Only the person hosting this viewing can start the call.",
-      );
+    assertHost(req, uid);
+    if (req.video?.checkedInAt) return {ok: true, alreadyCheckedIn: true};
+
+    const {dist, accuracy} =
+      await verifyPresence(requestId, req, reading, "checkin");
+    await getFirestore().collection("inspection_requests").doc(requestId)
+      .update({
+        "handlerArrived": true,
+        "handlerArrivedAt": FieldValue.serverTimestamp(),
+        "video.checkedInAt": FieldValue.serverTimestamp(),
+        "video.checkInDistanceM": dist,
+        "video.checkInAccuracyM": accuracy,
+        "updatedAt": FieldValue.serverTimestamp(),
+      });
+    logger.info("Video viewing check-in", {requestId, distanceM: dist});
+    return {ok: true};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// startVideoViewing - the host, checked in at the property, opens the call.
+// A host who skipped the check-in is checked here instead, so either order
+// works. The tenant can join only after this.
+// ─────────────────────────────────────────────────────────────────────────────
+export const startVideoViewing = onCall(
+  {enforceAppCheck: true, timeoutSeconds: 30, secrets: [agoraCertificate]},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const data = (request.data ?? {}) as Record<string, unknown>;
+    const requestId = typeof data.requestId === "string" ? data.requestId : "";
+    if (!requestId) {
+      throw new HttpsError("invalid-argument", "Missing viewing.");
     }
 
-    const db = getFirestore();
-    const reqRef = db.collection("inspection_requests").doc(requestId);
+    const req = await loadLiveVideoViewing(requestId);
+    assertHost(req, uid);
 
     // Already started (a dropped call, a second phone): presence was proven.
     if (req.video?.startedAt) {
       return callCredentials(requestId, HANDLER_UID, req);
     }
 
-    const loc = (await db.collection("properties").doc(req.propertyId)
-      .collection("private").doc("location").get()).data();
-    const pin = loc?.confirmedPin as {latitude: number; longitude: number} |
-      undefined;
-    if (!pin) {
-      throw new HttpsError(
-        "failed-precondition",
-        "This property's pin has not been confirmed on site, so a video " +
-          "viewing can't prove you are there.",
-      );
-    }
-
-    const dist =
-      distanceM(reading.lat, reading.lng, pin.latitude, pin.longitude);
-    const effective = Math.max(0, dist - reading.accuracyM);
-    const ok = !reading.isMocked &&
-      reading.accuracyM <= MAX_PRESENCE_ACCURACY_M &&
-      effective <= PRESENCE_RADIUS_M;
-
-    // Every attempt is kept, failed ones too: a handler trying from far away
-    // is itself evidence.
-    await reqRef.collection("video_presence").add({
-      stage: "start",
-      ok,
-      distanceM: Math.round(dist),
-      accuracyM: Math.round(reading.accuracyM),
-      isMocked: reading.isMocked,
-      at: FieldValue.serverTimestamp(),
-    });
-
-    if (reading.isMocked) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Your phone is reporting a simulated location. Turn off any mock " +
-          "location app and try again.",
-      );
-    }
-    if (reading.accuracyM > MAX_PRESENCE_ACCURACY_M) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Your location is only accurate to about " +
-          `${Math.round(reading.accuracyM)}m. Step outside, at the gate or ` +
-          "in the compound, and try again.",
-      );
-    }
-    if (!ok) {
-      throw new HttpsError(
-        "failed-precondition",
-        `You seem to be about ${Math.round(dist)}m from the property. ` +
-          "Start the call when you are there.",
-      );
-    }
-
-    await reqRef.update({
-      "handlerArrived": true,
-      "handlerArrivedAt": FieldValue.serverTimestamp(),
+    const update: Record<string, unknown> = {
       "video.startedAt": FieldValue.serverTimestamp(),
       "video.channel": `insp_${requestId}`,
-      "video.startDistanceM": Math.round(dist),
-      "video.startAccuracyM": Math.round(reading.accuracyM),
       "updatedAt": FieldValue.serverTimestamp(),
-    });
-    logger.info("Video viewing started", {
-      requestId, distanceM: Math.round(dist),
-    });
+    };
+    if (!req.video?.checkedInAt) {
+      const {dist, accuracy} =
+        await verifyPresence(requestId, req, readReading(data), "start");
+      Object.assign(update, {
+        "handlerArrived": true,
+        "handlerArrivedAt": FieldValue.serverTimestamp(),
+        "video.checkedInAt": FieldValue.serverTimestamp(),
+        "video.checkInDistanceM": dist,
+        "video.checkInAccuracyM": accuracy,
+      });
+    }
+    await getFirestore().collection("inspection_requests").doc(requestId)
+      .update(update);
+
+    if (req.tenantId) {
+      const title = req.propertyTitle ?? "the property";
+      await writeNotificationOnce(`req_${requestId}_videoStarted`, {
+        userId: req.tenantId,
+        type: "video_started",
+        title: "Your Video Viewing Has Started",
+        body: `Your host has started the call from ${title}. Join now.`,
+        payload: {
+          route: "/tenant/inspections",
+          initialTab: "1",
+          param_requestId: requestId,
+        },
+      });
+    }
+    logger.info("Video viewing started", {requestId});
     return callCredentials(requestId, HANDLER_UID, req);
   },
 );
@@ -403,17 +490,28 @@ export const markVideoViewingReady = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// videoViewingNoShowSweep - a host who never started the call.
+// videoViewingNoShowSweep - settles video viewings nobody needs to judge.
 //
-// When a paid video viewing's slot has ended, the tenant marked themselves
-// ready, and the host never started the call (which needs their GPS at the
-// property), the absence is proven by the host's own phone. Refunded at once,
-// not at the nightly sweep: the tenant waited. Same amount as a host cancel
-// (fee minus the booking charge), via onInspectionRefundTriggered.
+// The host's presence is proven by GPS (checkInVideoViewing) and the tenant's
+// by "I'm ready" or joining, so three outcomes are certain enough to act on at
+// once, every 15 minutes, instead of the nightly sweep:
 //
-// No ready tap means nothing is proven either way; the nightly
-// inspectionLifecycleSweep sends that to admin review as before.
+//  1. Host absent. The tenant is ready and the host has not checked in 30
+//     minutes after the slot started: refunded (fee minus the booking
+//     charge, via onInspectionRefundTriggered), exactly as if the host had
+//     cancelled.
+//  2. Tenant absent. The host checked in, the slot has ended, and the tenant
+//     neither said they were ready nor joined: completed as a tenant no-show,
+//     which pays the host (creditInspectionEarnings) as admin review did.
+//  3. Call never connected. Both were there (host checked in, tenant ready)
+//     but the tenant never got into the call: nobody's fault. Sent to admin
+//     review with a free reschedule offered, no automatic money either way.
+//
+// Anything else (no check-in and no ready tap) proves nothing and is left to
+// the nightly inspectionLifecycleSweep, which sends it to admin review.
 // ─────────────────────────────────────────────────────────────────────────────
+const GRACE_MS = 30 * 60 * 1000;
+
 export const videoViewingNoShowSweep = onSchedule(
   {schedule: "every 15 minutes", timeZone: "Africa/Lagos", timeoutSeconds: 120},
   async () => {
@@ -423,52 +521,109 @@ export const videoViewingNoShowSweep = onSchedule(
       .where("status", "==", "approved")
       .get();
 
-    let refunded = 0;
+    const counts = {hostAbsent: 0, tenantAbsent: 0, callFailed: 0};
     for (const doc of snap.docs) {
       const d = doc.data();
       const start = (d.requestedDate as Timestamp | undefined)?.toMillis();
-      if (start === undefined || Date.now() <= start + slotLengthMs(d)) {
+      if (start === undefined || d.paymentStatus !== "paid") continue;
+      const now = Date.now();
+      const checkedIn = !!d.video?.checkedInAt;
+      const ready = !!d.tenantReadyAt;
+      const joined = d.tenantArrived === true;
+      const slotOver = now > start + slotLengthMs(d);
+      const title = d.propertyTitle ?? "the property";
+      const hostId = handlerOf(d);
+      const hostRoute =
+        d.agentId ? "/agent/inspections" : "/landlord/inspections";
+
+      if (!checkedIn && ready && now > start + GRACE_MS) {
+        await doc.ref.update({
+          status: "cancelled",
+          paymentStatus: "refunded",
+          hostNoShow: true,
+          refundReason: "Your host did not arrive for the video viewing",
+          cancelledAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        counts.hostAbsent++;
+        await writeNotificationOnce(`req_${doc.id}_hostNoShow_${d.tenantId}`, {
+          userId: d.tenantId,
+          type: "video_host_no_show",
+          title: "Video Viewing Refunded",
+          body: `Your host didn't arrive for the video viewing of ${title}. ` +
+            "We're refunding you.",
+          payload: {
+            route: "/tenant/inspections",
+            initialTab: "2",
+            param_requestId: doc.id,
+          },
+        });
+        if (hostId) {
+          await writeNotificationOnce(`req_${doc.id}_hostNoShow_${hostId}`, {
+            userId: hostId,
+            type: "video_host_no_show",
+            title: "Missed Video Viewing",
+            body: `You hadn't checked in at ${title} 30 minutes after the ` +
+              "viewing time while the tenant was waiting, so it has been " +
+              "cancelled and refunded.",
+            payload: {
+              route: hostRoute,
+              initialTab: "2",
+              param_requestId: doc.id,
+            },
+          });
+        }
         continue;
       }
-      if (d.paymentStatus !== "paid" || d.video?.startedAt ||
-          !d.tenantReadyAt) {
+
+      if (!slotOver || !checkedIn || joined) continue;
+
+      if (!ready) {
+        await doc.ref.update({
+          status: "completed",
+          completedAt: FieldValue.serverTimestamp(),
+          agentPayoutStatus: "pending",
+          tenantNoShow: true,
+          autoResolved: true,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        counts.tenantAbsent++;
+        if (hostId) {
+          await writeNotificationOnce(`req_${doc.id}_tenantNoShow_${hostId}`, {
+            userId: hostId,
+            type: "video_tenant_no_show",
+            title: "You'll Be Paid for This Viewing",
+            body: `The tenant didn't join the video viewing of ${title}. ` +
+              "You were at the property, so your fee stands.",
+            payload: {
+              route: hostRoute,
+              initialTab: "2",
+              param_requestId: doc.id,
+            },
+          });
+        }
         continue;
       }
 
       await doc.ref.update({
-        status: "cancelled",
-        paymentStatus: "refunded",
-        hostNoShow: true,
-        refundReason: "Your host did not start the video viewing",
-        cancelledAt: FieldValue.serverTimestamp(),
+        status: "awaitingOutcome",
+        videoCallFailed: true,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      refunded++;
-
-      const title = d.propertyTitle ?? "the property";
-      await writeNotificationOnce(`req_${doc.id}_hostNoShow_${d.tenantId}`, {
+      counts.callFailed++;
+      await writeNotificationOnce(`req_${doc.id}_callFailed_${d.tenantId}`, {
         userId: d.tenantId,
-        type: "video_host_no_show",
-        title: "Video Viewing Refunded",
-        body: `Your host didn't start the video viewing of ${title}. ` +
-          "We're refunding you.",
-        payload: {route: "/tenant/inspections", initialTab: "2"},
+        type: "video_call_failed",
+        title: "Your Video Viewing Didn't Connect",
+        body: `Your host was at ${title} but the call didn't connect. ` +
+          "We'll help you rebook it at no cost.",
+        payload: {
+          route: "/tenant/inspections",
+          initialTab: "2",
+          param_requestId: doc.id,
+        },
       });
-      const hostId = handlerOf(d);
-      if (hostId) {
-        await writeNotificationOnce(`req_${doc.id}_hostNoShow_${hostId}`, {
-          userId: hostId,
-          type: "video_host_no_show",
-          title: "Missed Video Viewing",
-          body: `You didn't start the video viewing of ${title} while the ` +
-            "tenant was waiting, so it has been cancelled and refunded.",
-          payload: {
-            route: d.agentId ? "/agent/inspections" : "/landlord/inspections",
-            initialTab: "2",
-          },
-        });
-      }
     }
-    logger.info("Video no-show sweep", {checked: snap.size, refunded});
+    logger.info("Video viewing sweep", {checked: snap.size, ...counts});
   },
 );
