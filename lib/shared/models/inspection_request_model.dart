@@ -204,6 +204,10 @@ class InspectionRequest {
   /// the property. The tenant can join only after this.
   final DateTime? videoStartedAt;
 
+  /// The tenant said they were waiting for the call (markVideoViewingReady).
+  /// With no call started by the end of the slot, the host is a proven no-show.
+  final DateTime? tenantReadyAt;
+
   // Met confirmation - a meeting is a two-person fact, so each party records
   // only their OWN half. `met` (which gates completion) is derived: true only
   // when both have confirmed. Neither side can assert the meeting alone.
@@ -300,6 +304,7 @@ class InspectionRequest {
     this.landlordLivesInProperty = false,
     this.viewingMode = 'in_person',
     this.videoStartedAt,
+    this.tenantReadyAt,
     this.tenantConfirmedMet = false,
     this.tenantConfirmedMetAt,
     this.handlerConfirmedMet = false,
@@ -682,6 +687,7 @@ class InspectionRequest {
       // Not editable through copyWith; carried so a copy keeps its mode.
       viewingMode: viewingMode,
       videoStartedAt: videoStartedAt,
+      tenantReadyAt: tenantReadyAt,
     );
   }
 
@@ -769,6 +775,7 @@ class InspectionRequest {
       viewingMode: data['viewingMode'] as String? ?? 'in_person',
       videoStartedAt:
           ((data['video'] as Map?)?['startedAt'] as Timestamp?)?.toDate(),
+      tenantReadyAt: (data['tenantReadyAt'] as Timestamp?)?.toDate(),
       handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
       tenantConfirmedMet: data['tenantConfirmedMet'] ?? false,
       tenantConfirmedMetAt:

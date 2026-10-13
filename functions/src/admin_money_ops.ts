@@ -1125,6 +1125,18 @@ function deriveRefundReason(
     };
   }
 
+  // A video viewing host who never started the call while the tenant waited
+  // (videoViewingNoShowSweep). Standard amount: the booking charge is kept,
+  // exactly as when a host cancels.
+  if (data.hostNoShow === true) {
+    return {
+      source: "inspection_host_no_show",
+      reason:
+        (data.refundReason as string | undefined) ??
+        "Your host did not start the video viewing",
+    };
+  }
+
   // Handler exit ramp: agent or landlord cancelled on tenant's behalf.
   const cancelledBy = data.cancelledBy as string | undefined;
   if (cancelledBy === "agent" || cancelledBy === "landlord") {

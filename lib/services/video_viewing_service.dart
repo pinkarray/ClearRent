@@ -64,6 +64,24 @@ class VideoViewingService {
   Future<VideoCallCredentials> join(String requestId) =>
       _credentials('joinVideoViewing', {'requestId': requestId});
 
+  /// Tenant: "I'm waiting for the call". Recorded with server time; it is what
+  /// proves a host no-show (videoViewingNoShowSweep refunds automatically).
+  Future<void> markReady(String requestId) async {
+    try {
+      await _callable('markVideoViewingReady')
+          .call<Map<String, dynamic>>({'requestId': requestId});
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'deadline-exceeded' || e.code == 'unavailable') {
+        throw const VideoViewingException(
+          'Could not reach ClearRent. Check your connection and try again.',
+        );
+      }
+      throw VideoViewingException(
+        e.message ?? 'Could not record that. Please try again.',
+      );
+    }
+  }
+
   /// The host's position during the call, as evidence. Best effort: indoors
   /// there may be no fix, and nothing here may interrupt the call.
   Future<void> reportPresence(String requestId) async {

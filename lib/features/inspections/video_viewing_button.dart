@@ -26,6 +26,31 @@ class VideoViewingButton extends StatefulWidget {
 class _VideoViewingButtonState extends State<VideoViewingButton> {
   bool _busy = false;
 
+  // The call window: from 30 minutes before the slot to its end, matching
+  // video_viewing_ops.ts.
+  bool get _inWindow {
+    final start = widget.request.requestedDate;
+    final now = DateTime.now();
+    return now.isAfter(start.subtract(const Duration(minutes: 30))) &&
+        now.isBefore(start.add(const Duration(hours: 3)));
+  }
+
+  Future<void> _markReady() async {
+    setState(() => _busy = true);
+    try {
+      await VideoViewingService().markReady(widget.request.id);
+    } on VideoViewingException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.error,
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _open() async {
     final r = widget.request;
     setState(() => _busy = true);
@@ -72,6 +97,19 @@ class _VideoViewingButtonState extends State<VideoViewingButton> {
       return const SizedBox.shrink();
     }
     final waiting = !widget.isHost && r.videoStartedAt == null;
+
+    // The tenant can't join before the host starts. Saying "I'm ready" is what
+    // makes a host who never starts a provable no-show.
+    if (waiting && _inWindow && r.tenantReadyAt == null) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _busy ? null : _markReady,
+          icon: const Icon(Icons.front_hand_outlined),
+          label: Text(_busy ? 'Saving...' : "I'm ready for the call"),
+        ),
+      );
+    }
     final label = _busy
         ? (widget.isHost ? 'Checking you are at the property...' : 'Joining...')
         : widget.isHost
@@ -79,7 +117,9 @@ class _VideoViewingButtonState extends State<VideoViewingButton> {
                 ? 'Start video viewing'
                 : 'Rejoin video viewing')
             : (waiting
-                ? 'Waiting for your host to start the call'
+                ? (r.tenantReadyAt != null
+                    ? "You're ready. Waiting for your host to start the call"
+                    : 'Waiting for your host to start the call')
                 : 'Join video call');
 
     return SizedBox(

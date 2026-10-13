@@ -27,7 +27,9 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase-admin/firestore";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import {RtcTokenBuilder, RtcRole} from "agora-token";
+import {writeNotificationOnce} from "./notification_helpers";
 
 const agoraCertificate = defineSecret("AGORA_APP_CERTIFICATE");
 
@@ -338,5 +340,124 @@ export const recordVideoPresence = onCall(
     }
     await reqRef.collection("video_presence").add(sample);
     return {ok: true};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// markVideoViewingReady - the tenant says they are waiting for the call.
+//
+// The tenant can't join before the host starts, so without this nothing
+// records that they turned up. It is what makes a host no-show provable, and
+// so refundable automatically (videoViewingNoShowSweep). Server time, inside
+// the call window only.
+// ─────────────────────────────────────────────────────────────────────────────
+export const markVideoViewingReady = onCall(
+  {enforceAppCheck: true, timeoutSeconds: 15},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const requestId = typeof request.data?.requestId === "string" ?
+      request.data.requestId : "";
+    if (!requestId) {
+      throw new HttpsError("invalid-argument", "Missing viewing.");
+    }
+
+    const req = await loadLiveVideoViewing(requestId);
+    if (req.tenantId !== uid) {
+      throw new HttpsError("permission-denied", "This is not your viewing.");
+    }
+    if (req.tenantReadyAt) return {ok: true, alreadyReady: true};
+
+    await getFirestore().collection("inspection_requests").doc(requestId)
+      .update({
+        tenantReadyAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    const hostId = handlerOf(req);
+    if (hostId && !req.video?.startedAt) {
+      await writeNotificationOnce(`req_${requestId}_tenantReady_${hostId}`, {
+        userId: hostId,
+        type: "video_tenant_ready",
+        title: "Your Tenant Is Ready",
+        body: `${req.tenantName ?? "The tenant"} is waiting for the video ` +
+          `viewing of ${req.propertyTitle ?? "the property"}. Start the call ` +
+          "from the property.",
+        payload: {
+          route: req.agentId ? "/agent/inspections" : "/landlord/inspections",
+          initialTab: "1",
+          param_requestId: requestId,
+        },
+      });
+    }
+    return {ok: true};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// videoViewingNoShowSweep - a host who never started the call.
+//
+// When a paid video viewing's slot has ended, the tenant marked themselves
+// ready, and the host never started the call (which needs their GPS at the
+// property), the absence is proven by the host's own phone. Refunded at once,
+// not at the nightly sweep: the tenant waited. Same amount as a host cancel
+// (fee minus the booking charge), via onInspectionRefundTriggered.
+//
+// No ready tap means nothing is proven either way; the nightly
+// inspectionLifecycleSweep sends that to admin review as before.
+// ─────────────────────────────────────────────────────────────────────────────
+export const videoViewingNoShowSweep = onSchedule(
+  {schedule: "every 15 minutes", timeZone: "Africa/Lagos", timeoutSeconds: 120},
+  async () => {
+    const db = getFirestore();
+    const snap = await db.collection("inspection_requests")
+      .where("viewingMode", "==", "video")
+      .where("status", "==", "approved")
+      .get();
+
+    let refunded = 0;
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const start = (d.requestedDate as Timestamp | undefined)?.toMillis();
+      if (start === undefined || Date.now() <= start + SLOT_LENGTH_MS) continue;
+      if (d.paymentStatus !== "paid" || d.video?.startedAt ||
+          !d.tenantReadyAt) {
+        continue;
+      }
+
+      await doc.ref.update({
+        status: "cancelled",
+        paymentStatus: "refunded",
+        hostNoShow: true,
+        refundReason: "Your host did not start the video viewing",
+        cancelledAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      refunded++;
+
+      const title = d.propertyTitle ?? "the property";
+      await writeNotificationOnce(`req_${doc.id}_hostNoShow_${d.tenantId}`, {
+        userId: d.tenantId,
+        type: "video_host_no_show",
+        title: "Video Viewing Refunded",
+        body: `Your host didn't start the video viewing of ${title}. ` +
+          "We're refunding you.",
+        payload: {route: "/tenant/inspections", initialTab: "2"},
+      });
+      const hostId = handlerOf(d);
+      if (hostId) {
+        await writeNotificationOnce(`req_${doc.id}_hostNoShow_${hostId}`, {
+          userId: hostId,
+          type: "video_host_no_show",
+          title: "Missed Video Viewing",
+          body: `You didn't start the video viewing of ${title} while the ` +
+            "tenant was waiting, so it has been cancelled and refunded.",
+          payload: {
+            route: d.agentId ? "/agent/inspections" : "/landlord/inspections",
+            initialTab: "2",
+          },
+        });
+      }
+    }
+    logger.info("Video no-show sweep", {checked: snap.size, refunded});
   },
 );

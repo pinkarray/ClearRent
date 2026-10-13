@@ -94,6 +94,8 @@ export {
   startVideoViewing,
   joinVideoViewing,
   recordVideoPresence,
+  markVideoViewingReady,
+  videoViewingNoShowSweep,
 } from "./video_viewing_ops";
 export {adminDailyDigestEmail, adminEveningDigestEmail} from
   "./admin_digest_email";
