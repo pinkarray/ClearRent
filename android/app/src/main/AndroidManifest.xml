@@ -13,6 +13,18 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Optional hardware. Without these, the camera/location/microphone/
+         Bluetooth permissions make Play treat the hardware as REQUIRED and
+         drop devices that lack it (482 devices on the first version-16 upload).
+         Only hosting a video viewing or confirming a pin needs them; the app
+         asks at that moment. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
+    <uses-feature android:name="android.hardware.location" android:required="false"/>
+    <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+    <uses-feature android:name="android.hardware.location.network" android:required="false"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
 
     <!-- Brought in by the Agora SDK for features we do not use (screen
          sharing, phone-call state). Each would need a Play declaration. -->
