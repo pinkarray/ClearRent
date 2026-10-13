@@ -42,7 +42,16 @@ export const HANDLER_UID = 2;
 
 // The call may start this long before the slot, and runs until it ends.
 const EARLY_START_MS = 30 * 60 * 1000;
-const SLOT_LENGTH_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * How long the booked slot runs: the evening slot is 6-8 PM, the others three
+ * hours (timeSlotDisplay in inspection_service.dart).
+ * @param {DocumentData} req Inspection request.
+ * @return {number} Milliseconds.
+ */
+function slotLengthMs(req: DocumentData): number {
+  return (req.requestedTimeSlot === "evening" ? 2 : 3) * 60 * 60 * 1000;
+}
 
 // Presence: the reading's uncertainty is given the benefit of the doubt, but
 // the result must still land within this distance of the confirmed pin. The
@@ -127,7 +136,7 @@ async function loadLiveVideoViewing(requestId: string): Promise<DocumentData> {
       "The call opens 30 minutes before the viewing time.",
     );
   }
-  if (now > start + SLOT_LENGTH_MS) {
+  if (now > start + slotLengthMs(req)) {
     throw new HttpsError("failed-precondition", "This viewing slot has ended.");
   }
   return req;
@@ -143,7 +152,7 @@ async function loadLiveVideoViewing(requestId: string): Promise<DocumentData> {
  */
 function callCredentials(requestId: string, uid: number, req: DocumentData) {
   const start = (req.requestedDate as Timestamp).toMillis();
-  const expiresAtMs = start + SLOT_LENGTH_MS + 30 * 60 * 1000;
+  const expiresAtMs = start + slotLengthMs(req) + 30 * 60 * 1000;
   const ttl = Math.max(60, Math.round((expiresAtMs - Date.now()) / 1000));
   const channel = `insp_${requestId}`;
   const token = RtcTokenBuilder.buildTokenWithUid(
@@ -418,7 +427,9 @@ export const videoViewingNoShowSweep = onSchedule(
     for (const doc of snap.docs) {
       const d = doc.data();
       const start = (d.requestedDate as Timestamp | undefined)?.toMillis();
-      if (start === undefined || Date.now() <= start + SLOT_LENGTH_MS) continue;
+      if (start === undefined || Date.now() <= start + slotLengthMs(d)) {
+        continue;
+      }
       if (d.paymentStatus !== "paid" || d.video?.startedAt ||
           !d.tenantReadyAt) {
         continue;

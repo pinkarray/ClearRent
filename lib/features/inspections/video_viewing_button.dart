@@ -32,7 +32,9 @@ class _VideoViewingButtonState extends State<VideoViewingButton> {
     final start = widget.request.requestedDate;
     final now = DateTime.now();
     return now.isAfter(start.subtract(const Duration(minutes: 30))) &&
-        now.isBefore(start.add(const Duration(hours: 3)));
+        // Evening is 6-8 PM; the other slots run three hours.
+        now.isBefore(start.add(Duration(
+            hours: widget.request.requestedTimeSlot == 'evening' ? 2 : 3)));
   }
 
   Future<void> _markReady() async {
