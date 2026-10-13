@@ -54,8 +54,11 @@ class _PinConfirmationCardState extends State<PinConfirmationCard> {
         title: const Text('Are you at the property now?'),
         content: const Text(
           'ClearRent will read your location once, now, and set this '
-          "property's pin to where you are standing. Only do this at the "
-          'property itself.',
+          "property's pin to where you are standing.\n\n"
+          "This spot becomes the property's location. Whoever hosts a video "
+          'viewing must be within about 100m of it to check in, so stand at '
+          'the property itself: at the gate or in the compound, not down the '
+          'road.',
         ),
         actions: [
           TextButton(
@@ -141,8 +144,8 @@ class _PinConfirmationCardState extends State<PinConfirmationCard> {
       tone = AppColors.info;
       title = s.hasPin ? 'Pin not confirmed on site' : 'No map pin yet';
       body = 'Next time you are at the property, tap below to set the pin '
-          'from your phone. A confirmed pin is needed for video viewings and '
-          'helps tenants find the place.';
+          'from your phone. That spot is where a host must be to check in '
+          'for a video viewing, and it helps tenants find the place.';
     }
 
     return Container(
