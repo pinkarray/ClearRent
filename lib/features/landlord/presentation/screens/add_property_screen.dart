@@ -29,6 +29,7 @@ import '../../../../shared/screens/paystack_checkout_screen.dart';
 import '../../../../shared/utils/sheet_insets.dart';
 import '../../../../services/residence_service.dart';
 import '../../../../shared/models/landlord_residence.dart';
+import '../../../../services/location_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
 class ThousandsSeparatorInputFormatter extends TextInputFormatter {
@@ -173,6 +174,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
   double? _latitude;
   double? _longitude;
+  // A GPS reading taken at the property while listing. Sent to
+  // confirmPropertyPin once the listing exists, so it starts with a pin
+  // confirmed on site. Dropped if the pin is moved by hand afterwards.
+  LocationReading? _onSiteReading;
+  bool _locating = false;
+  // Bumped to redraw the map on a GPS-set pin (the picker reads its initial
+  // position once).
+  int _pickerKey = 0;
   // Picked from the area dropdown, as opposed to filled in from the pin. Kept
   // here because the location picker is rebuilt every time the step is shown.
   bool _areaChosenByHand = false;
@@ -1773,6 +1782,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
       debugPrint('✅ Property created successfully with ID: $propertyId');
 
+      // Pin set from GPS at the property while listing: confirm it now, so
+      // video viewings can be offered without a second trip. Best effort;
+      // the property page can still confirm it later.
+      final reading = _onSiteReading;
+      if (reading != null &&
+          reading.latitude == _latitude &&
+          reading.longitude == _longitude) {
+        final err =
+            await _propertyService.confirmPinOnSite(propertyId, reading);
+        if (err != null) debugPrint('On-site pin not confirmed: $err');
+      }
+
       // ── ALL properties start hidden until admin reviews ──
       // Admin verifies that ownership docs match the landlord.
       // This prevents verified users from listing properties they don't own.
@@ -2984,6 +3005,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
           // Location picker with autocomplete and map
           LocationPickerWidget(
+            key: ValueKey(_pickerKey),
             addressController: _addressController,
             cityController: _cityController,
             stateController: _stateController,
@@ -2995,6 +3017,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               setState(() {
                 _latitude = lat;
                 _longitude = lng;
+                if (_onSiteReading != null &&
+                    (_onSiteReading!.latitude != lat ||
+                        _onSiteReading!.longitude != lng)) {
+                  _onSiteReading = null; // moved by hand: no longer on site
+                }
               });
             },
             onUnknownAreaDetected: (rawName, lat, lng) async {
@@ -3027,11 +3054,88 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               }
             },
           ),
+          const SizedBox(height: 16),
+          _buildUseMyLocation(),
         ],
       ),
         ),
       ),
     );
+  }
+
+  Widget _buildUseMyLocation() {
+    final r = _onSiteReading;
+    if (r != null) {
+      final precise = r.accuracyM <= 50;
+      return Text(
+        precise
+            ? 'Pin set from your location (accurate to about '
+                '${r.accuracyM.round()}m). It will be confirmed on site when '
+                'you publish, which lets tenants book video viewings.'
+            : 'Your location is only accurate to about '
+                '${r.accuracyM.round()}m, so the pin is set but not '
+                'confirmed. Try again outside, or confirm it later from the '
+                'property page.',
+        style: AppTextStyles.bodySmall.copyWith(
+          color: precise ? AppColors.success : AppColors.warning,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _locating ? null : _useMyLocation,
+          icon: _locating
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.my_location),
+          label: Text(_locating
+              ? 'Getting your location...'
+              : "I'm at the property now, use my location"),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Standing at the property? Set the pin from your phone. That '
+          'spot is where a host must be to check in for a video viewing.',
+          style: AppTextStyles.bodySmall
+              .copyWith(color: AppColors.textSecondary),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _useMyLocation() async {
+    setState(() => _locating = true);
+    try {
+      final reading = await LocationService().currentReading();
+      if (!mounted) return;
+      if (reading.isMocked) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Your phone is reporting a simulated location.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
+      setState(() {
+        _latitude = reading.latitude;
+        _longitude = reading.longitude;
+        _onSiteReading = reading;
+        _pickerKey++;
+      });
+    } on LocationUnavailable catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.error,
+      ));
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
   }
 
   String _accessLabel(String access) {

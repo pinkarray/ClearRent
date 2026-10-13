@@ -33,6 +33,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   late final RtcEngine _engine;
   bool _ready = false;
+  // Agora reports the connection lost after ~10s without a server. It keeps
+  // retrying on its own, but on a bad network that can go on for minutes, so
+  // the user gets a Reconnect that starts over with a fresh token.
+  bool _lost = false;
+  bool _reconnecting = false;
   int? _remoteUid;
   bool _micOn = true;
   late bool _cameraOn = widget.isHost;
@@ -86,7 +91,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         if (!mounted) return;
         if (state == ConnectionStateType.connectionStateReconnecting) {
           setState(() => _status = 'Weak network, reconnecting...');
+        } else if (state == ConnectionStateType.connectionStateConnected) {
+          setState(() => _lost = false);
+        } else if (state == ConnectionStateType.connectionStateFailed) {
+          setState(() => _lost = true);
         }
+      },
+      onConnectionLost: (_) {
+        if (mounted) setState(() => _lost = true);
       },
     ));
 
@@ -106,7 +118,19 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
     await _engine.muteLocalVideoStream(!_cameraOn);
     await _engine.startPreview();
-    await _engine.joinChannel(
+    await _join(c);
+    if (!mounted) return;
+    setState(() => _ready = true);
+
+    if (widget.isHost) {
+      _presenceTimer = Timer.periodic(_presenceEvery, (_) {
+        VideoViewingService().reportPresence(widget.requestId);
+      });
+    }
+  }
+
+  Future<void> _join(VideoCallCredentials c) {
+    return _engine.joinChannel(
       token: c.token,
       channelId: c.channel,
       uid: c.uid,
@@ -119,13 +143,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         autoSubscribeVideo: true,
       ),
     );
-    if (!mounted) return;
-    setState(() => _ready = true);
+  }
 
-    if (widget.isHost) {
-      _presenceTimer = Timer.periodic(_presenceEvery, (_) {
-        VideoViewingService().reportPresence(widget.requestId);
-      });
+  /// Start over with a fresh token: leave, ask the server again (it also
+  /// re-checks this is still an open viewing), and join.
+  Future<void> _reconnect() async {
+    setState(() => _reconnecting = true);
+    try {
+      final c = await VideoViewingService().join(widget.requestId);
+      await _engine.leaveChannel();
+      await _join(c);
+      if (mounted) setState(() => _lost = false);
+    } on VideoViewingException catch (e) {
+      if (mounted) setState(() => _status = e.message);
+    } finally {
+      if (mounted) setState(() => _reconnecting = false);
     }
   }
 
@@ -214,6 +246,38 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                 ),
               ),
             ),
+            if (_lost)
+              Positioned(
+                left: 24,
+                right: 24,
+                top: 120,
+                child: Material(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Connection lost. Mobile data is often better '
+                          'than weak Wi-Fi.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _reconnecting ? null : _reconnect,
+                          icon: const Icon(Icons.refresh),
+                          label: Text(_reconnecting
+                              ? 'Reconnecting...'
+                              : 'Reconnect'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               left: 0,
               right: 0,
