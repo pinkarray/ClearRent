@@ -37,12 +37,25 @@ class AuthService {
 
   String? get verificationId => _verificationId;
 
+  // Set when the current code was sent by our requestPhoneOtp CF (Termii)
+  // rather than Firebase. Firebase Phone Auth fails for Glo and Airtel with
+  // 17499 / Error 39, so config/otp can route codes through Termii instead;
+  // such a code is checked by verifyPhoneOtp, not a PhoneAuthCredential.
+  static String? _serverOtpPhone;
+
+  /// True when the code on its way was sent by ClearRent, so the OTP screen
+  /// should listen for it with the SMS Retriever (the SMS carries our hash).
+  bool get codeSentByClearRent => _serverOtpPhone != null;
+
   /// Send OTP to phone number
   /// Returns a map with 'success' and optionally 'error' or 'verificationId'
   Future<PhoneAuthResult> sendOtp({
     required String phoneNumber,
     int? forceResendingToken,
   }) async {
+    final viaServer = await _requestServerOtp(phoneNumber);
+    if (viaServer != null) return viaServer;
+
     try {
       if (kDebugMode) developer.log('Sending OTP to $phoneNumber');
 
@@ -108,8 +121,120 @@ class AuthService {
     }
   }
 
+  /// Ask requestPhoneOtp to send the code. Returns null when the Firebase
+  /// path should be used: config/otp says so, or the CF is unreachable or not
+  /// deployed, in which case Firebase still serves MTN and 9mobile.
+  Future<PhoneAuthResult?> _requestServerOtp(String phoneNumber) async {
+    _serverOtpPhone = null;
+    try {
+      final result = await FirebaseFunctions.instance
+          .httpsCallable(
+            'requestPhoneOtp',
+            options: HttpsCallableOptions(
+              timeout: const Duration(seconds: 20),
+            ),
+          )
+          .call<Map<String, dynamic>>({'phone': phoneNumber});
+      if (result.data['provider'] != 'termii') return null;
+      _serverOtpPhone = phoneNumber;
+      return PhoneAuthResult(success: true, verificationId: 'clearrent');
+    } on FirebaseFunctionsException catch (e) {
+      // These two are about the request itself (bad number, resend too
+      // soon, too many codes); Firebase would not do any better.
+      if (e.code == 'invalid-argument' || e.code == 'resource-exhausted') {
+        return PhoneAuthResult(
+          success: false,
+          error: e.message ?? 'Could not send a code. Try again.',
+        );
+      }
+      debugPrint('requestPhoneOtp failed (${e.code}); using Firebase');
+      return null;
+    } catch (e) {
+      debugPrint('requestPhoneOtp error ($e); using Firebase');
+      return null;
+    }
+  }
+
+  /// Check a ClearRent-sent code with verifyPhoneOtp and sign in with the
+  /// custom token it returns. The account is the one Firebase Phone Auth
+  /// would have used: the server finds it by its phone number.
+  Future<AuthResult> _verifyServerOtp(String smsCode) async {
+    try {
+      final result = await FirebaseFunctions.instance
+          .httpsCallable(
+            'verifyPhoneOtp',
+            options: HttpsCallableOptions(
+              timeout: const Duration(seconds: 20),
+            ),
+          )
+          .call<Map<String, dynamic>>({
+        'phone': _serverOtpPhone,
+        'code': smsCode,
+      });
+      final token = result.data['token'];
+      if (token is! String || token.isEmpty) {
+        return AuthResult(
+          success: false,
+          error: 'Verification failed. Please try again.',
+        );
+      }
+      final isNew = result.data['isNewUser'] == true;
+
+      final userCredential = await _auth
+          .signInWithCustomToken(token)
+          .timeout(_networkTimeout);
+      _serverOtpPhone = null; // the code is spent
+      final user = userCredential.user;
+
+      bool hasProfile = false;
+      if (user != null && !isNew) {
+        hasProfile = await _checkUserProfile(user.uid);
+      }
+      return AuthResult(
+        success: true,
+        user: user,
+        isNewUser: isNew,
+        hasCompletedProfile: hasProfile,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      switch (e.code) {
+        // The server's own wording: wrong code, expired, too many attempts.
+        case 'permission-denied':
+        case 'failed-precondition':
+        case 'resource-exhausted':
+        case 'invalid-argument':
+          return AuthResult(
+            success: false,
+            error: e.message ?? 'Verification failed. Please try again.',
+          );
+        case 'deadline-exceeded':
+        case 'unavailable':
+          return AuthResult(success: false, error: _networkError);
+        default:
+          debugPrint('verifyPhoneOtp failed: ${e.code} ${e.message}');
+          return AuthResult(
+            success: false,
+            error: 'Verification failed. Please try again.',
+          );
+      }
+    } on TimeoutException {
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      return AuthResult(success: false, error: _networkError);
+    } catch (e) {
+      debugPrint('verifyPhoneOtp error: $e');
+      return AuthResult(
+        success: false,
+        error: 'Verification failed. Please try again.',
+      );
+    }
+  }
+
   /// Verify OTP code and in
   Future<AuthResult> verifyOtpAndSignIn(String smsCode) async {
+    if (_serverOtpPhone != null) return _verifyServerOtp(smsCode);
+
     try {
       if (_verificationId == null) {
         return AuthResult(

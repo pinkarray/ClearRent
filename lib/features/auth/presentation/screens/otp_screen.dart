@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -37,6 +39,7 @@ class _OtpScreenState extends State<OtpScreen> {
   int _resendSeconds = 60;
   Timer? _timer;
   String? _errorMessage;
+  StreamSubscription<String>? _smsSub;
 
   @override
   void initState() {
@@ -44,11 +47,32 @@ class _OtpScreenState extends State<OtpScreen> {
     _authService = AuthService();
     _biometricService = BiometricService();
     _startResendTimer();
+    _listenForSms();
+  }
+
+  /// Fill the code in by itself when ClearRent sent it. Our SMS ends with the
+  /// app's SMS Retriever hash, so Android hands it to us without any
+  /// permission. Firebase-sent codes are already auto-read by Firebase itself.
+  Future<void> _listenForSms() async {
+    if (!Platform.isAndroid || !_authService.codeSentByClearRent) return;
+    await _smsSub?.cancel();
+    _smsSub = SmsAutoFill().code.listen((code) {
+      if (!mounted || _isLoading || code == _otp) return;
+      _applyWholeCode(code);
+    });
+    try {
+      // Arms the Retriever for one SMS within 5 minutes; re-armed on resend.
+      await SmsAutoFill().listenForCode(smsCodeRegexPattern: r'\d{6}');
+    } catch (e) {
+      debugPrint('SMS Retriever unavailable: $e'); // typing still works
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _smsSub?.cancel();
+    SmsAutoFill().unregisterListener();
     for (var controller in _controllers) {
       controller.dispose();
     }
@@ -197,6 +221,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
     if (result.success) {
       _startResendTimer();
+      _listenForSms();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Verification code resent'),
