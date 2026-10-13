@@ -196,6 +196,14 @@ class InspectionRequest {
   /// are nonsense to them - see [handlerIsResident].
   final bool landlordLivesInProperty;
 
+  /// 'in_person' or 'video'. A video viewing is a live call with the handler
+  /// at the property; arrival on it is recorded by the server, never tapped.
+  final String viewingMode;
+
+  /// When the handler opened the call, after the server checked they were at
+  /// the property. The tenant can join only after this.
+  final DateTime? videoStartedAt;
+
   // Met confirmation - a meeting is a two-person fact, so each party records
   // only their OWN half. `met` (which gates completion) is derived: true only
   // when both have confirmed. Neither side can assert the meeting alone.
@@ -290,6 +298,8 @@ class InspectionRequest {
     this.handlerOnWay = false,
     this.handlerOnWayAt,
     this.landlordLivesInProperty = false,
+    this.viewingMode = 'in_person',
+    this.videoStartedAt,
     this.tenantConfirmedMet = false,
     this.tenantConfirmedMetAt,
     this.handlerConfirmedMet = false,
@@ -362,11 +372,19 @@ class InspectionRequest {
   /// on-my-way step at all, so a tenant who marks arrived there never sets
   /// [tenantOnWay], and the app then offered them "I'm on my way" while they
   /// were standing at the property having already confirmed the meeting.
+  ///
+  /// Never on a video viewing: nobody travels to the tenant's side of it, and
+  /// arrival there is recorded by the server (video_viewing_ops.ts).
   bool get canTenantMarkOnWay =>
+      !isVideo &&
       isConfirmed && !tenantOnWay && !tenantArrived && isWithinOnWayWindow;
 
   bool get canHandlerMarkOnWay =>
+      !isVideo &&
       isConfirmed && !handlerOnWay && !handlerArrived && isWithinOnWayWindow;
+
+  /// A live call with the handler at the property, instead of a visit.
+  bool get isVideo => viewingMode == 'video';
 
   /// The handler is already at the property because they live in it.
   ///
@@ -661,6 +679,9 @@ class InspectionRequest {
       rescheduleCount: rescheduleCount ?? this.rescheduleCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      // Not editable through copyWith; carried so a copy keeps its mode.
+      viewingMode: viewingMode,
+      videoStartedAt: videoStartedAt,
     );
   }
 
@@ -745,6 +766,9 @@ class InspectionRequest {
       tenantOnWayAt: (data['tenantOnWayAt'] as Timestamp?)?.toDate(),
       handlerOnWay: data['handlerOnWay'] ?? false,
       landlordLivesInProperty: data['landlordLivesInProperty'] ?? false,
+      viewingMode: data['viewingMode'] as String? ?? 'in_person',
+      videoStartedAt:
+          ((data['video'] as Map?)?['startedAt'] as Timestamp?)?.toDate(),
       handlerOnWayAt: (data['handlerOnWayAt'] as Timestamp?)?.toDate(),
       tenantConfirmedMet: data['tenantConfirmedMet'] ?? false,
       tenantConfirmedMetAt:

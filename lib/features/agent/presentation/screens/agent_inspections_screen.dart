@@ -20,6 +20,7 @@ import 'package:intl/intl.dart';
 import '../../../../shared/widgets/refund_confirm_sheet.dart';
 import '../../../../services/inspection_service.dart';
 import '../../../../core/utils/inspection_pricing.dart';
+import '../../../../features/inspections/video_viewing_button.dart';
 
 class AgentInspectionsScreen extends StatefulWidget {
   /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
@@ -1305,6 +1306,13 @@ class _AgentScheduledCardState extends State<_AgentScheduledCard> {
           ),
 
           const SizedBox(height: 16),
+
+          // A video viewing is started from here, at the property; its
+          // arrival is recorded by the server, not by the buttons below.
+          if (request.isVideo) ...[
+            VideoViewingButton(request: request, isHost: true),
+            const SizedBox(height: 12),
+          ],
 
           // Arrival & completion section
           if (_isToday(request.requestedDate)) ...[

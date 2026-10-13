@@ -12,6 +12,19 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+// agora_rtc_engine 6.6.4 and its iris_method_channel compile against API 31,
+// but their androidx dependencies need 34+, which fails checkAarMetadata.
+// Raise only those two.
+// Must be registered before evaluationDependsOn below evaluates it.
+subprojects {
+    if (name == "agora_rtc_engine" || name == "iris_method_channel") {
+        afterEvaluate {
+            extensions.configure<com.android.build.gradle.LibraryExtension>("android") {
+                compileSdk = 36
+            }
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }

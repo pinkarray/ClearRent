@@ -25,6 +25,7 @@ import '../../../../services/inspection_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../services/rental_interest_service.dart';
 import '../../../../services/active_rental_service.dart';
+import '../../../../features/inspections/video_viewing_button.dart';
 
 class LandlordInspectionsScreen extends StatefulWidget {
   /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
@@ -1347,7 +1348,14 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             // below - so they could never confirm the meeting, never
             // complete the inspection, and never be credited the handler
             // fee that completion pays.
-            if (r.handlerIsResident && !r.handlerArrived) ...[
+            // A video viewing is started from its own button (it checks the
+            // landlord is at the property); none of these taps apply to it.
+            if (r.isVideo && !r.handlerArrived) ...[
+              VideoViewingButton(
+                request: r,
+                isHost: r.agentId == null || r.agentId!.isEmpty,
+              ),
+            ] else if (r.handlerIsResident && !r.handlerArrived) ...[
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(

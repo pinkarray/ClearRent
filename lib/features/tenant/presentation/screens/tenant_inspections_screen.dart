@@ -25,6 +25,7 @@ import '../../../../services/rental_interest_service.dart';
 import '../../../../services/refund_service.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/refund_model.dart';
+import '../../../../features/inspections/video_viewing_button.dart';
 
 class TenantInspectionsScreen extends StatefulWidget {
   /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
@@ -1332,6 +1333,12 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
             text:
                 '${r.isAgentHandled ? (r.agentName ?? 'The agent') : r.landlordName} is on the way',
           ),
+        ],
+
+        // A video viewing: joining the call is the tenant's arrival.
+        if (r.isVideo && !r.met) ...[
+          const SizedBox(height: 12),
+          VideoViewingButton(request: r, isHost: false),
         ],
 
         // On Way / Arrived / Met - single-slot cascade that

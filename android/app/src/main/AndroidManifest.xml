@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
@@ -8,12 +9,27 @@
          handler is at the property. Never background location. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    
+    <!-- Video viewings (Agora): the call itself. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+
+    <!-- Brought in by the Agora SDK for features we do not use (screen
+         sharing, phone-call state). Each would need a Play declaration. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" tools:node="remove"/>
+
     <application
         android:label="ClearRent"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">
+        <!-- Agora screen sharing, and geolocator background tracking: neither
+             is used (location is read only while the app is open). -->
+        <activity android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenCaptureAssistantActivity" tools:node="remove"/>
+        <service android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenSharingService" tools:node="remove"/>
+        <service android:name="com.baseflow.geolocator.GeolocatorLocationService" tools:node="remove"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
