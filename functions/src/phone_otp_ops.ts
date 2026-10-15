@@ -131,8 +131,7 @@ function callerIp(request: CallableRequest): string {
 function buildMessage(code: string, cfg: OtpConfig): string {
   const lines = [
     `Your ClearRent verification code is ${code}. ` +
-      "It expires in 10 minutes. " +
-      "Do not share it.",
+      "It expires in 10 minutes.",
   ];
   const last = [
     ...(cfg.webOtpDomain ? [`@${cfg.webOtpDomain} #${code}`] : []),
