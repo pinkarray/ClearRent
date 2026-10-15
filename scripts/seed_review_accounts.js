@@ -47,10 +47,12 @@ const TS = admin.firestore.Timestamp;
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 const ACCOUNTS = [
-  {key: "tenant", email: "paystack.tenant@verealtytech.com",
+  {key: "tenant",
+    email: process.env.REVIEW_TENANT_EMAIL || "paystack.tenant@verealtytech.com",
     fullName: "Paystack Reviewer (Tenant)", accountType: "tenant",
     password: process.env.REVIEW_TENANT_PASSWORD},
-  {key: "landlord", email: "paystack.landlord@verealtytech.com",
+  {key: "landlord",
+    email: process.env.REVIEW_LANDLORD_EMAIL || "paystack.landlord@verealtytech.com",
     fullName: "Paystack Reviewer (Landlord)", accountType: "landlord",
     password: process.env.REVIEW_LANDLORD_PASSWORD},
 ];
@@ -161,7 +163,8 @@ async function upsertAccount(a) {
 }
 
 async function seedListing(l, i, landlordUid, landlordName) {
-  const ref = db.collection("properties").doc(`review_seed_${i + 1}`);
+  const prefix = process.env.REVIEW_LISTING_PREFIX || "review_seed_";
+  const ref = db.collection("properties").doc(`${prefix}${i + 1}`);
   const {cluster, address, lat, lng, ...fields} = l;
   await ref.set({
     ...fields,
