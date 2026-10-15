@@ -853,9 +853,9 @@ service cloud.firestore {
           && (propertyOwner() || propertyAgent())
           && (request.resource == null || docId != 'location'
               || (resource == null
-                  ? !request.resource.data.keys().hasAny(['confirmedPin'])
+                  ? !request.resource.data.keys().hasAny(['confirmedPin', 'listingPin', 'lastPinRefusal'])
                   : !request.resource.data.diff(resource.data).affectedKeys()
-                      .hasAny(['confirmedPin'])));
+                      .hasAny(['confirmedPin', 'listingPin', 'lastPinRefusal'])));
       }
 
       match /reveals/{tenantId} {
@@ -2131,15 +2131,40 @@ service cloud.firestore {
       allow list: if request.auth != null &&
         (resource.data.userId == request.auth.uid || canRead());
 
+      // Exactly what the app writes: PaystackService.recordPayment (base
+      // fields + each caller's `extra`) and initiateRefund. Everything else
+      // (refundRequired, duplicateOf, gatewayAmount, webhookVerified,
+      // amountMismatch, needsReconciliation, source...) is server-only: a payer
+      // could otherwise put their own charge in the admin refund queue looking
+      // system-flagged. The web writes no payments docs at all.
+      function paymentClientFields() {
+        return ['reference', 'userId', 'userEmail', 'type', 'amount',
+          'status', 'relatedId', 'createdAt', 'propertyId', 'requestId',
+          'rentalInterestId', 'rentAmount', 'agentFee', 'tenantDealFee',
+          'landlordPayout', 'agentPayout', 'clearrentEarnings', 'accountType',
+          'refundReason', 'refundInitiatedAt'];
+      }
+      function paymentClientStatusOk() {
+        return !('status' in request.resource.data) ||
+          request.resource.data.status in
+            ['completed', 'docs_upload_failed', 'refund_initiated'];
+      }
+
       // A user can create a payment record attributed to themselves
       // only (userId must match the writer).
       allow create: if request.auth != null &&
-        request.resource.data.userId == request.auth.uid;
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasOnly(paymentClientFields()) &&
+        paymentClientStatusOk();
 
       // Owner can update their own payment record (status transitions
-      // written client-side during checkout/refund).
+      // written client-side during checkout/refund), never reassign it.
       allow update: if request.auth != null &&
-        resource.data.userId == request.auth.uid;
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(paymentClientFields()) &&
+        paymentClientStatusOk();
 
       allow delete: if false;
     }

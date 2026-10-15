@@ -58,6 +58,8 @@ const denied = (p) => assertFails(p).then(() => true, () => false);
     await denied(updateDoc(loc(OWNER), {"confirmedPin.accuracyM": 1})));
   check("update: agent cannot rewrite confirmedPin",
     await denied(setDoc(loc(AGENT), {confirmedPin: {...pinned, latitude: 6.7}}, {merge: true})));
+  check("update: owner cannot move listingPin (the 1km reference)",
+    await denied(updateDoc(loc(OWNER), {listingPin: {latitude: 6.6, longitude: 3.4}})));
   check("update: stranger cannot touch the location at all",
     await denied(updateDoc(loc(OTHER), {latitude: 6.6})));
 

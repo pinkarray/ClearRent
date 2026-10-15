@@ -14,6 +14,7 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {distanceM} from "./video_viewing_ops";
 
 // A phone outdoors usually reports 5-20m. Indoors or under a roof it can be
 // 30-60m. Beyond this the reading isn't worth confirming a pin with.
@@ -21,6 +22,14 @@ const MAX_ACCURACY_M = 50;
 
 // Generous box around Nigeria: rejects a 0,0 or a swapped lat/lng.
 const NG_BOUNDS = {minLat: 4, maxLat: 14, minLng: 2.6, maxLng: 14.7};
+
+// How far the on-site reading may be from the pin set when listing. Loose
+// enough for a pin dropped roughly on a map, tight enough that a Lekki listing
+// can't be confirmed from Ikorodu (which made every presence check pass from
+// the landlord's sofa). Measured against the FIRST listing pin, kept as
+// `listingPin`, so repeated confirmations can't walk the pin away a km at a
+// time. Support moves it by clearing `listingPin`.
+const MAX_FROM_LISTING_M = 1000;
 
 export const confirmPropertyPin = onCall(
   {enforceAppCheck: true, timeoutSeconds: 30},
@@ -82,9 +91,45 @@ export const confirmPropertyPin = onCall(
       );
     }
 
-    await propRef.collection("private").doc("location").set({
+    const locRef = propRef.collection("private").doc("location");
+    const loc = (await locRef.get()).data() ?? {};
+    const ref = loc.listingPin ??
+      (typeof loc.latitude === "number" && typeof loc.longitude === "number" ?
+        {latitude: loc.latitude, longitude: loc.longitude} : null);
+    // Web listings carry no pin, so there is nothing to compare with; the
+    // admin address review is the check there.
+    if (ref) {
+      const away = distanceM(ref.latitude, ref.longitude, lat, lng);
+      if (away > MAX_FROM_LISTING_M) {
+        logger.warn("Pin confirmation refused: far from the listing pin", {
+          propertyId, role, awayM: Math.round(away),
+        });
+        // The app tells them to contact support, so support needs to see
+        // what happened: the admin pin panel shows this and can accept it.
+        await locRef.set({
+          lastPinRefusal: {
+            latitude: lat,
+            longitude: lng,
+            accuracyM: Math.round(accuracy),
+            awayM: Math.round(away),
+            by: uid,
+            role,
+            at: FieldValue.serverTimestamp(),
+          },
+        }, {merge: true});
+        throw new HttpsError(
+          "failed-precondition",
+          `You are about ${(away / 1000).toFixed(1)}km from where this ` +
+            "listing is on the map. Confirm the pin while standing at the " +
+            "property. If the map location itself is wrong, contact support.",
+        );
+      }
+    }
+
+    await locRef.set({
       latitude: lat,
       longitude: lng,
+      ...(ref && !loc.listingPin ? {listingPin: ref} : {}),
       confirmedPin: {
         latitude: lat,
         longitude: lng,
@@ -100,6 +145,56 @@ export const confirmPropertyPin = onCall(
       propertyId, role, accuracyM: Math.round(accuracy),
     });
     return {ok: true, latitude: lat, longitude: lng};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// acceptPinRefusal - admin's answer to "the app told me to contact support".
+//
+// A refusal means an accurate on-site reading landed more than 1km from the
+// map pin. Either the map pin was wrong (common: dropped roughly, or listed
+// from home) or the reading was taken somewhere else. Admin compares the
+// reading with the address and, if it is the property, accepts it: it becomes
+// the confirmed pin AND the new 1km reference, so later confirmations measure
+// from the right place.
+// ─────────────────────────────────────────────────────────────────────────────
+export const acceptPinRefusal = onCall(
+  {timeoutSeconds: 30},
+  async (request) => {
+    const t = request.auth?.token;
+    if (t?.admin !== true && t?.superAdmin !== true) {
+      throw new HttpsError("permission-denied", "Admins only.");
+    }
+    const propertyId = typeof request.data?.propertyId === "string" ?
+      request.data.propertyId.trim() : "";
+    if (!propertyId) {
+      throw new HttpsError("invalid-argument", "Missing propertyId.");
+    }
+    const locRef = getFirestore().collection("properties").doc(propertyId)
+      .collection("private").doc("location");
+    const r = (await locRef.get()).data()?.lastPinRefusal;
+    if (!r) {
+      throw new HttpsError("failed-precondition", "No refused pin to accept.");
+    }
+    const point = {latitude: r.latitude, longitude: r.longitude};
+    await locRef.update({
+      ...point,
+      listingPin: point,
+      confirmedPin: {
+        ...point,
+        accuracyM: r.accuracyM,
+        confirmedBy: r.by,
+        role: r.role,
+        confirmedAt: r.at ?? FieldValue.serverTimestamp(),
+        acceptedByAdmin: request.auth?.uid ?? null,
+      },
+      lastPinRefusal: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    logger.info("Admin accepted a refused pin", {
+      propertyId, admin: request.auth?.uid, awayM: r.awayM,
+    });
+    return {ok: true};
   },
 );
 

@@ -121,6 +121,12 @@ const RESOLVERS: Record<string, Resolver> = {
     collection: "refunds",
     done: (t) => t.status !== "pending",
   },
+  // Raised by paymentReconciliationSweep; done once the payment is no longer
+  // flagged, whether the sweep cleared it or an admin did.
+  payment_unreconciled: {
+    collection: "payments",
+    done: (t) => t.needsReconciliation !== true,
+  },
 
   // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
