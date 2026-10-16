@@ -20,6 +20,12 @@
 //   testPhones                        E.164 numbers that get Termii even while
 //                                     provider is "firebase", so a release
 //                                     can be tested before everyone moves.
+//   voicePrefixes                     E.164 prefixes ("+234802", or one whole
+//                                     number to test with) whose numbers
+//                                     get a phone call that reads the code
+//                                     out instead of an SMS. Airtel rejected
+//                                     or dropped every DND SMS (2026-10-16)
+//                                     while MTN, Glo and 9mobile delivered.
 //
 // The code itself is never stored, only a salted hash. phone_otps and
 // _otp_limits have no rules, so clients cannot read or write them.
@@ -49,6 +55,7 @@ interface OtpConfig {
   appHashes: string[];
   webOtpDomain: string | null;
   dailyCap: number;
+  voicePrefixes: string[];
 }
 
 /**
@@ -75,6 +82,10 @@ async function readOtpConfig(e164: string): Promise<OtpConfig> {
       d.webOtpDomain : null,
     dailyCap: typeof d.dailyCap === "number" && d.dailyCap > 0 ?
       d.dailyCap : DEFAULT_DAILY_CAP,
+    voicePrefixes: Array.isArray(d.voicePrefixes) ?
+      d.voicePrefixes.filter((p: unknown) =>
+        typeof p === "string" && /^\+234\d{1,10}$/.test(p)) :
+      [],
   };
 }
 
@@ -177,6 +188,37 @@ async function sendViaTermii(
 }
 
 /**
+ * Have Termii phone the number and read the code out. Termii takes the code
+ * as a number, so it must not start with 0 (the caller makes sure).
+ * @param {string} e164 Recipient.
+ * @param {string} code The 6-digit code.
+ * @return {Promise<string>} Termii message id.
+ */
+async function callViaTermii(e164: string, code: string): Promise<string> {
+  const resp = await fetch("https://v3.api.termii.com/api/sms/otp/call", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      api_key: termiiApiKey.value(),
+      phone_number: e164.slice(1),
+      code: Number(code),
+    }),
+  });
+  const body = (await resp.json().catch(() => ({}))) as {
+    code?: string;
+    message_id?: string;
+    pinId?: string;
+    message?: string;
+  };
+  const id = body.message_id ?? body.pinId;
+  if (!resp.ok || body.code !== "ok" || !id) {
+    throw new Error(`Termii voice ${resp.status}: ` +
+      `${body.message ?? "no message"}`);
+  }
+  return id;
+}
+
+/**
  * Count one send against a rolling hourly window, or refuse.
  * @param {string} docId _otp_limits doc id.
  * @param {number} max Sends allowed per hour.
@@ -270,13 +312,20 @@ export const requestPhoneOtp = onCall(
       );
     }
 
-    const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
+    const byVoice = cfg.voicePrefixes.some((p) => e164.startsWith(p));
+    // A voice code goes to Termii as a number, so a leading 0 would be lost.
+    const code = byVoice ?
+      randomInt(100_000, 1_000_000).toString() :
+      randomInt(0, 1_000_000).toString().padStart(6, "0");
     const salt = randomBytes(16).toString("hex");
     let messageId: string;
     try {
-      messageId = await sendViaTermii(e164, buildMessage(code, cfg), cfg);
+      messageId = byVoice ?
+        await callViaTermii(e164, code) :
+        await sendViaTermii(e164, buildMessage(code, cfg), cfg);
     } catch (err) {
       logger.error("Termii send failed", {
+        channel: byVoice ? "voice" : "sms",
         error: err instanceof Error ? err.message : String(err),
       });
       throw new HttpsError(
@@ -295,8 +344,13 @@ export const requestPhoneOtp = onCall(
       expiresAt: Timestamp.fromMillis(Date.now() + CODE_TTL_MS),
       messageId,
     });
-    logger.info("Phone OTP sent", {messageId});
-    return {provider: "termii", resendAfterSeconds: RESEND_AFTER_MS / 1000};
+    const channel = byVoice ? "voice" : "sms";
+    logger.info("Phone OTP sent", {messageId, channel});
+    return {
+      provider: "termii",
+      resendAfterSeconds: RESEND_AFTER_MS / 1000,
+      channel: byVoice ? "voice" : "sms",
+    };
   },
 );
 
