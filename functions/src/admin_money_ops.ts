@@ -1178,6 +1178,33 @@ function deriveRefundReason(
   };
 }
 
+/**
+ * What a called-off paid inspection refunds, per the policy described in
+ * onInspectionRefundTriggered. Exported so the tenant's cancel notification
+ * quotes the same figure the refund record will carry.
+ */
+export async function inspectionRefundAmount(
+  data: FirebaseFirestore.DocumentData,
+  totalFee: number,
+  source = deriveRefundReason(data).source,
+): Promise<number> {
+  const platformCharge = (await getPricing()).inspection.platform;
+  const fullRefundSource =
+    source === "inspection_admin_review" ||
+    source === "inspection_slot_conflict";
+  const baseAmount = fullRefundSource ?
+    totalFee :
+    Math.max(0, totalFee - platformCharge);
+
+  const override = data.refundAmount;
+  const useOverride =
+    typeof override === "number" &&
+    Number.isFinite(override) &&
+    override > 0 &&
+    override <= totalFee;
+  return useOverride ? override : baseAmount;
+}
+
 export const onInspectionRefundTriggered = onDocumentUpdated(
   "inspection_requests/{requestId}",
   async (event) => {
@@ -1223,21 +1250,7 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
     // The non-refundable platform charge comes from config/pricing - the same
     // document the tenant is charged from - so it can never drift from the
     // booking fee. Was a hardcoded 3000 kept in sync by hand.
-    const platformCharge = (await getPricing()).inspection.platform;
-    const fullRefundSource =
-      source === "inspection_admin_review" ||
-      source === "inspection_slot_conflict";
-    const baseAmount = fullRefundSource ?
-      totalFee :
-      Math.max(0, totalFee - platformCharge);
-
-    const override = after.refundAmount;
-    const useOverride =
-      typeof override === "number" &&
-      Number.isFinite(override) &&
-      override > 0 &&
-      override <= totalFee;
-    const amount = useOverride ? override : baseAmount;
+    const amount = await inspectionRefundAmount(after, totalFee, source);
 
     const db = getFirestore();
     const beneficiaryBank = await readBeneficiaryBank(db, tenantId);

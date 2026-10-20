@@ -34,6 +34,7 @@ import {
 } from "./admin_alerts";
 import {findUserByPhone, openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
+import {inspectionRefundAmount} from "./admin_money_ops";
 import {assertAdmin} from "./admin_helpers";
 
 initializeApp();
@@ -2680,10 +2681,21 @@ export const onInspectionRequestUpdated = onDocumentUpdated(
         const reason =
           (after.cancellationReason as string | undefined) ?? "";
         // Only a paid inspection has anything to refund. An approved-but-
-        // unpaid one was also told "Refund processing".
-        const refundLine = before.paymentStatus === "paid" ?
-          " Refund processing." :
-          " You were not charged.";
+        // unpaid one was also told "Refund processing". Name the amount: the
+        // booking charge is kept, and a tenant expecting the whole fee back
+        // read the smaller transfer as a mistake.
+        let refundLine = " You were not charged.";
+        if (before.paymentStatus === "paid") {
+          const total = Number(after.totalFee) || 0;
+          const back = await inspectionRefundAmount(after, total);
+          const kept = total - back;
+          refundLine = ` ₦${back.toLocaleString("en-NG")} is being refunded` +
+            " to your bank account" +
+            (kept > 0 ?
+              `. The ₦${kept.toLocaleString("en-NG")} booking charge is` +
+                " not refunded." :
+              ".");
+        }
         await writeNotificationOnce(
           `req_${requestId}_handlerCancelled_${tenantId}`,
           {

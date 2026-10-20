@@ -1672,13 +1672,20 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     if (widget.request.isCompleted) {
       _loadRentalInterest();
     }
-    if (widget.request.isRefunded) {
-      _refundSub = _refundService
-          .streamForInspection(widget.request.id)
-          .listen((refund) {
-        if (mounted) setState(() => _refund = refund);
-      });
-    }
+    _watchRefund();
+  }
+
+  /// A handler cancel leaves status `cancelled` and only flips paymentStatus
+  /// to `refunded`, so keying on status alone hid the refund (and its amount)
+  /// from exactly the tenants who were owed one. The flip also lands after the
+  /// card is built, hence the call from didUpdateWidget too.
+  void _watchRefund() {
+    final r = widget.request;
+    if (_refundSub != null) return;
+    if (!r.isRefunded && r.paymentStatus != 'refunded') return;
+    _refundSub = _refundService.streamForInspection(r.id).listen((refund) {
+      if (mounted) setState(() => _refund = refund);
+    });
   }
 
   @override
@@ -1707,6 +1714,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // which destroyed and recreated the widget. _loadRentalInterest already
     // returns early if it is subscribed, so this is safe to call repeatedly.
     if (widget.request.isCompleted) _loadRentalInterest();
+    _watchRefund();
   }
 
   /// Live-subscribe to this inspection's rental interest so the card reacts to
@@ -1979,9 +1987,19 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
                   ]),
                   const SizedBox(height: 8),
                   Text(
-                      '₦${_refund!.amount.toStringAsFixed(0)}',
+                      '₦${NumberFormat('#,###').format(_refund!.amount)}',
                       style: AppTextStyles.naira(AppTextStyles.bodyLarge
                           .copyWith(fontWeight: FontWeight.w700))),
+                  if (_refund!.amount < r.totalFee) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                        'Of the ₦${NumberFormat('#,###').format(r.totalFee)} '
+                        'you paid. The '
+                        '₦${NumberFormat('#,###').format(r.totalFee - _refund!.amount)} '
+                        'booking charge is not refunded.',
+                        style: AppTextStyles.naira(AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary))),
+                  ],
                   const SizedBox(height: 4),
                   Text(_refund!.reason,
                       style: AppTextStyles.caption.copyWith(
