@@ -141,6 +141,48 @@ const RESOLVERS: Record<string, Resolver> = {
     },
   },
 
+  // The tenant said the fix did not hold, which sent the issue back to
+  // in_progress. Done once the landlord offers a fix again or it is resolved.
+  // These were closed only on `resolved` (onIssueUpdated), so an alert sat
+  // open the whole time the landlord was visibly working the second fix.
+  issue_fix_disputed: {
+    collection: "issues",
+    done: (t) => t.status !== "in_progress",
+  },
+  // A fix awaiting the tenant's word for 14 days. Done once they answer
+  // either way, or an admin closes the issue.
+  issue_pending_stale: {
+    collection: "issues",
+    done: (t) => t.status !== "pending_confirmation",
+  },
+  // "The caution deposit never reached me." Done once the handover is closed
+  // - an admin resolved it, or the tenant confirmed. Nothing clears
+  // tenantContested, so the stage is the only reliable signal.
+  handover_settlement_contested: {
+    collection: "active_rentals",
+    done: (t) => t.handoverStage === "closed",
+  },
+
+  // Also closed at source by adminReviewPropertyDoc, but a listing approved
+  // any other way (the review seed script) or deleted never passed through it,
+  // and 10 of 11 open property_created alerts were exactly that on 2026-10-25.
+  property_created: {
+    collection: "properties",
+    done: (t) => t.isVerified === true ||
+      ["verified", "rejected", "inherited"].includes(t.ownershipDocStatus),
+  },
+  // Same shape: closed at source on a verification decision, missed by
+  // accounts verified another way.
+  user_signed_up: {
+    collection: "users",
+    done: (t) => t.verificationStatus === "verified",
+  },
+  verification_submitted: {
+    collection: "users",
+    done: (t) => t.verificationStatus === "verified" ||
+      t.verificationStatus === "rejected",
+  },
+
   // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
     collection: null,
@@ -173,6 +215,29 @@ const RESOLVERS: Record<string, Resolver> = {
     },
   },
 };
+
+/**
+ * Alert types that close WITHOUT a sweep resolver, and where. Every type a
+ * function raises must be in RESOLVERS or here, or
+ * scripts/verify_alert_resolvers.js fails. That is the point - two issue
+ * alerts and the deposit dispute shipped with no way to close and sat in the
+ * queue for good.
+ *
+ * "manual" means only a human can say it is finished, by design.
+ */
+export const CLOSED_ELSEWHERE: Record<string, string> = {
+  issue_reported: "onIssueUpdated, when the issue is resolved",
+  home_proof_submitted: "admin_alert_triggers, when the bill is reviewed",
+  property_doc_missing: "property_integrity_ops, when the document arrives",
+  inspection_dispute: "admin_review_ops, when the dispute is resolved",
+  profile_identity_change: "admin_review_ops, when marked reviewed",
+  rent_change_request: "rent_review_ops, when decided",
+  payout_disputed: "payout_receipt, when the dispute is resolved",
+  rental_end_contested: "manual: whether the tenant really left is a judgement",
+};
+
+/** Every alert type the sweep can close. */
+export const RESOLVED_TYPES = Object.keys(RESOLVERS);
 
 /**
  * `rent_payment` carries the payment REFERENCE as its targetId, not a rental
