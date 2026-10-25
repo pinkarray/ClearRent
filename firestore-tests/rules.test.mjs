@@ -3029,3 +3029,60 @@ test("tenant rebook smuggling a refund - denied", async () => {
     })
   );
 });
+
+// ─── user profile lock ───────────────────────────────────────────────────────
+// users/{uid} carries private data; other people's profiles come from the
+// public_profiles mirror. config/security.lockUserProfiles closes users/{uid}
+// to owner + admin, and is OFF until every supported app build reads the
+// mirror.
+
+const lockProfiles = async (on) => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "config/security"), { lockUserProfiles: on });
+  });
+};
+
+test("lock off: another user's profile is readable (old builds) - allowed", async () => {
+  await assertSucceeds(getDoc(doc(otherDb(), "users/" + LANDLORD)));
+});
+
+test("lock on: another user's profile - denied", async () => {
+  await lockProfiles(true);
+  await assertFails(getDoc(doc(otherDb(), "users/" + LANDLORD)));
+});
+
+test("lock on: listing users - denied", async () => {
+  await lockProfiles(true);
+  await assertFails(getDocs(collection(otherDb(), "users")));
+});
+
+test("lock on: your own profile - allowed", async () => {
+  await lockProfiles(true);
+  await assertSucceeds(getDoc(doc(landlordDb(), "users/" + LANDLORD)));
+});
+
+test("lock on: admin reads any profile - allowed", async () => {
+  await lockProfiles(true);
+  await assertSucceeds(getDoc(doc(adminDb(), "users/" + LANDLORD)));
+});
+
+test("public profile readable by any signed-in user - allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "public_profiles/" + LANDLORD), { fullName: "L" });
+  });
+  await lockProfiles(true);
+  await assertSucceeds(getDoc(doc(otherDb(), "public_profiles/" + LANDLORD)));
+});
+
+test("writing a public profile from a client - denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "public_profiles/" + LANDLORD), { fullName: "Fake" })
+  );
+});
+
+test("non-admin turns the lock off - denied", async () => {
+  await lockProfiles(true);
+  await assertFails(
+    setDoc(doc(landlordDb(), "config/security"), { lockUserProfiles: false })
+  );
+});

@@ -78,6 +78,7 @@ export {
   issueResponseReminders,
 } from "./issue_reminders_ops";
 import {refreshOverdueUrgent, reporterIsTenant} from "./issue_reminders_ops";
+export {onUserWrittenPublicProfile} from "./public_profile_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
   handoverSilenceSweep,

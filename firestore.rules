@@ -28,6 +28,15 @@ service cloud.firestore {
         && request.auth.token.get('superAdmin', false) == true;
     }
 
+    // The admin switch for locking users/{uid} to owner + admin (see that
+    // block). exists() first: get() on a missing doc is an evaluation error,
+    // which would deny every profile read if config/security were deleted.
+    function userProfilesLocked() {
+      return exists(/databases/$(database)/documents/config/security)
+        && get(/databases/$(database)/documents/config/security)
+             .data.get('lockUserProfiles', false) == true;
+    }
+
     // Does this write touch any of `keys`?
     //
     // Declared HERE, at the top of the document tree, because rules functions
@@ -281,13 +290,29 @@ service cloud.firestore {
     }
     
     // Users collection
-    match /users/{userId} {
+    // The other-users view of a profile (public_profile_ops.ts keeps it in
+    // step with users/{uid} through an allowlist). Server-written only.
+    match /public_profiles/{uid} {
       allow read: if request.auth != null;
-      
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      // A user doc carries email, phone, employer, income, ID-document paths
+      // and payment references, and every signed-in account could read every
+      // one. Other people's profiles now come from public_profiles; once
+      // config/security.lockUserProfiles is on (admin dashboard), a user doc
+      // is readable only by its owner and admins. It stays off until every
+      // supported app build reads the mirror - older builds read users
+      // directly and would lose names, ratings and handlers.
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isAdmin() || !userProfilesLocked());
+
       // Phone-to-email lookup at sign-in goes through the
       // lookupEmailByPhone Cloud Function, which uses admin SDK
-      // (bypasses rules). Clients must be authenticated to list users.
-      allow list: if request.auth != null;
+      // (bypasses rules).
+      allow list: if request.auth != null
+        && (isAdmin() || !userProfilesLocked());
       
       // Create own doc at signup. May NOT self-assign verified/privileged
       // state: verification is admin-granted (isAdmin clause below), earnings
