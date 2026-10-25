@@ -49,6 +49,7 @@ import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
+import {consumeReferenceInTx} from "./payment_verify";
 
 // Same Secret Manager entry as index.ts; defining the same name here is
 // fine - both resolve to the one PAYSTACK_SECRET_KEY secret.
@@ -333,6 +334,17 @@ export const completeActiveRenewal = onCall(
           `Underpayment: expected ${expected}, got ${verify.amountPaid}.`,
         );
       }
+      // Spend the reference with the renewal it paid for. Verifying alone
+      // let one payment renew any number of grace_locked tenancies.
+      await consumeReferenceInTx(tx, {
+        reference: input.paymentReference,
+        purpose: "renewal",
+        purposeId: input.sourceId,
+        // assertSelf above has already required a signed-in caller.
+        uid: request.auth?.uid ?? "",
+        amount: verify.amountPaid,
+        expectedAmount: expected,
+      });
 
       const oldEnd = (data.leaseEndDate as Timestamp).toDate();
 
@@ -462,6 +474,16 @@ export const completeLinkedPromotion = onCall(
           `Underpayment: expected ${expected}, got ${verify.amountPaid}.`,
         );
       }
+      // Spend the reference with the promotion it paid for (see renewal).
+      await consumeReferenceInTx(tx, {
+        reference: input.paymentReference,
+        purpose: "promotion",
+        purposeId: input.sourceId,
+        // assertSelf above has already required a signed-in caller.
+        uid: request.auth?.uid ?? "",
+        amount: verify.amountPaid,
+        expectedAmount: expected,
+      });
       const now = new Date();
       // Renewal-as-continuation: extend from the link's prior lease end so
       // the landlord's cycle is preserved (tenant had the full term to

@@ -91,6 +91,58 @@ interface ConsumeInput {
 }
 
 /**
+ * Consume an already-verified reference inside the CALLER's transaction.
+ *
+ * For callers that only learn the expected amount inside their own
+ * transaction (renewals read the rent there), so the ledger write commits or
+ * fails together with what the payment bought. Same rules as
+ * verifyAndConsumeReference: a retry for the same target is a no-op, any
+ * other reuse throws. Must be called before the transaction's first write -
+ * Firestore requires every read to come first.
+ *
+ * @param {FirebaseFirestore.Transaction} tx The caller's transaction.
+ * @param {object} input Reference, amounts and target.
+ * @return {Promise<void>}
+ */
+export async function consumeReferenceInTx(
+  tx: FirebaseFirestore.Transaction,
+  input: {
+    reference: string;
+    purpose: string;
+    purposeId: string;
+    uid: string;
+    amount: number;
+    expectedAmount: number;
+  },
+): Promise<void> {
+  const ref = getFirestore().collection(LEDGER).doc(input.reference);
+  const existing = await tx.get(ref);
+  if (existing.exists) {
+    const prior = existing.data() ?? {};
+    if (prior.purposeId === input.purposeId &&
+        prior.purpose === input.purpose) {
+      return;
+    }
+    logger.error("Payment reference replayed against a different target", {
+      purpose: input.purpose, purposeId: input.purposeId, uid: input.uid,
+      priorPurpose: prior.purpose, priorPurposeId: prior.purposeId,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "That payment has already been used.",
+    );
+  }
+  tx.create(ref, {
+    purpose: input.purpose,
+    purposeId: input.purposeId,
+    uid: input.uid,
+    amount: input.amount,
+    expectedAmount: input.expectedAmount,
+    consumedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+/**
  * Verify a reference against Paystack and consume it, or throw.
  *
  * Throws HttpsError on every failure path, so a caller can simply await this
