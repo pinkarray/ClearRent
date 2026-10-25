@@ -1905,7 +1905,10 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.createdAt == request.time
         && !request.resource.data.keys().hasAny(
-             ['chaseFrom', 'chaseResetUsed', 'landlordChase']);
+             ['chaseFrom', 'chaseResetUsed', 'landlordChase',
+              // Set by onIssueCreated after checking the reporter really
+              // lives there; only a verified issue can block a landlord.
+              'reporterVerified']);
       
       // The caretaker of the property is a party to its issues - triaging them
       // is the whole job. Costs one property read per issue evaluated; at this
@@ -1946,7 +1949,7 @@ service cloud.firestore {
           (resource.data.tenantId == request.auth.uid ||
            resource.data.landlordId == request.auth.uid)
           && !changed(['createdAt', 'priority', 'chaseFrom',
-                       'chaseResetUsed', 'landlordChase'])
+                       'chaseResetUsed', 'landlordChase', 'reporterVerified'])
         ) ||
         isAdmin()
       );

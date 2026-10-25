@@ -1862,6 +1862,19 @@ test("tenant clears the chase record - denied", async () => {
   );
 });
 
+test("tenant reports an issue already marked verified - denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "issues/iss_selfverified"),
+      newIssue({ reporterVerified: true }))
+  );
+});
+
+test("tenant marks their own issue verified - denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "issues/iss_party"), { reporterVerified: true })
+  );
+});
+
 test("caretaker writes the chase record - denied", async () => {
   await assertFails(
     updateDoc(doc(caretakerDb(), "issues/iss_party"), {

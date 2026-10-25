@@ -77,7 +77,7 @@ export {
   issuePendingConfirmationReminders,
   issueResponseReminders,
 } from "./issue_reminders_ops";
-import {refreshOverdueUrgent} from "./issue_reminders_ops";
+import {refreshOverdueUrgent, reporterIsTenant} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
   handoverSilenceSweep,
@@ -770,6 +770,20 @@ export const onIssueCreated = onDocumentCreated(
     if (!landlordId) {
       logger.warn("Issue has no landlordId", {issueId: event.params.issueId});
       return;
+    }
+
+    // Anyone signed in can create an issue, so confirm the reporter lives
+    // there before it can be chased or block a landlord's listings. The
+    // notifications below still go out either way: they only inform, and a
+    // bug in this check must never silently swallow a real complaint.
+    const verified = await reporterIsTenant(data).catch(() => false);
+    await snap.ref.update({reporterVerified: verified});
+    if (!verified) {
+      logger.warn("Issue reporter is not a tenant of the property", {
+        issueId: event.params.issueId,
+        tenantId: data.tenantId ?? null,
+        propertyId: data.propertyId ?? null,
+      });
     }
     const tenantName = (data.tenantName as string | undefined) ?? "A tenant";
     const propertyTitle =

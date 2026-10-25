@@ -226,6 +226,46 @@ const RESPONSE_RUNGS: Record<string, readonly [number, number, number]> = {
   low: [7, 14, 21],
 };
 
+// A tenancy the reporter is still living in. pending_payment has not moved
+// in; the ended states have moved out. `expired` stays: a lapsed lease is
+// often still occupied while it is renewed.
+const LIVE_RENTAL = ["active", "expiring_soon", "grace_locked",
+  "moveout_pending", "expired"];
+const LIVE_LINK = ["confirmed", "accepted"];
+
+/**
+ * Whether an issue's reporter really lives at the property, and the landlord
+ * it names really owns it. The create rule can only check that the reporter
+ * is signed in - tenancies have random ids and both clients write an empty
+ * rentalId - so without this anyone could file an urgent issue against any
+ * landlord and, three days later, block their listings. Only a verified issue
+ * is chased (issueResponseReminders) or counts toward the block.
+ *
+ * @param {FirebaseFirestore.DocumentData} issue The issue document.
+ * @return {Promise<boolean>} True when the tenancy checks out.
+ */
+export async function reporterIsTenant(
+  issue: FirebaseFirestore.DocumentData,
+): Promise<boolean> {
+  const db = getFirestore();
+  const {tenantId, landlordId, propertyId} = issue;
+  if (!tenantId || !landlordId || !propertyId) return false;
+  const property = await db.doc(`properties/${propertyId}`).get();
+  if (property.get("landlordId") !== landlordId) return false;
+  for (const [coll, live] of [["active_rentals", LIVE_RENTAL],
+    ["tenancy_links", LIVE_LINK]] as const) {
+    const snap = await db.collection(coll)
+      .where("tenantId", "==", tenantId)
+      .where("propertyId", "==", propertyId)
+      .get();
+    if (snap.docs.some((d) => (live as readonly string[])
+      .includes(String(d.get("status"))))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Recomputes `users/{landlordId}.overdueUrgentIssues`: the HIGH issues that
  * reached the admin rung of their current round and still wait on the
@@ -249,7 +289,8 @@ export async function refreshOverdueUrgent(
   const ids = snap.docs.filter((d) => {
     const x = d.data();
     const start = (x.chaseFrom ?? x.createdAt) as Timestamp | undefined;
-    return x.priority === "high" &&
+    return x.reporterVerified === true &&
+      x.priority === "high" &&
       (x.status === "open" || x.status === "in_progress") &&
       (x.landlordChase?.rung ?? 0) >= 3 &&
       x.landlordChase?.round === start?.toMillis?.();
@@ -284,6 +325,8 @@ export const issueResponseReminders = onSchedule(
 
     for (const doc of snap.docs) {
       const data = doc.data();
+      // Only an issue from someone who really lives there (onIssueCreated).
+      if (data.reporterVerified !== true) continue;
       const start = (data.chaseFrom ?? data.createdAt) as Timestamp | undefined;
       if (!start?.toMillis) continue;
       const round = start.toMillis();
