@@ -199,7 +199,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (otherPartyId != null) {
         // Check other party's verification and call permission directly from Firestore
         final otherPartyDoc = await FirebaseFirestore.instance
-            .collection('users')
+            .collection('public_profiles')
             .doc(otherPartyId)
             .get();
         

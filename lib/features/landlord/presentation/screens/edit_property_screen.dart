@@ -395,7 +395,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     setState(() => _isLoadingAgent = true);
     
     try {
-      final doc = await _firestore.collection('users').doc(_assignedAgentId).get();
+      final doc = await _firestore.collection('public_profiles').doc(_assignedAgentId).get();
       if (doc.exists && mounted) {
         setState(() {
           _assignedAgentName = doc.data()?['fullName'] ?? 'Unknown Agent';

@@ -85,7 +85,7 @@ class TenancyLinkService {
 
       // Get landlord info
       final landlordDoc =
-          await _firestore.collection('users').doc(landlordId).get();
+          await _firestore.collection('public_profiles').doc(landlordId).get();
       final landlordData = landlordDoc.data();
       final landlordName = landlordData?['fullName'] ?? 'Landlord';
       final landlordPhone = landlordData?['phone'] ?? '';

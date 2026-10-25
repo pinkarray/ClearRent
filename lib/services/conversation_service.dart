@@ -22,7 +22,7 @@ class ConversationService {
     }
 
     try {
-      final userDoc = await _firestore.collection('users').doc(userId).get();
+      final userDoc = await _firestore.collection('public_profiles').doc(userId).get();
       if (!userDoc.exists) {
         developer.log(
           '❌ User document not found: $userId',
@@ -474,7 +474,7 @@ class ConversationService {
       String role = senderRole ?? 'tenant';
       if (senderRole == null) {
         try {
-          final userDoc = await _firestore.collection('users').doc(senderId).get();
+          final userDoc = await _firestore.collection('public_profiles').doc(senderId).get();
           if (userDoc.exists) {
             role = userDoc.data()?['accountType'] ?? 'tenant';
           }
@@ -689,7 +689,7 @@ class ConversationService {
       if (senderRole == null) {
         try {
           final userDoc =
-              await _firestore.collection('users').doc(senderId).get();
+              await _firestore.collection('public_profiles').doc(senderId).get();
           if (userDoc.exists) {
             role = userDoc.data()?['accountType'] ?? 'tenant';
           }
@@ -930,8 +930,8 @@ class ConversationService {
       }
 
       // Get user details
-      final landlordDoc = await _firestore.collection('users').doc(landlordId).get();
-      final agentDoc = await _firestore.collection('users').doc(agentId).get();
+      final landlordDoc = await _firestore.collection('public_profiles').doc(landlordId).get();
+      final agentDoc = await _firestore.collection('public_profiles').doc(agentId).get();
 
       final landlordData = landlordDoc.data();
       final agentData = agentDoc.data();
@@ -1050,8 +1050,8 @@ class ConversationService {
       }
 
       // Get user details
-      final landlordDoc = await _firestore.collection('users').doc(landlordId).get();
-      final agentDoc = await _firestore.collection('users').doc(agentId).get();
+      final landlordDoc = await _firestore.collection('public_profiles').doc(landlordId).get();
+      final agentDoc = await _firestore.collection('public_profiles').doc(agentId).get();
 
       final landlordData = landlordDoc.data();
       final agentData = agentDoc.data();
@@ -1156,8 +1156,8 @@ class ConversationService {
         return existingQuery.docs.first.id;
       }
 
-      final landlordDoc = await _firestore.collection('users').doc(landlordId).get();
-      final caretakerDoc = await _firestore.collection('users').doc(caretakerId).get();
+      final landlordDoc = await _firestore.collection('public_profiles').doc(landlordId).get();
+      final caretakerDoc = await _firestore.collection('public_profiles').doc(caretakerId).get();
       final landlordData = landlordDoc.data();
       final caretakerData = caretakerDoc.data();
 

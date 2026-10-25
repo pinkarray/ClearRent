@@ -1088,7 +1088,7 @@ class AuthService {
   /// Get profile image URL for any user by their ID.
   Future<String?> getUserProfileImageUrl(String userId) async {
     try {
-      final doc = await _firestore.collection('users').doc(userId).get();
+      final doc = await _firestore.collection('public_profiles').doc(userId).get();
       return doc.data()?['profileImageUrl'];
     } catch (e) {
       developer.log(

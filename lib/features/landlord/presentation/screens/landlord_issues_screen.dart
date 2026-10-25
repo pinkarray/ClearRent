@@ -553,8 +553,8 @@ class _IssueCardState extends State<_IssueCard> {
       String tenantName = _tenantName;
       try {
         final results = await Future.wait([
-          FirebaseFirestore.instance.collection('users').doc(landlordId).get(),
-          FirebaseFirestore.instance.collection('users').doc(tenantId).get(),
+          FirebaseFirestore.instance.collection('public_profiles').doc(landlordId).get(),
+          FirebaseFirestore.instance.collection('public_profiles').doc(tenantId).get(),
         ]);
         final landlordDoc = results[0];
         final tenantDoc = results[1];

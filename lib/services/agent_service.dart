@@ -94,7 +94,7 @@ class AgentService {
   Future<List<AgentModel>> getVerifiedAgents() async {
     try {
       final snapshot = await _firestore
-          .collection('users')
+          .collection('public_profiles')
           .where('accountType', isEqualTo: 'agent')
           .where('isVerified', isEqualTo: true)
           .get();
@@ -118,7 +118,7 @@ class AgentService {
   Future<List<AgentModel>> getAgentsByArea(String area) async {
     try {
       final snapshot = await _firestore
-          .collection('users')
+          .collection('public_profiles')
           .where('accountType', isEqualTo: 'agent')
           .where('isVerified', isEqualTo: true)
           .where('serviceAreas', arrayContains: area)
@@ -147,7 +147,7 @@ class AgentService {
   /// Get a single agent by ID
   Future<AgentModel?> getAgent(String agentId) async {
     try {
-      final doc = await _firestore.collection('users').doc(agentId).get();
+      final doc = await _firestore.collection('public_profiles').doc(agentId).get();
 
       if (!doc.exists) return null;
 
@@ -210,7 +210,7 @@ class AgentService {
       });
 
       // Update agent's average rating
-      final agentDoc = await _firestore.collection('users').doc(agentId).get();
+      final agentDoc = await _firestore.collection('public_profiles').doc(agentId).get();
       if (agentDoc.exists) {
         final currentRating = (agentDoc.data()?['rating'] ?? 0.0).toDouble();
         final totalRatings = (agentDoc.data()?['totalRatings'] ?? 0) + 1;
@@ -264,7 +264,7 @@ class AgentService {
   Future<List<AgentModel>> getAllAgents() async {
     try {
       final snapshot = await _firestore
-          .collection('users')
+          .collection('public_profiles')
           .where('accountType', isEqualTo: 'agent')
           .get();
 

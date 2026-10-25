@@ -714,7 +714,7 @@ class PropertyService {
       // First, get all verified landlord IDs from users collection
       final verifiedLandlordsSnapshot =
           await _firestore
-              .collection('users')
+              .collection('public_profiles')
               .where('verificationStatus', isEqualTo: 'verified')
               .where('accountType', isEqualTo: 'landlord')
               .get();
@@ -1081,7 +1081,7 @@ class PropertyService {
       // First get verified landlord IDs
       final verifiedLandlordsSnapshot =
           await _firestore
-              .collection('users')
+              .collection('public_profiles')
               .where('verificationStatus', isEqualTo: 'verified')
               .where('accountType', isEqualTo: 'landlord')
               .get();

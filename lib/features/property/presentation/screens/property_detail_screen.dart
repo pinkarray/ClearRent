@@ -344,7 +344,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
       final landlordDoc =
           await FirebaseFirestore.instance
-              .collection('users')
+              .collection('public_profiles')
               .doc(widget.property.landlordId)
               .get();
 

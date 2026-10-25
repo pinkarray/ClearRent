@@ -62,7 +62,7 @@ class _SelectAgentScreenState extends State<SelectAgentScreen> {
     try {
       // Get all verified agents
       final snapshot = await _firestore
-          .collection('users')
+          .collection('public_profiles')
           .where('accountType', isEqualTo: 'agent')
           .where('isVerified', isEqualTo: true)
           .get();

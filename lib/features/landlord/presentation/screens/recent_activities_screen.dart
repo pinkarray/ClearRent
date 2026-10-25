@@ -709,7 +709,7 @@ class _ViewerInfoSheetState extends State<_ViewerInfoSheet> {
     }
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('public_profiles')
           .doc(widget.activity.actorId)
           .get();
       if (mounted) {

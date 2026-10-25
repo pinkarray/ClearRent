@@ -1663,7 +1663,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         try {
           final agentDoc =
               await FirebaseFirestore.instance
-                  .collection('users')
+                  .collection('public_profiles')
                   .doc(_selectedAgentId)
                   .get();
           if (agentDoc.exists) {

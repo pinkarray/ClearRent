@@ -4129,7 +4129,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       try {
         final landlordDoc =
             await FirebaseFirestore.instance
-                .collection('users')
+                .collection('public_profiles')
                 .doc(link.landlordId)
                 .get();
         if (landlordDoc.exists) {

@@ -69,7 +69,7 @@ class _AgentDiscoverPropertiesScreenState
       final currentUid = _auth.currentUser?.uid;
       if (currentUid == null) return;
 
-      final verifiedSnap = await _firestore.collection('users')
+      final verifiedSnap = await _firestore.collection('public_profiles')
           .where('verificationStatus', isEqualTo: 'verified')
           .where('accountType', isEqualTo: 'landlord').get();
       final verifiedIds = verifiedSnap.docs.map((d) => d.id).toSet();
@@ -247,7 +247,7 @@ class _AgentDiscoverPropertiesScreenState
     // not worth holding the list for: this repaints on its own when it lands.
     unawaited(_loadTenantHistory(property.id));
     try {
-      final snap = await _firestore.collection('users').where('accountType', isEqualTo: 'tenant').where('verificationStatus', isEqualTo: 'verified').get();
+      final snap = await _firestore.collection('public_profiles').where('accountType', isEqualTo: 'tenant').where('verificationStatus', isEqualTo: 'verified').get();
       final tenants = <Map<String, dynamic>>[];
       for (final doc in snap.docs) {
         final data = doc.data(); data['uid'] = doc.id;

@@ -120,7 +120,7 @@ class InspectionService {
 
       try {
         final agentDoc = await _firestore
-            .collection('users')
+            .collection('public_profiles')
             .doc(property.assignedAgentId)
             .get();
 
@@ -206,7 +206,7 @@ class InspectionService {
       // Handler lives elsewhere - get their baseLocation
       try {
         final landlordDoc = await _firestore
-            .collection('users')
+            .collection('public_profiles')
             .doc(byCaretaker ? property.caretakerId! : property.landlordId)
             .get();
 
@@ -253,7 +253,7 @@ class InspectionService {
   /// Callers must treat null as "ask again later", never as "no".
   Future<bool?> _isUserVerified(String userId) async {
     try {
-      final userDoc = await _firestore.collection('users').doc(userId).get();
+      final userDoc = await _firestore.collection('public_profiles').doc(userId).get();
       // A missing document is genuinely "not verified" - the account has no
       // profile at all. An absent FIELD on a present doc is the same. Only a
       // failed read is unknown.
@@ -389,7 +389,7 @@ class InspectionService {
 
         final agentDoc =
             await _firestore
-                .collection('users')
+                .collection('public_profiles')
                 .doc(property.assignedAgentId)
                 .get();
 
@@ -2300,7 +2300,7 @@ class InspectionService {
       try {
         final agentDoc =
             await _firestore
-                .collection('users')
+                .collection('public_profiles')
                 .doc(property.assignedAgentId)
                 .get();
 
