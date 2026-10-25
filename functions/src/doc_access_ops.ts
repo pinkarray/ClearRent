@@ -56,12 +56,10 @@ export const getSignedAgreementUrl = onCall(callableOptions, async (request) => 
     throw new HttpsError("unauthenticated", "You must be signed in.");
   }
   const uid = request.auth.uid;
-  // Read access mirrors canRead() in firestore.rules: full admins OR a
-  // read-only viewer. Viewing a signed agreement is a read, so viewers pass.
+  // Read access mirrors isAdmin() in firestore.rules.
   const canRead =
     request.auth.token?.admin === true ||
-    request.auth.token?.superAdmin === true ||
-    request.auth.token?.viewer === true;
+    request.auth.token?.superAdmin === true;
 
   const data = (request.data ?? {}) as {
     collection?: string;
@@ -199,8 +197,7 @@ export const getConditionMediaUrl = onCall(callableOptions, async (request) => {
   const uid = request.auth.uid;
   const canRead =
     request.auth.token?.admin === true ||
-    request.auth.token?.superAdmin === true ||
-    request.auth.token?.viewer === true;
+    request.auth.token?.superAdmin === true;
 
   const data = (request.data ?? {}) as {rentalId?: string; path?: string};
   const rentalId = data.rentalId ?? "";

@@ -56,12 +56,13 @@ async function main() {
     await passes(updateDoc(
       doc(admin.firestore(), "admin_alerts", "a1"), {status: "resolved"})));
 
-  // Viewer: read/list only.
-  await check("viewer can read alert",
-    await passes(getDoc(doc(viewer.firestore(), "admin_alerts", "a1"))));
-  await check("viewer can list alerts",
-    await passes(getDocs(collection(viewer.firestore(), "admin_alerts"))));
-  await check("viewer CANNOT update alert",
+  // The read-only viewer role was retired 2026-10-25; a stale claim must
+  // grant nothing.
+  await check("retired viewer claim CANNOT read alert",
+    await denies(getDoc(doc(viewer.firestore(), "admin_alerts", "a1"))));
+  await check("retired viewer claim CANNOT list alerts",
+    await denies(getDocs(collection(viewer.firestore(), "admin_alerts"))));
+  await check("retired viewer claim CANNOT update alert",
     await denies(updateDoc(
       doc(viewer.firestore(), "admin_alerts", "a1"), {read: true})));
 

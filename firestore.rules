@@ -28,19 +28,6 @@ service cloud.firestore {
         && request.auth.token.get('superAdmin', false) == true;
     }
 
-    // Read-only admin panel access. A `viewer` custom claim grants the admin
-    // dashboard the SAME read surface as a full admin, but never write access.
-    // Used on READ / GET / LIST clauses only - every create/update/delete gate
-    // stays on isAdmin(), so a viewer can look at everything and change nothing.
-    function isViewer() {
-      return request.auth != null && request.auth.token.viewer == true;
-    }
-
-    // Anyone allowed to read admin-gated data: full admins OR read-only viewers.
-    function canRead() {
-      return isAdmin() || isViewer();
-    }
-
     // Does this write touch any of `keys`?
     //
     // Declared HERE, at the top of the document tree, because rules functions
@@ -385,7 +372,7 @@ service cloud.firestore {
       // use the admin SDK and bypass these rules.
       match /private/{docId} {
         allow read: if request.auth != null && (
-          request.auth.uid == userId || canRead()
+          request.auth.uid == userId || isAdmin()
         );
         allow write: if request.auth != null && request.auth.uid == userId
           && (docId != 'residence' || ownResidenceWriteOk());
@@ -408,7 +395,7 @@ service cloud.firestore {
       // Get/read: only the submitter or admin.
       allow read: if request.auth != null && (
         resource.data.userId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: same ownership constraint. The only caller today is
@@ -417,7 +404,7 @@ service cloud.firestore {
       // (verification status is mirrored on the users doc instead).
       allow list: if request.auth != null && (
         resource.data.userId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Update: admin only (status transitions: pending → verified/rejected).
@@ -837,7 +824,7 @@ service cloud.firestore {
       // where getSignedAgreementUrl checks membership.
       match /private/agreement {
         allow read: if request.auth != null && (
-          canRead() || propertyOwner() || propertyAgent()
+          isAdmin() || propertyOwner() || propertyAgent()
         );
         allow write: if request.auth != null
           && (propertyOwner() || propertyAgent());
@@ -852,7 +839,7 @@ service cloud.firestore {
         // (which is about finding the property) would also open the landlord's
         // tenancy agreement. Proven by verify_message_rules.js.
         allow read: if request.auth != null && (
-          canRead()
+          isAdmin()
           || propertyOwner()
           || propertyAgent()
           || (docId != 'agreement'
@@ -881,7 +868,7 @@ service cloud.firestore {
       match /reveals/{tenantId} {
         // The tenant themselves, the handler, or an admin may read a grant.
         allow read: if request.auth != null && (
-          canRead()
+          isAdmin()
           || request.auth.uid == tenantId
           || propertyOwner()
           || propertyAgent()
@@ -916,7 +903,7 @@ service cloud.firestore {
       // List: the owner (add-property "join a building" picker) or admin (the
       // grouped approval queue). Ownership-constrained to satisfy query safety.
       allow list: if request.auth != null && (
-        resource.data.landlordId == request.auth.uid || canRead()
+        resource.data.landlordId == request.auth.uid || isAdmin()
       );
 
       // Admin verifies / rejects the shared ownership doc.
@@ -984,7 +971,7 @@ service cloud.firestore {
       
       // Get single doc: only active participants and admin
       allow get: if request.auth != null && (
-        isActiveParticipant() || canRead()
+        isActiveParticipant() || isAdmin()
       );
       
       // List/query (M3): the caller must be a party to every matched doc -
@@ -1004,7 +991,7 @@ service cloud.firestore {
         // "observer" concept was introduced. The caretaker's own dedup check
         // queries by caretakerId, exactly as the agent path queries by agentId.
         resource.data.caretakerId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Create: user must be in the participants list they're creating
@@ -1013,7 +1000,7 @@ service cloud.firestore {
       
       // Update: active participants and admin
       allow update: if request.auth != null && (
-        isActiveParticipant() || canRead()
+        isActiveParticipant() || isAdmin()
       );
       
       // Delete: admin only
@@ -1036,7 +1023,7 @@ service cloud.firestore {
         
         // Read: active participants and admin
         allow read: if request.auth != null && (
-          isConversationParticipant() || canRead()
+          isConversationParticipant() || isAdmin()
         );
         
         // Create: active participant, and either (a) they are the sender AND
@@ -1119,7 +1106,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.actorId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Create: any authed user logs an activity. The actor/landlord shapes
@@ -1300,7 +1287,7 @@ service cloud.firestore {
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: a party to the inspection (tenant/landlord/agent), or
@@ -1311,7 +1298,7 @@ service cloud.firestore {
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       allow delete: if false;
@@ -1608,11 +1595,11 @@ service cloud.firestore {
       // writes bypass this rule).
       allow create: if false;
 
-      // canRead() first so an admin list/read short-circuits BEFORE the per-doc
+      // isAdmin() first so an admin list/read short-circuits BEFORE the per-doc
       // get() lookups below (avoids their cost and a deny if a referenced
       // inspection is ever missing).
       allow read: if request.auth != null && (
-        canRead() ||
+        isAdmin() ||
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         get(/databases/$(database)/documents/inspection_requests/$(resource.data.inspectionRequestId)).data.tenantId == request.auth.uid ||
@@ -1663,7 +1650,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: tenant or landlord on the rental, or admin. Hardened (H1):
@@ -1675,7 +1662,7 @@ service cloud.firestore {
       allow list: if request.auth != null && (
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Admin can update freely (e.g. set pendingRentForRenewal after
@@ -1810,7 +1797,7 @@ service cloud.firestore {
           get(/databases/$(database)/documents/active_rentals/$(rentalId))
             .data.landlordId == request.auth.uid ||
           rentalCaretaker() ||
-          canRead()
+          isAdmin()
         );
 
         // Only for your own record, only on your own tenancy, and only the
@@ -1853,7 +1840,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Queries filter by landlordId / tenantId (parties) or status (admin).
@@ -1862,7 +1849,7 @@ service cloud.firestore {
       allow list: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Only admin decides (approve/reject + decisionReason). The filing
@@ -1891,7 +1878,7 @@ service cloud.firestore {
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         isPropertyCaretaker(resource.data.get('propertyId', '')) ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: parties only (tenant, landlord, or caretaker on the issue),
@@ -1910,7 +1897,7 @@ service cloud.firestore {
         resource.data.tenantId == request.auth.uid ||
         resource.data.landlordId == request.auth.uid ||
         isPropertyCaretaker(resource.data.get('propertyId', '')) ||
-        canRead()
+        isAdmin()
       );
 
       // The parties may write anything EXCEPT what the response clock reads:
@@ -1924,7 +1911,7 @@ service cloud.firestore {
           && !changed(['createdAt', 'priority', 'chaseFrom',
                        'chaseResetUsed', 'landlordChase'])
         ) ||
-        canRead()
+        isAdmin()
       );
 
       // The caretaker's own update clause is an ALLOWLIST, unlike the parties'
@@ -1976,7 +1963,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         isPropertyCaretaker(resource.data.get('propertyId', '')) ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: the owning landlord, the property's caretaker, or admin.
@@ -1988,7 +1975,7 @@ service cloud.firestore {
       allow list: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         isPropertyCaretaker(resource.data.get('propertyId', '')) ||
-        canRead()
+        isAdmin()
       );
 
       // Landlord can update or delete their own logs (e.g. correcting a note)
@@ -2021,7 +2008,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.caretakerId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List: the landlord's "who manages what" list and the invitee's pending
@@ -2029,7 +2016,7 @@ service cloud.firestore {
       allow list: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.caretakerId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Create/update/delete are callable-only. A client-written invite would
@@ -2050,7 +2037,7 @@ service cloud.firestore {
       allow read: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List queries must satisfy the same ownership constraint as get.
@@ -2062,7 +2049,7 @@ service cloud.firestore {
       allow list: if request.auth != null && (
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // Allowlist (parity with active_rentals): clients drive only the link
@@ -2104,7 +2091,7 @@ service cloud.firestore {
         resource.data.landlordId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
       // Hardened: was `if request.auth != null`, which let any authenticated
       // user query ALL transactions. Parties query their own row
@@ -2113,7 +2100,7 @@ service cloud.firestore {
         resource.data.landlordId == request.auth.uid ||
         resource.data.agentId == request.auth.uid ||
         resource.data.tenantId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
       allow create: if false;
       allow update: if isAdmin();
@@ -2129,14 +2116,14 @@ service cloud.firestore {
       // Recipients (and admin) can read their own.
       allow get: if request.auth != null && (
         resource.data.userId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: own notifications only (queries filter by userId).
       // Hardened: was `if request.auth != null`, which let any authenticated
       // user query ALL notifications.
       allow list: if request.auth != null &&
-        (resource.data.userId == request.auth.uid || canRead());
+        (resource.data.userId == request.auth.uid || isAdmin());
 
       // Recipients can mark as read (and only as read).
       //
@@ -2164,7 +2151,7 @@ service cloud.firestore {
       // user query ALL payment records. Clients query their own
       // (where userId == uid); admin reads collection-wide via the claim.
       allow list: if request.auth != null &&
-        (resource.data.userId == request.auth.uid || canRead());
+        (resource.data.userId == request.auth.uid || isAdmin());
 
       // Exactly what the app writes: PaystackService.recordPayment (base
       // fields + each caller's `extra`) and initiateRefund. Everything else
@@ -2212,14 +2199,14 @@ service cloud.firestore {
       // Beneficiary reads their own; admin reads all.
       allow get: if request.auth != null && (
         resource.data.beneficiaryId == request.auth.uid ||
-        canRead()
+        isAdmin()
       );
 
       // List/query: own refunds only (tenant uses a doc-get; only admin
       // lists collection-wide on the Refunds queue). Hardened: was
       // `if request.auth != null`, which exposed ALL refund records.
       allow list: if request.auth != null &&
-        (resource.data.beneficiaryId == request.auth.uid || canRead());
+        (resource.data.beneficiaryId == request.auth.uid || isAdmin());
 
       // Updates only via markRefundPaid CF (admin SDK bypasses).
       allow update: if false;
@@ -2234,10 +2221,10 @@ service cloud.firestore {
     // The admin dashboard lists them and marks each added/dismissed.
     //   - create: any signed-in user, but shape-constrained to a pending
     //     'unknown_area' report so a client can't forge arbitrary admin state.
-    //   - read: admins + read-only viewers (canRead).
+    //   - read: admins.
     //   - update/delete: admins only.
     match /admin_requests/{requestId} {
-      allow read: if canRead();
+      allow read: if isAdmin();
       allow create: if request.auth != null
         && request.resource.data.type == 'unknown_area'
         && request.resource.data.status == 'pending';
@@ -2254,11 +2241,11 @@ service cloud.firestore {
     }
 
     // Admin alerts - the web dashboard's ping/queue feed. Written only by the
-    // admin SDK (writeAdminAlert in Cloud Functions). Full admins and read-only
-    // viewers can read; only full admins may mark read / resolve or delete.
+    // admin SDK (writeAdminAlert in Cloud Functions). Admins read it, mark it
+    // read, resolve it or delete it.
     match /admin_alerts/{alertId} {
       allow create: if false;             // Admin SDK only
-      allow read, list: if canRead();
+      allow read, list: if isAdmin();
       allow update: if isAdmin();         // mark read / resolve
       allow delete: if isAdmin();
     }
@@ -2294,11 +2281,11 @@ service cloud.firestore {
     // the account goes. Financial records outlive the account for audit and
     // still reference its uid; this is how the dashboard tells "deleted
     // account" apart from a live party instead of rendering a ghost row.
-    // Read-only to admins and viewers; nothing may write or remove one from a
+    // Read-only to admins; nothing may write or remove one from a
     // client, or the audit trail could be erased.
     match /deleted_accounts/{uid} {
       allow create: if false;             // Admin SDK only
-      allow read, list: if canRead();
+      allow read, list: if isAdmin();
       allow update: if false;             // Immutable
       allow delete: if false;             // Immutable
     }
