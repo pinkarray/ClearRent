@@ -124,6 +124,23 @@ service firebase.storage {
         && (request.auth.uid == uid || isAdmin());
     }
 
+    // Photos a tenant attaches to an issue: the inside of someone's home.
+    // They were unsigned public Cloudinary links. Uploaded under the
+    // reporter's own uid before the issue exists (the issue id is not known
+    // while drafting), write-once, images only. The landlord, the caretaker
+    // and admins see them through getIssuePhotoUrl, which checks the photo
+    // is named on an issue they are a party to.
+    match /issues/{uid}/{photoId} {
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && resource == null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
+      allow update, delete: if false;
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

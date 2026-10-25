@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
@@ -11,6 +10,8 @@ import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/tab_badge.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
+import '../../../../shared/widgets/issue_photo_image.dart';
+import '../../../../services/issue_photo_service.dart';
 
 /// Landlord screen to view and manage reported issues from tenants.
 /// Shows issues grouped by status: Open, In Progress, Resolved.
@@ -454,7 +455,7 @@ class _IssueCardState extends State<_IssueCard> {
   String get _tenantName => widget.data['tenantName'] ?? 'Tenant';
   String get _propertyTitle => widget.data['propertyTitle'] ?? 'Property';
   List<String> get _images =>
-      List<String>.from(widget.data['images'] ?? []);
+      IssuePhotoService.photosOf(widget.data);
 
   DateTime? get _createdAt {
     final ts = widget.data['createdAt'];
@@ -713,17 +714,11 @@ class _IssueCardState extends State<_IssueCard> {
                   padding: const EdgeInsets.only(right: 8),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: _images[i],
+                    child: IssuePhotoImage(
+                      photo: _images[i],
+                      issueId: widget.issueId,
                       width: 70,
                       height: 70,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => Container(
-                        width: 70,
-                        height: 70,
-                        color: AppColors.border,
-                        child: const Icon(Icons.broken_image, size: 20),
-                      ),
                     ),
                   ),
                 ),

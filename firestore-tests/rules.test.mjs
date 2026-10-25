@@ -3151,3 +3151,35 @@ test("admin sets a landlord's show-record switch - allowed", async () => {
     updateDoc(doc(adminDb(), "users/" + LANDLORD), { showIssueRecord: true })
   );
 });
+
+// ─── issue photos ────────────────────────────────────────────────────────────
+
+test("tenant reports an issue with their own photo paths - allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(tenantDb(), "issues/iss_photos"),
+      newIssue({ photoPaths: ["issues/" + TENANT + "/a.jpg", "issues/" + TENANT + "/b.jpg"] }))
+  );
+});
+
+test("tenant attaches another user's photo path - denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "issues/iss_borrowed"),
+      newIssue({ photoPaths: ["issues/" + LANDLORD + "/a.jpg"] }))
+  );
+});
+
+test("tenant attaches more than 4 photos - denied", async () => {
+  const p = (n) => "issues/" + TENANT + "/" + n + ".jpg";
+  await assertFails(
+    setDoc(doc(tenantDb(), "issues/iss_many"),
+      newIssue({ photoPaths: [p(1), p(2), p(3), p(4), p(5)] }))
+  );
+});
+
+test("landlord swaps an issue's photos - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), {
+      photoPaths: ["issues/" + LANDLORD + "/x.jpg"],
+    })
+  );
+});

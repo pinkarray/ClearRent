@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
+import '../../../../services/issue_photo_service.dart';
+import '../../../../shared/widgets/issue_photo_image.dart';
 
 /// Full issue history for a tenant - all issues ever reported, grouped by
 /// property. Permanent record that survives tenancy changes / landlord removals.
@@ -192,7 +193,7 @@ class _IssueHistoryTile extends StatelessWidget {
   final Map<String, dynamic> data;
   const _IssueHistoryTile({required this.issueId, required this.data});
 
-  List<String> get _images => List<String>.from(data['images'] ?? []);
+  List<String> get _images => IssuePhotoService.photosOf(data);
 
   @override
   Widget build(BuildContext context) {
@@ -387,7 +388,7 @@ class _IssueDetailScreen extends StatelessWidget {
   final Map<String, dynamic> data;
   const _IssueDetailScreen({required this.issueId, required this.data});
 
-  List<String> get _images => List<String>.from(data['images'] ?? []);
+  List<String> get _images => IssuePhotoService.photosOf(data);
   String get _status => (data['status'] as String?) ?? 'open';
   String get _category => (data['category'] as String?) ?? 'general';
   String get _priority => (data['priority'] as String?) ?? 'low';
@@ -503,25 +504,11 @@ class _IssueDetailScreen extends StatelessWidget {
                       onTap: () => _showFullImage(context, i),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: _images[i],
+                        child: IssuePhotoImage(
+                          photo: _images[i],
+                          issueId: issueId,
                           width: 240,
                           height: 180,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) => Container(
-                            width: 240, height: 180,
-                            color: AppColors.border,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          errorWidget: (_, _, _) => Container(
-                            width: 240, height: 180,
-                            color: AppColors.border,
-                            child: Icon(Icons.broken_image, color: AppColors.textHint),
-                          ),
                         ),
                       ),
                     );
@@ -718,12 +705,10 @@ class _IssueDetailScreen extends StatelessWidget {
             itemCount: _images.length,
             itemBuilder: (_, i) => InteractiveViewer(
               child: Center(
-                child: CachedNetworkImage(
-                  imageUrl: _images[i],
+                child: IssuePhotoImage(
+                  photo: _images[i],
+                  issueId: issueId,
                   fit: BoxFit.contain,
-                  placeholder: (_, _) => CircularProgressIndicator(
-                    color: AppColors.primary,
-                  ),
                 ),
               ),
             ),

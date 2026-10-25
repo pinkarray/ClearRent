@@ -7,8 +7,9 @@ import 'dart:developer' as developer;
 import '../../../../core/constants/colors.dart';
 import '../../../../core/constants/text_styles.dart';
 import '../../../../services/auth_service.dart';
-import '../../../../services/property_service.dart';
 import '../../../../services/issue_draft_service.dart';
+import '../../../../services/issue_photo_service.dart';
+import '../../../../shared/widgets/issue_photo_image.dart';
 import '../../../../shared/widgets/what_happens_now_hint.dart';
 
 /// Report an issue screen for tenants.
@@ -41,11 +42,12 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final AuthService _authService = AuthService();
-  final PropertyService _propertyService = PropertyService();
 
   String _selectedCategory = 'plumbing';
   String _selectedPriority = 'medium';
-  final List<String> _imageUrls = [];
+  // Private Storage paths (issues/{uid}/...), not public links - see
+  // IssuePhotoService.
+  final List<String> _photoPaths = [];
   bool _isSubmitting = false;
   bool _isUploadingImage = false;
 
@@ -86,10 +88,14 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
       _descriptionController.text = (draft['description'] as String?) ?? '';
       _selectedCategory = (draft['category'] as String?) ?? _selectedCategory;
       _selectedPriority = (draft['priority'] as String?) ?? _selectedPriority;
-      _imageUrls
+      _photoPaths
         ..clear()
         ..addAll(
-          ((draft['imageUrls'] as List?) ?? const []).map((e) => '$e'),
+          ((draft['imageUrls'] as List?) ?? const [])
+              .map((e) => '$e')
+              // A draft from before private photos holds public Cloudinary
+              // links, which the rules no longer accept on a new issue.
+              .where((e) => !IssuePhotoService.isLegacyUrl(e)),
         );
       _restoredDraft = true;
     });
@@ -104,7 +110,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
       description: _descriptionController.text,
       category: _selectedCategory,
       priority: _selectedPriority,
-      imageUrls: _imageUrls,
+      imageUrls: _photoPaths,
     );
   }
 
@@ -118,7 +124,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
   }
 
   Future<void> _pickImage() async {
-    if (_imageUrls.length >= 4) {
+    if (_photoPaths.length >= 4) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Maximum 4 images allowed'),
         behavior: SnackBarBehavior.floating,
@@ -187,12 +193,18 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
 
       setState(() => _isUploadingImage = true);
 
-      // Use PropertyService.uploadImage (cloudinary_public)
-      final url = await _propertyService.uploadImage(File(image.path));
+      // Private Storage, never a public link: it is the inside of a home.
+      String? url;
+      try {
+        url = await IssuePhotoService.instance.upload(File(image.path));
+      } catch (e) {
+        developer.log('❌ Issue photo upload failed: $e', name: 'ReportIssue');
+      }
 
-      if (url != null && mounted) {
+      final uploaded = url;
+      if (uploaded != null && mounted) {
         setState(() {
-          _imageUrls.add(url);
+          _photoPaths.add(uploaded);
           _isUploadingImage = false;
         });
         _saveDraft();
@@ -258,7 +270,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
         'description': _descriptionController.text.trim(),
         'category': _selectedCategory,
         'priority': _selectedPriority,
-        'images': _imageUrls,
+        'photoPaths': _photoPaths,
         'status': 'open',
         'reportedBy': currentUserId,
         'createdAt': FieldValue.serverTimestamp(),
@@ -367,7 +379,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                       setState(() {
                         _titleController.clear();
                         _descriptionController.clear();
-                        _imageUrls.clear();
+                        _photoPaths.clear();
                         _selectedCategory = 'plumbing';
                         _selectedPriority = 'medium';
                         _restoredDraft = false;
@@ -544,22 +556,15 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  ..._imageUrls.asMap().entries.map((entry) {
+                  ..._photoPaths.asMap().entries.map((entry) {
                     return Stack(
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(10),
-                          child: Image.network(
-                            entry.value,
+                          child: IssuePhotoImage(
+                            photo: entry.value,
                             width: 80,
                             height: 80,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              width: 80,
-                              height: 80,
-                              color: AppColors.border,
-                              child: const Icon(Icons.broken_image),
-                            ),
                           ),
                         ),
                         Positioned(
@@ -567,7 +572,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                           right: 2,
                           child: GestureDetector(
                             onTap: () {
-                              setState(() => _imageUrls.removeAt(entry.key));
+                              setState(() => _photoPaths.removeAt(entry.key));
                               _saveDraft();
                             },
                             child: Container(
@@ -583,7 +588,7 @@ class _ReportIssueScreenState extends State<ReportIssueScreen> {
                       ],
                     );
                   }),
-                  if (_imageUrls.length < 4)
+                  if (_photoPaths.length < 4)
                     GestureDetector(
                       onTap: _isUploadingImage ? null : _pickImage,
                       child: Container(

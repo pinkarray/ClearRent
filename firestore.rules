@@ -1937,6 +1937,19 @@ service cloud.firestore {
     
     // Issues collection - tenant reports, landlord reads
     match /issues/{issueId} {
+      // Private issue photos (storage issues/{uid}/...) must be the
+      // reporter's own uploads, at most 4. getIssuePhotoUrl also refuses a
+      // path outside the tenant's folder, so this is the first of two locks.
+      function issuePhotosOwn() {
+        let paths = request.resource.data.get('photoPaths', []);
+        let prefix = '^issues/' + request.auth.uid + '/[^/]+$';
+        return paths is list && paths.size() <= 4
+          && (paths.size() < 1 || paths[0].matches(prefix))
+          && (paths.size() < 2 || paths[1].matches(prefix))
+          && (paths.size() < 3 || paths[2].matches(prefix))
+          && (paths.size() < 4 || paths[3].matches(prefix));
+      }
+
       // issueResponseReminders times the landlord from createdAt, so it must
       // be the real moment of reporting: both clients write serverTimestamp(),
       // and a backdated one would escalate a fresh issue to an admin at once.
@@ -1946,6 +1959,7 @@ service cloud.firestore {
         // entry (app and web) passes the signed-in tenant's own id.
         && request.resource.data.tenantId == request.auth.uid
         && request.resource.data.createdAt == request.time
+        && issuePhotosOwn()
         && !request.resource.data.keys().hasAny(
              ['chaseFrom', 'chaseResetUsed', 'landlordChase',
               // Set by onIssueCreated after checking the reporter really
@@ -1992,7 +2006,7 @@ service cloud.firestore {
            resource.data.landlordId == request.auth.uid)
           && !changed(['createdAt', 'priority', 'chaseFrom',
                        'chaseResetUsed', 'landlordChase', 'reporterVerified',
-                       'firstResponseAt'])
+                       'firstResponseAt', 'photoPaths'])
         ) ||
         isAdmin()
       );

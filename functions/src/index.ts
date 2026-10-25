@@ -4953,7 +4953,11 @@ export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";
 
-export {getSignedAgreementUrl, getConditionMediaUrl} from "./doc_access_ops";
+export {
+  getSignedAgreementUrl,
+  getConditionMediaUrl,
+  getIssuePhotoUrl,
+} from "./doc_access_ops";
 
 export {
   agentUnassignFromProperty,

@@ -125,6 +125,27 @@ async function main() {
   check("anonymous: CANNOT read an ownership doc",
     await denies(getBytes(ref(anon, P))));
 
+  // ── issue photos: the inside of someone's home ───────────────────────
+  const IP = `issues/${L1}/photo_1.jpg`;
+  const img = {contentType: "image/jpeg"};
+  check("tenant: CAN upload a photo for their issue",
+    await passes(uploadBytes(ref(owner, IP), BYTES, img)));
+  check("tenant: CAN read back their own photo",
+    await passes(getBytes(ref(owner, IP))));
+  check("tenant: CANNOT overwrite a photo",
+    await denies(uploadBytes(ref(owner, IP), OTHER, img)));
+  check("tenant: CANNOT upload a non-image into issues/",
+    await denies(uploadBytes(ref(owner, `issues/${L1}/x.pdf`), BYTES,
+      {contentType: "application/pdf"})));
+  check("other user: CANNOT read someone's issue photo directly",
+    await denies(getBytes(ref(other, IP))));
+  check("other user: CANNOT upload into someone's issue folder",
+    await denies(uploadBytes(ref(other, `issues/${L1}/photo_2.jpg`), BYTES, img)));
+  check("admin: CAN read an issue photo",
+    await passes(getBytes(ref(admin, IP))));
+  check("anonymous: CANNOT read an issue photo",
+    await denies(getBytes(ref(anon, IP))));
+
   await env.cleanup();
   console.log(`\n${failures === 0 ? "ALL PASSED" : failures + " FAILED"}`);
   process.exit(failures === 0 ? 0 : 1);

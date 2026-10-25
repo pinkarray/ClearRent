@@ -270,3 +270,76 @@ export const getConditionMediaUrl = onCall(callableOptions, async (request) => {
     throw new HttpsError("internal", "Could not generate the media link.");
   }
 });
+
+/**
+ * A short-lived link to one photo attached to an issue.
+ *
+ * Issue photos are the inside of someone's home. They used to be unsigned
+ * public Cloudinary links; now they sit in private Storage under the
+ * reporter's uid (issues/{uid}/...) and are shown through this callable, the
+ * same way as condition media. The caller must be the tenant, the landlord,
+ * the property's caretaker or an admin, and the path must be one the issue
+ * itself names AND sit in the reporting tenant's own folder - so a photo can
+ * never be borrowed into someone else's issue to be read.
+ */
+export const getIssuePhotoUrl = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "You must be signed in.");
+  }
+  const uid = request.auth.uid;
+  const isAdmin =
+    request.auth.token?.admin === true ||
+    request.auth.token?.superAdmin === true;
+
+  const data = (request.data ?? {}) as {issueId?: string; path?: string};
+  const issueId = data.issueId ?? "";
+  const path = data.path ?? "";
+  if (!issueId || !path) {
+    throw new HttpsError("invalid-argument", "issueId and path are required.");
+  }
+
+  const db = getFirestore();
+  const snap = await db.collection("issues").doc(issueId).get();
+  if (!snap.exists) throw new HttpsError("not-found", "Issue not found.");
+  const issue = snap.data() ?? {};
+
+  const paths = Array.isArray(issue.photoPaths) ? issue.photoPaths : [];
+  const segments = path.split("/");
+  if (
+    !paths.includes(path) ||
+    segments.length !== 3 ||
+    segments[0] !== "issues" ||
+    segments[1] !== issue.tenantId
+  ) {
+    throw new HttpsError(
+      "invalid-argument", "That photo is not attached to this issue.");
+  }
+
+  let allowed = isAdmin || uid === issue.tenantId || uid === issue.landlordId;
+  if (!allowed && issue.propertyId) {
+    const property = await db.collection("properties")
+      .doc(String(issue.propertyId)).get();
+    allowed = property.get("caretakerId") === uid;
+  }
+  if (!allowed) {
+    throw new HttpsError(
+      "permission-denied", "You are not a party to this issue.");
+  }
+
+  try {
+    const file = getStorage().bucket().file(path);
+    const [exists] = await file.exists();
+    if (!exists) throw new HttpsError("not-found", "That photo is gone.");
+    const [url] = await file.getSignedUrl({
+      action: "read",
+      expires: Date.now() + SIGNED_URL_TTL_MS,
+    });
+    return {url};
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    logger.error("Failed to sign issue photo URL", {
+      issueId, path, error: `${e}`,
+    });
+    throw new HttpsError("internal", "Could not generate the photo link.");
+  }
+});
