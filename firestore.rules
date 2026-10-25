@@ -292,6 +292,15 @@ service cloud.firestore {
     // Users collection
     // The other-users view of a profile (public_profile_ops.ts keeps it in
     // step with users/{uid} through an allowlist). Server-written only.
+    // A tenant's rating of their landlord at the end of a tenancy, written by
+    // rateLandlord only. Listings show the average (public_profiles), never
+    // the comment, so a review is readable by its author and admins alone.
+    match /landlord_reviews/{rentalId} {
+      allow read: if request.auth != null
+        && (resource.data.tenantId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
     match /public_profiles/{uid} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -361,7 +370,10 @@ service cloud.firestore {
                        // their own suspension in one write (found 2026-10-25).
                        // overdueUrgentIssues is issueResponseReminders' block.
                        'listingSuspended', 'listingSuspendedUntil',
-                       'listingSuspendedReason', 'overdueUrgentIssues'])
+                       'listingSuspendedReason', 'overdueUrgentIssues',
+                       // The landlord's public record (landlord_record_ops).
+                       'issueRecord', 'landlordRating', 'landlordRatingCount',
+                       'landlordRatingSum'])
         && (
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['verificationStatus'])
@@ -1936,7 +1948,7 @@ service cloud.firestore {
              ['chaseFrom', 'chaseResetUsed', 'landlordChase',
               // Set by onIssueCreated after checking the reporter really
               // lives there; only a verified issue can block a landlord.
-              'reporterVerified']);
+              'reporterVerified', 'firstResponseAt']);
       
       // The caretaker of the property is a party to its issues - triaging them
       // is the whole job. Costs one property read per issue evaluated; at this
@@ -1977,7 +1989,8 @@ service cloud.firestore {
           (resource.data.tenantId == request.auth.uid ||
            resource.data.landlordId == request.auth.uid)
           && !changed(['createdAt', 'priority', 'chaseFrom',
-                       'chaseResetUsed', 'landlordChase', 'reporterVerified'])
+                       'chaseResetUsed', 'landlordChase', 'reporterVerified',
+                       'firstResponseAt'])
         ) ||
         isAdmin()
       );

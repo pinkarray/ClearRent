@@ -3086,3 +3086,53 @@ test("non-admin turns the lock off - denied", async () => {
     setDoc(doc(landlordDb(), "config/security"), { lockUserProfiles: false })
   );
 });
+
+// ─── landlord public record ──────────────────────────────────────────────────
+
+test("landlord writes their own rating - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "users/" + LANDLORD), { landlordRating: 5 })
+  );
+});
+
+test("landlord writes their own issue record - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "users/" + LANDLORD), {
+      issueRecord: { received: 0, answeredInTime: 0, escalated: 0 },
+    })
+  );
+});
+
+test("client writes a landlord review - denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "landlord_reviews/ar1"), {
+      tenantId: TENANT, landlordId: LANDLORD, stars: 1,
+    })
+  );
+});
+
+test("tenant reads their own landlord review - allowed", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "landlord_reviews/ar1"), {
+      tenantId: TENANT, landlordId: LANDLORD, stars: 4,
+    });
+  });
+  await assertSucceeds(getDoc(doc(tenantDb(), "landlord_reviews/ar1")));
+});
+
+test("landlord reads a review of them - denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "landlord_reviews/ar1"), {
+      tenantId: TENANT, landlordId: LANDLORD, stars: 4,
+    });
+  });
+  await assertFails(getDoc(doc(landlordDb(), "landlord_reviews/ar1")));
+});
+
+test("landlord stamps firstResponseAt on an issue - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), {
+      status: "in_progress", firstResponseAt: serverTimestamp(),
+    })
+  );
+});

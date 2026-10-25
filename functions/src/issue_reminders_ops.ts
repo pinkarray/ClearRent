@@ -26,6 +26,7 @@ import * as logger from "firebase-functions/logger";
 import {getFirestore, Timestamp, FieldValue} from "firebase-admin/firestore";
 import {caretakerFor, writeNotificationOnce} from "./notification_helpers";
 import {upsertAdminAlert} from "./admin_alerts";
+import {bumpIssueRecord} from "./landlord_record_ops";
 
 const TENANT_ISSUES_ROUTE = "/tenant/issue-history";
 const LANDLORD_ISSUES_ROUTE = "/landlord/issues";
@@ -447,6 +448,9 @@ export const issueResponseReminders = onSchedule(
         });
         if (rung === 3 && priority === "high" && landlordId) {
           await refreshOverdueUrgent(landlordId);
+        }
+        if (rung === 3 && landlordId) {
+          await bumpIssueRecord(landlordId, "escalated");
         }
       } catch (e) {
         logger.error("Issue response reminder failed for an issue", {

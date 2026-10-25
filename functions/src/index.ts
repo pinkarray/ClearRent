@@ -78,6 +78,8 @@ export {
   issueResponseReminders,
 } from "./issue_reminders_ops";
 import {refreshOverdueUrgent, reporterIsTenant} from "./issue_reminders_ops";
+import {bumpIssueRecord} from "./landlord_record_ops";
+export {rateLandlord} from "./landlord_record_ops";
 export {onUserWrittenPublicProfile} from "./public_profile_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
@@ -779,6 +781,10 @@ export const onIssueCreated = onDocumentCreated(
     // bug in this check must never silently swallow a real complaint.
     const verified = await reporterIsTenant(data).catch(() => false);
     await snap.ref.update({reporterVerified: verified});
+    if (verified) {
+      await bumpIssueRecord(landlordId, "received").catch((e) =>
+        logger.error("issueRecord received failed", {error: `${e}`}));
+    }
     if (!verified) {
       logger.warn("Issue reporter is not a tenant of the property", {
         issueId: event.params.issueId,
@@ -884,6 +890,21 @@ export const onIssueUpdated = onDocumentUpdated(
       (after.propertyTitle as string | undefined) ?? "your property";
     const category = (after.category as string | undefined) ?? "maintenance";
     const propertyId = (after.propertyId as string | undefined) ?? "";
+
+    // The landlord's FIRST response, whichever way they move it out of open,
+    // feeds their public issue record. Judged on the state BEFORE this
+    // change: the round reset below clears landlordChase. Only verified
+    // issues count, the same as the ladder.
+    if (from === "open" && to !== "open" && !after.firstResponseAt &&
+        after.reporterVerified === true && landlordId) {
+      await event.data?.after.ref.update({
+        firstResponseAt: FieldValue.serverTimestamp(),
+      });
+      if ((before.landlordChase?.rung ?? 0) < 3) {
+        await bumpIssueRecord(landlordId, "answeredInTime").catch((e) =>
+          logger.error("issueRecord answered failed", {error: `${e}`}));
+      }
+    }
 
     // Restart the response clock (issueResponseReminders) on a new round.
     // Acknowledging restarts it ONCE: otherwise one tap on "In progress"

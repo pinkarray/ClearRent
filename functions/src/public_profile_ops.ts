@@ -35,6 +35,9 @@ const COPIED = [
   "blockedDates", "workMode", "allowsCalls",
   // Tenant search preferences: the agent leads feature runs on these.
   "budgetMin", "budgetMax", "preferredAreas",
+  // The landlord's public record (landlord_record_ops.ts). Listings show
+  // them only while the admin switches in config/features are on.
+  "issueRecord", "landlordRating", "landlordRatingCount",
 ] as const;
 
 /**
