@@ -1924,8 +1924,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          result == 'overdue_issue'
-              ? PropertyService.overdueUrgentMessage
+          result.startsWith('blocked:')
+              ? result.substring(8)
               : result == 'not_approved'
                   ? 'This property needs admin approval before it can be listed.'
                   : failed

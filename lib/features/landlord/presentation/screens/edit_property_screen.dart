@@ -1101,11 +1101,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             onChanged: (value) async {
               // Relisting is what the urgent-issue block stops (rules enforce
               // it on save); say so here rather than at a failed save.
-              if (value &&
-                  !widget.property.isAvailable &&
-                  await _propertyService.hasOverdueUrgentIssue()) {
-                _showError(PropertyService.overdueUrgentMessage);
-                return;
+              if (value && !widget.property.isAvailable) {
+                final blocked = await _propertyService.publishBlockReason();
+                if (blocked != null) {
+                  _showError(blocked);
+                  return;
+                }
               }
               if (!mounted) return;
               setState(() {

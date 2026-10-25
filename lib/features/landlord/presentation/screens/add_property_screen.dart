@@ -1468,8 +1468,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       return;
     }
     // firestore.rules refuses the listing anyway; say why before uploading.
-    if (await _propertyService.hasOverdueUrgentIssue()) {
-      _showError(PropertyService.overdueUrgentMessage);
+    final blocked = await _propertyService.publishBlockReason();
+    if (blocked != null) {
+      _showError(blocked);
       return;
     }
     setState(() => _isPublishing = true);

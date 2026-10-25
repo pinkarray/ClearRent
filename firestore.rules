@@ -526,6 +526,22 @@ service cloud.firestore {
           .data.get('overdueUrgentIssues', []).size() == 0;
       }
 
+      // Same suspension test as the create rule. Relisting is listing, so a
+      // suspended landlord could otherwise un-hide a listing the day after
+      // being suspended - the create rule alone stopped only NEW ones.
+      function notSuspended() {
+        return !(
+          get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('listingSuspended', false) == true
+          && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.get('listingSuspendedUntil', null) == null
+            || get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.listingSuspendedUntil > request.time
+          )
+        );
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -639,7 +655,7 @@ service cloud.firestore {
         && (
           !(request.resource.data.get('isAvailable', false) == true
             && resource.data.get('isAvailable', false) != true)
-          || noOverdueUrgentIssue()
+          || (noOverdueUrgentIssue() && notSuspended())
         )
         // The rent floor holds on edit too - otherwise it is create-only and
         // an owner lists at the floor then drops the rent afterwards. Gated on

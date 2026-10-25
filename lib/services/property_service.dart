@@ -1155,34 +1155,46 @@ class PropertyService {
       'An urgent issue a tenant reported has been waiting on you for over 3 '
       'days. Respond to it in Issues before you publish or relist a property.';
 
-  /// True while an urgent issue sits unanswered past the admin rung
-  /// (users/{uid}.overdueUrgentIssues, server-written). firestore.rules
-  /// refuses a new listing or a relist until it empties; this only lets the
-  /// screen say why. Read from the SERVER: offline persistence would serve a
-  /// stale "blocked" after the landlord has already responded. A failed read
-  /// returns false and leaves the decision to the rules.
-  Future<bool> hasOverdueUrgentIssue() async {
+  /// Why the signed-in landlord may not publish or relist right now, or null
+  /// when they may: a listing suspension, or an urgent issue unanswered past
+  /// the admin rung (users/{uid}.overdueUrgentIssues). Both are server-written
+  /// and firestore.rules enforces them; this only lets the screen say why.
+  /// Read from the SERVER: offline persistence would serve a stale "blocked"
+  /// after it lifted. A failed read returns null and leaves it to the rules.
+  Future<String?> publishBlockReason() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return false;
+    if (uid == null) return null;
     try {
       final snap = await _firestore
           .collection('users')
           .doc(uid)
           .get(const GetOptions(source: Source.server));
-      final ids = snap.data()?['overdueUrgentIssues'];
-      return ids is List && ids.isNotEmpty;
+      final d = snap.data() ?? const {};
+      final until = (d['listingSuspendedUntil'] as Timestamp?)?.toDate();
+      if (d['listingSuspended'] == true &&
+          (until == null || until.isAfter(DateTime.now()))) {
+        return until == null
+            ? 'Your listings are suspended, so you cannot publish or relist.'
+            : 'Your listings are suspended until '
+                '${until.day}/${until.month}/${until.year}, so you cannot '
+                'publish or relist.';
+      }
+      final ids = d['overdueUrgentIssues'];
+      if (ids is List && ids.isNotEmpty) return overdueUrgentMessage;
+      return null;
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
   /// Update property availability.
   /// Returns 'not_approved' if the property hasn't been admin-approved yet,
-  /// 'overdue_issue' while an urgent issue blocks relisting.
+  /// 'blocked:' plus the reason while a suspension or an urgent issue stops it.
   Future<String> updateAvailability(String propertyId, bool isAvailable) async {
     try {
-      if (isAvailable && await hasOverdueUrgentIssue()) {
-        return 'overdue_issue';
+      if (isAvailable) {
+        final blocked = await publishBlockReason();
+        if (blocked != null) return 'blocked:$blocked';
       }
       // If trying to make available, check admin approval first
       if (isAvailable) {

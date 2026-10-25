@@ -279,7 +279,8 @@ export const adminSetListingSuspension = onCall(
         type: "listing_suspension",
         title: suspend ? "Listing suspended" : "Listing reinstated",
         body: suspend ?
-          `You cannot publish new listings. ${reason}` :
+          "You cannot publish or relist a property. Listings already " +
+            `live stay up. ${reason}` :
           `You can publish listings again. ${reason}`,
         // /landlord/properties is not a registered GoRoute - the landlord's
         // properties live on their home screen. The unregistered path put the

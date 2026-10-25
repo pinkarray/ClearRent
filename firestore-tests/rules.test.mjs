@@ -753,6 +753,38 @@ test("landlord clears their own block - denied", async () => {
   );
 });
 
+const suspendLandlord = async (until) => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "users/" + LANDLORD), {
+      listingSuspended: true, listingSuspendedUntil: until,
+    });
+  });
+};
+
+test("suspended landlord relists a hidden listing - denied", async () => {
+  await seedListing("p_susp", { isAvailable: false });
+  await suspendLandlord(null);
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_susp"), { isAvailable: true })
+  );
+});
+
+test("landlord whose suspension has lapsed relists - allowed", async () => {
+  await seedListing("p_lapsed", { isAvailable: false });
+  await suspendLandlord(Timestamp.fromDate(new Date(Date.now() - 86400000)));
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_lapsed"), { isAvailable: true })
+  );
+});
+
+test("suspended landlord takes a listing down - allowed", async () => {
+  await seedListing("p_susp_down", { isAvailable: true });
+  await suspendLandlord(null);
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_susp_down"), { isAvailable: false })
+  );
+});
+
 test("suspended landlord lifts their own suspension - denied", async () => {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), "users/" + LANDLORD), {
