@@ -947,9 +947,28 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
     }
 
     try {
-      await _propertyService.updateAvailability(widget.property.id, newStatus);
+      final result = await _propertyService.updateAvailability(
+          widget.property.id, newStatus);
 
       if (!mounted) return;
+
+      // The result was ignored, so a refused relist still reported success.
+      if (result != 'success') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result == 'overdue_issue'
+                ? PropertyService.overdueUrgentMessage
+                : result == 'not_approved'
+                    ? 'This property needs admin approval before it can be listed.'
+                    : 'Could not update the property. Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        return;
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -77,6 +77,7 @@ export {
   issuePendingConfirmationReminders,
   issueResponseReminders,
 } from "./issue_reminders_ops";
+import {refreshOverdueUrgent} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
   handoverSilenceSweep,
@@ -885,6 +886,13 @@ export const onIssueUpdated = onDocumentUpdated(
         landlordChase: FieldValue.delete(),
         ...(firstAck ? {chaseResetUsed: true} : {}),
       });
+    }
+    // Any status change can end an overdue urgent issue (acknowledged, fix
+    // offered, resolved), which lifts the listing block - recompute after the
+    // round reset above has landed.
+    if (landlordId) {
+      await refreshOverdueUrgent(landlordId).catch((e) =>
+        logger.error("refreshOverdueUrgent failed", {issueId, error: `${e}`}));
     }
 
     const tenantRoute = {route: "/tenant/issue-history"};

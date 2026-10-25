@@ -1151,10 +1151,39 @@ class PropertyService {
 
   // ============ UPDATE ============
 
+  static const String overdueUrgentMessage =
+      'An urgent issue a tenant reported has been waiting on you for over 3 '
+      'days. Respond to it in Issues before you publish or relist a property.';
+
+  /// True while an urgent issue sits unanswered past the admin rung
+  /// (users/{uid}.overdueUrgentIssues, server-written). firestore.rules
+  /// refuses a new listing or a relist until it empties; this only lets the
+  /// screen say why. Read from the SERVER: offline persistence would serve a
+  /// stale "blocked" after the landlord has already responded. A failed read
+  /// returns false and leaves the decision to the rules.
+  Future<bool> hasOverdueUrgentIssue() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    try {
+      final snap = await _firestore
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
+      final ids = snap.data()?['overdueUrgentIssues'];
+      return ids is List && ids.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Update property availability.
-  /// Returns 'not_approved' if the property hasn't been admin-approved yet.
+  /// Returns 'not_approved' if the property hasn't been admin-approved yet,
+  /// 'overdue_issue' while an urgent issue blocks relisting.
   Future<String> updateAvailability(String propertyId, bool isAvailable) async {
     try {
+      if (isAvailable && await hasOverdueUrgentIssue()) {
+        return 'overdue_issue';
+      }
       // If trying to make available, check admin approval first
       if (isAvailable) {
         final doc = await _propertiesRef.doc(propertyId).get();

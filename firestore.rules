@@ -330,7 +330,13 @@ service cloud.firestore {
                        // super-admin's BVN over the REST API (2026-10-08).
                        // `nin` belongs here only as server-written versioned
                        // ciphertext (nin_ops.ts), never from a client.
-                       'bvn', 'bankDetails', 'nin'])
+                       'bvn', 'bankDetails', 'nin',
+                       // Consequences are the server's. listingSuspended was
+                       // missing here, so a suspended landlord could lift
+                       // their own suspension in one write (found 2026-10-25).
+                       // overdueUrgentIssues is issueResponseReminders' block.
+                       'listingSuspended', 'listingSuspendedUntil',
+                       'listingSuspendedReason', 'overdueUrgentIssues'])
         && (
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['verificationStatus'])
@@ -511,6 +517,15 @@ service cloud.firestore {
         return request.resource.data.furnishing in ['unfurnished', 'partly', 'fully'];
       }
 
+      // A landlord who let an URGENT issue reach the admin rung unanswered may
+      // not publish or relist until they respond (issueResponseReminders keeps
+      // users/{uid}.overdueUrgentIssues; it empties the moment they act).
+      // Listings already live stay live - the tenant is not the one punished.
+      function noOverdueUrgentIssue() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.get('overdueUrgentIssues', []).size() == 0;
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -576,6 +591,7 @@ service cloud.firestore {
         && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         && onPremisesClaimOk()
         && (!('furnishing' in request.resource.data) || furnishingValid())
+        && noOverdueUrgentIssue()
         && meetsMinRent();
 
       // Update: owner can edit own listing, but cannot reassign
@@ -619,6 +635,11 @@ service cloud.firestore {
         && (
           !changed(['isAvailable'])
           || resource.data.get('handoverPending', false) == false
+        )
+        && (
+          !(request.resource.data.get('isAvailable', false) == true
+            && resource.data.get('isAvailable', false) != true)
+          || noOverdueUrgentIssue()
         )
         // The rent floor holds on edit too - otherwise it is create-only and
         // an owner lists at the floor then drops the rent afterwards. Gated on

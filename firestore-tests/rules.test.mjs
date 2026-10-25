@@ -693,6 +693,77 @@ test("editing other fields of an occupied furnished listing - allowed", async ()
   );
 });
 
+// ─── overdue urgent issue blocks publishing ──────────────────────────────────
+// issueResponseReminders fills users/{uid}.overdueUrgentIssues when a HIGH
+// issue reaches the admin rung unanswered. Until it empties the landlord may
+// not create a listing or relist one; live listings are left alone.
+
+const blockLandlord = async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "users/" + LANDLORD), {
+      overdueUrgentIssues: ["iss_overdue"],
+    });
+  });
+};
+
+test("blocked landlord creates a listing - denied", async () => {
+  await blockLandlord();
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_blocked"), newUnit(LANDLORD, null))
+  );
+});
+
+test("blocked landlord relists a hidden listing - denied", async () => {
+  await seedListing("p_hidden", { isAvailable: false });
+  await blockLandlord();
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_hidden"), { isAvailable: true })
+  );
+});
+
+test("blocked landlord edits a live listing's title - allowed", async () => {
+  await seedListing("p_live", { isAvailable: true });
+  await blockLandlord();
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_live"), { title: "Renamed" })
+  );
+});
+
+test("blocked landlord takes a listing down - allowed", async () => {
+  await seedListing("p_down", { isAvailable: true });
+  await blockLandlord();
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_down"), { isAvailable: false })
+  );
+});
+
+test("unblocked landlord relists - allowed", async () => {
+  await seedListing("p_relist", { isAvailable: false });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_relist"), { isAvailable: true })
+  );
+});
+
+test("landlord clears their own block - denied", async () => {
+  await blockLandlord();
+  await assertFails(
+    updateDoc(doc(landlordDb(), "users/" + LANDLORD), {
+      overdueUrgentIssues: deleteField(),
+    })
+  );
+});
+
+test("suspended landlord lifts their own suspension - denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "users/" + LANDLORD), {
+      listingSuspended: true, listingSuspendedUntil: null,
+    });
+  });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "users/" + LANDLORD), { listingSuspended: false })
+  );
+});
+
 test("creating a unit in ANOTHER owner's building - denied", async () => {
   // OTHER is a verified landlord, but b1 belongs to LANDLORD.
   await assertFails(

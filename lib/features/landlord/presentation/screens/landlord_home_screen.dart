@@ -1912,19 +1912,29 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Future<void> _togglePropertyStatus(PropertyModel property) async {
-    await _propertyService.updateAvailability(
+    final result = await _propertyService.updateAvailability(
       property.id,
       !property.isAvailable,
     );
     // Stream auto-updates the list
     if (!mounted) return;
+    // The result was ignored, so a refused relist still said "marked as
+    // available".
+    final failed = result != 'success';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          property.isAvailable
-              ? 'Property marked as occupied'
-              : 'Property marked as available',
+          result == 'overdue_issue'
+              ? PropertyService.overdueUrgentMessage
+              : result == 'not_approved'
+                  ? 'This property needs admin approval before it can be listed.'
+                  : failed
+                      ? 'Could not update the property. Please try again.'
+                      : property.isAvailable
+                          ? 'Property marked as occupied'
+                          : 'Property marked as available',
         ),
+        backgroundColor: failed ? AppColors.error : null,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),

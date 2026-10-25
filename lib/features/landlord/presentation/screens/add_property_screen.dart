@@ -1467,6 +1467,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _showError('Please say how furnished the property is');
       return;
     }
+    // firestore.rules refuses the listing anyway; say why before uploading.
+    if (await _propertyService.hasOverdueUrgentIssue()) {
+      _showError(PropertyService.overdueUrgentMessage);
+      return;
+    }
     setState(() => _isPublishing = true);
 
     try {

@@ -23,7 +23,7 @@
 
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, Timestamp} from "firebase-admin/firestore";
+import {getFirestore, Timestamp, FieldValue} from "firebase-admin/firestore";
 import {caretakerFor, writeNotificationOnce} from "./notification_helpers";
 import {upsertAdminAlert} from "./admin_alerts";
 
@@ -226,6 +226,41 @@ const RESPONSE_RUNGS: Record<string, readonly [number, number, number]> = {
   low: [7, 14, 21],
 };
 
+/**
+ * Recomputes `users/{landlordId}.overdueUrgentIssues`: the HIGH issues that
+ * reached the admin rung of their current round and still wait on the
+ * landlord. firestore.rules refuses a new listing or a relist while it is
+ * non-empty - the private consequence of ignoring an urgent problem, chosen
+ * over a public record until the marketplace has the volume for one.
+ *
+ * Recomputed from the issues rather than added to and removed from, so a
+ * missed trigger can never strand a landlord blocked. Filtered in memory: a
+ * landlord's issue count is small, and it needs no composite index.
+ *
+ * @param {string} landlordId The landlord to refresh.
+ * @return {Promise<string[]>} The ids now blocking them.
+ */
+export async function refreshOverdueUrgent(
+  landlordId: string,
+): Promise<string[]> {
+  const db = getFirestore();
+  const snap = await db.collection("issues")
+    .where("landlordId", "==", landlordId).get();
+  const ids = snap.docs.filter((d) => {
+    const x = d.data();
+    const start = (x.chaseFrom ?? x.createdAt) as Timestamp | undefined;
+    return x.priority === "high" &&
+      (x.status === "open" || x.status === "in_progress") &&
+      (x.landlordChase?.rung ?? 0) >= 3 &&
+      x.landlordChase?.round === start?.toMillis?.();
+  }).map((d) => d.id);
+  await db.doc(`users/${landlordId}`).set(
+    {overdueUrgentIssues: ids.length ? ids : FieldValue.delete()},
+    {merge: true},
+  );
+  return ids;
+}
+
 const TENANT_RUNG_TEXT = [
   "",
   "We've reminded your landlord about it.",
@@ -290,7 +325,11 @@ export const issueResponseReminders = onSchedule(
                   `${what[0].toUpperCase()}${what.slice(1)} has had no ` +
                   `progress for ${days} days. Your tenant has been told.` :
                   `${what[0].toUpperCase()}${what.slice(1)} is ${days} days ` +
-                  "old with no fix. ClearRent's team will be in touch.",
+                  "old with no fix. ClearRent's team will be in touch." +
+                  (priority === "high" ?
+                    " Until you respond you can't publish or relist a " +
+                      "property." :
+                    ""),
               payload: {
                 route: LANDLORD_ISSUES_ROUTE,
                 issueId: doc.id,
@@ -363,6 +402,9 @@ export const issueResponseReminders = onSchedule(
         await doc.ref.update({
           landlordChase: {rung, round, at: Timestamp.now()},
         });
+        if (rung === 3 && priority === "high" && landlordId) {
+          await refreshOverdueUrgent(landlordId);
+        }
       } catch (e) {
         logger.error("Issue response reminder failed for an issue", {
           id: doc.id,
