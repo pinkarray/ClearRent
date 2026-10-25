@@ -18,6 +18,7 @@ import '../../../../shared/widgets/description_prompts.dart';
 import '../../../../shared/widgets/top_alert.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/caretaker_service.dart';
+import '../widgets/furnishing_picker.dart';
 import '../../../../services/conversation_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
@@ -137,6 +138,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // Whether the deposit comes back at move-out. Locked while a tenant is
   // sitting, same as the amount - the promise can't change mid-tenancy.
   late bool _cautionDepositRefundable;
+  String? _furnishing;
   final List<String> _ceilingTypes = [];
 
   // Caretaker. Read-only here on purpose: `caretakerId` is admin-SDK-only, so
@@ -154,6 +156,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   CaretakerInvite? _pendingInvite;
   StreamSubscription<List<CaretakerInvite>>? _caretakerInvitesSub;
   final GlobalKey _caretakerSectionKey = GlobalKey();
+  final GlobalKey _furnishingSectionKey = GlobalKey();
 
   /// Bring the requested section into view once there is a frame to scroll.
   ///
@@ -294,6 +297,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _revealFocusSection();
     _includeAgentFee = p.agentFee > 0; // Derive from existing data
     _cautionDepositRefundable = p.cautionDepositRefundable;
+    _furnishing = p.furnishing;
     
     // Initialize inspection availability
     _availableDays = List.from(p.inspectionDays);
@@ -743,6 +747,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'cautionDeposit': _parseAmountFromController(_cautionDepositController),
           'cautionDepositRefundable': _cautionDepositRefundable,
         },
+        // Never written as null: a listing that never stated it stays
+        // "Not stated" until the landlord picks one.
+        if (_furnishing != null) 'furnishing': _furnishing,
         'amenities': _selectedAmenities,
         'ceilingTypes': _ceilingTypes,
         'rules': _selectedRules,
@@ -951,6 +958,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               _buildAvailabilityToggle(),
               const SizedBox(height: 24),
 
+              if (_furnishing == null) ...[
+                _buildFurnishingPrompt(),
+                const SizedBox(height: 24),
+              ],
+
               // Photos section
               _buildSectionTitle('Photos'),
               const SizedBox(height: 12),
@@ -992,6 +1004,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
               _buildSectionTitle('Inspection Settings'),
               const SizedBox(height: 12),
               _buildInspectionSection(),
+              const SizedBox(height: 24),
+
+              // Furnishing
+              Container(
+                key: _furnishingSectionKey,
+                child: _buildSectionTitle('Furnishing'),
+              ),
+              const SizedBox(height: 12),
+              _buildFurnishingSection(),
               const SizedBox(height: 24),
 
               // Amenities
@@ -3057,6 +3078,94 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     } catch (e) {
       _showError('Could not pick document. Please try again.');
     }
+  }
+
+  /// Shown on listings created before furnishing was asked. Tenants see
+  /// "Furnishing not stated" on them until the landlord answers.
+  Widget _buildFurnishingPrompt() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warningLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withAlpha(120)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.chair_outlined, size: 20, color: AppColors.warning),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Say how furnished this place is',
+                  style: AppTextStyles.labelMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tenants see "Furnishing not stated" on this listing until '
+                  'you choose.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () {
+                    final ctx = _furnishingSectionKey.currentContext;
+                    if (ctx == null) return;
+                    Scrollable.ensureVisible(
+                      ctx,
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOut,
+                      alignment: 0.1,
+                    );
+                  },
+                  child: Text(
+                    'Choose now',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFurnishingSection() {
+    // Frozen while a tenant is in, like the rent and deposit: it is part of
+    // what they moved into. A listing that never stated it may still state it.
+    final locked =
+        (widget.property.currentTenantsCount ?? 0) > 0 &&
+        widget.property.furnishing != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (locked) ...[
+          Text(
+            'Locked while a tenant is living here.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+          ),
+          const SizedBox(height: 8),
+        ],
+        FurnishingPicker(
+          value: _furnishing,
+          onChanged:
+              locked
+                  ? null
+                  : (v) => setState(() {
+                    _furnishing = v;
+                    _hasChanges = true;
+                  }),
+        ),
+      ],
+    );
   }
 
   Widget _buildAmenitiesSection() {

@@ -516,6 +516,14 @@ service cloud.firestore {
         return request.resource.data.get('maxTenants', 1) == 1;
       }
 
+      // What the tenant is moving into: an empty space or not. Absent means
+      // "Not stated" (every listing before this field existed). Not REQUIRED
+      // here, only validated: apps already installed don't send it, and
+      // requiring it would stop them publishing at all. The forms require it.
+      function furnishingValid() {
+        return request.resource.data.furnishing in ['unfurnished', 'partly', 'fully'];
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -580,6 +588,7 @@ service cloud.firestore {
         // copied off another landlord's listing.
         && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         && onPremisesClaimOk()
+        && (!('furnishing' in request.resource.data) || furnishingValid())
         && meetsMinRent();
 
       // Update: owner can edit own listing, but cannot reassign
@@ -630,6 +639,9 @@ service cloud.firestore {
         // existed stay editable for everything else; they only have to come up
         // to the floor if their rent is touched.
         && (!changed(['rent']) || meetsMinRent())
+        // Once stated it can be corrected but not removed: deleting the field
+        // is a change, and furnishingValid() fails on a missing key.
+        && (!changed(['furnishing']) || furnishingValid())
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
@@ -711,6 +723,14 @@ service cloud.firestore {
             // listings created before this field exists don't carry it.
             && request.resource.data.get('cautionDepositRefundable', true)
                == resource.data.get('cautionDepositRefundable', true)
+            // What the sitting tenant moved into is part of the same deal.
+            // A listing that never stated it may state it once, so the edit
+            // screen's "please fill this in" prompt works on occupied ones.
+            && (
+              request.resource.data.get('furnishing', null)
+                == resource.data.get('furnishing', null)
+              || resource.data.get('furnishing', null) == null
+            )
           )
         );
 

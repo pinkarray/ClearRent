@@ -359,6 +359,34 @@ class PropertyCard extends StatelessWidget {
                       ),
                     ],
                   ],
+
+                  // Whether this is an empty space or not. Always shown, so a
+                  // listing that never said reads as not stated rather than
+                  // looking unfurnished by omission.
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.chair_outlined,
+                        size: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          property.furnishingLabel,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color:
+                                property.furnishing == null
+                                    ? AppColors.textHint
+                                    : null,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

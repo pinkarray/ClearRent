@@ -28,6 +28,10 @@ class PropertyModel {
   // unit in good condition. Defaults true: every listing before this field
   // existed was advertised as refundable in the add-property copy.
   final bool cautionDepositRefundable;
+  // 'unfurnished' | 'partly' | 'fully'. Null = "Not stated": every listing
+  // created before this field existed. Never defaulted, because guessing
+  // "unfurnished" would tell a tenant something the landlord never said.
+  final String? furnishing;
   final bool isAvailable;
   final bool isVerified;
   final List<String> amenities;
@@ -215,6 +219,7 @@ class PropertyModel {
     this.agentFee = 0,
     this.cautionDeposit = 0,
     this.cautionDepositRefundable = true,
+    this.furnishing,
     this.isAvailable = true,
     this.isVerified = false,
     this.amenities = const [],
@@ -360,6 +365,23 @@ class PropertyModel {
       type == 'miniFlat';
 
   static String typeLabelFor(String value) => typeLabels[value] ?? value;
+
+  /// Furnishing levels, in the order offered. Value is what's stored.
+  static const Map<String, String> furnishingLabels = {
+    'unfurnished': 'Unfurnished',
+    'partly': 'Partly furnished',
+    'fully': 'Fully furnished',
+  };
+
+  /// Anything outside the three values reads as not stated rather than
+  /// being shown raw.
+  static String? furnishingOrNull(dynamic value) =>
+      furnishingLabels.containsKey(value) ? value as String : null;
+
+  static String furnishingLabelFor(String? value) =>
+      furnishingLabels[value] ?? 'Furnishing not stated';
+
+  String get furnishingLabel => furnishingLabelFor(furnishing);
 
   /// Floor options offered to a landlord, in order. Value is what's stored.
   static const List<Map<String, String>> floors = [
@@ -605,6 +627,7 @@ class PropertyModel {
     double? agentFee,
     double? cautionDeposit,
     bool? cautionDepositRefundable,
+    String? furnishing,
     bool? isAvailable,
     bool? isVerified,
     List<String>? amenities,
@@ -679,6 +702,7 @@ class PropertyModel {
       cautionDeposit: cautionDeposit ?? this.cautionDeposit,
       cautionDepositRefundable:
           cautionDepositRefundable ?? this.cautionDepositRefundable,
+      furnishing: furnishing ?? this.furnishing,
       isAvailable: isAvailable ?? this.isAvailable,
       isVerified: isVerified ?? this.isVerified,
       amenities: amenities ?? this.amenities,
@@ -816,6 +840,7 @@ class PropertyModel {
       agentFee: (json['agentFee'] ?? 0).toDouble(),
       cautionDeposit: (json['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: json['cautionDepositRefundable'] ?? true,
+      furnishing: furnishingOrNull(json['furnishing']),
       isAvailable: json['isAvailable'] ?? true,
       isVerified: json['isVerified'] ?? false,
       amenities: List<String>.from(json['amenities'] ?? []),
@@ -925,6 +950,7 @@ class PropertyModel {
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
+      furnishing: furnishingOrNull(data['furnishing']),
       isAvailable: data['isAvailable'] ?? true,
       isVerified: data['isVerified'] ?? false,
       amenities: List<String>.from(data['amenities'] ?? []),
@@ -1022,6 +1048,8 @@ class PropertyModel {
       'agentFee': agentFee,
       'cautionDeposit': cautionDeposit,
       'cautionDepositRefundable': cautionDepositRefundable,
+      // Omitted, never null: firestore.rules only accepts the three values.
+      if (furnishing != null) 'furnishing': furnishing,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,
@@ -1105,6 +1133,8 @@ class PropertyModel {
       'agentFee': agentFee,
       'cautionDeposit': cautionDeposit,
       'cautionDepositRefundable': cautionDepositRefundable,
+      // Omitted, never null: firestore.rules only accepts the three values.
+      if (furnishing != null) 'furnishing': furnishing,
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,

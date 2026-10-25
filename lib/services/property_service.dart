@@ -437,6 +437,7 @@ class PropertyService {
     // Stated up front so the tenant knows before paying whether this
     // money comes back; the move-out handover is measured against it.
     bool cautionDepositRefundable = true,
+    String? furnishing,
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
@@ -562,6 +563,7 @@ class PropertyService {
         'agentFee': agentFee,
         'cautionDeposit': cautionDeposit,
         'cautionDepositRefundable': cautionDepositRefundable,
+        if (furnishing != null) 'furnishing': furnishing,
         'isAvailable': true,
         // A listing is born unreviewed. This is the ADMIN's badge for THIS
         // listing's ownership document (adminReviewPropertyDoc writes it) - not

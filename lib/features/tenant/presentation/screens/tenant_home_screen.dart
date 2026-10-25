@@ -146,13 +146,17 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   int _minBedrooms = 0;
   int _minBathrooms = 0;
   final Set<String> _filterAmenities = {};
+  // Furnishing levels the tenant will accept; empty = any. A listing that
+  // never stated its level matches only "any", since it could be either.
+  final Set<String> _filterFurnishing = {};
 
   bool get _hasExtraFilters =>
       _minRent > 0 ||
       _maxRent > 0 ||
       _minBedrooms > 0 ||
       _minBathrooms > 0 ||
-      _filterAmenities.isNotEmpty;
+      _filterAmenities.isNotEmpty ||
+      _filterFurnishing.isNotEmpty;
 
   // Properties
   List<PropertyModel> _realProperties = [];
@@ -652,6 +656,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 )) {
               return false;
             }
+            if (_filterFurnishing.isNotEmpty &&
+                !_filterFurnishing.contains(property.furnishing)) {
+              return false;
+            }
             if (_searchController.text.isNotEmpty) {
               final query = _searchController.text.toLowerCase();
               // Exact street address lives in the gated subdoc and isn't available
@@ -727,6 +735,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     int tempBed = _minBedrooms;
     int tempBath = _minBathrooms;
     final tempAmenities = {..._filterAmenities};
+    final tempFurnishing = {..._filterFurnishing};
     final divisions = (bound / 100000).round().clamp(1, 200);
 
     showModalBottomSheet(
@@ -806,6 +815,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                                 tempBed = 0;
                                 tempBath = 0;
                                 tempAmenities.clear();
+                                tempFurnishing.clear();
                               }),
                           child: Text(
                             'Reset',
@@ -883,6 +893,30 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                                   }).toList(),
                             ),
                           ),
+                          group(
+                            'Furnishing',
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children:
+                                  PropertyModel.furnishingLabels.entries.map((
+                                    e,
+                                  ) {
+                                    final on = tempFurnishing.contains(e.key);
+                                    return chip(
+                                      e.value,
+                                      on,
+                                      () => setSheet(() {
+                                        if (on) {
+                                          tempFurnishing.remove(e.key);
+                                        } else {
+                                          tempFurnishing.add(e.key);
+                                        }
+                                      }),
+                                    );
+                                  }).toList(),
+                            ),
+                          ),
                           if (amenities.isNotEmpty)
                             group(
                               'Amenities',
@@ -929,6 +963,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                             _filterAmenities
                               ..clear()
                               ..addAll(tempAmenities);
+                            _filterFurnishing
+                              ..clear()
+                              ..addAll(tempFurnishing);
                           });
                           _filterProperties();
                           Navigator.pop(context);
@@ -941,7 +978,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                           ),
                         ),
                         child: Text(
-                          'Show ${_matchCount(tempMin, tempMax >= bound ? 0 : tempMax, tempBed, tempBath, tempAmenities)} results',
+                          'Show ${_matchCount(tempMin, tempMax >= bound ? 0 : tempMax, tempBed, tempBath, tempAmenities, tempFurnishing)} results',
                           style: AppTextStyles.labelLarge.copyWith(
                             color: Colors.white,
                           ),
@@ -966,6 +1003,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     int minBed,
     int minBath,
     Set<String> amenities,
+    Set<String> furnishing,
   ) {
     return _allProperties.where((property) {
       if (_selectedType != 'all' && property.propertyType != _selectedType) {
@@ -980,6 +1018,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       if (minBath > 0 && property.bathrooms < minBath) return false;
       if (amenities.isNotEmpty &&
           !amenities.every((a) => property.amenities.contains(a))) {
+        return false;
+      }
+      if (furnishing.isNotEmpty && !furnishing.contains(property.furnishing)) {
         return false;
       }
       return true;

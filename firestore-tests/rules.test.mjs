@@ -26,6 +26,7 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
+  deleteField,
 } from "firebase/firestore";
 
 const PROJECT_ID = "demo-clearrent";
@@ -595,6 +596,100 @@ test("editing a sub-floor listing without touching rent - allowed", async () => 
     updateDoc(doc(landlordDb(), "properties/p_legacy_cheap"), {
       title: "Renamed",
     })
+  );
+});
+
+// ─── furnishing ──────────────────────────────────────────────────────────────
+// One of three values when present. Absent is "Not stated" and stays legal, or
+// installed apps that don't send it could not publish. Frozen while a tenant
+// is in, except that a listing which never stated it may state it once.
+
+test("creating a listing with a valid furnishing level - allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(landlordDb(), "properties/p_furn"), {
+      ...newUnit(LANDLORD, null),
+      furnishing: "partly",
+    })
+  );
+});
+
+test("creating a listing with an unknown furnishing value - denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_furn_bad"), {
+      ...newUnit(LANDLORD, null),
+      furnishing: "luxury",
+    })
+  );
+});
+
+test("creating a listing with furnishing null - denied", async () => {
+  await assertFails(
+    setDoc(doc(landlordDb(), "properties/p_furn_null"), {
+      ...newUnit(LANDLORD, null),
+      furnishing: null,
+    })
+  );
+});
+
+const seedListing = async (id, extra) => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "properties/" + id), {
+      ...newUnit(LANDLORD, null),
+      agentFee: 0,
+      cautionDeposit: 0,
+      ...extra,
+    });
+  });
+};
+
+test("stating furnishing on a Not-stated vacant listing - allowed", async () => {
+  await seedListing("p_furn_vacant", {});
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_furn_vacant"), { furnishing: "fully" })
+  );
+});
+
+test("changing furnishing on a vacant listing - allowed", async () => {
+  await seedListing("p_furn_change", { furnishing: "unfurnished" });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_furn_change"), { furnishing: "partly" })
+  );
+});
+
+test("editing furnishing to an unknown value - denied", async () => {
+  await seedListing("p_furn_badedit", { furnishing: "unfurnished" });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_furn_badedit"), { furnishing: "some" })
+  );
+});
+
+test("removing a stated furnishing level - denied", async () => {
+  await seedListing("p_furn_remove", { furnishing: "fully" });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_furn_remove"), {
+      furnishing: deleteField(),
+    })
+  );
+});
+
+test("changing furnishing while a tenant is in - denied", async () => {
+  await seedListing("p_furn_occ", { furnishing: "fully", currentTenantsCount: 1 });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "properties/p_furn_occ"), { furnishing: "unfurnished" })
+  );
+});
+
+test("stating furnishing for the first time while a tenant is in - allowed", async () => {
+  await seedListing("p_furn_occ_new", { currentTenantsCount: 1 });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_furn_occ_new"), { furnishing: "partly" })
+  );
+});
+
+test("editing other fields of an occupied furnished listing - allowed", async () => {
+  await seedListing("p_furn_occ_title", { furnishing: "fully", currentTenantsCount: 1 });
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "properties/p_furn_occ_title"), { title: "Renamed" })
   );
 });
 

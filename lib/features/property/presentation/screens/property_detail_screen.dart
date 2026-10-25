@@ -1199,6 +1199,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           _buildFeaturesRow(property),
 
+                          const SizedBox(height: 12),
+
+                          _buildFurnishingRow(property),
+
                           const SizedBox(height: 24),
 
                           if (_isOwner) ...[
@@ -3499,6 +3503,48 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
           style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
       ],
+    );
+  }
+
+  /// Whether the tenant is moving into an empty space. A listing created
+  /// before this was asked says so plainly instead of implying either way.
+  Widget _buildFurnishingRow(PropertyModel property) {
+    final stated = property.furnishing != null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.chair_outlined, size: 22, color: AppColors.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  property.furnishingLabel,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: stated ? AppColors.textPrimary : AppColors.textHint,
+                  ),
+                ),
+                if (!stated && _isOwner) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Add it from Edit so tenants know what they are moving into.',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

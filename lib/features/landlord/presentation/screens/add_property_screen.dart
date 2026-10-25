@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../widgets/clearrent_location_picker.dart';
+import '../widgets/furnishing_picker.dart';
 import '../../../../shared/widgets/description_prompts.dart';
 import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
@@ -220,6 +221,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   // Whether the caution deposit comes back to the tenant at move-out. Defaults
   // true because that is what the listing copy has always promised.
   bool _cautionDepositRefundable = true;
+  // Required on a new listing; no default, so it is a real answer.
+  String? _furnishing;
 
   // Selected agent (required when _inspectionHandler == 'agent')
   String? _selectedAgentId;
@@ -492,6 +495,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'agentFee': _agentFeeController.text,
       'cautionDeposit': _cautionDepositController.text,
       'cautionDepositRefundable': _cautionDepositRefundable,
+      'furnishing': _furnishing,
       'includeAgentFee': _includeAgentFee,
       'address': _addressController.text,
       'city': _cityController.text,
@@ -549,6 +553,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _agentFeeController.text = draft['agentFee'] ?? '';
       _cautionDepositController.text = draft['cautionDeposit'] ?? '';
       _cautionDepositRefundable = draft['cautionDepositRefundable'] ?? true;
+      _furnishing = PropertyModel.furnishingOrNull(draft['furnishing']);
       _addressController.text = draft['address'] ?? '';
       _cityController.text = draft['city'] ?? '';
       _stateController.text = draft['state'] ?? '';
@@ -1309,6 +1314,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please enter a description');
           return false;
         }
+        if (_furnishing == null) {
+          _showError('Please say how furnished the property is');
+          return false;
+        }
         return true;
       case _stepPricing:
         if (_rentController.text.isEmpty) {
@@ -1450,6 +1459,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   }
 
   Future<void> _publishProperty() async {
+    // A draft saved before furnishing was asked can resume past the details
+    // step, so the step check alone never sees it.
+    if (_furnishing == null) {
+      setState(() => _currentStep = _stepDetails);
+      _pageController.jumpToPage(_stepDetails);
+      _showError('Please say how furnished the property is');
+      return;
+    }
     setState(() => _isPublishing = true);
 
     try {
@@ -1706,6 +1723,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 : 0,
         cautionDeposit: _parseAmountFromController(_cautionDepositController),
         cautionDepositRefundable: _cautionDepositRefundable,
+        furnishing: _furnishing,
         amenities: _selectedAmenities,
         rules: _selectedRules,
         inspectionHandler: _inspectionHandler,
@@ -3756,6 +3774,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             },
           ),
           const SizedBox(height: 24),
+
+          // Furnishing - so a tenant always knows whether they are moving into
+          // an empty space.
+          Text('Furnishing', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          FurnishingPicker(
+            value: _furnishing,
+            onChanged: (v) {
+              setState(() => _furnishing = v);
+              _saveDraftDebounced();
+            },
+          ),
+          const SizedBox(height: 16),
 
           // Amenities
           Text('Amenities', style: AppTextStyles.labelMedium),
@@ -6812,6 +6843,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             _buildPreviewSection(
                 'Living room', _accessLabel(_livingRoomAccess)),
           ],
+          _buildPreviewSection(
+            'Furnishing',
+            PropertyModel.furnishingLabelFor(_furnishing),
+          ),
           _buildPreviewSection(
             'Inspections',
             _inspectionHandler == 'self' ? 'Handled by you' : 'Assigned agent',
