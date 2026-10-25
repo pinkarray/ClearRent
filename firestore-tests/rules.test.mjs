@@ -1678,6 +1678,95 @@ test("non-caretaker triages an issue - denied", async () => {
   );
 });
 
+// ─── issue response clock ────────────────────────────────────────────────────
+// issueResponseReminders times the landlord from createdAt / chaseFrom by
+// priority. None of those may be moved by a party, or the clock is theirs.
+
+const newIssue = (extra = {}) => ({
+  tenantId: TENANT, landlordId: LANDLORD, propertyId: "prop1",
+  status: "open", priority: "high", createdAt: serverTimestamp(), ...extra,
+});
+
+test("tenant reports an issue stamped with server time - allowed", async () => {
+  await assertSucceeds(
+    setDoc(doc(tenantDb(), "issues/iss_new"), newIssue())
+  );
+});
+
+test("tenant reports a backdated issue - denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "issues/iss_old"),
+      newIssue({ createdAt: Timestamp.fromDate(new Date("2026-01-01")) }))
+  );
+});
+
+test("tenant reports an issue with the chase already set - denied", async () => {
+  await assertFails(
+    setDoc(doc(tenantDb(), "issues/iss_chase"),
+      newIssue({ landlordChase: { rung: 3 } }))
+  );
+});
+
+test("landlord moves an issue to in progress - allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), {
+      status: "in_progress", updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant disputes a fix with a reason - allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(tenantDb(), "issues/iss_party"), {
+      status: "in_progress", disputeReason: "Still leaking",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord downgrades an issue's priority - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), { priority: "low" })
+  );
+});
+
+test("landlord pushes the response clock back - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), {
+      chaseFrom: serverTimestamp(),
+    })
+  );
+});
+
+test("landlord rewrites createdAt - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "issues/iss_party"), {
+      createdAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant clears the chase record - denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "issues/iss_party"), {
+      landlordChase: { rung: 1, round: 1 },
+    });
+  });
+  await assertFails(
+    updateDoc(doc(tenantDb(), "issues/iss_party"), {
+      landlordChase: deleteField(),
+    })
+  );
+});
+
+test("caretaker writes the chase record - denied", async () => {
+  await assertFails(
+    updateDoc(doc(caretakerDb(), "issues/iss_party"), {
+      status: "in_progress", chaseResetUsed: true,
+    })
+  );
+});
+
 // The landlord's own create path, which the ownership get() above tightened
 // and which nothing covered before. PropertyHealth._saveMaintenanceLog writes
 // exactly this shape.

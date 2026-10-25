@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../core/utils/app_logger.dart';
@@ -272,6 +274,43 @@ class ActivityService {
     'moveout_auto_confirmed': ActivityType.moveoutCompleted,
     'moveout_pending_reminder': ActivityType.moveoutRequested,
     'listing_suspension': ActivityType.propertyAdded,
+    // Every other notification the functions send a landlord (audited against
+    // functions/src 2026-10-25). Notifications are read per account, so a type
+    // that also goes to tenants still only shows the landlord their own.
+    'issue_response_reminder': ActivityType.issueDisputed,
+    'issue_nudge': ActivityType.issueDisputed,
+    'inspection_confirmed': ActivityType.inspectionApproved,
+    'inspection_cancelled': ActivityType.inspectionDeclined,
+    'inspection_met': ActivityType.inspectionApproved,
+    'inspection_completed': ActivityType.inspectionCompleted,
+    'inspection_rebook': ActivityType.inspectionRequest,
+    'inspection_reminder': ActivityType.inspectionRequest,
+    'inspection_under_review': ActivityType.inspectionRequest,
+    'inspection_nudge': ActivityType.inspectionRequest,
+    'inspection_admin_message': ActivityType.inspectionRequest,
+    'tenant_on_way': ActivityType.inspectionRequest,
+    'tenant_arrived': ActivityType.inspectionRequest,
+    'reschedule_proposed': ActivityType.inspectionRequest,
+    'reschedule_countered': ActivityType.inspectionRequest,
+    'reschedule_approved': ActivityType.inspectionApproved,
+    'reschedule_abandoned': ActivityType.inspectionDeclined,
+    'video_tenant_no_show': ActivityType.inspectionDeclined,
+    'new_rating': ActivityType.inspectionRated,
+    'rental_interest': ActivityType.inquiry,
+    'agreement_needed': ActivityType.payment,
+    'agreement_accepted': ActivityType.payment,
+    'agreement_disputed': ActivityType.issueDisputed,
+    'rent_payout': ActivityType.payoutReceived,
+    'rent_review_approved': ActivityType.payment,
+    'rent_review_rejected': ActivityType.payment,
+    'handover_nudge': ActivityType.moveoutRequested,
+    'handover_settlement_contested': ActivityType.moveoutRequested,
+    'rental_end_contested': ActivityType.moveoutRequested,
+    'condition_recorded': ActivityType.moveoutRequested,
+    'caretaker_removed': ActivityType.inquiry,
+    'verification_expiring': ActivityType.propertyAdded,
+    'verification_expired': ActivityType.propertyAdded,
+    'promotion': ActivityType.propertyAdded,
   };
 
   /// This user's notifications, rendered as feed entries.
@@ -285,35 +324,7 @@ class ActivityService {
           .where('userId', isEqualTo: _currentUserId)
           .get();
 
-      final out = <ActivityModel>[];
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final mapped = _notificationFeedTypes[data['type'] as String? ?? ''];
-        if (mapped == null) continue;
-
-        final created = (data['createdAt'] as Timestamp?)?.toDate();
-        if (created == null) continue;
-
-        final payload =
-            (data['payload'] as Map<String, dynamic>?) ?? const {};
-
-        out.add(ActivityModel(
-          id: doc.id,
-          landlordId: _currentUserId!,
-          type: mapped,
-          title: (data['title'] as String?) ?? '',
-          subtitle: (data['body'] as String?) ?? '',
-          propertyId: payload['propertyId'] as String?,
-          // Issue notifications carry issueId; inspection ones param_requestId.
-          // Without the latter a tap could only open the inspections screen,
-          // never the request itself.
-          relatedId: (payload['issueId'] ?? payload['param_requestId'])
-              as String?,
-          isRead: data['read'] == true,
-          createdAt: created,
-        ));
-      }
-      return out;
+      return _mapNotifications(snap.docs);
     } catch (e) {
       // A feed missing half its entries is better than a feed that fails.
       AppLogger.e('notification-backed activities failed',
@@ -322,15 +333,94 @@ class ActivityService {
     }
   }
 
+  List<ActivityModel> _mapNotifications(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final out = <ActivityModel>[];
+    for (final doc in docs) {
+      final data = doc.data();
+      final mapped = _notificationFeedTypes[data['type'] as String? ?? ''];
+      if (mapped == null) continue;
+
+      final created = (data['createdAt'] as Timestamp?)?.toDate();
+      if (created == null) continue;
+
+      final payload =
+          (data['payload'] as Map<String, dynamic>?) ?? const {};
+
+      out.add(ActivityModel(
+        id: doc.id,
+        landlordId: _currentUserId!,
+        type: mapped,
+        title: (data['title'] as String?) ?? '',
+        subtitle: (data['body'] as String?) ?? '',
+        propertyId: payload['propertyId'] as String?,
+        // Issue notifications carry issueId; inspection ones param_requestId.
+        // Without the latter a tap could only open the inspections screen,
+        // never the request itself.
+        relatedId: (payload['issueId'] ?? payload['param_requestId'])
+            as String?,
+        isRead: data['read'] == true,
+        createdAt: created,
+      ));
+    }
+    return out;
+  }
+
   /// Real-time stream of activities for the current landlord.
+  ///
+  /// Merges BOTH logs, like [getAllActivities]. It read `activities` alone, so
+  /// the dashboard card never showed a single server-sent event - payouts,
+  /// overdue issues, ratings - while "See all" did.
   Stream<List<ActivityModel>> activitiesStream({int limit = 10}) {
-    if (_currentUserId == null) return Stream.value([]);
-    return _activitiesRef
-        .where('landlordId', isEqualTo: _currentUserId)
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snap) => _mapDocs(snap.docs));
+    final uid = _currentUserId;
+    if (uid == null) return Stream.value([]);
+
+    var own = <ActivityModel>[];
+    var fromNotifications = <ActivityModel>[];
+    final subs = <StreamSubscription>[];
+    late final StreamController<List<ActivityModel>> controller;
+
+    void emit() {
+      final merged = [...own, ...fromNotifications]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      controller.add(merged.take(limit).toList());
+    }
+
+    controller = StreamController<List<ActivityModel>>(
+      onListen: () {
+        subs.add(_activitiesRef
+            .where('landlordId', isEqualTo: uid)
+            .orderBy('createdAt', descending: true)
+            .limit(limit)
+            .snapshots()
+            .listen((snap) {
+          own = _mapDocs(snap.docs);
+          emit();
+        }, onError: controller.addError));
+        // Unmapped types are dropped after the limit, so read a wider page
+        // than is shown; chat and tenant-side noise make up most of it.
+        subs.add(_firestore
+            .collection('notifications')
+            .where('userId', isEqualTo: uid)
+            .orderBy('createdAt', descending: true)
+            .limit(limit * 4)
+            .snapshots()
+            .listen((snap) {
+          fromNotifications = _mapNotifications(snap.docs);
+          emit();
+        }, onError: (Object e) {
+          // Same rule as the one-shot read: half a feed beats none.
+          AppLogger.e('notification feed stream failed', error: e, name: _tag);
+        }));
+      },
+      onCancel: () async {
+        for (final s in subs) {
+          await s.cancel();
+        }
+      },
+    );
+    return controller.stream;
   }
 
   // ─────────────────────────────────────────────

@@ -1874,7 +1874,14 @@ service cloud.firestore {
     
     // Issues collection - tenant reports, landlord reads
     match /issues/{issueId} {
-      allow create: if request.auth != null;
+      // issueResponseReminders times the landlord from createdAt, so it must
+      // be the real moment of reporting: both clients write serverTimestamp(),
+      // and a backdated one would escalate a fresh issue to an admin at once.
+      // The chase fields are the server's alone (see the update rule).
+      allow create: if request.auth != null
+        && request.resource.data.createdAt == request.time
+        && !request.resource.data.keys().hasAny(
+             ['chaseFrom', 'chaseResetUsed', 'landlordChase']);
       
       // The caretaker of the property is a party to its issues - triaging them
       // is the whole job. Costs one property read per issue evaluated; at this
@@ -1906,9 +1913,17 @@ service cloud.firestore {
         canRead()
       );
 
+      // The parties may write anything EXCEPT what the response clock reads:
+      // when it started, how urgent it is, and the server's record of the
+      // chase. Otherwise a landlord could push their own deadline back or
+      // downgrade a High issue to Low. Admins keep the override.
       allow update: if request.auth != null && (
-        resource.data.tenantId == request.auth.uid ||
-        resource.data.landlordId == request.auth.uid ||
+        (
+          (resource.data.tenantId == request.auth.uid ||
+           resource.data.landlordId == request.auth.uid)
+          && !changed(['createdAt', 'priority', 'chaseFrom',
+                       'chaseResetUsed', 'landlordChase'])
+        ) ||
         canRead()
       );
 

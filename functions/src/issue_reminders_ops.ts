@@ -196,3 +196,185 @@ export const issuePendingConfirmationReminders = onSchedule(
     });
   },
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// issueResponseReminders - chases a landlord who leaves an issue at `open` or
+// `in_progress`. Before this, only `pending_confirmation` was chased: a High
+// issue could sit at Open for a month and nobody would know.
+//
+// Days since the clock started, by the urgency the tenant picked:
+//     high    1 → remind landlord   2 → warn landlord + caretaker   3 → admin
+//     medium  3 →                   5 →                             7 →
+//     low     7 →                  14 →                            21 →
+//
+// The clock is `chaseFrom` (server-written by onIssueUpdated) or, before any
+// restart, `createdAt`. Acknowledging restarts it once; a disputed fix or a
+// re-opened issue restarts it as a new round. firestore.rules keeps every
+// field read here out of the parties' hands, or a landlord could move their
+// own deadline.
+//
+// Hourly in the daytime so a High issue is chased within the hour it falls
+// due, not up to a day late, without pushing anyone at 3am.
+//
+// The current rung is written to the issue as `landlordChase` so the tenant
+// can see that their complaint is being chased, not just hope it is.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RESPONSE_RUNGS: Record<string, readonly [number, number, number]> = {
+  high: [1, 2, 3],
+  medium: [3, 5, 7],
+  low: [7, 14, 21],
+};
+
+const TENANT_RUNG_TEXT = [
+  "",
+  "We've reminded your landlord about it.",
+  "We've warned your landlord that it is overdue.",
+  "ClearRent's team has been alerted and will follow up.",
+];
+
+export const issueResponseReminders = onSchedule(
+  {schedule: "0 8-20 * * *", timeZone: "Africa/Lagos", timeoutSeconds: 300},
+  async () => {
+    const db = getFirestore();
+    const now = Date.now();
+
+    const snap = await db
+      .collection("issues")
+      .where("status", "in", ["open", "in_progress"])
+      .get();
+
+    let sent = 0;
+    let escalated = 0;
+
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const start = (data.chaseFrom ?? data.createdAt) as Timestamp | undefined;
+      if (!start?.toMillis) continue;
+      const round = start.toMillis();
+
+      const priority = String(data.priority ?? "medium");
+      const rungs = RESPONSE_RUNGS[priority] ?? RESPONSE_RUNGS.medium;
+      const days = Math.floor((now - round) / DAY_MS);
+      // Highest rung reached wins, so a backlog item gets one push, not three.
+      const rung = rungs[2] <= days ? 3 : rungs[1] <= days ? 2 :
+        rungs[0] <= days ? 1 : 0;
+      if (rung === 0) continue;
+
+      const prior = data.landlordChase as {rung?: number; round?: number} |
+        undefined;
+      if (prior?.round === round && (prior.rung ?? 0) >= rung) continue;
+
+      const tenantId = data.tenantId as string | undefined;
+      const landlordId = data.landlordId as string | undefined;
+      const propertyTitle =
+        (data.propertyTitle as string | undefined) ?? "your property";
+      const category = (data.category as string | undefined) ?? "maintenance";
+      const propertyId = (data.propertyId as string | undefined) ?? "";
+      const urgent = priority === "high" ? "urgent " : "";
+      const what = `the ${urgent}${category} issue at ${propertyTitle}`;
+      const idBase = `issue_${doc.id}_resp_${round}_r${rung}`;
+
+      try {
+        if (landlordId) {
+          if (
+            await writeNotificationOnce(`${idBase}_${landlordId}`, {
+              userId: landlordId,
+              type: "issue_response_reminder",
+              title: rung === 1 ? "Your tenant is waiting" :
+                rung === 2 ? "Issue overdue" : "Issue escalated to ClearRent",
+              body: rung === 1 ?
+                `Please respond to ${what}. It was reported ${days} ` +
+                  `day${days === 1 ? "" : "s"} ago.` :
+                rung === 2 ?
+                  `${what[0].toUpperCase()}${what.slice(1)} has had no ` +
+                  `progress for ${days} days. Your tenant has been told.` :
+                  `${what[0].toUpperCase()}${what.slice(1)} is ${days} days ` +
+                  "old with no fix. ClearRent's team will be in touch.",
+              payload: {
+                route: LANDLORD_ISSUES_ROUTE,
+                issueId: doc.id,
+                initialTab: data.status === "in_progress" ? "1" : "0",
+                ...(propertyId ? {propertyId} : {}),
+              },
+            })
+          ) {
+            sent++;
+          }
+        }
+
+        // The caretaker is who would actually fix it, so they hear from the
+        // warning onward. Read only then, to spare a property read per issue
+        // on every hourly run.
+        if (rung >= 2) {
+          const caretakerId = await caretakerFor(propertyId);
+          if (
+            caretakerId &&
+            caretakerId !== landlordId &&
+            caretakerId !== tenantId &&
+            (await writeNotificationOnce(`${idBase}_${caretakerId}`, {
+              userId: caretakerId,
+              type: "issue_response_reminder",
+              title: "Issue overdue",
+              body: `${what[0].toUpperCase()}${what.slice(1)} has had no ` +
+                `progress for ${days} days.`,
+              payload: {
+                route: CARETAKER_ROUTE,
+                issueId: doc.id,
+                ...(propertyId ? {propertyId} : {}),
+              },
+            }))
+          ) {
+            sent++;
+          }
+        }
+
+        if (tenantId) {
+          if (
+            await writeNotificationOnce(`${idBase}_${tenantId}`, {
+              userId: tenantId,
+              type: "issue_response_reminder",
+              title: "We're chasing your issue",
+              body: `${TENANT_RUNG_TEXT[rung]} (${category}, ` +
+                `${propertyTitle})`,
+              payload: {route: TENANT_ISSUES_ROUTE, issueId: doc.id},
+            })
+          ) {
+            sent++;
+          }
+        }
+
+        if (rung === 3) {
+          await upsertAdminAlert(`issueslow_${doc.id}_${round}`, {
+            type: "issue_unanswered",
+            severity: priority === "high" ? "critical" : "warning",
+            title: "Landlord not responding to an issue",
+            body: `A ${priority}-urgency ${category} issue at ` +
+              `${propertyTitle} has had no progress for ${days} days ` +
+              "after two reminders.",
+            targetCollection: "issues",
+            targetId: doc.id,
+            actors: {tenantId, landlordId},
+            meta: {category, propertyTitle, priority, daysWaiting: days, round},
+          });
+          escalated++;
+        }
+
+        await doc.ref.update({
+          landlordChase: {rung, round, at: Timestamp.now()},
+        });
+      } catch (e) {
+        logger.error("Issue response reminder failed for an issue", {
+          id: doc.id,
+          error: `${e}`,
+        });
+      }
+    }
+
+    logger.info("Issue response sweep complete", {
+      scanned: snap.size,
+      sent,
+      escalated,
+    });
+  },
+);

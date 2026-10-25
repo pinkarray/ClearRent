@@ -203,6 +203,9 @@ class _IssueHistoryTile extends StatelessWidget {
         : category;
     final priority = (data['priority'] as String?) ?? 'low';
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+    final chase = (status == 'open' || status == 'in_progress')
+        ? _chaseLine(data['landlordChase'] as Map<String, dynamic>?)
+        : null;
 
     final statusColor = _statusColor(status);
     final statusLabel = _statusLabel(status);
@@ -277,6 +280,14 @@ class _IssueHistoryTile extends StatelessWidget {
                           .copyWith(color: AppColors.textHint)),
                 ],
               ]),
+              // So the tenant knows the complaint is being chased, not just
+              // hoping it is (issueResponseReminders writes landlordChase).
+              if (chase != null) ...[
+                const SizedBox(height: 4),
+                Text(chase,
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.warning)),
+              ],
             ]),
           ),
           const SizedBox(width: 4),
@@ -284,6 +295,18 @@ class _IssueHistoryTile extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  String? _chaseLine(Map<String, dynamic>? chase) {
+    final rung = (chase?['rung'] as num?)?.toInt() ?? 0;
+    final at = (chase?['at'] as Timestamp?)?.toDate();
+    final when = at != null ? _formatDate(at) : 'recently';
+    if (rung >= 3) {
+      return "ClearRent's team was alerted on $when and will follow up.";
+    }
+    if (rung == 2) return 'We warned your landlord on $when that this is overdue.';
+    if (rung == 1) return 'We reminded your landlord about this on $when.';
+    return null;
   }
 
   void _showIssueDetail(BuildContext context) {

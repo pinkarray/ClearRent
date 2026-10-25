@@ -128,6 +128,19 @@ const RESOLVERS: Record<string, Resolver> = {
     done: (t) => t.needsReconciliation !== true,
   },
 
+  // Raised by issueResponseReminders for one round of the response clock.
+  // Done once the issue has moved on (fix offered, resolved), or a new round
+  // has started - the landlord acknowledged it, or it was disputed or
+  // re-opened, each of which is a response; a later silence raises its own.
+  issue_unanswered: {
+    collection: "issues",
+    done: (t, alert) => {
+      if (t.status !== "open" && t.status !== "in_progress") return true;
+      const start = t.chaseFrom ?? t.createdAt;
+      return start?.toMillis?.() !== alert.meta?.round;
+    },
+  },
+
   // Judged from the alert's own meta - no target read needed.
   inspection_lifecycle: {
     collection: null,

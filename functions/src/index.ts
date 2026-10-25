@@ -73,7 +73,10 @@ export {nudgeIssueParty, nudgeIssuesBulk} from "./issue_admin_ops";
 // A contested deposit used to be an alert an admin could only dismiss, which
 // changed nothing about the stalled unit. This is the lever.
 export {nudgeHandoverParty} from "./handover_admin_ops";
-export {issuePendingConfirmationReminders} from "./issue_reminders_ops";
+export {
+  issuePendingConfirmationReminders,
+  issueResponseReminders,
+} from "./issue_reminders_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
 export {
   handoverSilenceSweep,
@@ -865,6 +868,24 @@ export const onIssueUpdated = onDocumentUpdated(
       (after.propertyTitle as string | undefined) ?? "your property";
     const category = (after.category as string | undefined) ?? "maintenance";
     const propertyId = (after.propertyId as string | undefined) ?? "";
+
+    // Restart the response clock (issueResponseReminders) on a new round.
+    // Acknowledging restarts it ONCE: otherwise one tap on "In progress"
+    // would silence the ladder for good. A disputed fix or a re-opened issue
+    // is a fresh complaint, so each of those restarts it too. Server-written:
+    // firestore.rules keeps these fields out of the parties' hands.
+    const firstAck = from === "open" && to === "in_progress" &&
+      after.chaseResetUsed !== true;
+    const newRound =
+      (from === "pending_confirmation" && to === "in_progress") ||
+      (from === "resolved" && to === "open");
+    if (firstAck || newRound) {
+      await event.data?.after.ref.update({
+        chaseFrom: FieldValue.serverTimestamp(),
+        landlordChase: FieldValue.delete(),
+        ...(firstAck ? {chaseResetUsed: true} : {}),
+      });
+    }
 
     const tenantRoute = {route: "/tenant/issue-history"};
     const landlordRoute = {
