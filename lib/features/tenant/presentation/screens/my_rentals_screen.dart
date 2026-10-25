@@ -15,6 +15,7 @@ import '../../../../services/agreement_access_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/guidance_empty_state.dart';
 import '../../../../shared/widgets/move_in_baseline_prompt.dart';
+import '../widgets/rate_landlord_card.dart';
 
 class MyRentalsScreen extends StatefulWidget {
   const MyRentalsScreen({super.key});
@@ -575,6 +576,11 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                     ],
                   ),
                 ),
+              ],
+
+              if (rental.isEnded) ...[
+                const SizedBox(height: 16),
+                RateLandlordCard(rentalId: rental.id),
               ],
 
               // Pay-after-accept: a pending_payment rental needs an OBVIOUS

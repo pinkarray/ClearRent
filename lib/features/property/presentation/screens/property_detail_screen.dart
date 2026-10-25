@@ -164,6 +164,10 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
   bool _landlordAllowsCalls = false;
   String? _landlordPhone;
+  // The landlord's public record, each null while its admin switch
+  // (config/features) is off.
+  String? _landlordIssueLine;
+  String? _landlordRatingLine;
 
   // Whether current tenant is already linked to THIS property
   bool _isLinkedToThisProperty = false;
@@ -357,6 +361,31 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         // Capture call info at the same time - no extra Firestore read needed
         _landlordAllowsCalls = landlordData?['allowsCalls'] ?? false;
         _landlordPhone = landlordData?['phone'];
+
+        final features = (await FirebaseFirestore.instance
+                    .collection('config')
+                    .doc('features')
+                    .get())
+                .data() ??
+            const {};
+        if (features['publicLandlordRecord'] == true) {
+          final rec =
+              (landlordData?['issueRecord'] as Map<String, dynamic>?) ?? {};
+          final received = (rec['received'] as num?)?.toInt() ?? 0;
+          final inTime = (rec['answeredInTime'] as num?)?.toInt() ?? 0;
+          _landlordIssueLine = received == 0
+              ? 'No tenant issues yet'
+              : 'Answered $inTime of $received tenant issues in time';
+        }
+        if (features['publicLandlordRatings'] == true) {
+          final count =
+              (landlordData?['landlordRatingCount'] as num?)?.toInt() ?? 0;
+          final avg = (landlordData?['landlordRating'] as num?)?.toDouble();
+          _landlordRatingLine = count == 0 || avg == null
+              ? 'No tenant ratings yet'
+              : '${avg.toStringAsFixed(1)} ★ from $count '
+                  'tenant${count == 1 ? '' : 's'}';
+        }
       }
 
       debugPrint('✅ Current user verified: $_isCurrentUserVerified');
@@ -1221,6 +1250,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           const SizedBox(height: 12),
 
                           _buildFurnishingRow(property),
+
+                          if (_landlordIssueLine != null ||
+                              _landlordRatingLine != null) ...[
+                            const SizedBox(height: 12),
+                            _buildLandlordRecordRow(),
+                          ],
 
                           const SizedBox(height: 24),
 
@@ -3562,6 +3597,38 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// How the landlord treats tenants, when the admin has made it public.
+  Widget _buildLandlordRecordRow() {
+    Widget line(IconData icon, String text) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [
+            Icon(icon, size: 18, color: AppColors.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text, style: AppTextStyles.bodySmall)),
+          ]),
+        );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('About this landlord', style: AppTextStyles.labelMedium),
+          const SizedBox(height: 6),
+          if (_landlordIssueLine != null)
+            line(Icons.build_circle_outlined, _landlordIssueLine!),
+          if (_landlordRatingLine != null)
+            line(Icons.star_outline, _landlordRatingLine!),
         ],
       ),
     );
