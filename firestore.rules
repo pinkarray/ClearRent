@@ -373,7 +373,9 @@ service cloud.firestore {
                        'listingSuspendedReason', 'overdueUrgentIssues',
                        // The landlord's public record (landlord_record_ops).
                        'issueRecord', 'landlordRating', 'landlordRatingCount',
-                       'landlordRatingSum'])
+                       'landlordRatingSum',
+                       // Admin's per-landlord "show their record" switch.
+                       'showIssueRecord'])
         && (
           !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['verificationStatus'])

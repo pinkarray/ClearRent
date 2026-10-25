@@ -368,7 +368,9 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                     .get())
                 .data() ??
             const {};
-        if (features['publicLandlordRecord'] == true) {
+        // Platform-wide switch, or the admin's switch for this landlord.
+        if (features['publicLandlordRecord'] == true ||
+            landlordData?['showIssueRecord'] == true) {
           final rec =
               (landlordData?['issueRecord'] as Map<String, dynamic>?) ?? {};
           final received = (rec['received'] as num?)?.toInt() ?? 0;

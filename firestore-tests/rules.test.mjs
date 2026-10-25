@@ -3136,3 +3136,18 @@ test("landlord stamps firstResponseAt on an issue - denied", async () => {
     })
   );
 });
+
+test("landlord hides their own issue record - denied", async () => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), "users/" + LANDLORD), { showIssueRecord: true });
+  });
+  await assertFails(
+    updateDoc(doc(landlordDb(), "users/" + LANDLORD), { showIssueRecord: false })
+  );
+});
+
+test("admin sets a landlord's show-record switch - allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(adminDb(), "users/" + LANDLORD), { showIssueRecord: true })
+  );
+});

@@ -38,6 +38,9 @@ const COPIED = [
   // The landlord's public record (landlord_record_ops.ts). Listings show
   // them only while the admin switches in config/features are on.
   "issueRecord", "landlordRating", "landlordRatingCount",
+  // Admin's per-landlord switch: show THIS landlord's issue record even
+  // while the platform-wide switch is off (admin Standing card).
+  "showIssueRecord",
 ] as const;
 
 /**
