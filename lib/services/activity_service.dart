@@ -225,9 +225,28 @@ class ActivityService {
       _ownActivities(),
       _activitiesFromNotifications(),
     ]);
-    final merged = [...results[0], ...results[1]]
+    return _merge(results[0], results[1]);
+  }
+
+  /// Both logs, newest first, without the events recorded in both.
+  ///
+  /// A new issue, a move-out request and a confirmed or disputed fix are
+  /// written by the client into `activities` AND sent as a notification, so
+  /// each showed twice. A notification is dropped when an activity of the same
+  /// kind for the same property sits within two minutes of it; one with no
+  /// twin (a fix confirmed on web, which writes no activity) still shows.
+  List<ActivityModel> _merge(
+    List<ActivityModel> own,
+    List<ActivityModel> fromNotifications,
+  ) {
+    bool twin(ActivityModel n) => own.any((a) =>
+        a.type == n.type &&
+        a.propertyId != null &&
+        a.propertyId == n.propertyId &&
+        a.createdAt.difference(n.createdAt).abs() <
+            const Duration(minutes: 2));
+    return [...own, ...fromNotifications.where((n) => !twin(n))]
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return merged;
   }
 
   /// The `activities` collection alone.
@@ -339,8 +358,16 @@ class ActivityService {
     final out = <ActivityModel>[];
     for (final doc in docs) {
       final data = doc.data();
-      final mapped = _notificationFeedTypes[data['type'] as String? ?? ''];
+      var mapped = _notificationFeedTypes[data['type'] as String? ?? ''];
       if (mapped == null) continue;
+      // issue_updated carries both of the tenant's answers to a fix. Split it
+      // so it lines up with the confirm / dispute activity the app also
+      // writes, and _merge can drop the twin.
+      if (data['type'] == 'issue_updated') {
+        final title = (data['title'] as String? ?? '').toLowerCase();
+        if (title.contains('not fixed')) mapped = ActivityType.issueDisputed;
+        if (title.contains('confirmed')) mapped = ActivityType.issueConfirmed;
+      }
 
       final created = (data['createdAt'] as Timestamp?)?.toDate();
       if (created == null) continue;
@@ -382,9 +409,7 @@ class ActivityService {
     late final StreamController<List<ActivityModel>> controller;
 
     void emit() {
-      final merged = [...own, ...fromNotifications]
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      controller.add(merged.take(limit).toList());
+      controller.add(_merge(own, fromNotifications).take(limit).toList());
     }
 
     controller = StreamController<List<ActivityModel>>(
