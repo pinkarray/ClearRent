@@ -3183,3 +3183,197 @@ test("landlord swaps an issue's photos - denied", async () => {
     })
   );
 });
+
+// ─── inspection_requests: every update row must be REACHABLE ─────────────────
+// Rules are evaluated in order and a request stops at the first that allows
+// it, so a late row spends the 1000-expression budget of every row before it.
+// Until 2026-10-25 only 4 of these 27 rows had a test that ALLOWED a write,
+// so a legitimate action that crept over the ceiling would have failed as a
+// plain permission denial with nothing to catch it. One positive control per
+// row; an over-ceiling row fails here first.
+
+const withBank = async (uid) => {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users/" + uid), { hasBankDetails: true }, { merge: true });
+  });
+};
+const upd = (db, id, data) =>
+  updateDoc(doc(db, `inspection_requests/${id}`), { ...data, updatedAt: serverTimestamp() });
+const nowTs = () => Timestamp.now();
+
+test("[14a] handler approves a pending request - allowed", async () => {
+  await withBank(LANDLORD);
+  await seedInspection("r14a", { status: "pending" });
+  await assertSucceeds(upd(landlordDb(), "r14a", { status: "approved" }));
+});
+
+test("[14b] landlord overrides an agent's decline - allowed", async () => {
+  await withBank(LANDLORD);
+  await seedInspection("r14b", { status: "declinedByAgent", agentId: AGENT });
+  await assertSucceeds(upd(landlordDb(), "r14b", {
+    status: "approved", wasOverridden: true, overriddenBy: LANDLORD,
+  }));
+});
+
+test("[1] agent declines a pending request - allowed", async () => {
+  await seedInspection("r1", { status: "pending", agentId: AGENT });
+  await assertSucceeds(upd(agentDb(), "r1", {
+    status: "declinedByAgent", declinedBy: AGENT, declineReason: "busy",
+    declinedAt: serverTimestamp(),
+  }));
+});
+
+test("[3] landlord declines an approved request - allowed", async () => {
+  await seedInspection("r3", { status: "approved" });
+  await assertSucceeds(upd(landlordDb(), "r3", {
+    status: "declined", declinedBy: LANDLORD, declineReason: "let out",
+    declinedAt: serverTimestamp(),
+  }));
+});
+
+test("[6] handler completes after both confirmed met - allowed", async () => {
+  await seedInspection("r6", {
+    status: "approved", tenantConfirmedMet: true, handlerConfirmedMet: true,
+  });
+  await assertSucceeds(upd(landlordDb(), "r6", {
+    status: "completed", completedAt: serverTimestamp(),
+    completedBy: LANDLORD, completedByType: "landlord",
+  }));
+});
+
+test("[7] tenant rates a completed inspection - allowed", async () => {
+  await seedInspection("r7", { status: "completed" });
+  await assertSucceeds(upd(tenantDb(), "r7", {
+    tenantRating: 5, tenantReview: "good", tenantRated: true,
+    ratingSubmittedAt: serverTimestamp(), ratedUserId: LANDLORD,
+    ratedUserType: "landlord", ratedUserName: "L",
+  }));
+});
+
+test("[9] tenant records a refund on a paid request - allowed", async () => {
+  await seedInspection("r9", { status: "declined", paymentStatus: "paid" });
+  await assertSucceeds(updateDoc(doc(tenantDb(), "inspection_requests/r9"), {
+    paymentStatus: "refunded", refundedAt: serverTimestamp(), refundReason: "declined",
+  }));
+});
+
+test("[13] handler confirms receiving their payout - allowed", async () => {
+  await seedInspection("r13", { status: "completed", agentPayoutStatus: "paid" });
+  await assertSucceeds(upd(landlordDb(), "r13", {
+    agentConfirmedPayment: true, agentConfirmedAt: serverTimestamp(),
+  }));
+});
+
+test("[15a] tenant confirms the meeting after both arrived - allowed", async () => {
+  await seedInspection("r15a", { status: "approved", tenantArrived: true, handlerArrived: true });
+  await assertSucceeds(upd(tenantDb(), "r15a", {
+    tenantConfirmedMet: true, tenantConfirmedMetAt: serverTimestamp(),
+  }));
+});
+
+test("[15b] handler confirms the meeting after both arrived - allowed", async () => {
+  await seedInspection("r15b", { status: "approved", tenantArrived: true, handlerArrived: true });
+  await assertSucceeds(upd(landlordDb(), "r15b", {
+    handlerConfirmedMet: true, handlerConfirmedMetAt: serverTimestamp(),
+  }));
+});
+
+test("[16] tenant proposes a reschedule - allowed", async () => {
+  await seedInspection("r16", { status: "approved" });
+  await assertSucceeds(upd(tenantDb(), "r16", {
+    rescheduleProposal: { proposedByUserId: TENANT, date: "2026-11-01" },
+  }));
+});
+
+test("[17] handler counter-proposes a reschedule - allowed", async () => {
+  await seedInspection("r17", {
+    status: "approved", rescheduleProposal: { proposedByUserId: TENANT },
+  });
+  await assertSucceeds(upd(landlordDb(), "r17", {
+    rescheduleProposal: { proposedByUserId: LANDLORD, date: "2026-11-02" },
+  }));
+});
+
+test("[18] handler approves a reschedule - allowed", async () => {
+  await seedInspection("r18", {
+    status: "approved", rescheduleProposal: { proposedByUserId: TENANT },
+  });
+  await assertSucceeds(upd(landlordDb(), "r18", {
+    requestedDate: nowTs(), requestedTimeSlot: "morning", rescheduleProposal: null,
+    rescheduleCount: 1, tenantArrived: false, handlerArrived: false,
+    tenantOnWay: false, handlerOnWay: false,
+  }));
+});
+
+test("[19] handler declines a reschedule - allowed", async () => {
+  await seedInspection("r19", {
+    status: "approved", rescheduleProposal: { proposedByUserId: TENANT },
+  });
+  await assertSucceeds(upd(landlordDb(), "r19", {
+    status: "declined", declinedBy: LANDLORD, declineReason: "no",
+    declinedAt: serverTimestamp(), rescheduleProposal: null,
+  }));
+});
+
+test("[20] proposer abandons their reschedule proposal - allowed", async () => {
+  await seedInspection("r20", {
+    status: "approved", rescheduleProposal: { proposedByUserId: TENANT },
+  });
+  await assertSucceeds(upd(tenantDb(), "r20", { rescheduleProposal: null }));
+});
+
+test("[21] handler cancels an approved inspection - allowed", async () => {
+  await seedInspection("r21", { status: "approved" });
+  await assertSucceeds(upd(landlordDb(), "r21", {
+    status: "cancelled", cancelledBy: "landlord", cancellationReason: "sold",
+    cancelledAt: serverTimestamp(),
+  }));
+});
+
+test("[22] tenant marks on the way - allowed", async () => {
+  await seedInspection("r22", { status: "approved" });
+  await assertSucceeds(upd(tenantDb(), "r22", {
+    tenantOnWay: true, tenantOnWayAt: serverTimestamp(),
+  }));
+});
+
+test("[23] handler marks on the way - allowed", async () => {
+  await seedInspection("r23", { status: "approved" });
+  await assertSucceeds(upd(landlordDb(), "r23", {
+    handlerOnWay: true, handlerOnWayAt: serverTimestamp(),
+  }));
+});
+
+test("[24] tenant passes after a completed inspection - allowed", async () => {
+  await seedInspection("r24", { status: "completed" });
+  await assertSucceeds(upd(tenantDb(), "r24", { tenantPassed: true }));
+});
+
+test("[26] tenant takes the refund on an expired request - allowed", async () => {
+  await seedInspection("r26", { status: "expiredUnapproved", paymentStatus: "paid" });
+  await assertSucceeds(upd(tenantDb(), "r26", {
+    status: "refunded", paymentStatus: "refunded", refundReason: "expired",
+    refundedAt: serverTimestamp(),
+  }));
+});
+
+test("[10] admin verifies a payment - allowed", async () => {
+  await seedInspection("r10", { status: "pendingPayment" });
+  await assertSucceeds(upd(adminDb(), "r10", {
+    paymentStatus: "paid", paymentVerifiedAt: serverTimestamp(), status: "pending",
+  }));
+});
+
+test("[4] tenant marks arrived inside the window - allowed", async () => {
+  await seedInspection("r4", { status: "approved", requestedDate: nowTs() });
+  await assertSucceeds(upd(tenantDb(), "r4", {
+    tenantArrived: true, tenantArrivedAt: serverTimestamp(),
+  }));
+});
+
+test("[5] handler marks arrived inside the window - allowed", async () => {
+  await seedInspection("r5", { status: "approved", requestedDate: nowTs() });
+  await assertSucceeds(upd(landlordDb(), "r5", {
+    handlerArrived: true, handlerArrivedAt: serverTimestamp(),
+  }));
+});
