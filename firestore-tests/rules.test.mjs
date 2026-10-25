@@ -1796,6 +1796,12 @@ test("tenant reports an issue stamped with server time - allowed", async () => {
   );
 });
 
+test("reporting an issue in another tenant's name - denied", async () => {
+  await assertFails(
+    setDoc(doc(otherDb(), "issues/iss_impersonated"), newIssue())
+  );
+});
+
 test("tenant reports a backdated issue - denied", async () => {
   await assertFails(
     setDoc(doc(tenantDb(), "issues/iss_old"),

@@ -1903,6 +1903,9 @@ service cloud.firestore {
       // and a backdated one would escalate a fresh issue to an admin at once.
       // The chase fields are the server's alone (see the update rule).
       allow create: if request.auth != null
+        // An issue is filed by the tenant in their own name. Every report
+        // entry (app and web) passes the signed-in tenant's own id.
+        && request.resource.data.tenantId == request.auth.uid
         && request.resource.data.createdAt == request.time
         && !request.resource.data.keys().hasAny(
              ['chaseFrom', 'chaseResetUsed', 'landlordChase',
