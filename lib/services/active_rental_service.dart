@@ -50,6 +50,31 @@ class ActiveRentalService {
     }
   }
 
+  /// Furnished stay: the tenant says the place and its items match the
+  /// listing, which lets the landlord's payout go. Null on success, else the
+  /// server's reason.
+  Future<String?> confirmMoveIn(String rentalId) =>
+      _moveInCall('confirmMoveIn', {'rentalId': rentalId});
+
+  /// Furnished stay: the tenant says what does not match. Holds the payout
+  /// until an admin settles it.
+  Future<String?> reportMoveInProblem(String rentalId, String text) =>
+      _moveInCall('reportMoveInProblem', {'rentalId': rentalId, 'text': text});
+
+  Future<String?> _moveInCall(String fn, Map<String, dynamic> data) async {
+    try {
+      await _functions.httpsCallable(fn).call<Map<String, dynamic>>(data);
+      return null;
+    } on FirebaseFunctionsException catch (e) {
+      developer.log('❌ $fn failed: ${e.code} - ${e.message}',
+          name: 'ActiveRentalService');
+      return e.message ?? 'That did not go through. Try again.';
+    } catch (e) {
+      developer.log('❌ $fn error: $e', name: 'ActiveRentalService');
+      return 'That did not go through. Check your connection and try again.';
+    }
+  }
+
   // ============ CREATE ============
 
   /// Create active rental after landlord accepts verified interest.

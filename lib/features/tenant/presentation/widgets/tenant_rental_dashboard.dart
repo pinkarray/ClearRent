@@ -13,6 +13,7 @@ import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/models/condition_record.dart';
 import '../screens/condition_capture_screen.dart';
+import 'move_in_check_card.dart';
 
 class TenantRentalDashboard extends StatefulWidget {
   final ActiveRental rental;
@@ -415,6 +416,13 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             // Move-out requested - awaiting landlord confirmation
             if (rental.isMoveoutPending) ...[
               _buildMoveOutPendingBanner(),
+              const SizedBox(height: 16),
+            ],
+
+            // Furnished stay: the 48-hour move-in check, once moved in.
+            if (rental.moveInCheck == 'awaiting' &&
+                !DateTime.now().isBefore(rental.leaseStartDate)) ...[
+              MoveInCheckCard(rental: rental),
               const SizedBox(height: 16),
             ],
 

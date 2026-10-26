@@ -127,6 +127,13 @@ class ActiveRental {
 
   // Provenance (set on promoted rentals, null otherwise)
   final String? sourceLinkId;
+
+  // Furnished stay: paid in full up front, so the landlord's payout waits for
+  // the tenant's 48-hour move-in check. Server-written only (move_in_check_ops):
+  // awaiting | confirmed | reported | resolved, null on a yearly lease.
+  final String stayType;
+  final String? moveInCheck;
+  final DateTime? moveInCheckDeadline;
   
   // Status
   final ActiveRentalStatus status;
@@ -204,6 +211,9 @@ class ActiveRental {
     this.cautionDeductionReason,
     this.cautionDeclaredAt,
     this.sourceLinkId,
+    this.stayType = 'yearly',
+    this.moveInCheck,
+    this.moveInCheckDeadline,
     this.status = ActiveRentalStatus.active,
     this.hasPaymentReminder = false,
     required this.createdAt,
@@ -483,6 +493,10 @@ class ActiveRental {
       cautionDeclaredAt: data['cautionDeclaredAt'] != null
           ? (data['cautionDeclaredAt'] as Timestamp).toDate() : null,
       sourceLinkId: data['sourceLinkId'] as String?,
+      stayType: data['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      moveInCheck: data['moveInCheck'] as String?,
+      moveInCheckDeadline:
+          (data['moveInCheckDeadline'] as Timestamp?)?.toDate(),
       status: _statusFromString(data['status'] ?? 'active'),
       hasPaymentReminder: data['hasPaymentReminder'] ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -622,6 +636,9 @@ class ActiveRental {
       tenantContestStatement: tenantContestStatement ?? this.tenantContestStatement,
       contestedAt: contestedAt ?? this.contestedAt,
       sourceLinkId: sourceLinkId ?? this.sourceLinkId,
+      stayType: stayType,
+      moveInCheck: moveInCheck,
+      moveInCheckDeadline: moveInCheckDeadline,
       status: status ?? this.status,
       hasPaymentReminder: hasPaymentReminder ?? this.hasPaymentReminder,
       createdAt: createdAt ?? this.createdAt,
