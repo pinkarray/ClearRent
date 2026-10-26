@@ -33,11 +33,17 @@ class RentalInterestService {
   /// precondition and a real fault alike.
   Future<({RentalInterest? interest, String? error})> createRentalInterest({
     required InspectionRequest inspectionRequest,
+    // Furnished stays only: the months and Lagos move-in day ("yyyy-mm-dd")
+    // the tenant chose. The server validates both against the listing.
+    int? stayMonths,
+    String? stayStartDate,
   }) async {
     try {
       final callable = _functions.httpsCallable('createRentalInterest');
       final result = await callable.call<Map<String, dynamic>>({
         'inspectionRequestId': inspectionRequest.id,
+        if (stayMonths != null) 'stayMonths': stayMonths,
+        if (stayStartDate != null) 'stayStartDate': stayStartDate,
       });
 
       final interestId = result.data['interestId'] as String?;
@@ -64,6 +70,8 @@ class RentalInterestService {
       // The server writes these for the tenant to read. Anything else is ours
       // to explain, not theirs to decipher.
       final refusal = e.code == 'failed-precondition' ||
+          // A furnished stay's length or move-in day was refused.
+          e.code == 'invalid-argument' ||
           e.code == 'permission-denied' ||
           e.code == 'not-found';
       final message = e.message;

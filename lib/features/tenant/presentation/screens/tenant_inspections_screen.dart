@@ -26,6 +26,7 @@ import '../../../../services/refund_service.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../shared/models/refund_model.dart';
 import '../../../../features/inspections/video_viewing_button.dart';
+import '../widgets/furnished_stay_sheet.dart';
 
 class TenantInspectionsScreen extends StatefulWidget {
   /// Optional explicit tab to land on (0 = Requests, 1 = Scheduled, 2 = Completed).
@@ -2625,11 +2626,22 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
       return;
     }
 
+    // A furnished stay is priced by its length, so the tenant says how long
+    // and from when before anything is sent.
+    StayPick? stay;
+    if (property.isFurnishedStay) {
+      if (!mounted) return;
+      stay = await showFurnishedStaySheet(context, property);
+      if (stay == null || !mounted) return;
+    }
+
     // Amounts are derived server-side by the createRentalInterest CF from the
     // property and config/pricing - the client no longer decides what the
     // tenant will be charged for rent (HANDOVER H2).
     final result = await _rentalInterestService.createRentalInterest(
       inspectionRequest: widget.request,
+      stayMonths: stay?.months,
+      stayStartDate: stay?.startDay,
     );
 
     if (mounted) {
