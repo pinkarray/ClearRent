@@ -32,6 +32,16 @@ class PropertyModel {
   // created before this field existed. Never defaulted, because guessing
   // "unfurnished" would tell a tenant something the landlord never said.
   final String? furnishing;
+  // 'yearly' (also when absent) or 'furnished': a 1-11 month stay paid up
+  // front. For a furnished stay `rent` is the MONTHLY rent and rentFrequency
+  // is 'monthly'. One stay type per listing.
+  final String stayType;
+  final int minStayMonths;
+  final int maxStayMonths;
+  final DateTime? availableFrom;
+  // What comes with a furnished stay, checked by both sides at move-in and
+  // move-out.
+  final List<InventoryItem> inventory;
   final bool isAvailable;
   final bool isVerified;
   final List<String> amenities;
@@ -220,6 +230,11 @@ class PropertyModel {
     this.cautionDeposit = 0,
     this.cautionDepositRefundable = true,
     this.furnishing,
+    this.stayType = 'yearly',
+    this.minStayMonths = 0,
+    this.maxStayMonths = 0,
+    this.availableFrom,
+    this.inventory = const [],
     this.isAvailable = true,
     this.isVerified = false,
     this.amenities = const [],
@@ -382,6 +397,28 @@ class PropertyModel {
       furnishingLabels[value] ?? 'Furnishing not stated';
 
   String get furnishingLabel => furnishingLabelFor(furnishing);
+
+  bool get isFurnishedStay => stayType == 'furnished';
+
+  /// "Stays of 1 to 6 months", or "1-month stays" when both ends match.
+  String get stayRangeLabel => minStayMonths == maxStayMonths
+      ? '$minStayMonths-month stays'
+      : 'Stays of $minStayMonths to $maxStayMonths months';
+
+  /// The furnished-stay fields, written only for a furnished stay so a
+  /// yearly listing never carries them (firestore.rules stayValid()).
+  Map<String, dynamic> stayFields({required bool isoDates}) => isFurnishedStay
+      ? {
+          'stayType': 'furnished',
+          'minStayMonths': minStayMonths,
+          'maxStayMonths': maxStayMonths,
+          if (availableFrom != null)
+            'availableFrom': isoDates
+                ? availableFrom!.toIso8601String()
+                : Timestamp.fromDate(availableFrom!),
+          'inventory': inventory.map((i) => i.toMap()).toList(),
+        }
+      : const {};
 
   /// Floor options offered to a landlord, in order. Value is what's stored.
   static const List<Map<String, String>> floors = [
@@ -628,6 +665,11 @@ class PropertyModel {
     double? cautionDeposit,
     bool? cautionDepositRefundable,
     String? furnishing,
+    String? stayType,
+    int? minStayMonths,
+    int? maxStayMonths,
+    DateTime? availableFrom,
+    List<InventoryItem>? inventory,
     bool? isAvailable,
     bool? isVerified,
     List<String>? amenities,
@@ -703,6 +745,11 @@ class PropertyModel {
       cautionDepositRefundable:
           cautionDepositRefundable ?? this.cautionDepositRefundable,
       furnishing: furnishing ?? this.furnishing,
+      stayType: stayType ?? this.stayType,
+      minStayMonths: minStayMonths ?? this.minStayMonths,
+      maxStayMonths: maxStayMonths ?? this.maxStayMonths,
+      availableFrom: availableFrom ?? this.availableFrom,
+      inventory: inventory ?? this.inventory,
       isAvailable: isAvailable ?? this.isAvailable,
       isVerified: isVerified ?? this.isVerified,
       amenities: amenities ?? this.amenities,
@@ -841,6 +888,11 @@ class PropertyModel {
       cautionDeposit: (json['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: json['cautionDepositRefundable'] ?? true,
       furnishing: furnishingOrNull(json['furnishing']),
+      stayType: json['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      minStayMonths: (json['minStayMonths'] as num?)?.toInt() ?? 0,
+      maxStayMonths: (json['maxStayMonths'] as num?)?.toInt() ?? 0,
+      availableFrom: _dateFromJson(json['availableFrom']),
+      inventory: InventoryItem.listFrom(json['inventory']),
       isAvailable: json['isAvailable'] ?? true,
       isVerified: json['isVerified'] ?? false,
       amenities: List<String>.from(json['amenities'] ?? []),
@@ -951,6 +1003,11 @@ class PropertyModel {
       cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
       furnishing: furnishingOrNull(data['furnishing']),
+      stayType: data['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      minStayMonths: (data['minStayMonths'] as num?)?.toInt() ?? 0,
+      maxStayMonths: (data['maxStayMonths'] as num?)?.toInt() ?? 0,
+      availableFrom: (data['availableFrom'] as Timestamp?)?.toDate(),
+      inventory: InventoryItem.listFrom(data['inventory']),
       isAvailable: data['isAvailable'] ?? true,
       isVerified: data['isVerified'] ?? false,
       amenities: List<String>.from(data['amenities'] ?? []),
@@ -1050,6 +1107,7 @@ class PropertyModel {
       'cautionDepositRefundable': cautionDepositRefundable,
       // Omitted, never null: firestore.rules only accepts the three values.
       if (furnishing != null) 'furnishing': furnishing,
+      ...stayFields(isoDates: true),
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,
@@ -1135,6 +1193,7 @@ class PropertyModel {
       'cautionDepositRefundable': cautionDepositRefundable,
       // Omitted, never null: firestore.rules only accepts the three values.
       if (furnishing != null) 'furnishing': furnishing,
+      ...stayFields(isoDates: false),
       'isAvailable': isAvailable,
       'isVerified': isVerified,
       'amenities': amenities,
@@ -1197,5 +1256,33 @@ class PropertyModel {
         'unitBuildingStructure': unitBuildingStructure,
       if (unitBuildingLabel != null) 'unitBuildingLabel': unitBuildingLabel,
     };
+  }
+}
+
+/// One item that comes with a furnished stay. The photo is optional: it is
+/// what the tenant compares against at move-in.
+class InventoryItem {
+  final String name;
+  final int qty;
+  final String? photoUrl;
+
+  const InventoryItem({required this.name, this.qty = 1, this.photoUrl});
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'qty': qty,
+        if (photoUrl != null && photoUrl!.isNotEmpty) 'photoUrl': photoUrl,
+      };
+
+  static List<InventoryItem> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((m) {
+      final name = '${m['name'] ?? ''}'.trim();
+      return InventoryItem(
+        name: name,
+        qty: (m['qty'] as num?)?.toInt() ?? 1,
+        photoUrl: m['photoUrl'] as String?,
+      );
+    }).where((i) => i.name.isNotEmpty).toList();
   }
 }

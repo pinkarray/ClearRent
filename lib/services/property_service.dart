@@ -438,6 +438,13 @@ class PropertyService {
     // money comes back; the move-out handover is measured against it.
     bool cautionDepositRefundable = true,
     String? furnishing,
+    // 'yearly' or 'furnished' (1-11 months paid up front; rent is then the
+    // monthly rent). The stay fields are written only for a furnished stay.
+    String stayType = 'yearly',
+    int minStayMonths = 0,
+    int maxStayMonths = 0,
+    DateTime? availableFrom,
+    List<InventoryItem> inventory = const [],
     List<String> amenities = const [],
     List<String> rules = const [],
     String inspectionHandler = 'self', // 'self' or 'agent'
@@ -564,6 +571,14 @@ class PropertyService {
         'cautionDeposit': cautionDeposit,
         'cautionDepositRefundable': cautionDepositRefundable,
         if (furnishing != null) 'furnishing': furnishing,
+        if (stayType == 'furnished') ...{
+          'stayType': 'furnished',
+          'minStayMonths': minStayMonths,
+          'maxStayMonths': maxStayMonths,
+          if (availableFrom != null)
+            'availableFrom': Timestamp.fromDate(availableFrom),
+          'inventory': inventory.map((i) => i.toMap()).toList(),
+        },
         'isAvailable': true,
         // A listing is born unreviewed. This is the ADMIN's badge for THIS
         // listing's ownership document (adminReviewPropertyDoc writes it) - not

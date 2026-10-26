@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../widgets/clearrent_location_picker.dart';
 import '../widgets/furnishing_picker.dart';
+import '../widgets/inventory_editor.dart';
 import '../../../../shared/widgets/description_prompts.dart';
 import 'package:video_compress/video_compress.dart';
 import '../../../../core/constants/colors.dart';
@@ -223,6 +224,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   bool _cautionDepositRefundable = true;
   // Required on a new listing; no default, so it is a real answer.
   String? _furnishing;
+  // 'yearly' or 'furnished' (1-11 months paid up front). One per listing.
+  String _stayType = 'yearly';
+  int _minStay = 1;
+  int _maxStay = 6;
+  DateTime? _availableFrom;
+  List<InventoryItem> _inventory = [];
 
   // Selected agent (required when _inspectionHandler == 'agent')
   String? _selectedAgentId;
@@ -496,6 +503,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       'cautionDeposit': _cautionDepositController.text,
       'cautionDepositRefundable': _cautionDepositRefundable,
       'furnishing': _furnishing,
+      'stayType': _stayType,
+      'minStay': _minStay,
+      'maxStay': _maxStay,
+      'availableFrom': _availableFrom?.toIso8601String(),
+      'inventory': _inventory.map((i) => i.toMap()).toList(),
       'includeAgentFee': _includeAgentFee,
       'address': _addressController.text,
       'city': _cityController.text,
@@ -554,6 +566,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _cautionDepositController.text = draft['cautionDeposit'] ?? '';
       _cautionDepositRefundable = draft['cautionDepositRefundable'] ?? true;
       _furnishing = PropertyModel.furnishingOrNull(draft['furnishing']);
+      _stayType = draft['stayType'] == 'furnished' ? 'furnished' : 'yearly';
+      _minStay = (draft['minStay'] as num?)?.toInt() ?? 1;
+      _maxStay = (draft['maxStay'] as num?)?.toInt() ?? 6;
+      _availableFrom = DateTime.tryParse('${draft['availableFrom'] ?? ''}');
+      _inventory = InventoryItem.listFrom(draft['inventory']);
       _addressController.text = draft['address'] ?? '';
       _cityController.text = draft['city'] ?? '';
       _stateController.text = draft['state'] ?? '';
@@ -567,7 +584,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _guestRooms = draft['guestRooms'] ?? 0;
       _kitchens = draft['kitchens'] ?? 1;
       _maxTenants = draft['maxTenants'] ?? 1;
-      _rentPeriod = 'yearly';
+      _rentPeriod = _stayType == 'furnished' ? 'monthly' : 'yearly';
       _titleManuallyEdited = draft['titleManuallyEdited'] ?? false;
       _descriptionManuallyEdited = draft['descriptionManuallyEdited'] ?? false;
       _includeAgentFee = draft['includeAgentFee'] ?? false;
@@ -1343,6 +1360,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           );
           return false;
         }
+        if (_stayType == 'furnished') {
+          // firestore.rules stayValid() refuses these; say why on this step.
+          if (_furnishing != 'fully') {
+            _showError(
+              'A furnished stay must be fully furnished. Change Furnishing on '
+              'the details step, or choose a yearly lease.',
+            );
+            return false;
+          }
+          if (_minStay > _maxStay) {
+            _showError('The shortest stay cannot be longer than the longest.');
+            return false;
+          }
+          if (_inventory.isEmpty) {
+            _showError('List at least one item that comes with the place.');
+            return false;
+          }
+        }
         if (_includeAgentFee) {
           if (_agentFeeController.text.isEmpty) {
             _showError('Please enter the agent fee');
@@ -1730,6 +1765,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         cautionDeposit: _parseAmountFromController(_cautionDepositController),
         cautionDepositRefundable: _cautionDepositRefundable,
         furnishing: _furnishing,
+        stayType: _stayType,
+        minStayMonths: _minStay,
+        maxStayMonths: _maxStay,
+        availableFrom: _availableFrom,
+        inventory: _inventory,
         amenities: _selectedAmenities,
         rules: _selectedRules,
         inspectionHandler: _inspectionHandler,
@@ -4086,6 +4126,121 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
+  Widget _stayChoice(String value, IconData icon, String title, String hint) {
+    final on = _stayType == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() {
+        _stayType = value;
+        _rentPeriod = value == 'furnished' ? 'monthly' : 'yearly';
+        // A furnished stay is fully furnished by definition (stayValid).
+        if (value == 'furnished') _furnishing = 'fully';
+        _saveDraftDebounced();
+      }),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: on ? AppColors.primary.withAlpha(20) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: on ? AppColors.primary : AppColors.border),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 20, color: on ? AppColors.primary : AppColors.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: AppTextStyles.labelMedium.copyWith(
+                      color: on ? AppColors.primary : AppColors.textPrimary)),
+              const SizedBox(height: 2),
+              Text(hint,
+                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+            ]),
+          ),
+          if (on) Icon(Icons.check_circle, size: 20, color: AppColors.primary),
+        ]),
+      ),
+    );
+  }
+
+  /// Furnished stay: allowed lengths, available-from date and the item list.
+  Widget _buildStayLengths() {
+    Widget months(String label, int value, ValueChanged<int> set) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+            Row(children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: value > 1
+                    ? () => setState(() {
+                          set(value - 1);
+                          _saveDraftDebounced();
+                        })
+                    : null,
+              ),
+              Text('$value', style: AppTextStyles.h4),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: value < 11
+                    ? () => setState(() {
+                          set(value + 1);
+                          _saveDraftDebounced();
+                        })
+                    : null,
+              ),
+            ]),
+          ]),
+        );
+    final from = _availableFrom;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('How long can tenants stay? (months)', style: AppTextStyles.labelMedium),
+      const SizedBox(height: 4),
+      Row(children: [
+        months('Shortest', _minStay, (v) => _minStay = v),
+        months('Longest', _maxStay, (v) => _maxStay = v),
+      ]),
+      const SizedBox(height: 12),
+      Text('Available from (optional)', style: AppTextStyles.labelMedium),
+      const SizedBox(height: 6),
+      OutlinedButton.icon(
+        icon: const Icon(Icons.event_outlined, size: 18),
+        label: Text(from == null
+            ? 'Available now'
+            : '${from.day}/${from.month}/${from.year}'),
+        onPressed: () async {
+          final now = DateTime.now();
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: from ?? now,
+            firstDate: DateTime(now.year, now.month, now.day),
+            lastDate: now.add(const Duration(days: 365)),
+          );
+          if (picked != null) {
+            setState(() => _availableFrom = picked);
+            _saveDraftDebounced();
+          }
+        },
+      ),
+      const SizedBox(height: 16),
+      Text("What's included", style: AppTextStyles.labelMedium),
+      const SizedBox(height: 2),
+      Text(
+        'Both you and the tenant check this list at move-in and move-out. '
+        'A photo of each item helps settle any question later.',
+        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+      ),
+      const SizedBox(height: 8),
+      InventoryEditor(
+        items: _inventory,
+        onChanged: (v) {
+          setState(() => _inventory = v);
+          _saveDraftDebounced();
+        },
+      ),
+    ]);
+  }
+
   Widget _buildPricingStep() {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -4106,8 +4261,30 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             const SizedBox(height: 24),
 
+            // How the place is let: decides what the rent figure means.
+            Text('How do you want to let it?', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            _stayChoice(
+              'yearly',
+              Icons.calendar_today_outlined,
+              'Yearly lease',
+              'A year at a time, renewed each year.',
+            ),
+            const SizedBox(height: 8),
+            _stayChoice(
+              'furnished',
+              Icons.weekend_outlined,
+              'Furnished stay',
+              '1 to 11 months, paid up front. For people back from abroad, '
+                  'contract workers and short projects.',
+            ),
+            const SizedBox(height: 20),
+
             // Rent amount with comma formatting
-            Text('Rent Amount (₦)', style: AppTextStyles.labelMedium),
+            Text(
+              _stayType == 'furnished' ? 'Monthly rent (₦)' : 'Rent Amount (₦)',
+              style: AppTextStyles.labelMedium,
+            ),
             const SizedBox(height: 8),
             _buildNairaInput(
               controller: _rentController,
@@ -4115,42 +4292,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             const SizedBox(height: 20),
 
-            // Rent period - yearly only at launch (monthly is v2; Lagos law caps
-            // yearly advance rent at one year, which the lifecycle relies on).
-            Text('Rent Period', style: AppTextStyles.labelMedium),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(26),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today_outlined,
-                    size: 16,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Per Year',
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Monthly coming soon',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
+            if (_stayType == 'furnished') ...[
+              _buildStayLengths(),
+              const SizedBox(height: 24),
+            ],
 
             // Agent fee toggle (optional)
             _buildYesNoTile(
@@ -4884,7 +5029,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'After the first year, renewal is just ₦${_formatAmount(rent)}${_rentPeriod == 'yearly' ? '/year' : '/month'}',
+            _stayType == 'furnished'
+                ? 'Tenants pay for their whole stay up front: ₦${_formatAmount(rent)} '
+                    'a month, for $_minStay to $_maxStay months.'
+                : 'After the first year, renewal is just ₦${_formatAmount(rent)}${_rentPeriod == 'yearly' ? '/year' : '/month'}',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
               fontStyle: FontStyle.italic,
@@ -6852,6 +7000,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _buildPreviewSection(
             'Furnishing',
             PropertyModel.furnishingLabelFor(_furnishing),
+          ),
+          _buildPreviewSection(
+            'Let as',
+            _stayType == 'furnished'
+                ? 'Furnished stay, $_minStay to $_maxStay months, '
+                    '${_inventory.length} item${_inventory.length == 1 ? '' : 's'} listed'
+                : 'Yearly lease',
           ),
           _buildPreviewSection(
             'Inspections',

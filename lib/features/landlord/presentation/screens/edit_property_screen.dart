@@ -19,6 +19,7 @@ import '../../../../shared/widgets/top_alert.dart';
 import '../../../../services/property_service.dart';
 import '../../../../services/caretaker_service.dart';
 import '../widgets/furnishing_picker.dart';
+import '../widgets/inventory_editor.dart';
 import '../../../../services/conversation_service.dart';
 
 /// Custom formatter that adds commas to numbers as you type
@@ -139,6 +140,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   // sitting, same as the amount - the promise can't change mid-tenancy.
   late bool _cautionDepositRefundable;
   String? _furnishing;
+  late String _stayType;
+  late int _minStay;
+  late int _maxStay;
+  DateTime? _availableFrom;
+  late List<InventoryItem> _inventory;
   final List<String> _ceilingTypes = [];
 
   // Caretaker. Read-only here on purpose: `caretakerId` is admin-SDK-only, so
@@ -298,6 +304,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     _includeAgentFee = p.agentFee > 0; // Derive from existing data
     _cautionDepositRefundable = p.cautionDepositRefundable;
     _furnishing = p.furnishing;
+    _stayType = p.stayType;
+    _minStay = p.minStayMonths > 0 ? p.minStayMonths : 1;
+    _maxStay = p.maxStayMonths > 0 ? p.maxStayMonths : 6;
+    _availableFrom = p.availableFrom;
+    _inventory = List.of(p.inventory);
     
     // Initialize inspection availability
     _availableDays = List.from(p.inspectionDays);
@@ -560,6 +571,21 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
   }
 
   bool _validateForm() {
+    // firestore.rules stayValid() refuses these; say why here instead.
+    if (_stayType == 'furnished') {
+      if (_furnishing != 'fully') {
+        _showError('A furnished stay must be fully furnished.');
+        return false;
+      }
+      if (_minStay > _maxStay) {
+        _showError('The shortest stay cannot be longer than the longest.');
+        return false;
+      }
+      if (_inventory.isEmpty) {
+        _showError('List at least one item that comes with the place.');
+        return false;
+      }
+    }
     if (_existingImageUrls.isEmpty && _newImageFiles.isEmpty) {
       _showError('Please add at least one photo');
       return false;
@@ -743,6 +769,15 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         if (!hasActiveTenants) ...{
           'rent': _parseRentAmount(),
           'rentFrequency': _rentPeriod,
+          // How it is let. Frozen with the price while a tenant is in.
+          'stayType': _stayType,
+          if (_stayType == 'furnished') ...{
+            'minStayMonths': _minStay,
+            'maxStayMonths': _maxStay,
+            if (_availableFrom != null)
+              'availableFrom': Timestamp.fromDate(_availableFrom!),
+            'inventory': _inventory.map((i) => i.toMap()).toList(),
+          },
           'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
           'cautionDeposit': _parseAmountFromController(_cautionDepositController),
           'cautionDepositRefundable': _cautionDepositRefundable,
@@ -1690,13 +1725,130 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
     );
   }
 
+  Widget _stayChoice(String value, String title, bool locked) {
+    final on = _stayType == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: locked
+          ? null
+          : () => setState(() {
+                _stayType = value;
+                _rentPeriod = value == 'furnished' ? 'monthly' : 'yearly';
+                if (value == 'furnished') _furnishing = 'fully';
+                _hasChanges = true;
+              }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: on ? AppColors.primary.withAlpha(20) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: on ? AppColors.primary : AppColors.border),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(title,
+                style: AppTextStyles.labelMedium.copyWith(
+                    color: on ? AppColors.primary : AppColors.textPrimary)),
+          ),
+          if (on) Icon(Icons.check_circle, size: 18, color: AppColors.primary),
+        ]),
+      ),
+    );
+  }
+
+  /// Lengths, available-from and the item list. Locked while a tenant is in:
+  /// the item list is what move-out is checked against.
+  Widget _buildStayDetails(bool locked) {
+    Widget months(String label, int value, ValueChanged<int> set) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+            Row(children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: !locked && value > 1
+                    ? () => setState(() {
+                          set(value - 1);
+                          _hasChanges = true;
+                        })
+                    : null,
+              ),
+              Text('$value', style: AppTextStyles.h4),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: !locked && value < 11
+                    ? () => setState(() {
+                          set(value + 1);
+                          _hasChanges = true;
+                        })
+                    : null,
+              ),
+            ]),
+          ]),
+        );
+    final from = _availableFrom;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('How long can tenants stay? (months)', style: AppTextStyles.labelMedium),
+      Row(children: [
+        months('Shortest', _minStay, (v) => _minStay = v),
+        months('Longest', _maxStay, (v) => _maxStay = v),
+      ]),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        icon: const Icon(Icons.event_outlined, size: 18),
+        label: Text(from == null
+            ? 'Available now'
+            : 'Available from ${from.day}/${from.month}/${from.year}'),
+        onPressed: locked
+            ? null
+            : () async {
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: from != null && from.isAfter(now) ? from : now,
+                  firstDate: DateTime(now.year, now.month, now.day),
+                  lastDate: now.add(const Duration(days: 365)),
+                );
+                if (picked != null) {
+                  setState(() {
+                    _availableFrom = picked;
+                    _hasChanges = true;
+                  });
+                }
+              },
+      ),
+      const SizedBox(height: 16),
+      Text("What's included", style: AppTextStyles.labelMedium),
+      if (locked)
+        Text('Locked while a tenant is living here.',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+      const SizedBox(height: 8),
+      InventoryEditor(
+        items: _inventory,
+        onChanged: locked
+            ? null
+            : (v) => setState(() {
+                  _inventory = v;
+                  _hasChanges = true;
+                }),
+      ),
+    ]);
+  }
+
   Widget _buildPricingSection() {
     final hasActiveTenants = (widget.property.currentTenantsCount ?? 0) > 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Rent Amount (₦)', style: AppTextStyles.labelMedium),
+        Text('How it is let', style: AppTextStyles.labelMedium),
+        const SizedBox(height: 8),
+        _stayChoice('yearly', 'Yearly lease', hasActiveTenants),
+        const SizedBox(height: 8),
+        _stayChoice('furnished', 'Furnished stay (1 to 11 months, paid up front)',
+            hasActiveTenants),
+        const SizedBox(height: 20),
+        Text(_stayType == 'furnished' ? 'Monthly rent (₦)' : 'Rent Amount (₦)',
+            style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
 
         if (hasActiveTenants) ...[
@@ -1727,38 +1879,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ],
         const SizedBox(height: 16),
 
-        Text('Rent Period', style: AppTextStyles.labelMedium),
-        const SizedBox(height: 8),
-        // Frequency is no longer switchable - yearly only at launch (monthly is
-        // v2). Existing monthly properties keep their stored value (shown as-is,
-        // not rewritten); new ones are always yearly.
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.calendar_today_outlined,
-                  size: 16, color: AppColors.textSecondary),
-              const SizedBox(width: 8),
-              Text(
-                _rentPeriod == 'yearly' ? 'Per Year' : 'Per Month',
-                style: AppTextStyles.labelMedium,
-              ),
-              const Spacer(),
-              if (_rentPeriod == 'yearly')
-                Text(
-                  'Monthly coming soon',
-                  style: AppTextStyles.caption
-                      .copyWith(color: AppColors.textHint),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
+        if (_stayType == 'furnished') ...[
+          _buildStayDetails(hasActiveTenants),
+          const SizedBox(height: 24),
+        ],
 
         // Agent Fee (optional toggle)
         Container(
