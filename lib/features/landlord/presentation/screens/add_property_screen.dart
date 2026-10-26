@@ -5038,6 +5038,31 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               fontStyle: FontStyle.italic,
             ),
           ),
+          // What the landlord pays: a fixed service fee for the rent's band,
+          // out of the rent when a tenant pays. A furnished stay's band
+          // depends on how long the tenant books, so it is a range.
+          const SizedBox(height: 8),
+          Builder(builder: (_) {
+            final pricing = PricingService().current;
+            final String fee;
+            if (_stayType == 'furnished') {
+              final low = pricing.landlordServiceFee(rent * _minStay);
+              final high = pricing.landlordServiceFee(rent * _maxStay);
+              fee = low == high
+                  ? '₦${_formatAmount(low)}'
+                  : '₦${_formatAmount(low)} to ₦${_formatAmount(high)}, '
+                      'depending on how long the tenant stays';
+            } else {
+              fee = '₦${_formatAmount(pricing.landlordServiceFee(rent))}';
+            }
+            return Text(
+              'ClearRent service fee when you get a tenant: $fee, taken from '
+              'the rent.',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            );
+          }),
           // Recurring dues summary
           if (_totalDuesYearly() > 0) ...[
             const SizedBox(height: 16),

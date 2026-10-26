@@ -1960,6 +1960,17 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           color: AppColors.textSecondary,
                         ),
                       ),
+                      // The landlord's side of it, fixed when the tenant
+                      // asked: the band fee comes out of the rent.
+                      if (interest.landlordPayout > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'ClearRent service fee: '
+                          '₦${_formatAmount(interest.landlordDealFee)}. You '
+                          'receive ₦${_formatAmount(interest.landlordPayout)}.',
+                          style: AppTextStyles.bodySmall,
+                        ),
+                      ],
                     ],
                   ),
                 ),

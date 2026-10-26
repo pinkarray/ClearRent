@@ -59,6 +59,11 @@ class PlatformPricing {
   /// tenant's share added on top of rent at payment time.
   final double dealFee;
 
+  /// The landlord's (and agent's) service fee by rent band, lowest first; the
+  /// last band has no ceiling. Mirrors serviceFeeBands in pricing.ts, which is
+  /// what is actually charged.
+  final List<FeeBand> serviceFeeBands;
+
   /// Charged to the tenant on each furnished-stay extension, on top of the
   /// rent for the added months (all of which goes to the landlord).
   final double extensionFee;
@@ -78,6 +83,7 @@ class PlatformPricing {
     required this.inspectionHandler,
     required this.inspectionPlatform,
     required this.dealFee,
+    this.serviceFeeBands = FeeBand.defaults,
     required this.extensionFee,
     required this.minRent,
   });
@@ -95,6 +101,15 @@ class PlatformPricing {
     extensionFee: 2500,
     minRent: 10000,
   );
+
+  /// The landlord's service fee for a deal of this rent (a furnished stay's
+  /// whole stay), taken out of the rent.
+  double landlordServiceFee(double rent) {
+    for (final b in serviceFeeBands) {
+      if (b.upTo == null || rent <= b.upTo!) return b.landlord;
+    }
+    return serviceFeeBands.isEmpty ? 0 : serviceFeeBands.last.landlord;
+  }
 
   /// The fee to show for [accountType].
   ///
@@ -133,6 +148,7 @@ class PlatformPricing {
       inspectionPlatform:
           _asDouble(i['platform'], fallback.inspectionPlatform),
       dealFee: _asDouble(map['dealFee'], fallback.dealFee),
+      serviceFeeBands: FeeBand.listFrom(map['serviceFeeBands']),
       extensionFee: _asDouble(map['extensionFee'], fallback.extensionFee),
       minRent: _asDouble(map['minRent'], fallback.minRent),
     );
@@ -243,5 +259,41 @@ class PricingService {
       '${lgas is Map ? ', ${lgas.length} extra LGA(s)' : ''}',
       name: 'PricingService',
     );
+  }
+}
+
+/// One rent band of the landlord's and agent's service fee.
+class FeeBand {
+  final double? upTo;
+  final double landlord;
+  final double agent;
+  const FeeBand({required this.upTo, required this.landlord, required this.agent});
+
+  /// Mirrors DEFAULT_PRICING.serviceFeeBands in functions/src/pricing.ts.
+  static const defaults = [
+    FeeBand(upTo: 300000, landlord: 7500, agent: 3750),
+    FeeBand(upTo: 700000, landlord: 15000, agent: 7500),
+    FeeBand(upTo: 1500000, landlord: 30000, agent: 15000),
+    FeeBand(upTo: 3000000, landlord: 50000, agent: 25000),
+    FeeBand(upTo: null, landlord: 75000, agent: 37500),
+  ];
+
+  /// The configured bands, or the defaults if any entry is malformed (the
+  /// server falls back the same way).
+  static List<FeeBand> listFrom(dynamic raw) {
+    if (raw is! List || raw.isEmpty) return defaults;
+    final out = <FeeBand>[];
+    for (final b in raw) {
+      if (b is! Map || b['landlord'] is! num || b['agent'] is! num) return defaults;
+      final upTo = b['upTo'];
+      if (upTo != null && upTo is! num) return defaults;
+      out.add(FeeBand(
+        upTo: (upTo as num?)?.toDouble(),
+        landlord: (b['landlord'] as num).toDouble(),
+        agent: (b['agent'] as num).toDouble(),
+      ));
+    }
+    out.sort((x, y) => (x.upTo ?? double.infinity).compareTo(y.upTo ?? double.infinity));
+    return out.last.upTo == null ? out : defaults;
   }
 }
