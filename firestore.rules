@@ -1247,12 +1247,6 @@ service cloud.firestore {
           && resource.data.agentId == request.auth.uid;
       }
       
-      // Convenience wrapper for the hasOnly() check.
-      function inspFields(fields) {
-        return request.resource.data.diff(resource.data)
-          .affectedKeys().hasOnly(fields);
-      }
-      
       // Receiver of the current reschedule proposal - i.e. the
       // opposite side from whoever proposed it. Used by row 17, 18,
       // 19 (counter, approve, decline of an existing proposal).
@@ -1380,267 +1374,269 @@ service cloud.firestore {
       allow delete: if false;
       
       // ─── State-machine updates (closes F1.6 + F1.12) ─────────
-      
-      // [Row 14a] Handler approves request (normal).
-      // Site: inspection_service.dart:627
-      allow update: if isHandler()
-        && actorHasBankDetails()
-        && (resource.data.status == 'pending'
-            || resource.data.status == 'pendingVerification')
-        && request.resource.data.status == 'approved'
-        && inspFields(['status', 'updatedAt']);
-
-      // [Row 14b] Landlord overrides agent decline by approving.
-      // Site: inspection_service.dart:627 (override branch)
-      allow update: if isLandlord()
-        && actorHasBankDetails()
-        && resource.data.status == 'declinedByAgent'
-        && request.resource.data.status == 'approved'
-        && inspFields(['status', 'updatedAt',
-                       'wasOverridden', 'overriddenBy']);
-      
-      // [Row 1] Agent declines request.
-      // Site: inspection_service.dart:751
-      allow update: if isAgent()
-        && (resource.data.status == 'pending'
-            || resource.data.status == 'pendingVerification')
-        && request.resource.data.status == 'declinedByAgent'
-        && inspFields(['status', 'declinedBy', 'declineReason',
-                       'declinedAt', 'landlordOverrideDeadline',
-                       'originalDeclineBy', 'updatedAt']);
-      
-      // [Row 2] finalDeclineRequest - auto-decline after 12hr
-      // deadline. No mobile clause. Will be CF-only when implemented
-      // (see parking lot). Admin SDK bypasses these rules.
-      
-      // [Row 3] Landlord declines (initial or override).
-      // Site: inspection_service.dart:854
-      allow update: if isLandlord()
-        && (resource.data.status == 'pending'
-            || resource.data.status == 'pendingVerification'
-            || resource.data.status == 'approved')
-        && request.resource.data.status == 'declined'
-        && inspFields(['status', 'declinedBy', 'declineReason',
-                       'declinedAt', 'wasOverridden', 'overriddenBy',
-                       'updatedAt']);
-      
-      // [Row 4] Tenant marks themselves arrived.
-      // Site: inspection_service.dart:907
-      allow update: if isTenant()
-        && resource.data.status == 'approved'
-        && withinInspectionWindow()
-        && resource.data.get('viewingMode', 'in_person') != 'video'
-        && inspFields(['tenantArrived', 'tenantArrivedAt', 'updatedAt']);
-
-      // [Row 5] Handler marks themselves arrived.
-      // Site: inspection_service.dart:961
       //
-      // Neither tap applies to a video viewing: there the server records
-      // arrival itself, the handler's only after a GPS check against the
-      // property's confirmed pin (startVideoViewing) and the tenant's on
-      // joining the call. A tap would let a handler "arrive" from home.
-      allow update: if isHandler()
-        && resource.data.status == 'approved'
-        && withinInspectionWindow()
-        && resource.data.get('viewingMode', 'in_person') != 'video'
-        && inspFields(['handlerArrived', 'handlerArrivedAt', 'updatedAt']);
-      
-      // [Row 6] Handler marks inspection complete. Triggers W1
-      // creditInspectionEarnings CF. A meeting requires BOTH halves, so the
-      // handler can't complete until the tenant has also confirmed.
-      // Defensive: the flags may be absent on legacy/test docs; use `in`.
-      allow update: if isHandler()
-        && resource.data.status == 'approved'
-        && 'tenantConfirmedMet' in resource.data
-        && resource.data.tenantConfirmedMet == true
-        && 'handlerConfirmedMet' in resource.data
-        && resource.data.handlerConfirmedMet == true
-        && request.resource.data.status == 'completed'
-        && inspFields(['status', 'completedAt', 'agentPayoutStatus',
-                       'completedBy', 'completedByType', 'updatedAt']);
-      
-      // [Row 7] Tenant rates the inspection post-completion.
-      // Site: inspection_service.dart:1129
-      // Note: tenantRated field may be absent on never-rated docs.
-      // Use `in` check to avoid evaluation error on missing field.
-      allow update: if isTenant()
-        && resource.data.status == 'completed'
-        && (!('tenantRated' in resource.data)
-            || resource.data.tenantRated != true)
-        && inspFields(['tenantRating', 'tenantReview', 'tenantRated',
-                       'ratingSubmittedAt', 'ratedUserId',
-                       'ratedUserType', 'ratedUserName', 'updatedAt']);
+      // ONE function, not 27 `allow update` rows. Rules are tried in order and
+      // stop at the first yes, and every row used to recompute the changed
+      // fields and the caller's role before reaching what made it different,
+      // so late rows used up to ~75% of Firestore's 1000-expression budget
+      // (firestore-tests/measure_rule_headroom.mjs). Grouped like this they
+      // use ~17-21% (2026-10-26). Here the changed
+      // fields and both statuses are worked out ONCE, and each row leads with
+      // its cheapest distinguishing check - the new status, or the exact set
+      // of fields - so only the row that can match pays for its role and
+      // state checks. Every row keeps the conditions it had; the [Row N]
+      // labels and Site notes are unchanged. Rows 10 and 11 (admin verifies /
+      // rejects a payment) are covered by the admin rule below.
+      //
+      // Every row must keep an "allowed" test in rules.test.mjs, or a row
+      // pushed over the limit fails users as a bare permission-denied.
+      function viewingUpdateAllowed() {
+        let keys = request.resource.data.diff(resource.data).affectedKeys();
+        let from = resource.data.get('status', '');
+        let to = request.resource.data.get('status', '');
+        let approved = from == 'approved';
+        return
+          // ── Status changes: keyed on the status it moves to ──
 
-      // [Row 8] Tenant withdraws a request nothing has been paid for:
-      // waiting for approval, or approved but unpaid. This allowed only the
-      // old pay-first 'pendingPayment', which new requests never reach, so a
-      // tenant could not back out at all and an abandoned approval held the
-      // handler's slot until its date lapsed. A paid inspection is cancelled
-      // by the handler (Row 21), which refunds it.
-      // Site: inspection_service.dart cancelRequest, web lib/inspections.ts
-      allow update: if isTenant()
-        && resource.data.status in ['pendingPayment', 'pending', 'approved']
-        && resource.data.get('paymentStatus', 'unpaid') != 'paid'
-        && request.resource.data.status == 'cancelled'
-        && request.resource.data.get('cancelledBy', 'tenant') == 'tenant'
-        && inspFields(['status', 'cancelledBy', 'updatedAt']);
-      
-      // [Row 9] _processRefund - subroutine called after a paid
-      // inspection is declined or cancelled. Inherits caller's auth.
-      // Site: inspection_service.dart:2103
-      allow update: if (isLandlord() || isTenant() || isHandler())
-        && resource.data.paymentStatus == 'paid'
-        && request.resource.data.paymentStatus == 'refunded'
-        && inspFields(['paymentStatus', 'refundedAt', 'refundReason']);
-      
-      // [Row 10] Admin verifies payment.
-      // Site: inspection_service.dart:2164
-      allow update: if isAdmin()
-        && resource.data.status == 'pendingPayment'
-        && inspFields(['paymentStatus', 'paymentVerifiedAt',
-                       'paymentVerifiedBy', 'paidAt', 'status',
-                       'updatedAt']);
-      
-      // [Row 11] Admin rejects payment.
-      // Site: inspection_service.dart:2232
-      allow update: if isAdmin()
-        && resource.data.status == 'pendingPayment'
-        && inspFields(['paymentStatus', 'status', 'declineReason',
-                       'updatedAt']);
-            
-      // [Row 13] Handler confirms they received payment.
-      // Site: inspection_service.dart:2408
-      allow update: if isHandler()
-        && resource.data.agentPayoutStatus == 'paid'
-        && inspFields(['agentConfirmedPayment', 'agentConfirmedAt',
-                       'updatedAt']);
-      
-      // [Row 15a] Tenant records THEIR half of the meeting. Both must have
-      // arrived, and the tenant may only set their own flag - the rule's
-      // field allow-list makes it impossible to also flip the handler's.
-      // Site: inspection_service.dart markMet
-      allow update: if isTenant()
-        && resource.data.status == 'approved'
-        && resource.data.tenantArrived == true
-        && resource.data.handlerArrived == true
-        && request.resource.data.tenantConfirmedMet == true
-        && inspFields(['tenantConfirmedMet', 'tenantConfirmedMetAt',
-                       'updatedAt']);
+          // [Row 14a] Handler approves request (normal).
+          // Site: inspection_service.dart:627
+          (to == 'approved'
+            && (from == 'pending' || from == 'pendingVerification')
+            && keys.hasOnly(['status', 'updatedAt'])
+            && isHandler()
+            && actorHasBankDetails())
 
-      // [Row 15b] Handler records THEIR half of the meeting. Same both-arrived
-      // gate; can only set the handler's own flag.
-      // Site: inspection_service.dart markMet
-      allow update: if isHandler()
-        && resource.data.status == 'approved'
-        && resource.data.tenantArrived == true
-        && resource.data.handlerArrived == true
-        && request.resource.data.handlerConfirmedMet == true
-        && inspFields(['handlerConfirmedMet', 'handlerConfirmedMetAt',
-                       'updatedAt']);
-      
-      // [Row 16] Propose a reschedule.
-      // Site: inspection_service.dart:1358
-      allow update: if (isTenant() || isHandler())
-        && resource.data.status == 'approved'
-        && (!('rescheduleProposal' in resource.data)
-            || resource.data.rescheduleProposal == null)
-        && (!('rescheduleCount' in resource.data)
-            || resource.data.rescheduleCount < 2)
-        && inspFields(['rescheduleProposal', 'updatedAt']);
-      
-      // [Row 17] Counter-propose a reschedule.
-      // Site: inspection_service.dart:1439
-      allow update: if isRescheduleReceiver()
-        && resource.data.status == 'approved'
-        && inspFields(['rescheduleProposal', 'updatedAt']);
-      
-      // [Row 18] Approve a reschedule. Resets arrival/on-way flags
-      // and bumps rescheduleCount.
-      // Site: inspection_service.dart:1494
-      allow update: if isRescheduleReceiver()
-        && resource.data.status == 'approved'
-        && inspFields(['requestedDate', 'requestedTimeSlot',
-                       'requestedTimeDisplay', 'rescheduleProposal',
-                       'rescheduleCount',
-                       'tenantArrived', 'tenantArrivedAt',
-                       'handlerArrived', 'handlerArrivedAt',
-                       'tenantOnWay', 'tenantOnWayAt',
-                       'handlerOnWay', 'handlerOnWayAt',
-                       'updatedAt']);
-      
-      // [Row 19] Decline a reschedule. Triggers refund via
-      // _processRefund subroutine (row 9 clause).
-      // Site: inspection_service.dart:1562
-      // [Row 19] Decline a reschedule. Triggers refund via
-      // _processRefund subroutine (row 9 clause).
-      // Site: inspection_service.dart:1562
-      allow update: if isRescheduleReceiver()
-        && resource.data.status == 'approved'
-        && request.resource.data.status == 'declined'
-        && inspFields(['status', 'declinedBy', 'declineReason',
-                       'declinedAt', 'rescheduleProposal',
-                       'updatedAt']);
-      
-      // [Row 20] Abandon a reschedule proposal. Any party with a
-      // current proposal can clear it (including the proposer who
-      // wants to back out).
-      // Site: inspection_service.dart:1608
-      allow update: if (isTenant() || isHandler())
-        && 'rescheduleProposal' in resource.data
-        && resource.data.rescheduleProposal != null
-        && inspFields(['rescheduleProposal', 'updatedAt']);
-      
-      // [Row 21] Handler cancels inspection on tenant's behalf.
-      // Triggers refund via _processRefund (row 9 clause).
-      // Site: inspection_service.dart:~1815
-      allow update: if isHandler()
-        && (resource.data.status == 'pending'
-            || resource.data.status == 'approved')
-        && request.resource.data.status == 'cancelled'
-        && inspFields(['status', 'cancelledBy', 'cancellationReason',
-                       'cancelledAt', 'rescheduleProposal',
-                       'updatedAt']);
-      
-      // [Row 22] Tenant marks they're on the way.
-      // Site: inspection_service.dart:1655
-      allow update: if isTenant()
-        && resource.data.status == 'approved'
-        && inspFields(['tenantOnWay', 'tenantOnWayAt', 'updatedAt']);
-      
-      // [Row 23] Handler marks they're on the way.
-      // Site: inspection_service.dart:1702
-      allow update: if isHandler()
-        && resource.data.status == 'approved'
-        && inspFields(['handlerOnWay', 'handlerOnWayAt', 'updatedAt']);
-      
-      // [Row 24] Tenant passes on renting after a completed inspection.
-      // Re-locks the exact address back to approximate.
-      // Site: inspection_service.dart markTenantPassed
-      allow update: if isTenant()
-        && resource.data.status == 'completed'
-        && request.resource.data.tenantPassed == true
-        && inspFields(['tenantPassed', 'updatedAt']);
-      
-      // [Row 25] Tenant reschedules an inspection that expired unapproved,
-      // or one an admin let them rebook after a missed or disputed viewing
-      // (adminResolveInspection 'rebook'). Either way it re-enters the
-      // approval queue with a new date and the payment is kept.
-      // Site: inspection_service.dart rescheduleExpiredInspection
-      allow update: if isTenant()
-        && resource.data.status in ['expiredUnapproved', 'rebookOffered']
-        && request.resource.data.status == 'pending'
-        && inspFields(['status', 'requestedDate', 'requestedTimeSlot',
-            'updatedAt']);
+          // [Row 14b] Landlord overrides agent decline by approving.
+          // Site: inspection_service.dart:627 (override branch)
+          || (to == 'approved'
+            && from == 'declinedByAgent'
+            && keys.hasOnly(['status', 'updatedAt',
+                             'wasOverridden', 'overriddenBy'])
+            && isLandlord()
+            && actorHasBankDetails())
 
-      // [Row 26] Tenant takes the refund instead of rescheduling an
-      // expired-unapproved inspection.
-      // Site: inspection_service.dart refundExpiredInspection
-      allow update: if isTenant()
-        && resource.data.status == 'expiredUnapproved'
-        && request.resource.data.status == 'refunded'
-        && request.resource.data.paymentStatus == 'refunded'
-        && inspFields(['status', 'paymentStatus', 'refundReason',
-            'refundedAt', 'updatedAt']);
+          // [Row 1] Agent declines request.
+          // Site: inspection_service.dart:751
+          || (to == 'declinedByAgent'
+            && (from == 'pending' || from == 'pendingVerification')
+            && keys.hasOnly(['status', 'declinedBy', 'declineReason',
+                             'declinedAt', 'landlordOverrideDeadline',
+                             'originalDeclineBy', 'updatedAt'])
+            && isAgent())
+
+          // [Row 2] finalDeclineRequest - auto-decline after 12hr
+          // deadline. No mobile clause. Will be CF-only when implemented
+          // (see parking lot). Admin SDK bypasses these rules.
+
+          // [Row 3] Landlord declines (initial or override).
+          // Site: inspection_service.dart:854
+          || (to == 'declined'
+            && (from == 'pending' || from == 'pendingVerification'
+                || approved)
+            && keys.hasOnly(['status', 'declinedBy', 'declineReason',
+                             'declinedAt', 'wasOverridden', 'overriddenBy',
+                             'updatedAt'])
+            && isLandlord())
+
+          // [Row 19] Decline a reschedule. Triggers refund via
+          // _processRefund subroutine (row 9 clause).
+          // Site: inspection_service.dart:1562
+          || (to == 'declined'
+            && approved
+            && keys.hasOnly(['status', 'declinedBy', 'declineReason',
+                             'declinedAt', 'rescheduleProposal',
+                             'updatedAt'])
+            && isRescheduleReceiver())
+
+          // [Row 6] Handler marks inspection complete. Triggers W1
+          // creditInspectionEarnings CF. A meeting requires BOTH halves, so
+          // the handler can't complete until the tenant has also confirmed.
+          // Defensive: the flags may be absent on legacy/test docs.
+          || (to == 'completed'
+            && approved
+            && keys.hasOnly(['status', 'completedAt', 'agentPayoutStatus',
+                             'completedBy', 'completedByType', 'updatedAt'])
+            && resource.data.get('tenantConfirmedMet', false) == true
+            && resource.data.get('handlerConfirmedMet', false) == true
+            && isHandler())
+
+          // [Row 8] Tenant withdraws a request nothing has been paid for:
+          // waiting for approval, or approved but unpaid. This allowed only
+          // the old pay-first 'pendingPayment', which new requests never
+          // reach, so a tenant could not back out at all and an abandoned
+          // approval held the handler's slot until its date lapsed. A paid
+          // inspection is cancelled by the handler (Row 21), which refunds it.
+          // Site: inspection_service.dart cancelRequest, web lib/inspections.ts
+          || (to == 'cancelled'
+            && from in ['pendingPayment', 'pending', 'approved']
+            && keys.hasOnly(['status', 'cancelledBy', 'updatedAt'])
+            && resource.data.get('paymentStatus', 'unpaid') != 'paid'
+            && request.resource.data.get('cancelledBy', 'tenant') == 'tenant'
+            && isTenant())
+
+          // [Row 21] Handler cancels inspection on tenant's behalf.
+          // Triggers refund via _processRefund (row 9 clause).
+          // Site: inspection_service.dart:~1815
+          || (to == 'cancelled'
+            && (from == 'pending' || approved)
+            && keys.hasOnly(['status', 'cancelledBy', 'cancellationReason',
+                             'cancelledAt', 'rescheduleProposal',
+                             'updatedAt'])
+            && isHandler())
+
+          // [Row 25] Tenant reschedules an inspection that expired
+          // unapproved, or one an admin let them rebook after a missed or
+          // disputed viewing (adminResolveInspection 'rebook'). Either way it
+          // re-enters the approval queue with a new date and the payment is
+          // kept.
+          // Site: inspection_service.dart rescheduleExpiredInspection
+          || (to == 'pending'
+            && from in ['expiredUnapproved', 'rebookOffered']
+            && keys.hasOnly(['status', 'requestedDate', 'requestedTimeSlot',
+                             'updatedAt'])
+            && isTenant())
+
+          // [Row 26] Tenant takes the refund instead of rescheduling an
+          // expired-unapproved inspection.
+          // Site: inspection_service.dart refundExpiredInspection
+          || (to == 'refunded'
+            && from == 'expiredUnapproved'
+            && keys.hasOnly(['status', 'paymentStatus', 'refundReason',
+                             'refundedAt', 'updatedAt'])
+            && request.resource.data.get('paymentStatus', '') == 'refunded'
+            && isTenant())
+
+          // ── Same status: keyed on the exact fields that change ──
+
+          // [Row 9] _processRefund - subroutine called after a paid
+          // inspection is declined or cancelled. Inherits caller's auth.
+          // Site: inspection_service.dart:2103
+          || (keys.hasOnly(['paymentStatus', 'refundedAt', 'refundReason'])
+            && request.resource.data.get('paymentStatus', '') == 'refunded'
+            && resource.data.get('paymentStatus', '') == 'paid'
+            && (isLandlord() || isTenant() || isHandler()))
+
+          // [Row 22] Tenant marks they're on the way.
+          // Site: inspection_service.dart:1655
+          || (keys.hasOnly(['tenantOnWay', 'tenantOnWayAt', 'updatedAt'])
+            && approved
+            && isTenant())
+
+          // [Row 23] Handler marks they're on the way.
+          // Site: inspection_service.dart:1702
+          || (keys.hasOnly(['handlerOnWay', 'handlerOnWayAt', 'updatedAt'])
+            && approved
+            && isHandler())
+
+          // [Row 4] Tenant marks themselves arrived.
+          // Site: inspection_service.dart:907
+          || (keys.hasOnly(['tenantArrived', 'tenantArrivedAt', 'updatedAt'])
+            && approved
+            && resource.data.get('viewingMode', 'in_person') != 'video'
+            && withinInspectionWindow()
+            && isTenant())
+
+          // [Row 5] Handler marks themselves arrived.
+          // Site: inspection_service.dart:961
+          //
+          // Neither tap applies to a video viewing: there the server records
+          // arrival itself, the handler's only after a GPS check against the
+          // property's confirmed pin (startVideoViewing) and the tenant's on
+          // joining the call. A tap would let a handler "arrive" from home.
+          || (keys.hasOnly(['handlerArrived', 'handlerArrivedAt',
+                            'updatedAt'])
+            && approved
+            && resource.data.get('viewingMode', 'in_person') != 'video'
+            && withinInspectionWindow()
+            && isHandler())
+
+          // [Row 15a] Tenant records THEIR half of the meeting. Both must
+          // have arrived, and the tenant may only set their own flag - the
+          // field allow-list makes it impossible to also flip the handler's.
+          // Site: inspection_service.dart markMet
+          || (keys.hasOnly(['tenantConfirmedMet', 'tenantConfirmedMetAt',
+                            'updatedAt'])
+            && approved
+            && request.resource.data.get('tenantConfirmedMet', false) == true
+            && resource.data.get('tenantArrived', false) == true
+            && resource.data.get('handlerArrived', false) == true
+            && isTenant())
+
+          // [Row 15b] Handler records THEIR half of the meeting. Same
+          // both-arrived gate; can only set the handler's own flag.
+          // Site: inspection_service.dart markMet
+          || (keys.hasOnly(['handlerConfirmedMet', 'handlerConfirmedMetAt',
+                            'updatedAt'])
+            && approved
+            && request.resource.data.get('handlerConfirmedMet', false) == true
+            && resource.data.get('tenantArrived', false) == true
+            && resource.data.get('handlerArrived', false) == true
+            && isHandler())
+
+          // [Row 7] Tenant rates the inspection post-completion.
+          // Site: inspection_service.dart:1129
+          || (keys.hasOnly(['tenantRating', 'tenantReview', 'tenantRated',
+                            'ratingSubmittedAt', 'ratedUserId',
+                            'ratedUserType', 'ratedUserName', 'updatedAt'])
+            && from == 'completed'
+            && resource.data.get('tenantRated', false) != true
+            && isTenant())
+
+          // [Row 24] Tenant passes on renting after a completed inspection.
+          // Re-locks the exact address back to approximate.
+          // Site: inspection_service.dart markTenantPassed
+          || (keys.hasOnly(['tenantPassed', 'updatedAt'])
+            && from == 'completed'
+            && request.resource.data.get('tenantPassed', false) == true
+            && isTenant())
+
+          // [Row 13] Handler confirms they received payment.
+          // Site: inspection_service.dart:2408
+          || (keys.hasOnly(['agentConfirmedPayment', 'agentConfirmedAt',
+                            'updatedAt'])
+            && resource.data.get('agentPayoutStatus', '') == 'paid'
+            && isHandler())
+
+          // ── Rescheduling: rescheduleProposal changes ──
+
+          // [Row 16] Propose a reschedule.
+          // Site: inspection_service.dart:1358
+          || (keys.hasOnly(['rescheduleProposal', 'updatedAt'])
+            && approved
+            && resource.data.get('rescheduleProposal', null) == null
+            && resource.data.get('rescheduleCount', 0) < 2
+            && (isTenant() || isHandler()))
+
+          // [Row 17] Counter-propose a reschedule.
+          // Site: inspection_service.dart:1439
+          || (keys.hasOnly(['rescheduleProposal', 'updatedAt'])
+            && approved
+            && isRescheduleReceiver())
+
+          // [Row 20] Abandon a reschedule proposal. Any party with a
+          // current proposal can clear it (including the proposer who
+          // wants to back out).
+          // Site: inspection_service.dart:1608
+          || (keys.hasOnly(['rescheduleProposal', 'updatedAt'])
+            && resource.data.get('rescheduleProposal', null) != null
+            && (isTenant() || isHandler()))
+
+          // [Row 18] Approve a reschedule. Resets arrival/on-way flags
+          // and bumps rescheduleCount.
+          // Site: inspection_service.dart:1494
+          || (keys.hasOnly(['requestedDate', 'requestedTimeSlot',
+                            'requestedTimeDisplay', 'rescheduleProposal',
+                            'rescheduleCount',
+                            'tenantArrived', 'tenantArrivedAt',
+                            'handlerArrived', 'handlerArrivedAt',
+                            'tenantOnWay', 'tenantOnWayAt',
+                            'handlerOnWay', 'handlerOnWayAt',
+                            'updatedAt'])
+            && approved
+            && isRescheduleReceiver());
+      }
+
+      allow update: if request.auth != null && viewingUpdateAllowed();
 
       // Admin override - any legitimate admin intervention.
       allow update: if isAdmin();
