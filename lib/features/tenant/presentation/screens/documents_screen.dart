@@ -416,7 +416,7 @@ class _DocumentsScreenState extends State<DocumentsScreen>
           _buildDetail(
             Icons.payments_outlined,
             'Rent',
-            '₦${_formatAmount(rental.rentAmount)}/${rental.rentFrequency == 'yearly' ? 'yr' : 'mo'}',
+            '₦${_formatAmount(rental.displayRent)}/${rental.rentFrequency == 'yearly' ? 'yr' : 'mo'}',
           ),
 
           const SizedBox(height: 12),

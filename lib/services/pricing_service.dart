@@ -59,6 +59,10 @@ class PlatformPricing {
   /// tenant's share added on top of rent at payment time.
   final double dealFee;
 
+  /// Charged to the tenant on each furnished-stay extension, on top of the
+  /// rent for the added months (all of which goes to the landlord).
+  final double extensionFee;
+
   /// Lowest rent a property may be listed at. Below it the deal fee consumes
   /// the whole rent and the landlord nets nothing, so the listing can never
   /// pay anyone. Enforced server-side in firestore.rules; mirrored here only
@@ -74,6 +78,7 @@ class PlatformPricing {
     required this.inspectionHandler,
     required this.inspectionPlatform,
     required this.dealFee,
+    required this.extensionFee,
     required this.minRent,
   });
 
@@ -87,6 +92,7 @@ class PlatformPricing {
     inspectionHandler: 7000,
     inspectionPlatform: 3000,
     dealFee: 5000,
+    extensionFee: 2500,
     minRent: 10000,
   );
 
@@ -127,6 +133,7 @@ class PlatformPricing {
       inspectionPlatform:
           _asDouble(i['platform'], fallback.inspectionPlatform),
       dealFee: _asDouble(map['dealFee'], fallback.dealFee),
+      extensionFee: _asDouble(map['extensionFee'], fallback.extensionFee),
       minRent: _asDouble(map['minRent'], fallback.minRent),
     );
   }

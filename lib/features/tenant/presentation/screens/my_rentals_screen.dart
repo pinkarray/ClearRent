@@ -445,7 +445,7 @@ class _MyRentalsScreenState extends State<MyRentalsScreen> {
                     icon: Icons.payments_outlined,
                     label: 'Rent',
                     value:
-                        '₦${_formatAmount(rental.rentAmount)}${rental.rentPeriod}',
+                        '₦${_formatAmount(rental.displayRent)}${rental.rentPeriod}',
                   ),
                 ),
               ]),

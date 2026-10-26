@@ -680,7 +680,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '₦${_formatAmount(rental.rentAmount)}${rental.rentPeriod}',
+                        '₦${_formatAmount(rental.displayRent)}${rental.rentPeriod}',
                         style: AppTextStyles.naira(AppTextStyles.labelLarge)
                             .copyWith(color: AppColors.primary),
                       ),

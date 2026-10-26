@@ -5,6 +5,7 @@ import '../../../../core/constants/text_styles.dart';
 import '../../../../core/utils/inspection_pricing.dart';
 import '../../../../services/active_rental_service.dart';
 import '../../../../services/paystack_service.dart';
+import '../../../../services/pricing_service.dart';
 import '../../../../shared/models/active_rental_model.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
 import '../../../../shared/utils/sheet_insets.dart';
@@ -43,7 +44,9 @@ class _ExtendStaySheetState extends State<_ExtendStaySheet> {
   String? _error;
 
   int get _room => (widget.maxStay - widget.rental.stayMonths).clamp(0, 11);
-  double get _total => widget.rental.monthlyRent * _months;
+  double get _rent => widget.rental.monthlyRent * _months;
+  double get _fee => PricingService().current.extensionFee;
+  double get _total => _rent + _fee;
 
   Future<void> _pay() async {
     setState(() {
@@ -106,7 +109,8 @@ class _ExtendStaySheetState extends State<_ExtendStaySheet> {
           Text(
             _room == 0
                 ? 'This stay is already as long as the landlord allows.'
-                : 'You pay the rent for the extra months only. The landlord '
+                : 'You pay the rent for the extra months, which all goes to '
+                    'the landlord, plus a small processing fee. The landlord '
                     'allows up to ${widget.maxStay} months in all; you have '
                     '${r.stayMonths}.',
             style: AppTextStyles.bodySmall.copyWith(
@@ -136,7 +140,8 @@ class _ExtendStaySheetState extends State<_ExtendStaySheet> {
             const SizedBox(height: 8),
             Text(
               'Total: ${InspectionPricing.formatNaira(_total)} '
-              '(${InspectionPricing.formatNaira(r.monthlyRent)} x $_months)',
+              '(${InspectionPricing.formatNaira(r.monthlyRent)} x $_months '
+              '+ ${InspectionPricing.formatNaira(_fee)} processing)',
               style: AppTextStyles.labelMedium,
             ),
             if (_error != null) ...[

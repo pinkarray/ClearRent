@@ -380,6 +380,11 @@ class ActiveRental {
   
   String get formattedRent => '₦${formatAmount(rentAmount)}';
   String get rentPeriod => rentFrequency == 'yearly' ? '/year' : '/month';
+
+  /// The figure to show next to [rentPeriod]. A furnished stay's rentAmount is
+  /// the whole stay (monthly rent x months), so "/month" needs the monthly rent.
+  double get displayRent =>
+      stayType == 'furnished' && monthlyRent > 0 ? monthlyRent : rentAmount;
   
   /// Creates a lightweight ActiveRental from a TenancyLinkModel.
   /// Used so lease-details and report-issue screens work for linked tenants.
