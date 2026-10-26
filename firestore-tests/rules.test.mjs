@@ -352,6 +352,27 @@ test("non-admin writing a payout field - denied", async () => {
   );
 });
 
+// The furnished-stay move-in check gates the landlord's payout, so only the
+// callables (admin SDK) may move it. A landlord confirming for the tenant
+// would release their own money.
+test("landlord marking the move-in check confirmed - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      moveInCheck: "confirmed",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant writing the move-in check directly - denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
+      moveInCheck: "reported",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
 test("smuggling rentAmount alongside an allowlisted field - denied", async () => {
   // Proves the rule is hasOnly (allowlist), not just a single-field block:
   // an otherwise-valid agreement write that also touches rentAmount must fail.

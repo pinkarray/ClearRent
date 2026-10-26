@@ -64,6 +64,7 @@ import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlertOnce} from "./admin_alerts";
 import {getPricing} from "./pricing";
 import {lagosMidnight, stayEndDay} from "./furnished_stay";
+import {moveInHoldReason} from "./move_in_check_ops";
 
 interface BeneficiaryBank {
   bankName: string | null;
@@ -470,6 +471,9 @@ export const markRentLandlordPayoutPaid = onCall(
         // tenant's rent has actually been collected.
         assertAgreementFinalized(data);
         assertRentPaid(data);
+        // A furnished stay: not until the tenant's move-in check has passed.
+        const hold = moveInHoldReason(data);
+        if (hold) throw new HttpsError("failed-precondition", hold);
         guardStatusTransition(
           data.landlordPayoutStatus,
           "pending",

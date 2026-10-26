@@ -4946,6 +4946,11 @@ export {
 } from "./verification_ops";
 
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
+export {
+  confirmMoveIn,
+  reportMoveInProblem,
+  resolveMoveInReport,
+} from "./move_in_check_ops";
 export {confirmInspectionPayment} from "./inspection_payment_ops";
 export {confirmListingFee} from "./listing_fee_ops";
 

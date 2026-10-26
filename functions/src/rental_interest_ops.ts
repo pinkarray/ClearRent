@@ -16,12 +16,14 @@
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {
   lagosMidnight, parseStayChoice, type StayChoice,
 } from "./furnished_stay";
 import {defineSecret} from "firebase-functions/params";
 import {getPricing} from "./pricing";
+import {moveInCheckDeadline} from "./move_in_check_ops";
+import {writeNotificationOnce} from "./notification_helpers";
 import {verifyAndConsumeReference} from "./payment_verify";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
@@ -466,6 +468,18 @@ export const recordRentPayment = onCall(
         // not counted as occupying); flipping to active here is what fires the
         // occupancy recompute and takes the unit off the market.
         status: "active",
+        // A furnished stay is paid in full up front, so the landlord's payout
+        // waits for the tenant's 48-hour move-in check (move_in_check_ops).
+        ...(r.stayType === "furnished" ?
+          {
+            moveInCheck: "awaiting",
+            moveInCheckDeadline: moveInCheckDeadline(
+              (r.leaseStartDate as Timestamp | undefined)?.toDate() ??
+                new Date(),
+              new Date(),
+            ),
+          } :
+          {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -525,6 +539,19 @@ export const recordRentPayment = onCall(
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    // A furnished stay: tell the tenant the move-in check is theirs to do.
+    if (rentalQuery.docs[0].get("stayType") === "furnished") {
+      await writeNotificationOnce(`movein_${rentalRef.id}_opened`, {
+        userId: uid,
+        type: "move_in_check",
+        title: "Check the place when you move in",
+        body: "On move-in day you have 48 hours to confirm the place and its " +
+          "items match the listing, or report what does not. The landlord " +
+          "is paid after that.",
+        payload: {route: "/tenant/my-rentals"},
+      });
     }
 
     logger.info("Rent payment recorded server-side", {
