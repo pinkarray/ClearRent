@@ -454,6 +454,7 @@ export const markRentLandlordPayoutPaid = onCall(
       beneficiaryId: string | null;
       propertyId: string | null;
       propertyTitle: string | null;
+      cycle: number;
     }
 
     const sideEffect = await db.runTransaction<RentPayoutSideEffect>(
@@ -498,6 +499,9 @@ export const markRentLandlordPayoutPaid = onCall(
           beneficiaryId: readOptionalString(data, "landlordId"),
           propertyId: readOptionalString(data, "propertyId"),
           propertyTitle: readOptionalString(data, "propertyTitle"),
+          // A renewal or extension payout (payout_cycle.ts) is a new cycle
+          // and needs its own receipt; the first keeps its old id.
+          cycle: typeof data.payoutCycle === "number" ? data.payoutCycle : 0,
         };
       });
 
@@ -517,7 +521,8 @@ export const markRentLandlordPayoutPaid = onCall(
       amount: sideEffect.amount,
       propertyId: sideEffect.propertyId,
       propertyTitle: sideEffect.propertyTitle,
-      receiptDocId: `PAYOUT_LANDLORD_${input.docId}`,
+      receiptDocId: `PAYOUT_LANDLORD_${input.docId}` +
+        (sideEffect.cycle > 0 ? `_c${sideEffect.cycle}` : ""),
       activityTitle: "Rent Payout Sent",
       activityMessageBuilder: (a, p) =>
         `Your rent payout of ₦${a.toLocaleString("en-NG")} for ${p} ` +
@@ -982,6 +987,15 @@ async function writeRentPayoutSideEffects(
       "agent" :
       "landlord";
     await markEarningsRowPaid(`txn_${rentRef}_${role}`);
+  }
+  // Renewal / extension payments this payout settles (payout_cycle.ts).
+  if (!input.receiptDocId.startsWith("PAYOUT_AGENT_")) {
+    const cycleRefs = rental.get("payoutCycleReferences");
+    if (Array.isArray(cycleRefs)) {
+      for (const r of cycleRefs) {
+        if (typeof r === "string") await markEarningsRowPaid(`txn_${r}_landlord`);
+      }
+    }
   }
 
   // Mirrors the mobile pre-migration behaviour: if there's no

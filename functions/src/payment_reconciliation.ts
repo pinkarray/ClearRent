@@ -49,8 +49,18 @@ function targetOf(p: Doc): {path: string; field: string} | null {
     return id("rentalInterestId") ?
       {path: `rental_interests/${id("rentalInterestId")}`,
         field: "paymentReference"} : null;
-  case "verification":
+  // Both record their reference on the rental they paid for. Renewal used
+  // to share the verification case, which looked on the user doc and so
+  // could never match.
   case "renewal":
+    return id("sourceId") ?
+      {path: `active_rentals/${id("sourceId")}`,
+        field: "renewalPaymentReference"} : null;
+  case "extension":
+    return id("sourceId") ?
+      {path: `active_rentals/${id("sourceId")}`,
+        field: "lastExtensionReference"} : null;
+  case "verification":
     return id("userId") ?
       {path: `users/${id("userId")}`,
         field: "verificationPaymentReference"} : null;

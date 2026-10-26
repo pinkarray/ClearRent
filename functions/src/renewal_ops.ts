@@ -5,8 +5,16 @@
  *     Caller: the tenant on a grace_locked active_rentals doc.
  *     Re-verifies the Paystack reference server-side, then (in a txn)
  *     extends leaseEndDate by one year from the OLD end (no lost days),
- *     resets status -> active and hasPaymentReminder -> false. No payout
- *     writes: the rental was already paid out at original creation.
+ *     resets status -> active and hasPaymentReminder -> false, and opens a
+ *     payout cycle (payout_cycle.ts) for the landlord's share. It used to
+ *     write no payout, on the reasoning that the rental was paid out at
+ *     creation - but that payout was the FIRST year's rent, so every
+ *     renewal's rent was collected and never sent on.
+ *
+ *   completeStayExtension
+ *     Caller: the tenant on a furnished stay, before it ends. Adds months
+ *     (up to the listing's longest stay) for rent only, moves leaseEndDate
+ *     on by that many months, and opens a payout cycle for all of it.
  *     Side-effects (post-commit): two `renewal` activities (tenant feed +
  *     landlord feed) and a `payments/RENEWAL_{rentalId}_{ts}` receipt.
  *
@@ -50,6 +58,14 @@ import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 import {consumeReferenceInTx} from "./payment_verify";
+import {announcePayoutCycle, openPayoutCycle} from "./payout_cycle";
+import {
+  extensionAmount,
+  lagosDay,
+  lagosMidnight,
+  listingMaxStay,
+  stayEndDay,
+} from "./furnished_stay";
 
 // Same Secret Manager entry as index.ts; defining the same name here is
 // fine - both resolve to the one PAYSTACK_SECRET_KEY secret.
@@ -298,6 +314,8 @@ export const completeActiveRenewal = onCall(
       propertyId: string;
       propertyTitle: string;
       amount: number;
+      landlordAmount: number;
+      earned: number;
     }
 
     const side = await db.runTransaction<RenewalSideEffect>(async (tx) => {
@@ -379,6 +397,18 @@ export const completeActiveRenewal = onCall(
 
       tx.update(ref, rentalUpdate);
 
+      // The landlord's share, on the same terms as the first year: each party
+      // pays the deal fee out of their own money, clamped so it can never
+      // turn the payout negative.
+      const landlordAmount = effectiveRent - Math.min(DEAL_FEE, effectiveRent);
+      const earned = verify.amountPaid - landlordAmount;
+      openPayoutCycle(tx, ref, data, {
+        landlordAmount,
+        earned,
+        reference: input.paymentReference,
+        kind: "renewal",
+      });
+
       return {
         tenantId: data.tenantId as string,
         tenantName: (data.tenantName as string) ?? "Your tenant",
@@ -386,7 +416,24 @@ export const completeActiveRenewal = onCall(
         propertyId: (data.propertyId as string) ?? "",
         propertyTitle: (data.propertyTitle as string) ?? "your property",
         amount: verify.amountPaid,
+        landlordAmount,
+        earned,
       };
+    });
+
+    await announcePayoutCycle({
+      rentalId: input.sourceId,
+      input: {
+        landlordAmount: side.landlordAmount,
+        earned: side.earned,
+        reference: input.paymentReference,
+        kind: "renewal",
+      },
+      landlordId: side.landlordId,
+      tenantId: side.tenantId,
+      tenantName: side.tenantName,
+      propertyId: side.propertyId,
+      propertyTitle: side.propertyTitle,
     });
 
     await writeRenewalSideEffects({
@@ -402,6 +449,133 @@ export const completeActiveRenewal = onCall(
     });
 
     return {success: true, rentalId: input.sourceId};
+  },
+);
+
+// ── completeStayExtension ─────────────────────────────────────────────────────
+
+export const completeStayExtension = onCall(
+  callableOptions,
+  async (request) => {
+    const input = validateRenewalInput(request.data);
+    const months = (request.data as {months?: unknown} | null)?.months;
+    const db = getFirestore();
+    const ref = db.collection("active_rentals").doc(input.sourceId);
+
+    const pre = await ref.get();
+    if (!pre.exists) {
+      throw new HttpsError("not-found", "That stay no longer exists.");
+    }
+    const maxStay = await listingMaxStay(pre.get("propertyId"));
+
+    const verify = await verifyPaystackReference(
+      input.paymentReference,
+      paystackSecret.value(),
+    );
+    if (!verify.ok) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Payment could not be verified.",
+      );
+    }
+
+    const side = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.data();
+      if (!data) {
+        throw new HttpsError("not-found", "That stay no longer exists.");
+      }
+      assertSelf(request.auth, data.tenantId as string);
+      // A replay of a recorded extension succeeds without adding months
+      // again: the reference ledger alone would let it through, since the
+      // purpose matches.
+      const done = Array.isArray(data.extensionReferences) ?
+        data.extensionReferences as string[] :
+        [];
+      if (done.includes(input.paymentReference)) return null;
+
+      const expected = extensionAmount(data, maxStay, months);
+      if (verify.amountPaid < expected - 1) {
+        throw new HttpsError(
+          "failed-precondition",
+          `Underpayment: expected ${expected}, got ${verify.amountPaid}.`,
+        );
+      }
+      await consumeReferenceInTx(tx, {
+        reference: input.paymentReference,
+        purpose: "extension",
+        purposeId: input.sourceId,
+        uid: request.auth?.uid ?? "",
+        amount: verify.amountPaid,
+        expectedAmount: expected,
+      });
+
+      const added = months as number;
+      const oldEnd = (data.leaseEndDate as Timestamp).toDate();
+      const newEnd = lagosMidnight(stayEndDay(lagosDay(oldEnd), added));
+      tx.update(ref, {
+        leaseEndDate: Timestamp.fromDate(newEnd),
+        nextPaymentDue: Timestamp.fromDate(newEnd),
+        stayMonths: FieldValue.increment(added),
+        rentAmount: FieldValue.increment(expected),
+        totalPaid: FieldValue.increment(verify.amountPaid),
+        extensionReferences: FieldValue.arrayUnion(input.paymentReference),
+        lastExtensionReference: input.paymentReference,
+        extendedAt: FieldValue.serverTimestamp(),
+        status: "active",
+        hasPaymentReminder: false,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      // Rent only, so the landlord is owed all of it.
+      openPayoutCycle(tx, ref, data, {
+        landlordAmount: expected,
+        earned: Math.max(0, verify.amountPaid - expected),
+        reference: input.paymentReference,
+        kind: "extension",
+      });
+      return {
+        added,
+        expected,
+        earned: Math.max(0, verify.amountPaid - expected),
+        newEnd,
+        tenantId: data.tenantId as string,
+        tenantName: (data.tenantName as string) ?? "Your tenant",
+        landlordId: data.landlordId as string,
+        propertyId: (data.propertyId as string) ?? "",
+        propertyTitle: (data.propertyTitle as string) ?? "your property",
+      };
+    });
+
+    if (!side) return {success: true, alreadyRecorded: true};
+
+    await announcePayoutCycle({
+      rentalId: input.sourceId,
+      input: {
+        landlordAmount: side.expected,
+        earned: side.earned,
+        reference: input.paymentReference,
+        kind: "extension",
+      },
+      landlordId: side.landlordId,
+      tenantId: side.tenantId,
+      tenantName: side.tenantName,
+      propertyId: side.propertyId,
+      propertyTitle: side.propertyTitle,
+    });
+    await writeNotificationOnce(`extension_${input.paymentReference}`, {
+      userId: side.landlordId,
+      type: "stay_extended",
+      title: "Stay extended",
+      body: `${side.tenantName} added ${side.added} ` +
+        `month${side.added === 1 ? "" : "s"} at ${side.propertyTitle}, ` +
+        `now ending ${side.newEnd.toLocaleDateString("en-GB", {
+          day: "numeric", month: "short", year: "numeric",
+          timeZone: "Africa/Lagos",
+        })}. Your payout is on its way.`,
+      payload: {route: "/landlord/rentals"},
+    });
+
+    return {success: true, alreadyRecorded: false};
   },
 );
 
