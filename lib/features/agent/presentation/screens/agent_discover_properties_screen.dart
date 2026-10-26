@@ -323,8 +323,6 @@ class _AgentDiscoverPropertiesScreenState
     } else if ((wm == 'commute' || wm == 'hybrid') && t['workplaceArea'] == p.city) {
       r.add('Works in ${p.city}');
     }
-    final occ = t['occupation'] as String?;
-    if (occ != null && occ.isNotEmpty) r.add(occ);
     return r;
   }
 
@@ -338,7 +336,9 @@ class _AgentDiscoverPropertiesScreenState
         propertyId: _selectedProperty!.id, propertyTitle: _selectedProperty!.title,
         propertyImage: _selectedProperty!.images.isNotEmpty ? _selectedProperty!.images.first : '',
         landlordId: _selectedProperty!.landlordId, landlordName: _selectedProperty!.landlordName ?? 'Landlord',
-        tenantId: tenant['uid'] as String, tenantName: tenant['fullName'] as String? ?? 'Tenant',
+        // Leads show the need, not the person: the thread an agent opens is
+        // labelled "Tenant" until the tenant chooses to answer.
+        tenantId: tenant['uid'] as String, tenantName: 'Tenant',
         agentId: agentId, agentName: agentDoc.data()?['fullName'] as String? ?? 'Agent',
       );
       if (!mounted) return; Navigator.pop(context);
@@ -361,8 +361,6 @@ class _AgentDiscoverPropertiesScreenState
     PropertyModel property,
     Map<String, dynamic> tenant,
   ) {
-    final fullName = (tenant['fullName'] as String? ?? '').trim();
-    final firstName = fullName.isEmpty ? 'there' : fullName.split(' ').first;
     final area = property.city;
     final preferred = ((tenant['preferredAreas'] as List?) ?? const [])
         .map((a) => a.toString().toLowerCase())
@@ -374,8 +372,8 @@ class _AgentDiscoverPropertiesScreenState
 
     return [
       area.isEmpty
-          ? 'Hi $firstName, I handle ${property.title}.'
-          : 'Hi $firstName, I handle ${property.title} in $area.',
+          ? 'Hi there, I handle ${property.title}.'
+          : 'Hi there, I handle ${property.title} in $area.',
       if (wantsThisArea) '$area is one of the areas you are looking in.',
       if (withinBudget) 'The rent is ${property.formattedRent}, within your budget.'
       else 'The rent is ${property.formattedRent}.',
@@ -612,14 +610,24 @@ class _AgentDiscoverPropertiesScreenState
     ]);
   }
 
+  /// A lead shows the NEED, never the person: no name, photo, occupation or
+  /// marital status. Agents reach the tenant through ClearRent chat, and the
+  /// tenant decides whether to answer.
   Widget _tenantCard(Map<String, dynamic> t) {
-    final name = t['fullName'] as String? ?? 'Tenant';
-    final occ = t['occupation'] as String? ?? '';
+    final areas = List<String>.from(t['preferredAreas'] ?? const []);
+    final name = areas.isEmpty
+        ? 'Tenant looking for a place'
+        : 'Tenant looking in ${areas.take(2).join(', ')}'
+            '${areas.length > 2 ? ' +${areas.length - 2}' : ''}';
+    final bMin = (t['budgetMin'] as num?)?.toDouble() ?? 0;
+    final bMax = (t['budgetMax'] as num?)?.toDouble() ?? 0;
+    String k(double v) => '₦${(v / 1000).round()}k';
+    final occ = bMax > 0
+        ? 'Budget ${bMin > 0 ? '${k(bMin)} - ' : 'up to '}${k(bMax)} a year'
+        : 'Budget not stated';
     final wm = t['workMode'] as String?;
     final score = t['_matchScore'] as int? ?? 0;
     final reasons = List<String>.from(t['_matchReasons'] ?? []);
-    final img = t['profileImageUrl'] as String?;
-    final ms = t['maritalStatus'] as String?;
 
     final history = _historyChipLabel(
         _historyCache[_selectedProperty?.id]?[t['uid'] as String? ?? '']);
@@ -633,8 +641,7 @@ class _AgentDiscoverPropertiesScreenState
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           CircleAvatar(radius: 22, backgroundColor: AppColors.primary.withAlpha(26),
-            backgroundImage: (img != null && img.isNotEmpty) ? NetworkImage(img) : null,
-            child: (img == null || img.isEmpty) ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'T', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)) : null),
+            child: Icon(Icons.person_search_outlined, size: 22, color: AppColors.primary)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: AppTextStyles.labelLarge), if (occ.isNotEmpty) Text(occ, style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary))])),
           Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: matchColor.withAlpha(26), borderRadius: BorderRadius.circular(20)), child: Text(matchLabel, style: AppTextStyles.caption.copyWith(color: matchColor, fontWeight: FontWeight.w600))),
@@ -659,7 +666,6 @@ class _AgentDiscoverPropertiesScreenState
         const SizedBox(height: 10),
         Row(children: [
           if (wm != null) ...[Icon(wm == 'remote' ? Icons.home_outlined : wm == 'hybrid' ? Icons.sync_alt : Icons.directions_car_outlined, size: 14, color: AppColors.textHint), const SizedBox(width: 4), Text(wm == 'remote' ? 'Remote' : wm == 'hybrid' ? 'Hybrid' : 'Commutes', style: AppTextStyles.caption.copyWith(color: AppColors.textHint)), const SizedBox(width: 12)],
-          if (ms != null) ...[Icon(Icons.people_outline, size: 14, color: AppColors.textHint), const SizedBox(width: 4), Text(ms == 'single' ? 'Single' : ms == 'married' ? 'Married' : 'Family', style: AppTextStyles.caption.copyWith(color: AppColors.textHint))],
           const Spacer(),
           SizedBox(height: 34, child: ElevatedButton.icon(onPressed: () => _contactTenant(t), icon: const Icon(Icons.message_outlined, size: 14), label: const Text('Message'), style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white, textStyle: AppTextStyles.labelSmall.copyWith(fontWeight: FontWeight.w600), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(horizontal: 12), elevation: 0))),
         ]),
