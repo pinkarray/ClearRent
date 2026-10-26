@@ -1862,7 +1862,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textHint,
                   ),
-                  border: InputBorder.none,
+                  border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 10,

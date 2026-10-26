@@ -3353,7 +3353,13 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                       },
                     )
                     : null,
+            // The Container draws the outline. The theme's enabled/focused
+            // borders win over `border`, so all three are cleared, or a second
+            // outline is drawn inside the first.
             border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            filled: false,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,

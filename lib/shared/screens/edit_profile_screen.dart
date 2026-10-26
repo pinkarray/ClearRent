@@ -708,7 +708,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: Text('₦', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary, fontFamily: 'Roboto')),
           ),
           prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-          border: InputBorder.none,
+          border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         ),
       ),

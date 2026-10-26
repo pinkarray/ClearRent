@@ -2033,7 +2033,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
             child: Text('₦', style: AppTextStyles.h4.copyWith(color: AppColors.primary)),
           ),
           prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-          border: InputBorder.none,
+          border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
       ),

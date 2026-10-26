@@ -4600,7 +4600,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             minWidth: 0,
             minHeight: 0,
           ),
-          border: InputBorder.none,
+          border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,

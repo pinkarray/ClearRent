@@ -810,7 +810,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             prefixIcon: Padding(padding: const EdgeInsets.only(left: 12, right: 4),
               child: Text('₦', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary, fontFamily: 'Roboto'))),
             prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-            border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14))))),
+            border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14))))),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Text('to', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary))),
       Expanded(child: Container(
@@ -822,7 +822,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             prefixIcon: Padding(padding: const EdgeInsets.only(left: 12, right: 4),
               child: Text('₦', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary, fontFamily: 'Roboto'))),
             prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-            border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14))))),
+            border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14))))),
     ]),
   ]);
 
