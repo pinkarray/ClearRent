@@ -1076,14 +1076,19 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
     // booking did happen - so promise what actually goes back.
     final backText = naira.format(r.totalFee - r.clearrentFee);
     final keptText = naira.format(r.clearrentFee);
+    // Unpaid, there is nothing to give back: the sheet promised
+    // "refund ₦7,000" for a viewing nobody had paid for. Web only mentions a
+    // refund when paid (dashboard/requests callOff), and so does this now.
     final reason = await RefundConfirmSheet.show(
       context,
       title: 'Cancel Inspection',
-      warningMessage:
-          'Cancelling will end this inspection for '
-          '${r.propertyTitle} and refund ₦$backText to the tenant. '
-          'The ₦$keptText service charge is not refunded.',
-      confirmButtonText: 'Cancel & Refund',
+      warningMessage: r.isPaid
+          ? 'Cancelling will end this inspection for '
+              '${r.propertyTitle} and refund ₦$backText to the tenant. '
+              'The ₦$keptText service charge is not refunded.'
+          : 'Cancelling will end this inspection for ${r.propertyTitle}. '
+              'The tenant has not paid yet, so there is nothing to refund.',
+      confirmButtonText: r.isPaid ? 'Cancel & Refund' : 'Cancel inspection',
     );
     if (reason == null || !mounted) return;
 
@@ -1720,7 +1725,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
             onPressed: _cancelInspection,
             icon: Icon(Icons.cancel_outlined, size: 18, color: AppColors.error),
             label: Text(
-              'Cancel & Refund',
+              r.isPaid ? 'Cancel & Refund' : 'Cancel inspection',
               style: AppTextStyles.labelMedium.copyWith(color: AppColors.error),
             ),
             style: OutlinedButton.styleFrom(
