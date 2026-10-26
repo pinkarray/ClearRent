@@ -37,6 +37,13 @@ export interface PricingConfig {
   /** Deal-completion fee charged per party on a completed rental. */
   dealFee: number;
   /**
+   * Charged to the tenant on each furnished-stay extension, on top of the
+   * rent for the added months. The landlord gets all of that rent; without
+   * this, every extension cost ClearRent Paystack's fee (up to 2,000) to
+   * pass someone else's money on.
+   */
+  extensionFee: number;
+  /**
    * Lowest rent a property may be listed at.
    *
    * At or below `dealFee` the fee consumes the whole rent and the landlord
@@ -63,6 +70,7 @@ export const DEFAULT_PRICING: PricingConfig = {
   listing: 10000,
   inspection: {total: 10000, handler: 7000, platform: 3000},
   dealFee: 5000,
+  extensionFee: 2500,
   minRent: 10000,
 };
 
@@ -119,6 +127,9 @@ export async function getPricing(): Promise<PricingConfig> {
       dealFee: typeof d.dealFee === "number" ?
         d.dealFee :
         DEFAULT_PRICING.dealFee,
+      extensionFee: typeof d.extensionFee === "number" ?
+        d.extensionFee :
+        DEFAULT_PRICING.extensionFee,
       minRent: typeof d.minRent === "number" ?
         d.minRent :
         DEFAULT_PRICING.minRent,
@@ -434,7 +445,8 @@ export async function resolveServerAmount(
       );
     }
     const maxStay = await listingMaxStay(snap.get("propertyId"));
-    return extensionAmount(snap.data() ?? {}, maxStay, metadata?.months);
+    return extensionAmount(snap.data() ?? {}, maxStay, metadata?.months) +
+      pricing.extensionFee;
   }
 
   if (type === "verification") {

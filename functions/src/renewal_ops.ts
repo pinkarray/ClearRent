@@ -58,6 +58,7 @@ import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 import {consumeReferenceInTx} from "./payment_verify";
+import {getPricing} from "./pricing";
 import {announcePayoutCycle, openPayoutCycle} from "./payout_cycle";
 import {
   extensionAmount,
@@ -467,6 +468,7 @@ export const completeStayExtension = onCall(
       throw new HttpsError("not-found", "That stay no longer exists.");
     }
     const maxStay = await listingMaxStay(pre.get("propertyId"));
+    const {extensionFee} = await getPricing();
 
     const verify = await verifyPaystackReference(
       input.paymentReference,
@@ -494,7 +496,9 @@ export const completeStayExtension = onCall(
         [];
       if (done.includes(input.paymentReference)) return null;
 
-      const expected = extensionAmount(data, maxStay, months);
+      // The landlord is owed the rent; the tenant also pays the fee.
+      const rent = extensionAmount(data, maxStay, months);
+      const expected = rent + extensionFee;
       if (verify.amountPaid < expected - 1) {
         throw new HttpsError(
           "failed-precondition",
@@ -517,7 +521,7 @@ export const completeStayExtension = onCall(
         leaseEndDate: Timestamp.fromDate(newEnd),
         nextPaymentDue: Timestamp.fromDate(newEnd),
         stayMonths: FieldValue.increment(added),
-        rentAmount: FieldValue.increment(expected),
+        rentAmount: FieldValue.increment(rent),
         totalPaid: FieldValue.increment(verify.amountPaid),
         extensionReferences: FieldValue.arrayUnion(input.paymentReference),
         lastExtensionReference: input.paymentReference,
@@ -526,17 +530,17 @@ export const completeStayExtension = onCall(
         hasPaymentReminder: false,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      // Rent only, so the landlord is owed all of it.
+      // The landlord is owed all of the rent; ClearRent keeps the fee.
       openPayoutCycle(tx, ref, data, {
-        landlordAmount: expected,
-        earned: Math.max(0, verify.amountPaid - expected),
+        landlordAmount: rent,
+        earned: verify.amountPaid - rent,
         reference: input.paymentReference,
         kind: "extension",
       });
       return {
         added,
-        expected,
-        earned: Math.max(0, verify.amountPaid - expected),
+        rent,
+        earned: verify.amountPaid - rent,
         newEnd,
         tenantId: data.tenantId as string,
         tenantName: (data.tenantName as string) ?? "Your tenant",
@@ -551,7 +555,7 @@ export const completeStayExtension = onCall(
     await announcePayoutCycle({
       rentalId: input.sourceId,
       input: {
-        landlordAmount: side.expected,
+        landlordAmount: side.rent,
         earned: side.earned,
         reference: input.paymentReference,
         kind: "extension",

@@ -157,9 +157,10 @@ export async function listingMaxStay(propertyId: unknown): Promise<number> {
 const EXTENDABLE = new Set(["active", "expiring_soon"]);
 
 /**
- * What extending a furnished stay by `months` costs, or the reason it cannot
- * be extended. Rent only: the deal fee was paid once, with the booking. Used
- * by pricing (to charge) and by completeStayExtension (to check the charge).
+ * The rent for extending a furnished stay by `months`, or the reason it cannot
+ * be extended. The deal fee was paid once, with the booking; the tenant also
+ * pays pricing.extensionFee on top, which callers add. Used by pricing (to
+ * charge) and by completeStayExtension (to check the charge).
  * @param {FirebaseFirestore.DocumentData} r The active_rentals document.
  * @param {number} maxStay The listing's longest stay, in months.
  * @param {unknown} months How many months the tenant asked to add.
