@@ -415,8 +415,7 @@ class _AgentHomeScreenState extends State<AgentHomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
             child: AnnouncementsBanner(
               userId: _auth.currentUser?.uid ?? '',
-              accountType: 'agent',
-              notificationsRoute: '/notifications',
+              accountType: 'agent',
             ),
           ),
         ),

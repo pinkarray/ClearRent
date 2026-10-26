@@ -2648,8 +2648,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
             child: AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
-              accountType: 'tenant',
-              notificationsRoute: '/notifications',
+              accountType: 'tenant',
             ),
           ),
           // A caretaker can be any accountType, so the invitation prompt sits

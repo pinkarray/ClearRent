@@ -13,13 +13,11 @@ import '../../core/constants/text_styles.dart';
 class AnnouncementsBanner extends StatefulWidget {
   final String userId;
   final String accountType;
-  final String notificationsRoute;
 
   const AnnouncementsBanner({
     super.key,
     required this.userId,
     required this.accountType,
-    required this.notificationsRoute,
   });
 
   @override
@@ -130,6 +128,53 @@ class _AnnouncementsBannerState extends State<AnnouncementsBanner> {
     }
   }
 
+  /// The whole announcement. The banner only has room for a line of it; this
+  /// used to push a '/notifications' named route the app's router does not
+  /// know, so a tap did nothing and the rest could never be read.
+  void _open(Map<String, dynamic> a, Color color) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (a['title'] ?? '') as String,
+                  style: AppTextStyles.h4.copyWith(color: color),
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  (a['body'] ?? '') as String,
+                  style: AppTextStyles.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_ready) return const SizedBox.shrink();
@@ -146,7 +191,7 @@ class _AnnouncementsBannerState extends State<AnnouncementsBanner> {
     final color = _color(type);
 
     return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, widget.notificationsRoute),
+      onTap: () => _open(a, color),
       child: Container(
         margin: const EdgeInsets.fromLTRB(0, 12, 0, 0),
         padding: const EdgeInsets.all(14),
@@ -173,8 +218,13 @@ class _AnnouncementsBannerState extends State<AnnouncementsBanner> {
                     (a['body'] ?? '') as String,
                     style: AppTextStyles.bodySmall
                         .copyWith(color: AppColors.textSecondary),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Read more',
+                    style: AppTextStyles.caption.copyWith(color: color),
                   ),
                 ],
               ),

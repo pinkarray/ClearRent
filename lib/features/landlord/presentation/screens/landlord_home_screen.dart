@@ -728,8 +728,7 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             // Announcements
             AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
-              accountType: 'landlord',
-              notificationsRoute: '/notifications',
+              accountType: 'landlord',
             ),
             // A landlord can be someone else's caretaker too. This is the only
             // way in to caretaker work, so it is NOT part of the capped stack -
