@@ -3377,3 +3377,66 @@ test("[5] handler marks arrived inside the window - allowed", async () => {
     handlerArrived: true, handlerArrivedAt: serverTimestamp(),
   }));
 });
+
+// ─── furnished stays (Phase 1: listing) ──────────────────────────────────────
+
+const furnished = (extra = {}) => ({
+  ...newUnit(LANDLORD, null),
+  rent: 300000, rentFrequency: "monthly", stayType: "furnished",
+  furnishing: "fully", minStayMonths: 1, maxStayMonths: 6,
+  inventory: [{ name: "Bed", qty: 1 }, { name: "Sofa", qty: 1 }],
+  ...extra,
+});
+
+test("listing a valid furnished stay - allowed", async () => {
+  await assertSucceeds(setDoc(doc(landlordDb(), "properties/fs_ok"), furnished()));
+});
+
+test("furnished stay that is only partly furnished - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_partly"), furnished({ furnishing: "partly" })));
+});
+
+test("furnished stay with no item list - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_noinv"), furnished({ inventory: [] })));
+});
+
+test("furnished stay priced yearly - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_yearly"), furnished({ rentFrequency: "yearly" })));
+});
+
+test("furnished stay longer than 11 months - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_long"), furnished({ maxStayMonths: 12 })));
+});
+
+test("furnished stay with shortest longer than longest - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_minmax"), furnished({ minStayMonths: 4, maxStayMonths: 2 })));
+});
+
+test("unknown stay type - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/fs_bad"), furnished({ stayType: "nightly" })));
+});
+
+test("downgrading a furnished stay to partly furnished - denied", async () => {
+  await seedListing("fs_down", furnished());
+  await assertFails(updateDoc(doc(landlordDb(), "properties/fs_down"), { furnishing: "partly" }));
+});
+
+test("changing a vacant furnished stay's lengths - allowed", async () => {
+  await seedListing("fs_len", furnished());
+  await assertSucceeds(updateDoc(doc(landlordDb(), "properties/fs_len"), { minStayMonths: 2, maxStayMonths: 9 }));
+});
+
+test("changing stay lengths while a tenant is in - denied", async () => {
+  await seedListing("fs_occ", { ...furnished(), currentTenantsCount: 1 });
+  await assertFails(updateDoc(doc(landlordDb(), "properties/fs_occ"), { maxStayMonths: 9 }));
+});
+
+test("editing the item list while a tenant is in - denied", async () => {
+  await seedListing("fs_inv", { ...furnished(), currentTenantsCount: 1 });
+  await assertFails(updateDoc(doc(landlordDb(), "properties/fs_inv"), { inventory: [{ name: "Bed", qty: 1 }] }));
+});
+
+test("editing an occupied furnished stay's title - allowed", async () => {
+  await seedListing("fs_title", { ...furnished(), currentTenantsCount: 1 });
+  await assertSucceeds(updateDoc(doc(landlordDb(), "properties/fs_title"), { title: "Renamed" }));
+});

@@ -581,6 +581,28 @@ service cloud.firestore {
         );
       }
 
+      // How the place is let. Absent or 'yearly' is the yearly lease. A
+      // 'furnished' stay is 1-11 months paid up front: `rent` then holds the
+      // MONTHLY rent (rentFrequency 'monthly'), the landlord sets the shortest
+      // and longest stay, the place must be fully furnished, and it carries
+      // the item list both sides check at move-in and move-out. One stay type
+      // per listing (decided 2026-10-26), so no shared booking calendar.
+      function stayValid() {
+        let d = request.resource.data;
+        return d.get('stayType', 'yearly') == 'yearly'
+          || (d.stayType == 'furnished'
+              && d.get('rentFrequency', '') == 'monthly'
+              && d.get('furnishing', '') == 'fully'
+              && d.get('minStayMonths', 0) is int
+              && d.get('maxStayMonths', 0) is int
+              && d.minStayMonths >= 1
+              && d.maxStayMonths <= 11
+              && d.minStayMonths <= d.maxStayMonths
+              && d.get('inventory', null) is list
+              && d.inventory.size() >= 1
+              && d.inventory.size() <= 60);
+      }
+
       function docFieldsChanged() {
         return request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['ownershipDocUrl', 'ownershipDocType']);
@@ -646,6 +668,7 @@ service cloud.firestore {
         && ownOwnershipDoc(request.resource.data.get('ownershipDocUrl', null))
         && onPremisesClaimOk()
         && (!('furnishing' in request.resource.data) || furnishingValid())
+        && stayValid()
         && noOverdueUrgentIssue()
         && meetsMinRent();
 
@@ -705,6 +728,11 @@ service cloud.firestore {
         // Once stated it can be corrected but not removed: deleting the field
         // is a change, and furnishingValid() fails on a missing key.
         && (!changed(['furnishing']) || furnishingValid())
+        // Re-checked whenever anything a furnished stay depends on moves,
+        // including furnishing: a furnished stay may not drop below fully.
+        && (!changed(['stayType', 'rentFrequency', 'furnishing',
+                      'minStayMonths', 'maxStayMonths', 'inventory'])
+            || stayValid())
         // The rejection reason is the admin's words. The owner may not rewrite
         // or clear it to hide why they were turned down.
         && !changed(['ownershipDocRejectionReason'])
@@ -794,6 +822,10 @@ service cloud.firestore {
                 == resource.data.get('furnishing', null)
               || resource.data.get('furnishing', null) == null
             )
+            // The stay a sitting tenant booked: how it is let, the allowed
+            // lengths and the item list checked at move-out.
+            && !changed(['stayType', 'rentFrequency', 'minStayMonths',
+                         'maxStayMonths', 'inventory'])
           )
         );
 

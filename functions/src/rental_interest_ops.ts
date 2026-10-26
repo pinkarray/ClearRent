@@ -156,6 +156,17 @@ export const createRentalInterest = onCall(
       );
     }
 
+    // Furnished stays are listed from Phase 1 of their build, but booking one
+    // through THIS yearly flow would charge a single month's rent for a year's
+    // tenancy. Refused until their own booking path (months x monthly rent,
+    // chosen start and length) exists.
+    if (prop.stayType === "furnished") {
+      throw new HttpsError(
+        "failed-precondition",
+        "Booking furnished stays opens soon. This one cannot be rented yet.",
+      );
+    }
+
     const pricing = await getPricing();
     const dealFee = pricing.dealFee;
     const rentAmount = typeof prop.rent === "number" ? prop.rent : 0;
