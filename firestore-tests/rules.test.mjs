@@ -373,6 +373,46 @@ test("tenant writing the move-in check directly - denied", async () => {
   );
 });
 
+// The furnished move-out item check is the landlord's statement; the tenant
+// answers it by confirming or contesting, never by rewriting it.
+const itemCheck = [{ name: "Bed", qty: 1, state: "ok" }, { name: "TV", qty: 1, state: "damaged", note: "Cracked" }];
+
+test("landlord recording the move-out item check - allowed", async () => {
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      handoverInventory: itemCheck,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("tenant rewriting the move-out item check - denied", async () => {
+  await assertFails(
+    updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
+      handoverInventory: [{ name: "TV", qty: 1, state: "ok" }],
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("move-out item check over 60 items - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      handoverInventory: Array.from({ length: 61 }, (_, i) => ({ name: `Item ${i}`, qty: 1, state: "ok" })),
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("move-out item check that is not a list - denied", async () => {
+  await assertFails(
+    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
+      handoverInventory: "all fine",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
 test("smuggling rentAmount alongside an allowlisted field - denied", async () => {
   // Proves the rule is hasOnly (allowlist), not just a single-field block:
   // an otherwise-valid agreement write that also touches rentAmount must fail.

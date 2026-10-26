@@ -1389,12 +1389,17 @@ async function createRentalForAcceptedInterest(
   // tenant was promised.
   let cautionDeposit = 0;
   let cautionDepositRefundable = true;
+  // Furnished stay: the item list both checks are made against, frozen here.
+  // The listing's own copy becomes editable again once the tenant has gone,
+  // which is exactly when the move-out check reads it.
+  let inventory: unknown[] = [];
   try {
     const propSnap = await db.collection("properties").doc(propertyId).get();
     const p = propSnap.data();
     if (p) {
       cautionDeposit = Number(p.cautionDeposit ?? 0);
       cautionDepositRefundable = p.cautionDepositRefundable !== false;
+      if (Array.isArray(p.inventory)) inventory = p.inventory;
     }
   } catch (err) {
     logger.error("Caution-deposit snapshot failed - defaulting to 0", {
@@ -1500,6 +1505,7 @@ async function createRentalForAcceptedInterest(
           stayType: "furnished",
           stayMonths: interest.stayMonths,
           monthlyRent: Number(interest.monthlyRent ?? 0),
+          inventory,
         } :
         {}),
       leaseStartDate: Timestamp.fromDate(now),

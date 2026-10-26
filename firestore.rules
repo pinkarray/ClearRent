@@ -1798,6 +1798,15 @@ service cloud.firestore {
           !changed(['moveOutAcknowledgedAt'])
           || resource.data.landlordId == request.auth.uid
         )
+        // Furnished stay: the landlord's item-by-item move-out check. Theirs
+        // to make (the tenant answers it by confirming or contesting), and
+        // bounded like the listing's own item list.
+        && (
+          !changed(['handoverInventory'])
+          || (resource.data.landlordId == request.auth.uid
+              && request.resource.data.handoverInventory is list
+              && request.resource.data.handoverInventory.size() <= 60)
+        )
         // An agreement path written here must live in the writer's own folder.
         && agreementPathsOwnedOnUpdate()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -1852,6 +1861,7 @@ service cloud.firestore {
               // The landlord attesting they physically checked the unit. This
               // is the relist lever - nothing frees the property without it.
               'handoverConditionConfirmedAt', 'handoverConditionNotes',
+              'handoverInventory',
               // Settlement. `handoverSettlementMethod` is the seam for taking
               // the deposit through ClearRent later; today it only ever records
               // that the money moved landlord-to-tenant off-platform.
