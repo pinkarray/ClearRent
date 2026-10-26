@@ -1488,12 +1488,16 @@ class ActiveRentalService {
   Future<bool> handoverConfirmCondition(
     String rentalId, {
     String notes = '',
+    // Furnished stay: the item-by-item check against the move-in list.
+    List<ItemCheck>? items,
   }) async {
     try {
       await _firestore.collection('active_rentals').doc(rentalId).update({
         'handoverStage': 'awaiting_settlement',
         'handoverConditionConfirmedAt': FieldValue.serverTimestamp(),
         'handoverConditionNotes': notes.isEmpty ? null : notes,
+        if (items != null)
+          'handoverInventory': items.map((i) => i.toMap()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       return true;

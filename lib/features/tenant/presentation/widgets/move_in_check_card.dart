@@ -21,8 +21,14 @@ class MoveInCheckCard extends StatefulWidget {
 
 class _MoveInCheckCardState extends State<MoveInCheckCard> {
   final _service = ActiveRentalService();
-  late final Future<PropertyModel?> _property =
-      PropertyService().getProperty(widget.rental.propertyId);
+  // The list frozen on the rental at acceptance; the listing's copy only for
+  // a rental from before the snapshot existed.
+  late final Future<List<InventoryItem>> _items =
+      widget.rental.inventory.isNotEmpty
+          ? Future.value(widget.rental.inventory)
+          : PropertyService()
+              .getProperty(widget.rental.propertyId)
+              .then((p) => p?.inventory ?? const <InventoryItem>[]);
   bool _busy = false;
   // Shown until the rental stream catches up with the server's write.
   String? _done;
@@ -120,8 +126,8 @@ class _MoveInCheckCardState extends State<MoveInCheckCard> {
           ),
           if (_done == null) ...[
             const SizedBox(height: 12),
-            FutureBuilder<PropertyModel?>(
-              future: _property,
+            FutureBuilder<List<InventoryItem>>(
+              future: _items,
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
                   return const Center(
@@ -131,7 +137,7 @@ class _MoveInCheckCardState extends State<MoveInCheckCard> {
                     ),
                   );
                 }
-                return InventoryEditor(items: snap.data?.inventory ?? const []);
+                return InventoryEditor(items: snap.data ?? const []);
               },
             ),
             const SizedBox(height: 12),

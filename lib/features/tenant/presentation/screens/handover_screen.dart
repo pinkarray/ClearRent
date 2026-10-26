@@ -17,6 +17,7 @@ import '../../../../shared/models/condition_record.dart';
 import '../../../../shared/widgets/top_alert.dart';
 import '../../../../shared/widgets/condition_evidence_list.dart';
 import 'condition_capture_screen.dart';
+import '../widgets/move_out_item_check.dart';
 
 /// Works a move-out through to settlement, for whichever party is looking.
 ///
@@ -109,6 +110,11 @@ class _HandoverScreenState extends State<HandoverScreen> {
                   onSettle: () => _settle(rental),
                 ),
 
+              if (rental.handoverInventory.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                MoveOutItemSummary(items: rental.handoverInventory),
+              ],
+
               const SizedBox(height: 24),
               ConditionEvidenceList(
                 rentalId: rental.id,
@@ -144,6 +150,16 @@ class _HandoverScreenState extends State<HandoverScreen> {
   }
 
   Future<void> _confirmCondition(ActiveRental rental) async {
+    // Furnished stay: check each item on the list the tenant moved in with.
+    if (rental.stayType == 'furnished' && rental.inventory.isNotEmpty) {
+      final items = await showMoveOutItemCheck(context, rental.inventory);
+      if (items == null || !mounted) return;
+      await _run(
+        () => _rentalService.handoverConfirmCondition(rental.id, items: items),
+        'Could not record that. Try again.',
+      );
+      return;
+    }
     final notes = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,

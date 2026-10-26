@@ -1,3 +1,4 @@
+import 'property_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tenancy_link_model.dart';
 
@@ -138,6 +139,10 @@ class ActiveRental {
   final double monthlyRent;
   final String? moveInCheck;
   final DateTime? moveInCheckDeadline;
+  // The item list frozen at acceptance (both checks use it), and the
+  // landlord's item-by-item move-out check against it.
+  final List<InventoryItem> inventory;
+  final List<ItemCheck> handoverInventory;
   
   // Status
   final ActiveRentalStatus status;
@@ -220,6 +225,8 @@ class ActiveRental {
     this.monthlyRent = 0,
     this.moveInCheck,
     this.moveInCheckDeadline,
+    this.inventory = const [],
+    this.handoverInventory = const [],
     this.status = ActiveRentalStatus.active,
     this.hasPaymentReminder = false,
     required this.createdAt,
@@ -505,6 +512,8 @@ class ActiveRental {
       moveInCheck: data['moveInCheck'] as String?,
       moveInCheckDeadline:
           (data['moveInCheckDeadline'] as Timestamp?)?.toDate(),
+      inventory: InventoryItem.listFrom(data['inventory']),
+      handoverInventory: ItemCheck.listFrom(data['handoverInventory']),
       status: _statusFromString(data['status'] ?? 'active'),
       hasPaymentReminder: data['hasPaymentReminder'] ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -649,6 +658,8 @@ class ActiveRental {
       monthlyRent: monthlyRent,
       moveInCheck: moveInCheck,
       moveInCheckDeadline: moveInCheckDeadline,
+      inventory: inventory,
+      handoverInventory: handoverInventory,
       status: status ?? this.status,
       hasPaymentReminder: hasPaymentReminder ?? this.hasPaymentReminder,
       createdAt: createdAt ?? this.createdAt,
@@ -736,4 +747,40 @@ enum AgreementStatus {
   accepted,
   disputed,        // Tenant raised concerns
   finalized,       // Counter-signed - the executed agreement is on record
+}
+/// One line of the landlord's furnished move-out check.
+class ItemCheck {
+  final String name;
+  final int qty;
+  /// ok | damaged | missing
+  final String state;
+  final String? note;
+
+  const ItemCheck({
+    required this.name,
+    required this.qty,
+    required this.state,
+    this.note,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'qty': qty,
+        'state': state,
+        if (note != null && note!.isNotEmpty) 'note': note,
+      };
+
+  static List<ItemCheck> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final e in raw)
+        if (e is Map && e['name'] is String)
+          ItemCheck(
+            name: e['name'] as String,
+            qty: (e['qty'] as num?)?.toInt() ?? 1,
+            state: (e['state'] as String?) ?? 'ok',
+            note: e['note'] as String?,
+          ),
+    ];
+  }
 }
