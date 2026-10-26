@@ -63,6 +63,7 @@ import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpe
 import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlertOnce} from "./admin_alerts";
 import {getPricing} from "./pricing";
+import {lagosMidnight, stayEndDay} from "./furnished_stay";
 
 interface BeneficiaryBank {
   bankName: string | null;
@@ -1384,9 +1385,20 @@ async function createRentalForAcceptedInterest(
     });
   }
 
-  const now = new Date();
-  const leaseEnd = new Date(now);
-  leaseEnd.setFullYear(leaseEnd.getFullYear() + 1);
+  // A furnished stay runs from the day the tenant chose for the months they
+  // paid for; a yearly lease from acceptance for a year.
+  const furnished = interest.stayType === "furnished" &&
+    typeof interest.stayStartDay === "string" &&
+    typeof interest.stayMonths === "number";
+  const now = furnished ?
+    lagosMidnight(interest.stayStartDay as string) :
+    new Date();
+  const leaseEnd = furnished ?
+    lagosMidnight(stayEndDay(
+      interest.stayStartDay as string, interest.stayMonths as number,
+    )) :
+    new Date(now);
+  if (!furnished) leaseEnd.setFullYear(leaseEnd.getFullYear() + 1);
 
   const rentAmount = Number(interest.rentAmount ?? 0) > 0 ?
     Number(interest.rentAmount) :
@@ -1418,7 +1430,12 @@ async function createRentalForAcceptedInterest(
     const storedPath = (a?.storagePath as string | undefined) ?? "";
     const rentAtUpload = Number(a?.rentAtUpload ?? 0);
     if (storedPath) {
-      if (rentAtUpload > 0 && rentAmount > 0 && rentAtUpload !== rentAmount) {
+      // The listing's rent is what the agreement was written against: for a
+      // furnished stay that is the monthly figure, not the stay's total.
+      const listedRent = furnished ?
+        Number(interest.monthlyRent ?? 0) :
+        rentAmount;
+      if (rentAtUpload > 0 && listedRent > 0 && rentAtUpload !== listedRent) {
         logger.info("Property agreement stale for this rent - not attached", {
           interestId, rentAtUpload, rentAmount,
         });
@@ -1459,7 +1476,14 @@ async function createRentalForAcceptedInterest(
       inspectionFeeCredit: 5000,
       cautionDeposit,
       cautionDepositRefundable,
-      rentFrequency: "yearly",
+      rentFrequency: furnished ? "monthly" : "yearly",
+      ...(furnished ?
+        {
+          stayType: "furnished",
+          stayMonths: interest.stayMonths,
+          monthlyRent: Number(interest.monthlyRent ?? 0),
+        } :
+        {}),
       leaseStartDate: Timestamp.fromDate(now),
       leaseEndDate: Timestamp.fromDate(leaseEnd),
       nextPaymentDue: Timestamp.fromDate(leaseEnd),

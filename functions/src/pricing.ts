@@ -389,6 +389,14 @@ export async function resolveServerAmount(
         "This tenancy belongs to a different tenant.",
       );
     }
+    // A furnished stay's rentAmount is the whole stay; renewing it would
+    // charge that again for a year. Refused before any money moves.
+    if (snap.get("stayType") === "furnished") {
+      throw new HttpsError(
+        "failed-precondition",
+        "A furnished stay cannot be renewed for a year.",
+      );
+    }
     const rent = snap.get("rentAmount");
     if (typeof rent !== "number" || !(rent > 0)) {
       logger.error("Renewal source has no usable rentAmount", {uid, sourceId});

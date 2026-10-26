@@ -17,6 +17,9 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {
+  lagosMidnight, parseStayChoice, type StayChoice,
+} from "./furnished_stay";
 import {defineSecret} from "firebase-functions/params";
 import {getPricing} from "./pricing";
 import {verifyAndConsumeReference} from "./payment_verify";
@@ -25,6 +28,9 @@ const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 interface CreateRentalInterestInput {
   inspectionRequestId?: unknown;
+  /** Furnished stays only: how many months, and the Lagos move-in day. */
+  stayMonths?: unknown;
+  stayStartDate?: unknown;
 }
 
 export const createRentalInterest = onCall(
@@ -156,20 +162,18 @@ export const createRentalInterest = onCall(
       );
     }
 
-    // Furnished stays are listed from Phase 1 of their build, but booking one
-    // through THIS yearly flow would charge a single month's rent for a year's
-    // tenancy. Refused until their own booking path (months x monthly rent,
-    // chosen start and length) exists.
-    if (prop.stayType === "furnished") {
-      throw new HttpsError(
-        "failed-precondition",
-        "Booking furnished stays opens soon. This one cannot be rented yet.",
-      );
-    }
+    // A furnished stay's `rent` is MONTHLY. The tenant chooses the length
+    // (within the landlord's range) and the move-in day, and pays every month
+    // up front, so the rent charged is monthly rent x months. One deal fee
+    // whatever the length.
+    const stay: StayChoice | null = prop.stayType === "furnished" ?
+      parseStayChoice(data, prop) :
+      null;
 
     const pricing = await getPricing();
     const dealFee = pricing.dealFee;
-    const rentAmount = typeof prop.rent === "number" ? prop.rent : 0;
+    const listedRent = typeof prop.rent === "number" ? prop.rent : 0;
+    const rentAmount = stay ? listedRent * stay.months : listedRent;
     const agentFee = typeof prop.agentFee === "number" ? prop.agentFee : 0;
     if (!(rentAmount > 0)) {
       throw new HttpsError(
@@ -244,6 +248,15 @@ export const createRentalInterest = onCall(
         status: "pending_acceptance",
         paymentAmount,
         rentAmount,
+        ...(stay ?
+          {
+            stayType: "furnished",
+            stayMonths: stay.months,
+            stayStartDay: stay.startDay,
+            stayStartDate: lagosMidnight(stay.startDay),
+            monthlyRent: listedRent,
+          } :
+          {}),
         agentFee,
         tenantDealFee: dealFee,
         // The fee ACTUALLY taken, not the headline one, so admin can see when a

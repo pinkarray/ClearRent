@@ -311,6 +311,14 @@ export const completeActiveRenewal = onCall(
       const data = snap.data()!;
       assertSelf(request.auth, data.tenantId as string);
       guardStatusTransition(data.status, "grace_locked", "status");
+      // A yearly renewal would add a year at a month's rent. Furnished stays
+      // are extended a month at a time instead (not built yet).
+      if (data.stayType === "furnished") {
+        throw new HttpsError(
+          "failed-precondition",
+          "A furnished stay cannot be renewed for a year.",
+        );
+      }
 
       // Apply a staged rent increase if one is scheduled and its effective
       // date has passed. Reads only this rental's own fields - never the
