@@ -30,12 +30,29 @@ export interface RoleFee {
   renewal: number;
 }
 
+/**
+ * One rent band of the landlord's and agent's service fee. A deal's fee is
+ * the band its rent falls in: `upTo` is the band's top (inclusive), null for
+ * the last band. Fixed naira amounts, never a percentage, so the landlord
+ * reads one number.
+ */
+export interface FeeBand {
+  upTo: number | null;
+  landlord: number;
+  agent: number;
+}
+
 export interface PricingConfig {
   verification: {tenant: RoleFee; landlord: RoleFee; agent: RoleFee};
   listing: number;
   inspection: {total: number; handler: number; platform: number};
-  /** Deal-completion fee charged per party on a completed rental. */
+  /**
+   * The TENANT's deal-completion fee, on top of the rent. The landlord's and
+   * agent's fees come from serviceFeeBands instead.
+   */
   dealFee: number;
+  /** Landlord and agent service fees by rent band, lowest band first. */
+  serviceFeeBands: FeeBand[];
   /**
    * Charged to the tenant on each furnished-stay extension, on top of the
    * rent for the added months. The landlord gets all of that rent; without
@@ -70,6 +87,13 @@ export const DEFAULT_PRICING: PricingConfig = {
   listing: 10000,
   inspection: {total: 10000, handler: 7000, platform: 3000},
   dealFee: 5000,
+  serviceFeeBands: [
+    {upTo: 300000, landlord: 7500, agent: 3750},
+    {upTo: 700000, landlord: 15000, agent: 7500},
+    {upTo: 1500000, landlord: 30000, agent: 15000},
+    {upTo: 3000000, landlord: 50000, agent: 25000},
+    {upTo: null, landlord: 75000, agent: 37500},
+  ],
   extensionFee: 2500,
   minRent: 10000,
 };
@@ -96,6 +120,52 @@ function toRoleFee(value: unknown, fallback: RoleFee): RoleFee {
     };
   }
   return fallback;
+}
+
+/**
+ * The configured bands, or the defaults when the document's are missing or
+ * malformed. Never a partial list: a bad band could leave some rent with no
+ * fee at all, so one bad entry falls back to the whole default table.
+ * @param {unknown} raw config/pricing.serviceFeeBands.
+ * @return {FeeBand[]} Bands, lowest first, the last open-ended.
+ */
+function toBands(raw: unknown): FeeBand[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_PRICING.serviceFeeBands;
+  }
+  const bands: FeeBand[] = [];
+  for (const b of raw as Record<string, unknown>[]) {
+    const upTo = b?.upTo;
+    if (
+      !(upTo === null || (typeof upTo === "number" && upTo > 0)) ||
+      typeof b.landlord !== "number" || b.landlord < 0 ||
+      typeof b.agent !== "number" || b.agent < 0
+    ) {
+      return DEFAULT_PRICING.serviceFeeBands;
+    }
+    bands.push({upTo: upTo as number | null, landlord: b.landlord, agent: b.agent});
+  }
+  bands.sort((x, y) => (x.upTo ?? Infinity) - (y.upTo ?? Infinity));
+  if (bands[bands.length - 1].upTo !== null) {
+    return DEFAULT_PRICING.serviceFeeBands;
+  }
+  return bands;
+}
+
+/**
+ * The landlord's and agent's service fee for a deal of this rent. Each is
+ * clamped by the caller to what that party is actually owed.
+ * @param {number} rent The deal's rent (a furnished stay's whole stay).
+ * @param {FeeBand[]} bands From getPricing().
+ * @return {{landlord: number, agent: number}} The band's fees.
+ */
+export function serviceFees(
+  rent: number,
+  bands: FeeBand[],
+): {landlord: number; agent: number} {
+  const band = bands.find((b) => b.upTo === null || rent <= b.upTo) ??
+    bands[bands.length - 1];
+  return {landlord: band.landlord, agent: band.agent};
 }
 
 /**
@@ -127,6 +197,7 @@ export async function getPricing(): Promise<PricingConfig> {
       dealFee: typeof d.dealFee === "number" ?
         d.dealFee :
         DEFAULT_PRICING.dealFee,
+      serviceFeeBands: toBands(d.serviceFeeBands),
       extensionFee: typeof d.extensionFee === "number" ?
         d.extensionFee :
         DEFAULT_PRICING.extensionFee,

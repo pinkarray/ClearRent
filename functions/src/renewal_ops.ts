@@ -58,7 +58,7 @@ import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 import {consumeReferenceInTx} from "./payment_verify";
-import {getPricing} from "./pricing";
+import {getPricing, serviceFees} from "./pricing";
 import {announcePayoutCycle, openPayoutCycle} from "./payout_cycle";
 import {
   extensionAmount,
@@ -295,6 +295,7 @@ export const completeActiveRenewal = onCall(
   async (request) => {
     const input = validateRenewalInput(request.data);
     const db = getFirestore();
+    const bands = (await getPricing()).serviceFeeBands;
     const ref = db.collection("active_rentals").doc(input.sourceId);
 
     const verify = await verifyPaystackReference(
@@ -398,10 +399,11 @@ export const completeActiveRenewal = onCall(
 
       tx.update(ref, rentalUpdate);
 
-      // The landlord's share, on the same terms as the first year: each party
-      // pays the deal fee out of their own money, clamped so it can never
-      // turn the payout negative.
-      const landlordAmount = effectiveRent - Math.min(DEAL_FEE, effectiveRent);
+      // The landlord's share, on the same terms as the first year: the
+      // service fee for the rent's band, clamped so it can never turn the
+      // payout negative.
+      const landlordFee = serviceFees(effectiveRent, bands).landlord;
+      const landlordAmount = effectiveRent - Math.min(landlordFee, effectiveRent);
       const earned = verify.amountPaid - landlordAmount;
       openPayoutCycle(tx, ref, data, {
         landlordAmount,
@@ -596,6 +598,7 @@ export const completeLinkedPromotion = onCall(
   async (request) => {
     const input = validateRenewalInput(request.data);
     const db = getFirestore();
+    const promoBands = (await getPricing()).serviceFeeBands;
     const linkRef = db.collection("tenancy_links").doc(input.sourceId);
 
     const verify = await verifyPaystackReference(
@@ -652,6 +655,9 @@ export const completeLinkedPromotion = onCall(
         pendingEffective != null &&
         pendingEffective.getTime() <= Date.now();
       const rentAmount = applyIncrease ? pendingRent! : baseRent;
+      const promotionFee = Math.min(
+        serviceFees(rentAmount, promoBands).landlord, rentAmount,
+      );
 
       const expected = rentAmount + DEAL_FEE;
       if (verify.amountPaid < expected - 1) {
@@ -706,9 +712,11 @@ export const completeLinkedPromotion = onCall(
         rentAmount: rentAmount,
         agentFee: 0,
         totalPaid: rentAmount + DEAL_FEE,
-        landlordPayout: rentAmount - DEAL_FEE,
+        // Same terms as a deal made on ClearRent: the landlord's service fee
+        // for the rent's band, out of the rent.
+        landlordPayout: rentAmount - promotionFee,
         agentPayout: 0,
-        clearrentEarnings: DEAL_FEE * 2,
+        clearrentEarnings: DEAL_FEE + promotionFee,
         landlordPayoutStatus: "pending",
         agentPayoutStatus: "not_applicable",
         inspectionFeeCredit: 0,

@@ -21,7 +21,7 @@ import {
   lagosMidnight, parseStayChoice, type StayChoice,
 } from "./furnished_stay";
 import {defineSecret} from "firebase-functions/params";
-import {getPricing} from "./pricing";
+import {getPricing, serviceFees} from "./pricing";
 import {moveInCheckDeadline} from "./move_in_check_ops";
 import {writeNotificationOnce} from "./notification_helpers";
 import {verifyAndConsumeReference} from "./payment_verify";
@@ -215,8 +215,12 @@ export const createRentalInterest = onCall(
     // sent a negative transfer. It reconciled on paper only because the
     // negative payout cancelled the inflated take: one live rental claimed
     // ₦15,000 kept out of a ₦7,200 payment.
-    const landlordDealFee = Math.min(dealFee, rentAmount);
-    const agentDealFee = hasAgent ? Math.min(dealFee, agentFee) : 0;
+    // The tenant pays the flat dealFee; the landlord and agent pay the
+    // service fee for the deal's rent band (the agent half the landlord's),
+    // each out of what they are owed.
+    const bandFee = serviceFees(rentAmount, pricing.serviceFeeBands);
+    const landlordDealFee = Math.min(bandFee.landlord, rentAmount);
+    const agentDealFee = hasAgent ? Math.min(bandFee.agent, agentFee) : 0;
     const landlordPayout = rentAmount - landlordDealFee;
     const agentPayout = hasAgent ? agentFee - agentDealFee : 0;
 
