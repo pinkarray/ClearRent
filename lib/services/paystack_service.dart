@@ -50,6 +50,8 @@ class PaystackService {
   static const String typeListing = 'listing';
   static const String typeRent = 'rent';
   static const String typeRenewal = 'renewal';
+  // Furnished stay, months added (rent only). Priced server-side.
+  static const String typeExtension = 'extension';
 
   /// Redact a payment reference for release-build logs.
   /// Returns the full reference in debug builds, first 8 chars + ellipsis in release.

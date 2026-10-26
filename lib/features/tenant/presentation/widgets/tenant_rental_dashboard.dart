@@ -14,6 +14,8 @@ import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/models/condition_record.dart';
 import '../screens/condition_capture_screen.dart';
 import 'move_in_check_card.dart';
+import 'extend_stay_sheet.dart';
+import '../../../../services/property_service.dart';
 
 class TenantRentalDashboard extends StatefulWidget {
   final ActiveRental rental;
@@ -419,6 +421,14 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
               const SizedBox(height: 16),
             ],
 
+            // Furnished stay: add months before it ends (rent only).
+            if (rental.stayType == 'furnished' &&
+                (rental.isActive || rental.isExpiringSoon) &&
+                rental.daysUntilLeaseEnd > 0) ...[
+              _buildExtendStay(),
+              const SizedBox(height: 16),
+            ],
+
             // Furnished stay: the 48-hour move-in check, once moved in.
             if (rental.moveInCheck == 'awaiting' &&
                 !DateTime.now().isBefore(rental.leaseStartDate)) ...[
@@ -522,6 +532,41 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
     );
   }
 
+  Widget _buildExtendStay() {
+    final end = rental.leaseEndDate;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        Icon(Icons.update, color: AppColors.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            'Your stay ends ${end.day}/${end.month}/${end.year}.',
+            style: AppTextStyles.bodyMedium,
+          ),
+        ),
+        TextButton(
+          onPressed: () async {
+            final property =
+                await PropertyService().getProperty(rental.propertyId);
+            if (!mounted) return;
+            final maxStay = (property?.maxStayMonths ?? 0) > 0
+                ? property!.maxStayMonths
+                : 11;
+            await showExtendStaySheet(context, rental, maxStay);
+          },
+          child: const Text('Extend'),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildExpiryWarning() {
     return Container(
       width: double.infinity,
@@ -548,12 +593,17 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Lease Expiring Soon',
+              Text(
+                  rental.stayType == 'furnished'
+                      ? 'Stay Ending Soon'
+                      : 'Lease Expiring Soon',
                   style: AppTextStyles.labelMedium
                       .copyWith(color: AppColors.warning)),
               const SizedBox(height: 2),
               Text(
-                '${rental.daysUntilLeaseEnd} days remaining. Start looking for your next home or contact your landlord to renew.',
+                rental.stayType == 'furnished'
+                    ? '${rental.daysUntilLeaseEnd} days remaining. Extend your stay below, or plan your move-out.'
+                    : '${rental.daysUntilLeaseEnd} days remaining. Start looking for your next home or contact your landlord to renew.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary),
               ),

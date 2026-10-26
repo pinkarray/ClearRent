@@ -132,6 +132,10 @@ class ActiveRental {
   // the tenant's 48-hour move-in check. Server-written only (move_in_check_ops):
   // awaiting | confirmed | reported | resolved, null on a yearly lease.
   final String stayType;
+  // Furnished stay: months paid for so far, and the monthly rent extensions
+  // are priced at.
+  final int stayMonths;
+  final double monthlyRent;
   final String? moveInCheck;
   final DateTime? moveInCheckDeadline;
   
@@ -212,6 +216,8 @@ class ActiveRental {
     this.cautionDeclaredAt,
     this.sourceLinkId,
     this.stayType = 'yearly',
+    this.stayMonths = 0,
+    this.monthlyRent = 0,
     this.moveInCheck,
     this.moveInCheckDeadline,
     this.status = ActiveRentalStatus.active,
@@ -494,6 +500,8 @@ class ActiveRental {
           ? (data['cautionDeclaredAt'] as Timestamp).toDate() : null,
       sourceLinkId: data['sourceLinkId'] as String?,
       stayType: data['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      stayMonths: (data['stayMonths'] as num?)?.toInt() ?? 0,
+      monthlyRent: (data['monthlyRent'] as num?)?.toDouble() ?? 0,
       moveInCheck: data['moveInCheck'] as String?,
       moveInCheckDeadline:
           (data['moveInCheckDeadline'] as Timestamp?)?.toDate(),
@@ -637,6 +645,8 @@ class ActiveRental {
       contestedAt: contestedAt ?? this.contestedAt,
       sourceLinkId: sourceLinkId ?? this.sourceLinkId,
       stayType: stayType,
+      stayMonths: stayMonths,
+      monthlyRent: monthlyRent,
       moveInCheck: moveInCheck,
       moveInCheckDeadline: moveInCheckDeadline,
       status: status ?? this.status,

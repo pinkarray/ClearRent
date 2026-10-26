@@ -61,6 +61,19 @@ class ActiveRentalService {
   Future<String?> reportMoveInProblem(String rentalId, String text) =>
       _moveInCall('reportMoveInProblem', {'rentalId': rentalId, 'text': text});
 
+  /// Furnished stay: records a paid extension. The server re-verifies the
+  /// payment and moves the end date. Null on success.
+  Future<String?> completeStayExtension(
+    String rentalId,
+    String paymentReference,
+    int months,
+  ) =>
+      _moveInCall('completeStayExtension', {
+        'sourceId': rentalId,
+        'paymentReference': paymentReference,
+        'months': months,
+      });
+
   Future<String?> _moveInCall(String fn, Map<String, dynamic> data) async {
     try {
       await _functions.httpsCallable(fn).call<Map<String, dynamic>>(data);
