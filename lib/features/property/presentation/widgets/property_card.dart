@@ -374,7 +374,9 @@ class PropertyCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          property.furnishingLabel,
+                          property.isFurnishedStay
+                              ? 'Furnished stay, ${property.minStayMonths} to ${property.maxStayMonths} months'
+                              : property.furnishingLabel,
                           style: AppTextStyles.bodySmall.copyWith(
                             color:
                                 property.furnishing == null

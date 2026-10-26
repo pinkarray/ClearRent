@@ -36,6 +36,7 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/services.dart';
 import '../../../../shared/models/landlord_residence.dart';
 import '../../../landlord/presentation/widgets/home_building_toggle.dart';
+import '../../../landlord/presentation/widgets/inventory_editor.dart';
 
 class PropertyDetailScreen extends StatefulWidget {
   final PropertyModel property;
@@ -1252,6 +1253,11 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                           const SizedBox(height: 12),
 
                           _buildFurnishingRow(property),
+
+                          if (property.isFurnishedStay) ...[
+                            const SizedBox(height: 12),
+                            _buildStayCard(property),
+                          ],
 
                           if (_landlordIssueLine != null ||
                               _landlordRatingLine != null) ...[
@@ -3599,6 +3605,52 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// A furnished stay: how long, from when, and what comes with the place.
+  /// The item list is what both sides check at move-in and move-out.
+  Widget _buildStayCard(PropertyModel property) {
+    final from = property.availableFrom;
+    final now = DateTime.now();
+    final when = from == null || !from.isAfter(now)
+        ? 'Available now'
+        : 'Available from ${from.day}/${from.month}/${from.year}';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.weekend_outlined, size: 22, color: AppColors.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Furnished stay', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${property.stayRangeLabel}, paid up front. $when.',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          Text("What's included", style: AppTextStyles.labelMedium),
+          const SizedBox(height: 8),
+          InventoryEditor(items: property.inventory),
         ],
       ),
     );

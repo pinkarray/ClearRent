@@ -149,6 +149,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   // Furnishing levels the tenant will accept; empty = any. A listing that
   // never stated its level matches only "any", since it could be either.
   final Set<String> _filterFurnishing = {};
+  // 'any' | 'yearly' | 'furnished'. One stay type per listing.
+  String _filterStay = 'any';
 
   bool get _hasExtraFilters =>
       _minRent > 0 ||
@@ -156,7 +158,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       _minBedrooms > 0 ||
       _minBathrooms > 0 ||
       _filterAmenities.isNotEmpty ||
-      _filterFurnishing.isNotEmpty;
+      _filterFurnishing.isNotEmpty ||
+      _filterStay != 'any';
 
   // Properties
   List<PropertyModel> _realProperties = [];
@@ -660,6 +663,9 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                 !_filterFurnishing.contains(property.furnishing)) {
               return false;
             }
+            if (_filterStay != 'any' && property.stayType != _filterStay) {
+              return false;
+            }
             if (_searchController.text.isNotEmpty) {
               final query = _searchController.text.toLowerCase();
               // Exact street address lives in the gated subdoc and isn't available
@@ -736,6 +742,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     int tempBath = _minBathrooms;
     final tempAmenities = {..._filterAmenities};
     final tempFurnishing = {..._filterFurnishing};
+    String tempStay = _filterStay;
     final divisions = (bound / 100000).round().clamp(1, 200);
 
     showModalBottomSheet(
@@ -816,6 +823,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                                 tempBath = 0;
                                 tempAmenities.clear();
                                 tempFurnishing.clear();
+                                tempStay = 'any';
                               }),
                           child: Text(
                             'Reset',
@@ -894,6 +902,24 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                             ),
                           ),
                           group(
+                            'Stay',
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: const {
+                                'any': 'Any',
+                                'yearly': 'Yearly lease',
+                                'furnished': 'Furnished stay (1 to 11 months)',
+                              }.entries.map((e) {
+                                return chip(
+                                  e.value,
+                                  tempStay == e.key,
+                                  () => setSheet(() => tempStay = e.key),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          group(
                             'Furnishing',
                             Wrap(
                               spacing: 8,
@@ -966,6 +992,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                             _filterFurnishing
                               ..clear()
                               ..addAll(tempFurnishing);
+                            _filterStay = tempStay;
                           });
                           _filterProperties();
                           Navigator.pop(context);
@@ -978,7 +1005,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                           ),
                         ),
                         child: Text(
-                          'Show ${_matchCount(tempMin, tempMax >= bound ? 0 : tempMax, tempBed, tempBath, tempAmenities, tempFurnishing)} results',
+                          'Show ${_matchCount(tempMin, tempMax >= bound ? 0 : tempMax, tempBed, tempBath, tempAmenities, tempFurnishing, tempStay)} results',
                           style: AppTextStyles.labelLarge.copyWith(
                             color: Colors.white,
                           ),
@@ -1004,6 +1031,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
     int minBath,
     Set<String> amenities,
     Set<String> furnishing,
+    String stay,
   ) {
     return _allProperties.where((property) {
       if (_selectedType != 'all' && property.propertyType != _selectedType) {
@@ -1023,6 +1051,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
       if (furnishing.isNotEmpty && !furnishing.contains(property.furnishing)) {
         return false;
       }
+      if (stay != 'any' && property.stayType != stay) return false;
       return true;
     }).length;
   }
