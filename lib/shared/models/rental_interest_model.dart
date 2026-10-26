@@ -26,6 +26,9 @@ class RentalInterest {
   // Payment details
   final double paymentAmount;
   final double rentAmount;
+  // Furnished stay: what the tenant asked for. Null on a yearly lease.
+  final int? stayMonths;
+  final String? stayStartDay; // Lagos calendar day, yyyy-mm-dd
   final double agentFee;
   final double tenantDealFee;
   final double landlordDealFee;
@@ -59,6 +62,8 @@ class RentalInterest {
     required this.status,
     required this.paymentAmount,
     this.rentAmount = 0,
+    this.stayMonths,
+    this.stayStartDay,
     this.agentFee = 0,
     this.tenantDealFee = 5000,
     this.landlordDealFee = 5000,
@@ -116,6 +121,8 @@ class RentalInterest {
       status: _statusFromString(data['status'] ?? 'pending_payment'),
       paymentAmount: (data['paymentAmount'] ?? 0).toDouble(),
       rentAmount: (data['rentAmount'] ?? 0).toDouble(),
+      stayMonths: (data['stayMonths'] as num?)?.toInt(),
+      stayStartDay: data['stayStartDay'] as String?,
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       tenantDealFee: (data['tenantDealFee'] ?? 5000).toDouble(),
       landlordDealFee: (data['landlordDealFee'] ?? 5000).toDouble(),
@@ -219,6 +226,8 @@ class RentalInterest {
       status: status ?? this.status,
       paymentAmount: paymentAmount ?? this.paymentAmount,
       rentAmount: rentAmount ?? this.rentAmount,
+      stayMonths: stayMonths,
+      stayStartDay: stayStartDay,
       agentFee: agentFee ?? this.agentFee,
       tenantDealFee: tenantDealFee ?? this.tenantDealFee,
       landlordDealFee: landlordDealFee ?? this.landlordDealFee,

@@ -1935,6 +1935,18 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                         interest.propertyTitle,
                         style: AppTextStyles.labelMedium,
                       ),
+                      // Furnished stay: how long and from when, which is
+                      // what the landlord is agreeing to.
+                      if (interest.stayMonths != null &&
+                          interest.stayStartDay != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Furnished stay: ${interest.stayMonths} '
+                          'month${interest.stayMonths == 1 ? '' : 's'} from '
+                          '${interest.stayStartDay!.split('-').reversed.join('/')}',
+                          style: AppTextStyles.bodySmall,
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       // NOT "payment verified": under pay-after-accept the
                       // tenant has paid nothing at this point. The banner above
