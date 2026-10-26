@@ -1,4 +1,5 @@
 import {HttpsError} from "firebase-functions/v2/https";
+import {getFirestore} from "firebase-admin/firestore";
 
 /**
  * Furnished stays: 1 to 11 months, paid up front, at a monthly rent. The
@@ -137,4 +138,73 @@ export function parseStayChoice(
     );
   }
   return {months, startDay};
+}
+
+/**
+ * The longest stay the listing allows now. A landlord may lower it later;
+ * extension follows the listing, as booking did.
+ * @param {unknown} propertyId The rental's propertyId.
+ * @return {Promise<number>} Months, 11 when unknown.
+ */
+export async function listingMaxStay(propertyId: unknown): Promise<number> {
+  if (typeof propertyId !== "string" || !propertyId) return 11;
+  const p = await getFirestore().collection("properties").doc(propertyId).get();
+  const max = p.get("maxStayMonths");
+  return typeof max === "number" ? max : 11;
+}
+
+/** Statuses a furnished stay can still be extended from. */
+const EXTENDABLE = new Set(["active", "expiring_soon"]);
+
+/**
+ * What extending a furnished stay by `months` costs, or the reason it cannot
+ * be extended. Rent only: the deal fee was paid once, with the booking. Used
+ * by pricing (to charge) and by completeStayExtension (to check the charge).
+ * @param {FirebaseFirestore.DocumentData} r The active_rentals document.
+ * @param {number} maxStay The listing's longest stay, in months.
+ * @param {unknown} months How many months the tenant asked to add.
+ * @param {Date} now Injected for tests.
+ * @return {number} The amount to charge, in naira.
+ */
+export function extensionAmount(
+  r: FirebaseFirestore.DocumentData,
+  maxStay: number,
+  months: unknown,
+  now: Date = new Date(),
+): number {
+  if (r.stayType !== "furnished") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only a furnished stay can be extended.",
+    );
+  }
+  const end = (r.leaseEndDate as {toDate?: () => Date} | undefined)
+    ?.toDate?.();
+  if (!EXTENDABLE.has(r.status) || !end || end.getTime() <= now.getTime()) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This stay has ended, so it can no longer be extended.",
+    );
+  }
+  const current = typeof r.stayMonths === "number" ? r.stayMonths : 0;
+  const room = Math.max(0, maxStay - current);
+  if (
+    typeof months !== "number" || !Number.isInteger(months) ||
+    months < 1 || months > room
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      room === 0 ?
+        "This stay is already as long as the landlord allows." :
+        `You can extend by 1 to ${room} more month${room === 1 ? "" : "s"}.`,
+    );
+  }
+  const monthly = typeof r.monthlyRent === "number" ? r.monthlyRent : 0;
+  if (!(monthly > 0)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This stay has no monthly rent recorded. Contact support.",
+    );
+  }
+  return monthly * months;
 }

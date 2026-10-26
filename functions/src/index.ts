@@ -54,6 +54,7 @@ const PRICED_PAYMENT_TYPES = new Set([
   "listing",
   "rent",
   "renewal",
+  "extension",
 ]);
 
 interface NotificationDoc {
@@ -3681,7 +3682,9 @@ async function reconcilePaystackCharge(
       // rent got paid twice: the client died after the charge, nothing flipped
       // rentPaymentStatus, and the next initialize saw an unpaid rental.
       const purposeIds: Record<string, string> = {};
-      for (const key of ["rentalInterestId", "propertyId", "requestId"]) {
+      for (const key of [
+        "rentalInterestId", "propertyId", "requestId", "sourceId",
+      ]) {
         const v = (meta as Record<string, unknown>)[key];
         if (typeof v === "string" && v.length > 0) purposeIds[key] = v;
       }
@@ -4035,6 +4038,39 @@ export const leaseLifecycleSweep = onSchedule(
           (data.propertyTitle as string | undefined) ?? "your rental";
         const daysLeft = Math.ceil((leaseEndMs - now) / dayMs);
 
+        // A furnished stay simply ends: no year to renew into. It goes into
+        // the ordinary move-out (landlord confirms the handover, or the sweep
+        // does after 7 days), exactly as if the tenant had given notice for
+        // the last day.
+        const furnished = !isLinked && data.stayType === "furnished";
+        if (furnished && leaseEndMs <= now) {
+          await doc.ref.update({
+            status: "moveout_pending",
+            moveOutRequestedAt: FieldValue.serverTimestamp(),
+            moveOutIntendedDate: leaseEndTs,
+            endReason: "Their furnished stay ended",
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          locked++;
+          const wrote = await writeNotificationOnce(
+            `stay_ended_${doc.id}`,
+            {
+              userId: tenantId,
+              title: "Your stay has ended",
+              body: `Your stay at ${propertyTitle} has ended. Hand the ` +
+                "place over to the landlord; they confirm the handover.",
+              payload: {
+                type: "lease_ended",
+                rentalId: doc.id,
+                source: "active",
+              },
+              type: "lease_ended",
+            },
+          );
+          if (wrote) remindersSent++;
+          continue;
+        }
+
         // ── Already lapsed → lock + one-time ended notice ──
         if (leaseEndMs <= now) {
           if (data.status !== "grace_locked") {
@@ -4081,8 +4117,12 @@ export const leaseLifecycleSweep = onSchedule(
                   `Your lease for ${propertyTitle} ends in ${t} ` +
                     `day${t === 1 ? "" : "s"}. Pay rent to continue or plan ` +
                     "your move." :
-                  `Your lease for ${propertyTitle} ends in ${t} ` +
-                    `day${t === 1 ? "" : "s"}. Renew to avoid interruption.`,
+                  furnished ?
+                    `Your stay at ${propertyTitle} ends in ${t} ` +
+                      `day${t === 1 ? "" : "s"}. Extend it in the app, or ` +
+                      "plan your move-out." :
+                    `Your lease for ${propertyTitle} ends in ${t} ` +
+                      `day${t === 1 ? "" : "s"}. Renew to avoid interruption.`,
                 payload: {
                   type: "lease_reminder",
                   rentalId: doc.id,
@@ -4931,6 +4971,7 @@ export {
 
 export {
   completeActiveRenewal,
+  completeStayExtension,
   completeLinkedPromotion,
 } from "./renewal_ops";
 export {

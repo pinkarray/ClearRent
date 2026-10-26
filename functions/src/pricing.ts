@@ -16,6 +16,7 @@
 import * as logger from "firebase-functions/logger";
 import {HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
+import {extensionAmount, listingMaxStay} from "./furnished_stay";
 
 /**
  * What a role pays to verify, first time versus every year after.
@@ -407,6 +408,33 @@ export async function resolveServerAmount(
       );
     }
     return rent + pricing.dealFee;
+  }
+
+  if (type === "extension") {
+    // Furnished stay, months added: rent only, priced from the rental's own
+    // monthly rent. Every failure throws, for the reason given on renewal.
+    const sourceId = typeof metadata?.sourceId === "string" ?
+      metadata.sourceId :
+      null;
+    if (!sourceId) {
+      throw new HttpsError(
+        "invalid-argument",
+        "We could not tell which stay this is for. Reopen it and try again.",
+      );
+    }
+    const snap = await getFirestore()
+      .collection("active_rentals").doc(sourceId).get();
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "That stay no longer exists.");
+    }
+    if (snap.get("tenantId") !== uid) {
+      throw new HttpsError(
+        "permission-denied",
+        "This stay belongs to a different tenant.",
+      );
+    }
+    const maxStay = await listingMaxStay(snap.get("propertyId"));
+    return extensionAmount(snap.data() ?? {}, maxStay, metadata?.months);
   }
 
   if (type === "verification") {
