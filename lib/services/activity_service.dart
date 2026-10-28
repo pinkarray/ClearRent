@@ -239,10 +239,13 @@ class ActivityService {
     List<ActivityModel> own,
     List<ActivityModel> fromNotifications,
   ) {
+    // Viewing notifications carry the request id, not a propertyId, so the
+    // same title stands in for the same property: without it every booking
+    // showed "New Inspection Request" twice.
     bool twin(ActivityModel n) => own.any((a) =>
         a.type == n.type &&
-        a.propertyId != null &&
-        a.propertyId == n.propertyId &&
+        ((a.propertyId != null && a.propertyId == n.propertyId) ||
+            (n.propertyId == null && a.title == n.title)) &&
         a.createdAt.difference(n.createdAt).abs() <
             const Duration(minutes: 2));
     return [...own, ...fromNotifications.where((n) => !twin(n))]
