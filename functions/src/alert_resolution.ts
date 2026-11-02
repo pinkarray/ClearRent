@@ -84,6 +84,10 @@ function payoutsSettled(r: Doc): boolean {
 // LIFECYCLE_PENDING in the dashboard's src/lib/alerts.ts - if these two lists
 // disagree, the feed calls a row open work while its status says resolved.
 const LIFECYCLE_OPEN = new Set(["requested", "paid"]);
+// A viewing in one of these states needs nothing more from an admin.
+const VIEWING_FINISHED = new Set([
+  "completed", "cancelled", "declined", "expired", "refunded",
+]);
 
 const RESOLVERS: Record<string, Resolver> = {
   // The landlord decided (or the interest was cleaned up). Anything other than
@@ -188,11 +192,14 @@ const RESOLVERS: Record<string, Resolver> = {
       t.verificationStatus === "rejected",
   },
 
-  // Judged from the alert's own meta - no target read needed.
+  // Judged from the alert's own meta, and from the viewing itself: a viewing
+  // that was deleted, or finished without its meta moving on, left the alert
+  // open for good (two deleted test viewings sat "requested" for weeks).
   inspection_lifecycle: {
-    collection: null,
-    done: (_t, alert) =>
-      !LIFECYCLE_OPEN.has(String(alert.meta?.state ?? "")),
+    collection: "inspection_requests",
+    done: (t, alert) =>
+      !LIFECYCLE_OPEN.has(String(alert.meta?.state ?? "")) ||
+      VIEWING_FINISHED.has(String(t.status ?? "")),
   },
 
   // "Did this payout ever arrive?" - answered once the beneficiary confirms.
