@@ -199,28 +199,117 @@ export const finalizeWebVerification = onCall(
       );
     }
 
-    const batch = db.batch();
-    batch.set(reqRef, {
-      status: "pending",
-      paymentReference: reference,
-      paymentStatus: "paid",
-      paidAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
-    batch.set(db.collection("users").doc(uid), {
-      verificationStatus: "pending",
-      // Renewals carry no new NIN - lets admin tell an annual renewal from a
-      // first-time application in the review queue.
-      isRenewal: false,
-      verificationSubmittedAt: FieldValue.serverTimestamp(),
-      verificationPaymentReference: reference,
-      verificationPaymentStatus: "paid",
-      updatedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
-    await batch.commit();
-
+    await promoteWebVerification(uid, requestId, reference);
     logger.info("Web verification promoted to review", {
       uid, requestId, reference, paid,
     });
     return {ok: true, alreadyDone: false};
   },
 );
+
+/**
+ * Moves a paid web application from `awaiting_payment` into the review queue.
+ * Shared by the callback page (finalizeWebVerification) and the Paystack
+ * webhook (autoPromoteWebVerification), whichever arrives first; callers check
+ * the status and the payment before calling.
+ * @param {string} uid The applicant.
+ * @param {string} requestId The verification_requests id.
+ * @param {string} reference The Paystack reference that paid for it.
+ * @return {Promise<void>}
+ */
+async function promoteWebVerification(
+  uid: string,
+  requestId: string,
+  reference: string,
+): Promise<void> {
+  const db = getFirestore();
+  const batch = db.batch();
+  batch.set(db.collection("verification_requests").doc(requestId), {
+    status: "pending",
+    paymentReference: reference,
+    paymentStatus: "paid",
+    paidAt: FieldValue.serverTimestamp(),
+  }, {merge: true});
+  batch.set(db.collection("users").doc(uid), {
+    verificationStatus: "pending",
+    // Renewals carry no new NIN - lets admin tell an annual renewal from a
+    // first-time application in the review queue.
+    isRenewal: false,
+    verificationSubmittedAt: FieldValue.serverTimestamp(),
+    verificationPaymentReference: reference,
+    verificationPaymentStatus: "paid",
+    updatedAt: FieldValue.serverTimestamp(),
+  }, {merge: true});
+  await batch.commit();
+}
+
+/**
+ * Promotes a web application from the Paystack webhook, so a paid applicant
+ * reaches the review queue even when the browser never comes back to the
+ * callback page. That is how one tenant paid, saw "not paid", filled the form
+ * again and paid a second time. The webhook's signature already proves the
+ * charge; this only matches it to the application the charge named.
+ * @param {string} reference The webhook's payments doc id.
+ * @return {Promise<void>}
+ */
+export async function autoPromoteWebVerification(
+  reference: string,
+): Promise<void> {
+  const db = getFirestore();
+  const pay = (await db.collection("payments").doc(reference).get()).data();
+  if (!pay || pay.type !== "verification") return;
+  const requestId = typeof pay.requestId === "string" ? pay.requestId : "";
+  const uid = typeof pay.userId === "string" ? pay.userId : "";
+  if (!requestId || !uid) return; // the app's flow: no parked application
+  const req = (await db.collection("verification_requests")
+    .doc(requestId).get()).data();
+  if (!req || req.userId !== uid || req.status !== "awaiting_payment") return;
+  const expected = await resolveServerAmount("verification", uid);
+  const paid = typeof pay.gatewayAmount === "number" ? pay.gatewayAmount : 0;
+  if (expected !== null && paid + 0.5 < expected) {
+    logger.error("Webhook verification underpaid - not promoted", {
+      uid, requestId, reference, paid, expected,
+    });
+    return;
+  }
+  await promoteWebVerification(uid, requestId, reference);
+  logger.info("Web verification promoted from the webhook", {
+    uid, requestId, reference, paid,
+  });
+}
+
+/**
+ * Refuses to start a verification charge the user does not owe: their
+ * application is already with the team, or a payment from them in the last
+ * day has arrived and is still being applied. Called only when a payment is
+ * STARTED, never while finishing one.
+ * @param {string} uid The payer.
+ * @return {Promise<void>}
+ */
+export async function assertNoVerificationOwed(uid: string): Promise<void> {
+  const db = getFirestore();
+  const user = (await db.collection("users").doc(uid).get()).data() ?? {};
+  if (user.verificationStatus === "pending") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Your verification is already with our team. There is nothing to pay.",
+    );
+  }
+  const recent = await db.collection("payments")
+    .where("userId", "==", uid)
+    .where("type", "==", "verification")
+    .where("needsReconciliation", "==", true)
+    .get();
+  const dayAgo = Date.now() - 24 * 3600_000;
+  const unapplied = recent.docs.some((d) => {
+    const at = d.get("createdAt");
+    return at && typeof at.toMillis === "function" && at.toMillis() > dayAgo;
+  });
+  if (unapplied) {
+    throw new HttpsError(
+      "failed-precondition",
+      "We have received a verification payment from you and are applying " +
+        "it. Please do not pay again; refresh in a minute.",
+    );
+  }
+}

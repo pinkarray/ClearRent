@@ -34,6 +34,10 @@ import {
 } from "./admin_alerts";
 import {findUserByPhone, openCaretakerThread} from "./caretaker_ops";
 import {resolveServerAmount, getPricing} from "./pricing";
+import {
+  assertNoVerificationOwed,
+  autoPromoteWebVerification,
+} from "./verification_ops";
 import {inspectionRefundAmount} from "./admin_money_ops";
 import {assertAdmin} from "./admin_helpers";
 
@@ -3294,6 +3298,10 @@ export const initializePayment = onCall(
     // ₦100 for verification, or ₦100 of rent. Every priced type now either
     // returns a server figure or throws, so the `?? amount` below is
     // unreachable and remains only as a belt-and-braces default.
+    // A second verification charge is refused while one is in review or still
+    // being applied (one tenant paid twice in two minutes).
+    if (type === "verification") await assertNoVerificationOwed(uid);
+
     const serverAmount = await resolveServerAmount(type, uid, callerMetadata);
     if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
       logger.warn("Client/server amount mismatch - charging server amount", {
@@ -3622,6 +3630,17 @@ export const paystackWebhook = onRequest(
 
     try {
       await reconcilePaystackCharge(reference, data);
+      // A web verification is finished here too, not only by the callback
+      // page, which a closed tab or a missed redirect never reaches. Its own
+      // failure must not make Paystack retry a charge already recorded.
+      try {
+        await autoPromoteWebVerification(reference);
+      } catch (err) {
+        logger.error("Webhook verification promotion failed", {
+          reference,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       res.status(200).send("ok");
     } catch (err) {
       logger.error("Paystack webhook reconcile failed", {
@@ -3701,11 +3720,16 @@ async function reconcilePaystackCharge(
         needsReconciliation: true,
         createdAt: now,
       });
-      logger.warn("Paystack webhook created a MISSING payment record", {
-        reference,
-        paymentType,
-        userId,
-      });
+      // The website never writes its own record (it redirects to Paystack and
+      // back), so for a web payment this is the normal path, not a warning.
+      const fromWeb = typeof (meta as Record<string, unknown>).webReturnPath ===
+        "string";
+      (fromWeb ? logger.info : logger.warn)(
+        fromWeb ?
+          "Paystack webhook recorded a web payment" :
+          "Paystack webhook created a MISSING payment record",
+        {reference, paymentType, userId},
+      );
       return;
     }
 
