@@ -330,8 +330,8 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
       builder: (ctx) => AlertDialog(
         title: const Text('Get Refund'),
         content: const Text(
-            'Take a full refund instead of rescheduling? An admin will '
-            'process it shortly.'),
+            'Take a refund instead of rescheduling? You get the fee back '
+            'less the booking charge, and an admin will process it shortly.'),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
@@ -704,7 +704,7 @@ class _TenantPendingCardState extends State<_TenantPendingCard> {
               ),
               child: Text(
                 'This wasn\'t approved before the date. Reschedule for free, '
-                'or take a full refund.',
+                'or take a refund of the fee less the booking charge.',
                 style:
                     AppTextStyles.caption.copyWith(color: AppColors.warning),
               ),

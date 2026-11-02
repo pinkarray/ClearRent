@@ -982,7 +982,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Your first listing is free. Each additional property listing requires a ₦10,000 fee. Payment will be collected securely via Paystack when you publish.',
+                  'Your first listing is free. Each additional property listing requires a ${PlatformPricing.formatNaira(_listingFeeAmount.toDouble())} fee. Payment will be collected securely via Paystack when you publish.',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -1014,7 +1014,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '₦10,000',
+                              PlatformPricing.formatNaira(_listingFeeAmount.toDouble()),
                               style: AppTextStyles.h3.copyWith(
                                 color: AppColors.primary,
                               ),
@@ -4548,7 +4548,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   Expanded(
                     child: Text(
                       _requiresListingFee
-                          ? 'This listing requires a ₦10,000 fee. Your property will go live after admin verifies it.'
+                          ? 'This listing requires a ${PlatformPricing.formatNaira(_listingFeeAmount.toDouble())} fee. Your property will go live after admin verifies it.'
                           : 'Your first listing is free!',
                       style: AppTextStyles.bodySmall.copyWith(
                         color:
@@ -6724,7 +6724,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Tenants pay a flat ₦10,000 inspection fee. Transport to and from the property is arranged directly between the tenant and the agent.',
+                      'Tenants pay a flat ${PlatformPricing.formatNaira(PricingService().current.inspectionTotal)} inspection fee. Transport to and from the property is arranged directly between the tenant and the agent.',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.info,
                       ),
@@ -7202,7 +7202,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       style: AppTextStyles.bodyMedium,
                     ),
                     Text(
-                      '₦10,000 flat',
+                      '${PlatformPricing.formatNaira(PricingService().current.inspectionTotal)} flat',
                       style: AppTextStyles.caption.copyWith(
                         color: AppColors.textSecondary,
                       ),

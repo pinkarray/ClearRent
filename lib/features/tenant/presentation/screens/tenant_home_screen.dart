@@ -13,6 +13,7 @@ import '../../../../shared/models/tenancy_link_model.dart';
 import '../../../../shared/models/rental_interest_model.dart';
 import '../../../property/presentation/widgets/property_card.dart';
 import '../../../chat/presentation/widgets/messages_tab.dart';
+import '../../../../services/pricing_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/saved_properties_service.dart';
 import '../../../../services/conversation_service.dart';
@@ -1349,7 +1350,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        "You're currently a linked tenant. Pay ₦5,000 to get verified and unlock:",
+                        "You're currently a linked tenant. Pay ${PlatformPricing.formatNaira(PricingService().current.verificationFee('tenant'))} to get verified and unlock:",
                         style: AppTextStyles.bodySmall.copyWith(
                           color: Colors.white.withAlpha(220),
                           height: 1.4,
@@ -1412,7 +1413,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                             ),
                           ),
                           child: Text(
-                            'Get Verified - ₦5,000',
+                            'Get Verified - ${PlatformPricing.formatNaira(PricingService().current.verificationFee('tenant'))}',
                             style: AppTextStyles.labelLarge.copyWith(
                               color: AppColors.primary,
                             ),
@@ -2116,7 +2117,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Pay ₦5,000 to unlock full platform access',
+                            'Pay ${PlatformPricing.formatNaira(PricingService().current.verificationFee('tenant'))} to unlock full platform access',
                             style: AppTextStyles.caption.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -2648,7 +2649,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
             child: AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
-              accountType: 'tenant',
+              accountType: 'tenant',
             ),
           ),
           // A caretaker can be any accountType, so the invitation prompt sits

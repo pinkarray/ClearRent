@@ -3047,8 +3047,8 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
                 Expanded(
                   child: Text(
                     'Transport to and from the property is arranged '
-                    'directly with the agent. Pay upfront to schedule; '
-                    'full refund if the landlord or agent declines.',
+                    'directly with the agent. You pay only once the '
+                    'landlord or agent approves the viewing.',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.info,
                     ),
