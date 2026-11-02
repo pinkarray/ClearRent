@@ -516,11 +516,26 @@ class PropertyModel {
   /// revealing the street. Used before an inspection is approved (tenant) or
   /// before an agent is assigned.
   String get approximateAddress {
+    final line = areaLine(lga, city, state);
+    return line.isEmpty ? 'Location available after approval' : line;
+  }
+
+  /// "Alagomeji, Yaba, Lagos" - neighbourhood first. The website stores the
+  /// council area as its full label, "Lagos Mainland LGA (Yaba)", which led
+  /// the line with a name tenants don't search by; the bracketed district is
+  /// the familiar one. Same rule as the website's `areaLine`.
+  static String areaLine(String lga, String city, [String state = '']) {
+    final bracket = RegExp(r'\(([^)]+)\)\s*$').firstMatch(lga);
+    final district =
+        bracket?.group(1) ?? lga.replaceAll(RegExp(r'\s+LGA\b.*$'), '');
     final parts = <String>[];
-    if (lga.isNotEmpty) parts.add(lga);
-    if (city.isNotEmpty) parts.add(city);
-    if (state.isNotEmpty) parts.add(state);
-    return parts.isEmpty ? 'Location available after approval' : parts.join(', ');
+    for (final p in [city, district, state]) {
+      final t = p.trim();
+      if (t.isEmpty) continue;
+      if (parts.any((q) => q.toLowerCase() == t.toLowerCase())) continue;
+      parts.add(t);
+    }
+    return parts.join(', ');
   }
 
   /// Full street-level address. Only show when the viewer is entitled:

@@ -270,7 +270,7 @@ class _CaretakerPropertiesScreenState extends State<CaretakerPropertiesScreen> {
         ),
         title: Text(property.title, style: AppTextStyles.bodyMedium),
         subtitle: Text(
-          [property.lga, property.city].where((s) => s.isNotEmpty).join(', '),
+          PropertyModel.areaLine(property.lga, property.city),
           style:
               AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
         ),
