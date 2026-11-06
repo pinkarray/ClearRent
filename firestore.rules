@@ -2375,6 +2375,15 @@ service cloud.firestore {
       allow delete: if false;     // Immutable
     }
 
+    // A beneficiary's Paystack subaccount. Server-written only: a code the owner
+    // could edit would let them redirect a split, which is why it does not sit
+    // on users/{uid}/private/bank.
+    match /payout_accounts/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
     // Admin alerts - the web dashboard's ping/queue feed. Written only by the
     // admin SDK (writeAdminAlert in Cloud Functions). Admins read it, mark it
     // read, resolve it or delete it.

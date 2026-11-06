@@ -5010,6 +5010,8 @@ export {
   finalizeWebVerification,
 } from "./verification_ops";
 
+export {onBankDetailsWritten} from "./subaccount_ops";
+
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
 export {
   confirmMoveIn,

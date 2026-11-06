@@ -20,6 +20,7 @@ import {
   stampVerificationClock,
   VERIFICATION_PERIOD_MS,
 } from "./verification_lifecycle";
+import {syncSubaccount} from "./subaccount_ops";
 
 /** Same secret index.ts binds; defineSecret is keyed by name, not identity. */
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
@@ -35,7 +36,7 @@ const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
  * @return {Promise<void>}
  */
 export const onVerificationVerified = onDocumentUpdated(
-  "users/{uid}",
+  {document: "users/{uid}", secrets: [paystackSecret]},
   async (event) => {
     const before = event.data?.before;
     const after = event.data?.after;
@@ -55,6 +56,10 @@ export const onVerificationVerified = onDocumentUpdated(
       uid: event.params.uid,
       expiresAt: new Date(now + VERIFICATION_PERIOD_MS).toISOString(),
     });
+
+    // Bank details are often saved before approval, when no subaccount can be
+    // made. This is the other half of onBankDetailsWritten.
+    await syncSubaccount(event.params.uid);
   },
 );
 

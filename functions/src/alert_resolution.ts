@@ -90,6 +90,13 @@ const VIEWING_FINISHED = new Set([
 ]);
 
 const RESOLVERS: Record<string, Resolver> = {
+  // Closes once Paystack has accepted an account for this person, which a
+  // corrected bank detail or a backfill run does on its own.
+  subaccount_failed: {
+    collection: "payout_accounts",
+    done: (t) => t.status === "active",
+  },
+
   // The landlord decided (or the interest was cleaned up). Anything other than
   // pending_acceptance means nobody is waiting on them any more.
   rental_interest: {
