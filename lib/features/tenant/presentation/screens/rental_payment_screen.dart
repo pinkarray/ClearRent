@@ -537,7 +537,11 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
     final interest = widget.rentalInterest;
     final rentAmount = interest.rentAmount > 0 ? interest.rentAmount : _amount;
     final agentFee = interest.agentFee;
-    final dealFee = interest.tenantDealFee > 0 ? interest.tenantDealFee : 5000.0;
+    // Everything ClearRent charges sits on top of the rent and agent fee
+    // (deal fee + service fee), so it is the rest of the server's total.
+    final clearRentFee = interest.paymentAmount > rentAmount + agentFee
+        ? interest.paymentAmount - rentAmount - agentFee
+        : interest.tenantDealFee;
     final hasAgent = agentFee > 0;
 
     return Container(
@@ -564,7 +568,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
             _paymentRow('Agent Fee', '₦${NumberFormat('#,###').format(agentFee)}'),
           ],
           const SizedBox(height: 8),
-          _paymentRow('Deal Completion Fee', '₦${NumberFormat('#,###').format(dealFee)}'),
+          _paymentRow('ClearRent Fee', '₦${NumberFormat('#,###').format(clearRentFee)}'),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 4),
@@ -598,7 +602,7 @@ class _RentalPaymentScreenState extends State<RentalPaymentScreen> {
           // The caution deposit, stated but NOT charged.
           //
           // ClearRent deliberately never holds this money - paymentAmount is
-          // rent + agent fee + deal fee and nothing else. But until now
+          // rent + agent fee + ClearRent's fee and nothing else. But until now
           // nothing anywhere told the tenant the deposit existed or that they
           // owed it to the landlord directly, so a tenant could complete this
           // screen believing they had paid everything they owed. Saying the

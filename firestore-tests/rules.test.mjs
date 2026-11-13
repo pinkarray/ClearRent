@@ -352,27 +352,6 @@ test("non-admin writing a payout field - denied", async () => {
   );
 });
 
-// The furnished-stay move-in check gates the landlord's payout, so only the
-// callables (admin SDK) may move it. A landlord confirming for the tenant
-// would release their own money.
-test("landlord marking the move-in check confirmed - denied", async () => {
-  await assertFails(
-    updateDoc(doc(landlordDb(), "active_rentals/ar1"), {
-      moveInCheck: "confirmed",
-      updatedAt: serverTimestamp(),
-    })
-  );
-});
-
-test("tenant writing the move-in check directly - denied", async () => {
-  await assertFails(
-    updateDoc(doc(tenantDb(), "active_rentals/ar1"), {
-      moveInCheck: "reported",
-      updatedAt: serverTimestamp(),
-    })
-  );
-});
-
 // The furnished move-out item check is the landlord's statement; the tenant
 // answers it by confirming or contesting, never by rewriting it.
 const itemCheck = [{ name: "Bed", qty: 1, state: "ok" }, { name: "TV", qty: 1, state: "damaged", note: "Cracked" }];
@@ -3475,6 +3454,43 @@ test("furnished stay with shortest longer than longest - denied", async () => {
 
 test("unknown stay type - denied", async () => {
   await assertFails(setDoc(doc(landlordDb(), "properties/fs_bad"), furnished({ stayType: "nightly" })));
+});
+
+const shortLease = (extra = {}) => ({
+  ...newUnit(LANDLORD, null),
+  rent: 200000, rentFrequency: "monthly", stayType: "short",
+  furnishing: "unfurnished", minStayMonths: 3, maxStayMonths: 6,
+  ...extra,
+});
+
+test("listing an unfurnished short lease - allowed", async () => {
+  await assertSucceeds(setDoc(doc(landlordDb(), "properties/sl_ok"), shortLease()));
+});
+
+test("listing a partly furnished short lease - allowed", async () => {
+  await assertSucceeds(setDoc(doc(landlordDb(), "properties/sl_partly"), shortLease({ furnishing: "partly" })));
+});
+
+test("short lease marked fully furnished - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/sl_fully"), shortLease({ furnishing: "fully" })));
+});
+
+test("short lease priced yearly - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/sl_yearly"), shortLease({ rentFrequency: "yearly" })));
+});
+
+test("short lease longer than 11 months - denied", async () => {
+  await assertFails(setDoc(doc(landlordDb(), "properties/sl_long"), shortLease({ maxStayMonths: 12 })));
+});
+
+test("short lease with no lengths - denied", async () => {
+  const d = shortLease(); delete d.minStayMonths;
+  await assertFails(setDoc(doc(landlordDb(), "properties/sl_nolen"), d));
+});
+
+test("changing an occupied short lease's lengths - denied", async () => {
+  await seedListing("sl_occ", { ...shortLease(), currentTenantsCount: 1 });
+  await assertFails(updateDoc(doc(landlordDb(), "properties/sl_occ"), { maxStayMonths: 9 }));
 });
 
 test("downgrading a furnished stay to partly furnished - denied", async () => {

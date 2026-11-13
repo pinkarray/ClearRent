@@ -1941,7 +1941,7 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           interest.stayStartDay != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Furnished stay: ${interest.stayMonths} '
+                          '${interest.stayType == 'short' ? 'Short lease' : 'Furnished stay'}: ${interest.stayMonths} '
                           'month${interest.stayMonths == 1 ? '' : 's'} from '
                           '${interest.stayStartDay!.split('-').reversed.join('/')}',
                           style: AppTextStyles.bodySmall,
@@ -1960,14 +1960,15 @@ class _LandlordHistoryCardState extends State<_LandlordHistoryCard> {
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      // The landlord's side of it, fixed when the tenant
-                      // asked: the band fee comes out of the rent.
+                      // The landlord's side of it: the whole rent. ClearRent's
+                      // fees are in the tenant's total above.
                       if (interest.landlordPayout > 0) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'ClearRent service fee: '
-                          '₦${_formatAmount(interest.landlordDealFee)}. You '
-                          'receive ₦${_formatAmount(interest.landlordPayout)}.',
+                          'You receive '
+                          '₦${_formatAmount(interest.landlordPayout)}. '
+                          "ClearRent's fee is paid by the tenant, not taken "
+                          'from your rent.',
                           style: AppTextStyles.bodySmall,
                         ),
                       ],

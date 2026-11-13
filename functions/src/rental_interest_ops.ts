@@ -16,14 +16,12 @@
 
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {
-  lagosMidnight, parseStayChoice, type StayChoice,
+  isMonthStay, lagosMidnight, parseStayChoice, type StayChoice,
 } from "./furnished_stay";
 import {defineSecret} from "firebase-functions/params";
 import {getPricing, serviceFees} from "./pricing";
-import {moveInCheckDeadline} from "./move_in_check_ops";
-import {writeNotificationOnce} from "./notification_helpers";
 import {verifyAndConsumeReference} from "./payment_verify";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
@@ -168,7 +166,8 @@ export const createRentalInterest = onCall(
     // (within the landlord's range) and the move-in day, and pays every month
     // up front, so the rent charged is monthly rent x months. One deal fee
     // whatever the length.
-    const stay: StayChoice | null = prop.stayType === "furnished" ?
+    // A short lease works the same way, without the item list.
+    const stay: StayChoice | null = isMonthStay(prop.stayType) ?
       parseStayChoice(data, prop) :
       null;
 
@@ -201,28 +200,17 @@ export const createRentalInterest = onCall(
     const hasAgent =
       typeof insp.agentId === "string" && insp.agentId.length > 0;
 
-    // Same composition the client used: rent + agent fee + the tenant's share
-    // of the deal-completion fee. The caution deposit is NOT collected here.
-    const paymentAmount = rentAmount + agentFee + dealFee;
-
-    // Each party pays a deal fee out of their OWN proceeds - the tenant on
-    // top, the landlord out of the rent, the agent out of the agent fee. A fee
-    // can therefore only be taken from money that party is actually owed.
-    //
-    // Unclamped, a rent (or agent fee) at or below the fee produced a NEGATIVE
-    // payout, and `dealFee * parties` then booked the shortfall as revenue -
-    // income never collected and impossible to realise, since nobody is ever
-    // sent a negative transfer. It reconciled on paper only because the
-    // negative payout cancelled the inflated take: one live rental claimed
-    // ₦15,000 kept out of a ₦7,200 payment.
-    // The tenant pays the flat dealFee; the landlord and agent pay the
-    // service fee for the deal's rent band (the agent half the landlord's),
-    // each out of what they are owed.
+    // Every ClearRent fee is ADDED to what the tenant pays; nothing is ever
+    // taken out of the landlord's rent or the agent's fee. The tenant pays
+    // the flat dealFee plus the service fee for the deal's rent band, and the
+    // band's agent part as well when an agent brought the deal. The caution
+    // deposit is NOT collected here.
     const bandFee = serviceFees(rentAmount, pricing.serviceFeeBands);
-    const landlordDealFee = Math.min(bandFee.landlord, rentAmount);
-    const agentDealFee = hasAgent ? Math.min(bandFee.agent, agentFee) : 0;
-    const landlordPayout = rentAmount - landlordDealFee;
-    const agentPayout = hasAgent ? agentFee - agentDealFee : 0;
+    const serviceFee = bandFee.landlord +
+      (hasAgent && agentFee > 0 ? bandFee.agent : 0);
+    const paymentAmount = rentAmount + agentFee + dealFee + serviceFee;
+    const landlordPayout = rentAmount;
+    const agentPayout = hasAgent ? agentFee : 0;
 
     // What is genuinely kept is whatever the tenant paid that is not being
     // sent on. Derived, never asserted, so it cannot exceed the money held.
@@ -256,7 +244,7 @@ export const createRentalInterest = onCall(
         rentAmount,
         ...(stay ?
           {
-            stayType: "furnished",
+            stayType: prop.stayType,
             stayMonths: stay.months,
             stayStartDay: stay.startDay,
             stayStartDate: lagosMidnight(stay.startDay),
@@ -265,10 +253,11 @@ export const createRentalInterest = onCall(
           {}),
         agentFee,
         tenantDealFee: dealFee,
-        // The fee ACTUALLY taken, not the headline one, so admin can see when a
-        // party's proceeds could not cover it.
-        landlordDealFee,
-        agentDealFee,
+        serviceFee,
+        // Nothing is taken from either side. Written as 0 rather than left
+        // out because older app builds default a missing value to 5,000.
+        landlordDealFee: 0,
+        agentDealFee: 0,
         landlordPayout,
         agentPayout,
         clearrentEarnings,
@@ -472,18 +461,6 @@ export const recordRentPayment = onCall(
         // not counted as occupying); flipping to active here is what fires the
         // occupancy recompute and takes the unit off the market.
         status: "active",
-        // A furnished stay is paid in full up front, so the landlord's payout
-        // waits for the tenant's 48-hour move-in check (move_in_check_ops).
-        ...(r.stayType === "furnished" ?
-          {
-            moveInCheck: "awaiting",
-            moveInCheckDeadline: moveInCheckDeadline(
-              (r.leaseStartDate as Timestamp | undefined)?.toDate() ??
-                new Date(),
-              new Date(),
-            ),
-          } :
-          {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
@@ -543,19 +520,6 @@ export const recordRentPayment = onCall(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-    }
-
-    // A furnished stay: tell the tenant the move-in check is theirs to do.
-    if (rentalQuery.docs[0].get("stayType") === "furnished") {
-      await writeNotificationOnce(`movein_${rentalRef.id}_opened`, {
-        userId: uid,
-        type: "move_in_check",
-        title: "Check the place when you move in",
-        body: "On move-in day you have 48 hours to confirm the place and its " +
-          "items match the listing, or report what does not. The landlord " +
-          "is paid after that.",
-        payload: {route: "/tenant/my-rentals"},
-      });
     }
 
     logger.info("Rent payment recorded server-side", {

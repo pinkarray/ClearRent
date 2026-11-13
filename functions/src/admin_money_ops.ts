@@ -63,8 +63,7 @@ import { assertAdmin, guardStatusTransition, writeAuditLog } from "./admin_helpe
 import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlertOnce} from "./admin_alerts";
 import {getPricing} from "./pricing";
-import {lagosMidnight, stayEndDay} from "./furnished_stay";
-import {moveInHoldReason} from "./move_in_check_ops";
+import {isMonthStay, lagosMidnight, stayEndDay} from "./furnished_stay";
 
 interface BeneficiaryBank {
   bankName: string | null;
@@ -472,9 +471,6 @@ export const markRentLandlordPayoutPaid = onCall(
         // tenant's rent has actually been collected.
         assertAgreementFinalized(data);
         assertRentPaid(data);
-        // A furnished stay: not until the tenant's move-in check has passed.
-        const hold = moveInHoldReason(data);
-        if (hold) throw new HttpsError("failed-precondition", hold);
         guardStatusTransition(
           data.landlordPayoutStatus,
           "pending",
@@ -1410,7 +1406,7 @@ async function createRentalForAcceptedInterest(
 
   // A furnished stay runs from the day the tenant chose for the months they
   // paid for; a yearly lease from acceptance for a year.
-  const furnished = interest.stayType === "furnished" &&
+  const furnished = isMonthStay(interest.stayType) &&
     typeof interest.stayStartDay === "string" &&
     typeof interest.stayMonths === "number";
   const now = furnished ?
@@ -1502,10 +1498,10 @@ async function createRentalForAcceptedInterest(
       rentFrequency: furnished ? "monthly" : "yearly",
       ...(furnished ?
         {
-          stayType: "furnished",
+          stayType: interest.stayType,
           stayMonths: interest.stayMonths,
           monthlyRent: Number(interest.monthlyRent ?? 0),
-          inventory,
+          ...(interest.stayType === "furnished" ? {inventory} : {}),
         } :
         {}),
       leaseStartDate: Timestamp.fromDate(now),

@@ -8,6 +8,16 @@ import {getFirestore} from "firebase-admin/firestore";
  * "yyyy-mm-dd" so month arithmetic never drifts across the UTC boundary.
  */
 
+/**
+ * Stays booked by the month and paid in full up front: a furnished stay, or
+ * an unfurnished short lease. Only the furnished stay has an item list.
+ * @param {unknown} stayType The listing's or rental's stayType.
+ * @return {boolean} True for a month-based stay.
+ */
+export function isMonthStay(stayType: unknown): boolean {
+  return stayType === "furnished" || stayType === "short";
+}
+
 const LAGOS_OFFSET_MS = 60 * 60 * 1000; // WAT, no daylight saving
 /** How far ahead a tenant may book a start. */
 export const MAX_START_AHEAD_DAYS = 90;
@@ -173,10 +183,10 @@ export function extensionAmount(
   months: unknown,
   now: Date = new Date(),
 ): number {
-  if (r.stayType !== "furnished") {
+  if (!isMonthStay(r.stayType)) {
     throw new HttpsError(
       "failed-precondition",
-      "Only a furnished stay can be extended.",
+      "Only a furnished stay or short lease can be extended.",
     );
   }
   const end = (r.leaseEndDate as {toDate?: () => Date} | undefined)

@@ -55,23 +55,22 @@ class PlatformPricing {
   final double inspectionHandler;
   final double inspectionPlatform;
 
-  /// Deal-completion fee charged per party on a completed rental. Also the
-  /// tenant's share added on top of rent at payment time.
+  /// The tenant's flat deal-completion fee, added on top of the rent.
   final double dealFee;
 
-  /// The landlord's (and agent's) service fee by rent band, lowest first; the
-  /// last band has no ceiling. Mirrors serviceFeeBands in pricing.ts, which is
-  /// what is actually charged.
+  /// The service fee by rent band, lowest first; the last band has no
+  /// ceiling. Paid by the tenant on top of the rent, never taken from the
+  /// landlord or agent. Mirrors serviceFeeBands in pricing.ts, which is what
+  /// is actually charged.
   final List<FeeBand> serviceFeeBands;
 
   /// Charged to the tenant on each furnished-stay extension, on top of the
   /// rent for the added months (all of which goes to the landlord).
   final double extensionFee;
 
-  /// Lowest rent a property may be listed at. Below it the deal fee consumes
-  /// the whole rent and the landlord nets nothing, so the listing can never
-  /// pay anyone. Enforced server-side in firestore.rules; mirrored here only
-  /// so the add-property form can say so before the write is refused.
+  /// Lowest rent a property may be listed at. Enforced server-side in
+  /// firestore.rules; mirrored here only so the add-property form can say so
+  /// before the write is refused.
   final double minRent;
 
   const PlatformPricing({
@@ -102,8 +101,8 @@ class PlatformPricing {
     minRent: 10000,
   );
 
-  /// The landlord's service fee for a deal of this rent (a furnished stay's
-  /// whole stay), taken out of the rent.
+  /// The band's service fee for a deal of this rent (a month stay's whole
+  /// stay), paid by the tenant on top of the rent.
   double landlordServiceFee(double rent) {
     for (final b in serviceFeeBands) {
       if (b.upTo == null || rent <= b.upTo!) return b.landlord;
@@ -262,7 +261,8 @@ class PricingService {
   }
 }
 
-/// One rent band of the landlord's and agent's service fee.
+/// One rent band of the service fee: `landlord` on every deal, `agent` on
+/// top when an agent brought it. Both paid by the tenant.
 class FeeBand {
   final double? upTo;
   final double landlord;

@@ -71,11 +71,13 @@ class _FurnishedStaySheetState extends State<_FurnishedStaySheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Your stay', style: AppTextStyles.h4),
+          Text(widget.property.isShortLease ? 'Your lease' : 'Your stay',
+              style: AppTextStyles.h4),
           const SizedBox(height: 4),
           Text(
-            'Choose how long and when you move in. You pay for the whole stay '
-            'once the landlord accepts and the agreement is signed.',
+            'Choose how long and when you move in. You pay for the whole '
+            '${widget.property.isShortLease ? 'lease' : 'stay'} once the '
+            'landlord accepts and the agreement is signed, before you move in.',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textSecondary,
             ),
@@ -131,7 +133,7 @@ class _FurnishedStaySheetState extends State<_FurnishedStaySheet> {
             child: Text(
               'Rent: ${InspectionPricing.formatNaira(_p.rent * _months)} '
               '(${InspectionPricing.formatNaira(_p.rent)} x $_months). '
-              'The deal fee and any agent fee are added at payment.',
+              "ClearRent's fee and any agent fee are added at payment.",
               style: AppTextStyles.bodySmall,
             ),
           ),

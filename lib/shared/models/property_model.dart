@@ -32,9 +32,11 @@ class PropertyModel {
   // created before this field existed. Never defaulted, because guessing
   // "unfurnished" would tell a tenant something the landlord never said.
   final String? furnishing;
-  // 'yearly' (also when absent) or 'furnished': a 1-11 month stay paid up
-  // front. For a furnished stay `rent` is the MONTHLY rent and rentFrequency
-  // is 'monthly'. One stay type per listing.
+  // 'yearly' (also when absent), 'furnished' (a fully furnished 1-11 month
+  // stay paid up front, with an item list) or 'short' (the same for an
+  // unfurnished or partly furnished home, no item list). For both month
+  // stays `rent` is the MONTHLY rent and rentFrequency is 'monthly'. One stay
+  // type per listing.
   final String stayType;
   final int minStayMonths;
   final int maxStayMonths;
@@ -400,23 +402,37 @@ class PropertyModel {
 
   bool get isFurnishedStay => stayType == 'furnished';
 
+  bool get isShortLease => stayType == 'short';
+
+  /// Booked by the month and paid in full up front: furnished or short lease.
+  bool get isMonthStay => isFurnishedStay || isShortLease;
+
+  /// Stored stayType, or 'yearly' for anything unknown or absent.
+  static String stayTypeOf(dynamic v) =>
+      v == 'furnished' || v == 'short' ? v as String : 'yearly';
+
   /// "Stays of 1 to 6 months", or "1-month stays" when both ends match.
-  String get stayRangeLabel => minStayMonths == maxStayMonths
-      ? '$minStayMonths-month stays'
-      : 'Stays of $minStayMonths to $maxStayMonths months';
+  String get stayRangeLabel {
+    final noun = isShortLease ? 'lease' : 'stay';
+    return minStayMonths == maxStayMonths
+        ? '$minStayMonths-month ${noun}s'
+        : '${isShortLease ? 'Leases' : 'Stays'} of $minStayMonths to '
+            '$maxStayMonths months';
+  }
 
   /// The furnished-stay fields, written only for a furnished stay so a
   /// yearly listing never carries them (firestore.rules stayValid()).
-  Map<String, dynamic> stayFields({required bool isoDates}) => isFurnishedStay
+  Map<String, dynamic> stayFields({required bool isoDates}) => isMonthStay
       ? {
-          'stayType': 'furnished',
+          'stayType': stayType,
           'minStayMonths': minStayMonths,
           'maxStayMonths': maxStayMonths,
           if (availableFrom != null)
             'availableFrom': isoDates
                 ? availableFrom!.toIso8601String()
                 : Timestamp.fromDate(availableFrom!),
-          'inventory': inventory.map((i) => i.toMap()).toList(),
+          if (isFurnishedStay)
+            'inventory': inventory.map((i) => i.toMap()).toList(),
         }
       : const {};
 
@@ -903,7 +919,7 @@ class PropertyModel {
       cautionDeposit: (json['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: json['cautionDepositRefundable'] ?? true,
       furnishing: furnishingOrNull(json['furnishing']),
-      stayType: json['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      stayType: stayTypeOf(json['stayType']),
       minStayMonths: (json['minStayMonths'] as num?)?.toInt() ?? 0,
       maxStayMonths: (json['maxStayMonths'] as num?)?.toInt() ?? 0,
       availableFrom: _dateFromJson(json['availableFrom']),
@@ -1018,7 +1034,7 @@ class PropertyModel {
       cautionDeposit: (data['cautionDeposit'] ?? 0).toDouble(),
       cautionDepositRefundable: data['cautionDepositRefundable'] ?? true,
       furnishing: furnishingOrNull(data['furnishing']),
-      stayType: data['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      stayType: stayTypeOf(data['stayType']),
       minStayMonths: (data['minStayMonths'] as num?)?.toInt() ?? 0,
       maxStayMonths: (data['maxStayMonths'] as num?)?.toInt() ?? 0,
       availableFrom: (data['availableFrom'] as Timestamp?)?.toDate(),

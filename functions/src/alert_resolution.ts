@@ -105,11 +105,6 @@ const RESOLVERS: Record<string, Resolver> = {
   },
 
   agreement_ready: {collection: "active_rentals", done: agreementSettled},
-  // Settled by an admin (resolveMoveInReport) or nothing left to settle.
-  move_in_reported: {
-    collection: "active_rentals",
-    done: (r) => r.moveInCheck !== "reported",
-  },
   agreement_disputed: {collection: "active_rentals", done: agreementSettled},
   agreement_rent_mismatch: {
     collection: "active_rentals",

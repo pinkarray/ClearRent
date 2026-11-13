@@ -29,13 +29,14 @@ class RentalInterest {
   // Furnished stay: what the tenant asked for. Null on a yearly lease.
   final int? stayMonths;
   final String? stayStartDay; // Lagos calendar day, yyyy-mm-dd
+  final String? stayType; // 'furnished' | 'short', null on a yearly lease
   final double agentFee;
   final double tenantDealFee;
   final double landlordDealFee;
   final double agentDealFee;
-  final double landlordPayout;   // rent - landlordDealFee
-  final double agentPayout;      // agentFee - agentDealFee
-  final double clearrentEarnings; // sum of all deal fees
+  final double landlordPayout;   // the full rent (nothing is deducted)
+  final double agentPayout;      // the full agent fee
+  final double clearrentEarnings; // deal fee + service fee, paid by the tenant
   final String? paymentReceiptUrl;
   final DateTime? paymentUploadedAt;
   final DateTime? paymentVerifiedAt;
@@ -64,6 +65,7 @@ class RentalInterest {
     this.rentAmount = 0,
     this.stayMonths,
     this.stayStartDay,
+    this.stayType,
     this.agentFee = 0,
     this.tenantDealFee = 5000,
     this.landlordDealFee = 5000,
@@ -123,6 +125,7 @@ class RentalInterest {
       rentAmount: (data['rentAmount'] ?? 0).toDouble(),
       stayMonths: (data['stayMonths'] as num?)?.toInt(),
       stayStartDay: data['stayStartDay'] as String?,
+      stayType: data['stayType'] as String?,
       agentFee: (data['agentFee'] ?? 0).toDouble(),
       tenantDealFee: (data['tenantDealFee'] ?? 5000).toDouble(),
       landlordDealFee: (data['landlordDealFee'] ?? 5000).toDouble(),
@@ -228,6 +231,7 @@ class RentalInterest {
       rentAmount: rentAmount ?? this.rentAmount,
       stayMonths: stayMonths,
       stayStartDay: stayStartDay,
+      stayType: stayType,
       agentFee: agentFee ?? this.agentFee,
       tenantDealFee: tenantDealFee ?? this.tenantDealFee,
       landlordDealFee: landlordDealFee ?? this.landlordDealFee,

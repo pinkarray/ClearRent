@@ -19,7 +19,8 @@ import '../../../../shared/screens/paystack_checkout_screen.dart';
 /// client-side), and the success path returns to the dashboard rather than
 /// the inspections list.
 ///
-/// Charges rent + the tenant's ₦5,000 deal-completion fee. The matching CF
+/// Charges rent + ClearRent's fee (the deal-completion fee plus the service
+/// fee for the rent's band), all on top of the rent. The matching CF
 /// (completeActiveRenewal / completeLinkedPromotion, dispatched by
 /// [ActiveRentalService.completeRenewal]) re-verifies the payment, extends or
 /// creates the rental, and fires payout/receipt side-effects.
@@ -40,11 +41,15 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
   String? _paymentReference;
 
   // Remote fee schedule (config/pricing) rather than a hardcoded constant, so
-  // the deal-completion fee can change without a store release.
-  double get _dealFee => PricingService().current.dealFee;
-
+  // the fees can change without a store release. Mirrors renewalFee() in
+  // functions/src/pricing.ts, which is what is actually charged.
   double get _rent => widget.rental.rental.rentAmount;
-  double get _amount => _rent + _dealFee;
+  double get _clearRentFee {
+    final pricing = PricingService().current;
+    return pricing.dealFee + pricing.landlordServiceFee(_rent);
+  }
+
+  double get _amount => _rent + _clearRentFee;
 
   String get _formattedAmount => '₦${NumberFormat('#,###').format(_amount)}';
 
@@ -429,8 +434,8 @@ class _RenewalPaymentScreenState extends State<RenewalPaymentScreen> {
           _paymentRow(
               'Rent Amount', '₦${NumberFormat('#,###').format(_rent)}'),
           const SizedBox(height: 8),
-          _paymentRow('Deal Completion Fee',
-              '₦${NumberFormat('#,###').format(_dealFee)}'),
+          _paymentRow('ClearRent Fee',
+              '₦${NumberFormat('#,###').format(_clearRentFee)}'),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 4),

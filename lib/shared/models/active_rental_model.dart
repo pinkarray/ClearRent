@@ -129,17 +129,13 @@ class ActiveRental {
   // Provenance (set on promoted rentals, null otherwise)
   final String? sourceLinkId;
 
-  // Furnished stay: paid in full up front, so the landlord's payout waits for
-  // the tenant's 48-hour move-in check. Server-written only (move_in_check_ops):
-  // awaiting | confirmed | reported | resolved, null on a yearly lease.
+  // 'furnished', 'short' or 'yearly'.
   final String stayType;
   // Furnished stay: months paid for so far, and the monthly rent extensions
   // are priced at.
   final int stayMonths;
   final double monthlyRent;
-  final String? moveInCheck;
-  final DateTime? moveInCheckDeadline;
-  // The item list frozen at acceptance (both checks use it), and the
+  // The item list frozen at acceptance (the move-out check uses it), and the
   // landlord's item-by-item move-out check against it.
   final List<InventoryItem> inventory;
   final List<ItemCheck> handoverInventory;
@@ -223,8 +219,6 @@ class ActiveRental {
     this.stayType = 'yearly',
     this.stayMonths = 0,
     this.monthlyRent = 0,
-    this.moveInCheck,
-    this.moveInCheckDeadline,
     this.inventory = const [],
     this.handoverInventory = const [],
     this.status = ActiveRentalStatus.active,
@@ -384,7 +378,10 @@ class ActiveRental {
   /// The figure to show next to [rentPeriod]. A furnished stay's rentAmount is
   /// the whole stay (monthly rent x months), so "/month" needs the monthly rent.
   double get displayRent =>
-      stayType == 'furnished' && monthlyRent > 0 ? monthlyRent : rentAmount;
+      isMonthStay && monthlyRent > 0 ? monthlyRent : rentAmount;
+
+  /// Furnished stay or short lease: paid up front by the month, extendable.
+  bool get isMonthStay => stayType == 'furnished' || stayType == 'short';
   
   /// Creates a lightweight ActiveRental from a TenancyLinkModel.
   /// Used so lease-details and report-issue screens work for linked tenants.
@@ -511,12 +508,11 @@ class ActiveRental {
       cautionDeclaredAt: data['cautionDeclaredAt'] != null
           ? (data['cautionDeclaredAt'] as Timestamp).toDate() : null,
       sourceLinkId: data['sourceLinkId'] as String?,
-      stayType: data['stayType'] == 'furnished' ? 'furnished' : 'yearly',
+      stayType: data['stayType'] == 'furnished' || data['stayType'] == 'short'
+          ? data['stayType'] as String
+          : 'yearly',
       stayMonths: (data['stayMonths'] as num?)?.toInt() ?? 0,
       monthlyRent: (data['monthlyRent'] as num?)?.toDouble() ?? 0,
-      moveInCheck: data['moveInCheck'] as String?,
-      moveInCheckDeadline:
-          (data['moveInCheckDeadline'] as Timestamp?)?.toDate(),
       inventory: InventoryItem.listFrom(data['inventory']),
       handoverInventory: ItemCheck.listFrom(data['handoverInventory']),
       status: _statusFromString(data['status'] ?? 'active'),
@@ -661,8 +657,6 @@ class ActiveRental {
       stayType: stayType,
       stayMonths: stayMonths,
       monthlyRent: monthlyRent,
-      moveInCheck: moveInCheck,
-      moveInCheckDeadline: moveInCheckDeadline,
       inventory: inventory,
       handoverInventory: handoverInventory,
       status: status ?? this.status,

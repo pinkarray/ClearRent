@@ -24,9 +24,9 @@
  *     doc shaped like a native rental (so the existing occupancy trigger and
  *     the dashboard treat it identically), with promotion economics:
  *       rentAmount        = link.rentAmount
- *       landlordPayout    = rentAmount - 5000   (landlord's deal fee netted)
- *       clearrentEarnings = 10000               (tenant 5k + landlord 5k)
- *       totalPaid         = rentAmount + 5000   (what the tenant's card paid)
+ *       landlordPayout    = rentAmount          (the full rent)
+ *       clearrentEarnings = renewalFee(rent)    (all paid by the tenant)
+ *       totalPaid         = rentAmount + renewalFee(rent)
  *       agentPayout/agentFee = 0, agentId = null (links have no agent)
  *       inspectionFeeCredit  = 0 (no inspection - tenant already occupying)
  *       sourceLinkId      = linkId
@@ -58,12 +58,13 @@ import {defineSecret} from "firebase-functions/params";
 import {assertSelf, guardStatusTransition} from "./admin_helpers";
 import {writeNotificationOnce} from "./notification_helpers";
 import {consumeReferenceInTx} from "./payment_verify";
-import {getPricing, serviceFees} from "./pricing";
+import {getPricing, renewalFee, renewalRent} from "./pricing";
 import {announcePayoutCycle, openPayoutCycle} from "./payout_cycle";
 import {
   extensionAmount,
   lagosDay,
   lagosMidnight,
+  isMonthStay,
   listingMaxStay,
   stayEndDay,
 } from "./furnished_stay";
@@ -78,7 +79,6 @@ const callableOptions = {
   enforceAppCheck: false,
 };
 
-const DEAL_FEE = 5000;
 
 // ── input validation ────────────────────────────────────────────────────────
 
@@ -295,7 +295,7 @@ export const completeActiveRenewal = onCall(
   async (request) => {
     const input = validateRenewalInput(request.data);
     const db = getFirestore();
-    const bands = (await getPricing()).serviceFeeBands;
+    const pricing = await getPricing();
     const ref = db.collection("active_rentals").doc(input.sourceId);
 
     const verify = await verifyPaystackReference(
@@ -333,10 +333,10 @@ export const completeActiveRenewal = onCall(
       guardStatusTransition(data.status, "grace_locked", "status");
       // A yearly renewal would add a year at a month's rent. Furnished stays
       // are extended a month at a time instead (not built yet).
-      if (data.stayType === "furnished") {
+      if (isMonthStay(data.stayType)) {
         throw new HttpsError(
           "failed-precondition",
-          "A furnished stay cannot be renewed for a year.",
+          "A furnished stay or short lease cannot be renewed for a year.",
         );
       }
 
@@ -344,18 +344,9 @@ export const completeActiveRenewal = onCall(
       // date has passed. Reads only this rental's own fields - never the
       // property - so co-tenants are never swept up. rentAmount mutates here
       // (renewal), not at approval.
-      const currentRent = (data.rentAmount as number) ?? 0;
-      const pendingRent = data.pendingRentForRenewal as number | undefined;
-      const pendingEffective =
-        (data.pendingRentEffectiveDate as Timestamp | undefined)?.toDate();
-      const applyIncrease =
-        pendingRent != null &&
-        pendingRent > 0 &&
-        pendingEffective != null &&
-        pendingEffective.getTime() <= Date.now();
-      const effectiveRent = applyIncrease ? pendingRent! : currentRent;
+      const {rent: effectiveRent, applyIncrease} = renewalRent(data);
 
-      const expected = effectiveRent + DEAL_FEE;
+      const expected = effectiveRent + renewalFee(effectiveRent, pricing);
       if (verify.amountPaid < expected - 1) {
         throw new HttpsError(
           "failed-precondition",
@@ -399,11 +390,9 @@ export const completeActiveRenewal = onCall(
 
       tx.update(ref, rentalUpdate);
 
-      // The landlord's share, on the same terms as the first year: the
-      // service fee for the rent's band, clamped so it can never turn the
-      // payout negative.
-      const landlordFee = serviceFees(effectiveRent, bands).landlord;
-      const landlordAmount = effectiveRent - Math.min(landlordFee, effectiveRent);
+      // The landlord gets the whole rent; the tenant paid ClearRent's fee on
+      // top of it.
+      const landlordAmount = effectiveRent;
       const earned = verify.amountPaid - landlordAmount;
       openPayoutCycle(tx, ref, data, {
         landlordAmount,
@@ -598,7 +587,7 @@ export const completeLinkedPromotion = onCall(
   async (request) => {
     const input = validateRenewalInput(request.data);
     const db = getFirestore();
-    const promoBands = (await getPricing()).serviceFeeBands;
+    const pricing = await getPricing();
     const linkRef = db.collection("tenancy_links").doc(input.sourceId);
 
     const verify = await verifyPaystackReference(
@@ -645,21 +634,10 @@ export const completeLinkedPromotion = onCall(
       // this link and its effective date has passed (mirrors
       // completeActiveRenewal). The increase lands here - at promotion, the
       // link's "renewal".
-      const baseRent = (link.rentAmount as number) ?? 0;
-      const pendingRent = link.pendingRentForRenewal as number | undefined;
-      const pendingEffective =
-        (link.pendingRentEffectiveDate as Timestamp | undefined)?.toDate();
-      const applyIncrease =
-        pendingRent != null &&
-        pendingRent > 0 &&
-        pendingEffective != null &&
-        pendingEffective.getTime() <= Date.now();
-      const rentAmount = applyIncrease ? pendingRent! : baseRent;
-      const promotionFee = Math.min(
-        serviceFees(rentAmount, promoBands).landlord, rentAmount,
-      );
+      const {rent: rentAmount} = renewalRent(link);
+      const promotionFee = renewalFee(rentAmount, pricing);
 
-      const expected = rentAmount + DEAL_FEE;
+      const expected = rentAmount + promotionFee;
       if (verify.amountPaid < expected - 1) {
         throw new HttpsError(
           "failed-precondition",
@@ -711,12 +689,12 @@ export const completeLinkedPromotion = onCall(
         landlordPhone: (link.landlordPhone as string) ?? null,
         rentAmount: rentAmount,
         agentFee: 0,
-        totalPaid: rentAmount + DEAL_FEE,
-        // Same terms as a deal made on ClearRent: the landlord's service fee
-        // for the rent's band, out of the rent.
-        landlordPayout: rentAmount - promotionFee,
+        totalPaid: expected,
+        // Same terms as a deal made on ClearRent: the landlord gets the whole
+        // rent and the tenant paid ClearRent's fee on top.
+        landlordPayout: rentAmount,
         agentPayout: 0,
-        clearrentEarnings: DEAL_FEE + promotionFee,
+        clearrentEarnings: promotionFee,
         landlordPayoutStatus: "pending",
         agentPayoutStatus: "not_applicable",
         inspectionFeeCredit: 0,

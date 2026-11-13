@@ -16,7 +16,9 @@
 import * as logger from "firebase-functions/logger";
 import {HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
-import {extensionAmount, listingMaxStay} from "./furnished_stay";
+import {
+  extensionAmount, isMonthStay, listingMaxStay,
+} from "./furnished_stay";
 
 /**
  * What a role pays to verify, first time versus every year after.
@@ -31,10 +33,12 @@ export interface RoleFee {
 }
 
 /**
- * One rent band of the landlord's and agent's service fee. A deal's fee is
- * the band its rent falls in: `upTo` is the band's top (inclusive), null for
- * the last band. Fixed naira amounts, never a percentage, so the landlord
- * reads one number.
+ * One rent band of the service fee. A deal's fee is the band its rent falls
+ * in: `upTo` is the band's top (inclusive), null for the last band. Fixed
+ * naira amounts, never a percentage. `landlord` is charged on every deal and
+ * `agent` on top of it when an agent brought the deal; the TENANT pays both,
+ * on top of the rent. Nothing is ever taken out of the landlord's rent or the
+ * agent's fee.
  */
 export interface FeeBand {
   upTo: number | null;
@@ -46,12 +50,9 @@ export interface PricingConfig {
   verification: {tenant: RoleFee; landlord: RoleFee; agent: RoleFee};
   listing: number;
   inspection: {total: number; handler: number; platform: number};
-  /**
-   * The TENANT's deal-completion fee, on top of the rent. The landlord's and
-   * agent's fees come from serviceFeeBands instead.
-   */
+  /** The tenant's flat deal-completion fee, on top of the rent. */
   dealFee: number;
-  /** Landlord and agent service fees by rent band, lowest band first. */
+  /** Service fee by rent band, lowest band first; also paid by the tenant. */
   serviceFeeBands: FeeBand[];
   /**
    * Charged to the tenant on each furnished-stay extension, on top of the
@@ -61,13 +62,9 @@ export interface PricingConfig {
    */
   extensionFee: number;
   /**
-   * Lowest rent a property may be listed at.
-   *
-   * At or below `dealFee` the fee consumes the whole rent and the landlord
-   * nets nothing - createRentalInterest clamps the split at zero rather than
-   * letting it go negative, so the listing is not broken, just pointless.
-   * Configurable (rather than derived from dealFee) because testing wants tiny
-   * rents to keep card charges small while production wants a real floor.
+   * Lowest rent a property may be listed at. Configurable because testing
+   * wants tiny rents to keep card charges small while production wants a
+   * real floor.
    */
   minRent: number;
 }
@@ -153,8 +150,7 @@ function toBands(raw: unknown): FeeBand[] {
 }
 
 /**
- * The landlord's and agent's service fee for a deal of this rent. Each is
- * clamped by the caller to what that party is actually owed.
+ * The band's two service fees for a deal of this rent.
  * @param {number} rent The deal's rent (a furnished stay's whole stay).
  * @param {FeeBand[]} bands From getPricing().
  * @return {{landlord: number, agent: number}} The band's fees.
@@ -166,6 +162,38 @@ export function serviceFees(
   const band = bands.find((b) => b.upTo === null || rent <= b.upTo) ??
     bands[bands.length - 1];
   return {landlord: band.landlord, agent: band.agent};
+}
+
+/**
+ * What a renewal (or linked promotion) charges on top of the rent: the
+ * tenant's deal fee plus the band's service fee. Renewals carry no agent.
+ * @param {number} rent The rent for the new year.
+ * @param {PricingConfig} pricing From getPricing().
+ * @return {number} ClearRent's fee, all paid by the tenant.
+ */
+export function renewalFee(rent: number, pricing: PricingConfig): number {
+  return pricing.dealFee + serviceFees(rent, pricing.serviceFeeBands).landlord;
+}
+
+/**
+ * The rent a renewal is for: a staged increase once its date has passed,
+ * otherwise the current rent. Shared by the charge and the renewal itself so
+ * they can never price different rents.
+ * @param {FirebaseFirestore.DocumentData} d An active_rentals or
+ *   tenancy_links document.
+ * @param {number} now Epoch ms, injected for tests.
+ * @return {{rent: number, applyIncrease: boolean}} The renewal's rent.
+ */
+export function renewalRent(
+  d: FirebaseFirestore.DocumentData,
+  now: number = Date.now(),
+): {rent: number; applyIncrease: boolean} {
+  const current = typeof d.rentAmount === "number" ? d.rentAmount : 0;
+  const pending = d.pendingRentForRenewal;
+  const effective = d.pendingRentEffectiveDate?.toDate?.() as Date | undefined;
+  const applyIncrease = typeof pending === "number" && pending > 0 &&
+    effective != null && effective.getTime() <= now;
+  return {rent: applyIncrease ? pending : current, applyIncrease};
 }
 
 /**
@@ -427,7 +455,7 @@ export async function resolveServerAmount(
   }
 
   if (type === "renewal") {
-    // A renewal charges the rental's own rent plus the tenant's deal fee. The
+    // A renewal charges the rental's own rent plus renewalFee(). The
     // client sends only `sourceId`, which is either an active_rentals or a
     // tenancy_links doc without saying which, so try both.
     //
@@ -474,14 +502,14 @@ export async function resolveServerAmount(
     }
     // A furnished stay's rentAmount is the whole stay; renewing it would
     // charge that again for a year. Refused before any money moves.
-    if (snap.get("stayType") === "furnished") {
+    if (isMonthStay(snap.get("stayType"))) {
       throw new HttpsError(
         "failed-precondition",
-        "A furnished stay cannot be renewed for a year.",
+        "A furnished stay or short lease cannot be renewed for a year.",
       );
     }
-    const rent = snap.get("rentAmount");
-    if (typeof rent !== "number" || !(rent > 0)) {
+    const {rent} = renewalRent(snap.data() ?? {});
+    if (!(rent > 0)) {
       logger.error("Renewal source has no usable rentAmount", {uid, sourceId});
       throw new HttpsError(
         "failed-precondition",
@@ -489,7 +517,7 @@ export async function resolveServerAmount(
         "Contact support.",
       );
     }
-    return rent + pricing.dealFee;
+    return rent + renewalFee(rent, pricing);
   }
 
   if (type === "extension") {

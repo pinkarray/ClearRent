@@ -224,7 +224,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   bool _cautionDepositRefundable = true;
   // Required on a new listing; no default, so it is a real answer.
   String? _furnishing;
-  // 'yearly' or 'furnished' (1-11 months paid up front). One per listing.
+  // 'yearly', 'furnished' (1-11 months paid up front, fully furnished, item
+  // list) or 'short' (the same months for an unfurnished or partly furnished
+  // home, no item list). One per listing.
   String _stayType = 'yearly';
   int _minStay = 1;
   int _maxStay = 6;
@@ -566,7 +568,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _cautionDepositController.text = draft['cautionDeposit'] ?? '';
       _cautionDepositRefundable = draft['cautionDepositRefundable'] ?? true;
       _furnishing = PropertyModel.furnishingOrNull(draft['furnishing']);
-      _stayType = draft['stayType'] == 'furnished' ? 'furnished' : 'yearly';
+      _stayType = PropertyModel.stayTypeOf(draft['stayType']);
       _minStay = (draft['minStay'] as num?)?.toInt() ?? 1;
       _maxStay = (draft['maxStay'] as num?)?.toInt() ?? 6;
       _availableFrom = DateTime.tryParse('${draft['availableFrom'] ?? ''}');
@@ -584,7 +586,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       _guestRooms = draft['guestRooms'] ?? 0;
       _kitchens = draft['kitchens'] ?? 1;
       _maxTenants = draft['maxTenants'] ?? 1;
-      _rentPeriod = _stayType == 'furnished' ? 'monthly' : 'yearly';
+      _rentPeriod = _stayType == 'yearly' ? 'yearly' : 'monthly';
       _titleManuallyEdited = draft['titleManuallyEdited'] ?? false;
       _descriptionManuallyEdited = draft['descriptionManuallyEdited'] ?? false;
       _includeAgentFee = draft['includeAgentFee'] ?? false;
@@ -1345,18 +1347,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           _showError('Please enter a valid rent amount');
           return false;
         }
-        // Rent floor. Below it the deal fee takes the whole rent and the
-        // landlord is paid nothing, so the listing can never complete a deal.
-        // firestore.rules enforces this for real; saying it here turns an
-        // opaque permission failure at the end of the form into a fixable
-        // message on the step that caused it.
+        // Rent floor. firestore.rules enforces this for real; saying it here
+        // turns an opaque permission failure at the end of the form into a
+        // fixable message on the step that caused it.
         final pricing = PricingService().current;
         if (_parseRentAmount() < pricing.minRent) {
           _showError(
             'Rent must be at least '
-            '${PlatformPricing.formatNaira(pricing.minRent)}. Below that the '
-            '${PlatformPricing.formatNaira(pricing.dealFee)} deal fee would '
-            'leave you with nothing.',
+            '${PlatformPricing.formatNaira(pricing.minRent)}.',
           );
           return false;
         }
@@ -1375,6 +1373,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           }
           if (_inventory.isEmpty) {
             _showError('List at least one item that comes with the place.');
+            return false;
+          }
+        }
+        if (_stayType == 'short') {
+          if (_furnishing == 'fully') {
+            _showError(
+              'A fully furnished home is let as a furnished stay, with a list '
+              'of what is included. Choose Furnished stay instead.',
+            );
+            return false;
+          }
+          if (_minStay > _maxStay) {
+            _showError('The shortest lease cannot be longer than the longest.');
             return false;
           }
         }
@@ -4132,7 +4143,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       borderRadius: BorderRadius.circular(12),
       onTap: () => setState(() {
         _stayType = value;
-        _rentPeriod = value == 'furnished' ? 'monthly' : 'yearly';
+        _rentPeriod = value == 'yearly' ? 'yearly' : 'monthly';
         // A furnished stay is fully furnished by definition (stayValid).
         if (value == 'furnished') _furnishing = 'fully';
         _saveDraftDebounced();
@@ -4194,7 +4205,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
         );
     final from = _availableFrom;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('How long can tenants stay? (months)', style: AppTextStyles.labelMedium),
+      Text(
+        _stayType == 'short'
+            ? 'How long can the lease be? (months)'
+            : 'How long can tenants stay? (months)',
+        style: AppTextStyles.labelMedium,
+      ),
       const SizedBox(height: 4),
       Row(children: [
         months('Shortest', _minStay, (v) => _minStay = v),
@@ -4222,22 +4238,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           }
         },
       ),
-      const SizedBox(height: 16),
-      Text("What's included", style: AppTextStyles.labelMedium),
-      const SizedBox(height: 2),
-      Text(
-        'Both you and the tenant check this list at move-in and move-out. '
-        'A photo of each item helps settle any question later.',
-        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
-      ),
-      const SizedBox(height: 8),
-      InventoryEditor(
-        items: _inventory,
-        onChanged: (v) {
-          setState(() => _inventory = v);
-          _saveDraftDebounced();
-        },
-      ),
+      if (_stayType == 'furnished') ...[
+        const SizedBox(height: 16),
+        Text("What's included", style: AppTextStyles.labelMedium),
+        const SizedBox(height: 2),
+        Text(
+          'Both you and the tenant check this list at move-in and move-out. '
+          'A photo of each item helps settle any question later.',
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 8),
+        InventoryEditor(
+          items: _inventory,
+          onChanged: (v) {
+            setState(() => _inventory = v);
+            _saveDraftDebounced();
+          },
+        ),
+      ],
     ]);
   }
 
@@ -4278,11 +4296,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               '1 to 11 months, paid up front. For people back from abroad, '
                   'contract workers and short projects.',
             ),
+            const SizedBox(height: 8),
+            _stayChoice(
+              'short',
+              Icons.event_note_outlined,
+              'Short lease',
+              'An unfurnished or partly furnished home for 1 to 11 months. '
+                  'The tenant pays every month up front before moving in.',
+            ),
             const SizedBox(height: 20),
 
             // Rent amount with comma formatting
             Text(
-              _stayType == 'furnished' ? 'Monthly rent (₦)' : 'Rent Amount (₦)',
+              _stayType == 'yearly' ? 'Rent Amount (₦)' : 'Monthly rent (₦)',
               style: AppTextStyles.labelMedium,
             ),
             const SizedBox(height: 8),
@@ -4292,7 +4318,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             ),
             const SizedBox(height: 20),
 
-            if (_stayType == 'furnished') ...[
+            if (_stayType != 'yearly') ...[
               _buildStayLengths(),
               const SizedBox(height: 24),
             ],
@@ -5029,23 +5055,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            _stayType == 'furnished'
-                ? 'Tenants pay for their whole stay up front: ₦${_formatAmount(rent)} '
-                    'a month, for $_minStay to $_maxStay months.'
+            _stayType != 'yearly'
+                ? 'Tenants pay for the whole ${_stayType == 'short' ? 'lease' : 'stay'} '
+                    'up front: ₦${_formatAmount(rent)} a month, for $_minStay '
+                    'to $_maxStay months.'
                 : 'After the first year, renewal is just ₦${_formatAmount(rent)}${_rentPeriod == 'yearly' ? '/year' : '/month'}',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
               fontStyle: FontStyle.italic,
             ),
           ),
-          // What the landlord pays: a fixed service fee for the rent's band,
-          // out of the rent when a tenant pays. A furnished stay's band
-          // depends on how long the tenant books, so it is a range.
+          // The service fee for the rent's band, which the TENANT pays on top;
+          // the landlord gets the whole rent. A month stay's band depends on
+          // how long the tenant books, so it is a range.
           const SizedBox(height: 8),
           Builder(builder: (_) {
             final pricing = PricingService().current;
             final String fee;
-            if (_stayType == 'furnished') {
+            if (_stayType != 'yearly') {
               final low = pricing.landlordServiceFee(rent * _minStay);
               final high = pricing.landlordServiceFee(rent * _maxStay);
               fee = low == high
@@ -5056,8 +5083,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               fee = '₦${_formatAmount(pricing.landlordServiceFee(rent))}';
             }
             return Text(
-              'ClearRent service fee when you get a tenant: $fee, taken from '
-              'the rent.',
+              "You receive the full rent. ClearRent's service fee ($fee) is "
+              'paid by the tenant on top, never taken from your rent.',
               style: AppTextStyles.caption.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -7031,7 +7058,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             _stayType == 'furnished'
                 ? 'Furnished stay, $_minStay to $_maxStay months, '
                     '${_inventory.length} item${_inventory.length == 1 ? '' : 's'} listed'
-                : 'Yearly lease',
+                : _stayType == 'short'
+                    ? 'Short lease, $_minStay to $_maxStay months'
+                    : 'Yearly lease',
           ),
           _buildPreviewSection(
             'Inspections',

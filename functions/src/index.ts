@@ -84,6 +84,7 @@ export {
 } from "./issue_reminders_ops";
 import {refreshOverdueUrgent, reporterIsTenant} from "./issue_reminders_ops";
 import {bumpIssueRecord} from "./landlord_record_ops";
+import {isMonthStay} from "./furnished_stay";
 export {rateLandlord} from "./landlord_record_ops";
 export {onUserWrittenPublicProfile} from "./public_profile_ops";
 export {moveoutAutoConfirmSweep, moveoutPendingReminders} from "./moveout_ops";
@@ -4066,13 +4067,15 @@ export const leaseLifecycleSweep = onSchedule(
         // the ordinary move-out (landlord confirms the handover, or the sweep
         // does after 7 days), exactly as if the tenant had given notice for
         // the last day.
-        const furnished = !isLinked && data.stayType === "furnished";
+        const furnished = !isLinked && isMonthStay(data.stayType);
         if (furnished && leaseEndMs <= now) {
           await doc.ref.update({
             status: "moveout_pending",
             moveOutRequestedAt: FieldValue.serverTimestamp(),
             moveOutIntendedDate: leaseEndTs,
-            endReason: "Their furnished stay ended",
+            endReason: data.stayType === "short" ?
+              "Their short lease ended" :
+              "Their furnished stay ended",
             updatedAt: FieldValue.serverTimestamp(),
           });
           locked++;
@@ -5013,11 +5016,6 @@ export {
 export {onBankDetailsWritten} from "./subaccount_ops";
 
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
-export {
-  confirmMoveIn,
-  reportMoveInProblem,
-  resolveMoveInReport,
-} from "./move_in_check_ops";
 export {confirmInspectionPayment} from "./inspection_payment_ops";
 export {confirmListingFee} from "./listing_fee_ops";
 

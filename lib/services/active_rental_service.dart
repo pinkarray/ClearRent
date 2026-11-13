@@ -50,17 +50,6 @@ class ActiveRentalService {
     }
   }
 
-  /// Furnished stay: the tenant says the place and its items match the
-  /// listing, which lets the landlord's payout go. Null on success, else the
-  /// server's reason.
-  Future<String?> confirmMoveIn(String rentalId) =>
-      _moveInCall('confirmMoveIn', {'rentalId': rentalId});
-
-  /// Furnished stay: the tenant says what does not match. Holds the payout
-  /// until an admin settles it.
-  Future<String?> reportMoveInProblem(String rentalId, String text) =>
-      _moveInCall('reportMoveInProblem', {'rentalId': rentalId, 'text': text});
-
   /// Furnished stay: records a paid extension. The server re-verifies the
   /// payment and moves the end date. Null on success.
   Future<String?> completeStayExtension(

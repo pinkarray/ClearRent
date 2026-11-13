@@ -13,7 +13,6 @@ import '../../../../services/conversation_service.dart';
 import '../../../../shared/widgets/notification_bell.dart';
 import '../../../../shared/models/condition_record.dart';
 import '../screens/condition_capture_screen.dart';
-import 'move_in_check_card.dart';
 import 'extend_stay_sheet.dart';
 import '../../../../services/property_service.dart';
 
@@ -422,17 +421,10 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             ],
 
             // Furnished stay: add months before it ends (rent only).
-            if (rental.stayType == 'furnished' &&
+            if (rental.isMonthStay &&
                 (rental.isActive || rental.isExpiringSoon) &&
                 rental.daysUntilLeaseEnd > 0) ...[
               _buildExtendStay(),
-              const SizedBox(height: 16),
-            ],
-
-            // Furnished stay: the 48-hour move-in check, once moved in.
-            if (rental.moveInCheck == 'awaiting' &&
-                !DateTime.now().isBefore(rental.leaseStartDate)) ...[
-              MoveInCheckCard(rental: rental),
               const SizedBox(height: 16),
             ],
 
@@ -547,7 +539,7 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            'Your stay ends ${end.day}/${end.month}/${end.year}.',
+            'Your ${rental.stayType == 'short' ? 'lease' : 'stay'} ends ${end.day}/${end.month}/${end.year}.',
             style: AppTextStyles.bodyMedium,
           ),
         ),
@@ -601,8 +593,8 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
                       .copyWith(color: AppColors.warning)),
               const SizedBox(height: 2),
               Text(
-                rental.stayType == 'furnished'
-                    ? '${rental.daysUntilLeaseEnd} days remaining. Extend your stay below, or plan your move-out.'
+                rental.isMonthStay
+                    ? '${rental.daysUntilLeaseEnd} days remaining. Extend your ${rental.stayType == 'short' ? 'lease' : 'stay'} below, or plan your move-out.'
                     : '${rental.daysUntilLeaseEnd} days remaining. Start looking for your next home or contact your landlord to renew.',
                 style: AppTextStyles.caption
                     .copyWith(color: AppColors.textSecondary),

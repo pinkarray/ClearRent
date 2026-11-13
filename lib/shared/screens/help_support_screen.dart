@@ -36,7 +36,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     FAQItem(
       category: 'Getting Started',
       question: 'Is ClearRent free to use?',
-      answer: 'Listing your property on ClearRent is completely FREE. We only charge a small service fee when rent is successfully paid through our platform. This means you only pay when you earn!',
+      answer: "Everyone pays a one-off verification fee. A landlord's first listing is free. When a tenant rents, ClearRent's fee is added to what the tenant pays; it is never taken out of the landlord's rent or the agent's fee.",
     ),
     FAQItem(
       category: 'Getting Started',
@@ -85,7 +85,7 @@ class _HelpSupportScreenState extends State<HelpSupportScreen> {
     FAQItem(
       category: 'Payments & Earnings',
       question: 'What fees does ClearRent charge?',
-      answer: 'ClearRent charges a small service fee only when rent is paid through our platform. Listing properties is completely free. The exact fee percentage is shown in the payment breakdown before any transaction is confirmed.',
+      answer: "Verification, listings after the first, and viewings each have a fixed fee shown before you pay. When you rent, ClearRent's fee is a fixed naira amount by rent band, added on top of the rent and shown in the payment summary before you pay. Landlords receive the full rent and agents their full fee.",
     ),
 
     // Communication
