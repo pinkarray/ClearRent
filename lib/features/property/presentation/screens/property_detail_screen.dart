@@ -1254,7 +1254,7 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
 
                           _buildFurnishingRow(property),
 
-                          if (property.isFurnishedStay) ...[
+                          if (property.isMonthStay) ...[
                             const SizedBox(height: 12),
                             _buildStayCard(property),
                           ],
@@ -3629,13 +3629,20 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Icon(Icons.weekend_outlined, size: 22, color: AppColors.primary),
+            Icon(
+                property.isShortLease
+                    ? Icons.event_note_outlined
+                    : Icons.weekend_outlined,
+                size: 22,
+                color: AppColors.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Furnished stay', style: AppTextStyles.labelMedium),
+                  Text(
+                      property.isShortLease ? 'Short lease' : 'Furnished stay',
+                      style: AppTextStyles.labelMedium),
                   const SizedBox(height: 2),
                   Text(
                     '${property.stayRangeLabel}, paid up front. $when.',
@@ -3647,10 +3654,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
               ),
             ),
           ]),
-          const SizedBox(height: 14),
-          Text("What's included", style: AppTextStyles.labelMedium),
-          const SizedBox(height: 8),
-          InventoryEditor(items: property.inventory),
+          if (property.isFurnishedStay) ...[
+            const SizedBox(height: 14),
+            Text("What's included", style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            InventoryEditor(items: property.inventory),
+          ],
         ],
       ),
     );

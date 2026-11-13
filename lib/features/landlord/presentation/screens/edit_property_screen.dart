@@ -586,6 +586,17 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         return false;
       }
     }
+    if (_stayType == 'short') {
+      if (_furnishing == 'fully') {
+        _showError('A fully furnished home is let as a furnished stay, with a '
+            'list of what is included. Choose Furnished stay instead.');
+        return false;
+      }
+      if (_minStay > _maxStay) {
+        _showError('The shortest lease cannot be longer than the longest.');
+        return false;
+      }
+    }
     if (_existingImageUrls.isEmpty && _newImageFiles.isEmpty) {
       _showError('Please add at least one photo');
       return false;
@@ -771,12 +782,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           'rentFrequency': _rentPeriod,
           // How it is let. Frozen with the price while a tenant is in.
           'stayType': _stayType,
-          if (_stayType == 'furnished') ...{
+          if (_stayType != 'yearly') ...{
             'minStayMonths': _minStay,
             'maxStayMonths': _maxStay,
             if (_availableFrom != null)
               'availableFrom': Timestamp.fromDate(_availableFrom!),
-            'inventory': _inventory.map((i) => i.toMap()).toList(),
+            if (_stayType == 'furnished')
+              'inventory': _inventory.map((i) => i.toMap()).toList(),
           },
           'agentFee': _includeAgentFee ? _parseAmountFromController(_agentFeeController) : 0,
           'cautionDeposit': _parseAmountFromController(_cautionDepositController),
@@ -1733,7 +1745,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
           ? null
           : () => setState(() {
                 _stayType = value;
-                _rentPeriod = value == 'furnished' ? 'monthly' : 'yearly';
+                _rentPeriod = value == 'yearly' ? 'yearly' : 'monthly';
                 if (value == 'furnished') _furnishing = 'fully';
                 _hasChanges = true;
               }),
@@ -1787,7 +1799,11 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         );
     final from = _availableFrom;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('How long can tenants stay? (months)', style: AppTextStyles.labelMedium),
+      Text(
+          _stayType == 'short'
+              ? 'How long can the lease be? (months)'
+              : 'How long can tenants stay? (months)',
+          style: AppTextStyles.labelMedium),
       Row(children: [
         months('Shortest', _minStay, (v) => _minStay = v),
         months('Longest', _maxStay, (v) => _maxStay = v),
@@ -1816,21 +1832,23 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
                 }
               },
       ),
-      const SizedBox(height: 16),
-      Text("What's included", style: AppTextStyles.labelMedium),
-      if (locked)
-        Text('Locked while a tenant is living here.',
-            style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
-      const SizedBox(height: 8),
-      InventoryEditor(
-        items: _inventory,
-        onChanged: locked
-            ? null
-            : (v) => setState(() {
-                  _inventory = v;
-                  _hasChanges = true;
-                }),
-      ),
+      if (_stayType == 'furnished') ...[
+        const SizedBox(height: 16),
+        Text("What's included", style: AppTextStyles.labelMedium),
+        if (locked)
+          Text('Locked while a tenant is living here.',
+              style: AppTextStyles.caption.copyWith(color: AppColors.textHint)),
+        const SizedBox(height: 8),
+        InventoryEditor(
+          items: _inventory,
+          onChanged: locked
+              ? null
+              : (v) => setState(() {
+                    _inventory = v;
+                    _hasChanges = true;
+                  }),
+        ),
+      ],
     ]);
   }
 
@@ -1846,8 +1864,12 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         const SizedBox(height: 8),
         _stayChoice('furnished', 'Furnished stay (1 to 11 months, paid up front)',
             hasActiveTenants),
+        const SizedBox(height: 8),
+        _stayChoice('short',
+            'Short lease, unfurnished or partly (1 to 11 months, paid up front)',
+            hasActiveTenants),
         const SizedBox(height: 20),
-        Text(_stayType == 'furnished' ? 'Monthly rent (₦)' : 'Rent Amount (₦)',
+        Text(_stayType == 'yearly' ? 'Rent Amount (₦)' : 'Monthly rent (₦)',
             style: AppTextStyles.labelMedium),
         const SizedBox(height: 8),
 
@@ -1879,7 +1901,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen> {
         ],
         const SizedBox(height: 16),
 
-        if (_stayType == 'furnished') ...[
+        if (_stayType != 'yearly') ...[
           _buildStayDetails(hasActiveTenants),
           const SizedBox(height: 24),
         ],

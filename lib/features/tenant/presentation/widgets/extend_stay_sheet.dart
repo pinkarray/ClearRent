@@ -79,7 +79,8 @@ class _ExtendStaySheetState extends State<_ExtendStaySheet> {
     if (err == null) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Stay extended by $_months '
+        content: Text(
+            '${widget.rental.stayType == 'short' ? 'Lease' : 'Stay'} extended by $_months '
             'month${_months == 1 ? '' : 's'}.'),
         backgroundColor: AppColors.success,
         behavior: SnackBarBehavior.floating,
@@ -98,17 +99,18 @@ class _ExtendStaySheetState extends State<_ExtendStaySheet> {
   @override
   Widget build(BuildContext context) {
     final r = widget.rental;
+    final noun = r.stayType == 'short' ? 'lease' : 'stay';
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + sheetBottomInset(context)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Extend your stay', style: AppTextStyles.h4),
+          Text('Extend your $noun', style: AppTextStyles.h4),
           const SizedBox(height: 4),
           Text(
             _room == 0
-                ? 'This stay is already as long as the landlord allows.'
+                ? 'This $noun is already as long as the landlord allows.'
                 : 'You pay the rent for the extra months, which all goes to '
                     'the landlord, plus a small processing fee. The landlord '
                     'allows up to ${widget.maxStay} months in all; you have '

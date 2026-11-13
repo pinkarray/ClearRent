@@ -2629,7 +2629,7 @@ class TenantInspectionOutcomeCardState extends State<TenantInspectionOutcomeCard
     // A furnished stay is priced by its length, so the tenant says how long
     // and from when before anything is sent.
     StayPick? stay;
-    if (property.isFurnishedStay) {
+    if (property.isMonthStay) {
       if (!mounted) return;
       stay = await showFurnishedStaySheet(context, property);
       if (stay == null || !mounted) return;

@@ -350,7 +350,10 @@ class VerificationService {
       final version = DateTime.now().millisecondsSinceEpoch;
       final path = 'verification/$_currentUserId/$folder/$version';
       final ref = FirebaseStorage.instance.ref(path);
-      await ref.putFile(file);
+      // Named, so the admin viewer knows a bank statement PDF from a photo.
+      final isPdf = file.path.toLowerCase().endsWith('.pdf');
+      await ref.putFile(file,
+          SettableMetadata(contentType: isPdf ? 'application/pdf' : 'image/jpeg'));
       developer.log('✅ Upload successful: $path', name: 'VerificationService');
       return path;
     } on FirebaseException catch (e) {

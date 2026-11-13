@@ -1386,11 +1386,11 @@ class _LeaseDetailsScreenState extends State<LeaseDetailsScreen> {
   Widget _buildFinancialSummary() {
     return _card(
       child: Column(children: [
-        if (_rental.stayType == 'furnished') ...[
+        if (_rental.isMonthStay) ...[
           // rentAmount is the whole stay; say so beside the monthly figure.
           _finRow('Monthly rent', '₦${_formatAmount(_rental.displayRent)}', bold: true),
           const SizedBox(height: 8),
-          _finRow('Stay',
+          _finRow(_rental.stayType == 'short' ? 'Lease' : 'Stay',
               '${_rental.stayMonths} months, ₦${_formatAmount(_rental.rentAmount)} in all'),
         ] else ...[
           _finRow('Rent Amount', '₦${_formatAmount(_rental.rentAmount)}', bold: true),

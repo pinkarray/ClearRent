@@ -150,7 +150,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
   // Furnishing levels the tenant will accept; empty = any. A listing that
   // never stated its level matches only "any", since it could be either.
   final Set<String> _filterFurnishing = {};
-  // 'any' | 'yearly' | 'furnished'. One stay type per listing.
+  // 'any' | 'yearly' | 'furnished' | 'short'. One stay type per listing.
   String _filterStay = 'any';
 
   bool get _hasExtraFilters =>
@@ -911,6 +911,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen> {
                                 'any': 'Any',
                                 'yearly': 'Yearly lease',
                                 'furnished': 'Furnished stay (1 to 11 months)',
+                                'short': 'Short lease (1 to 11 months)',
                               }.entries.map((e) {
                                 return chip(
                                   e.value,

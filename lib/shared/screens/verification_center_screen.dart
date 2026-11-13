@@ -14,6 +14,7 @@ import '../../services/verification_service.dart';
 import '../../services/pricing_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/paystack_service.dart';
+import '../utils/document_file_picker.dart';
 import '../widgets/top_alert.dart';
 import 'paystack_checkout_screen.dart';
 
@@ -302,6 +303,33 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
     );
   }
 
+  /// The tenant's bank statement: six months is several pages, so a PDF
+  /// (or a photo) through the document picker, copied out of the picker's
+  /// cache for the same reason as below.
+  Future<void> _pickStatement() async {
+    try {
+      final picked = await DocumentFilePicker.pick(
+        context,
+        hint: 'Your last 6 months of bank statements. The PDF from your bank '
+            'or banking app is best.',
+      );
+      if (picked == null) return;
+      final docsDir = await getApplicationDocumentsDirectory();
+      final destDir = Directory('${docsDir.path}/verification_docs');
+      if (!await destDir.exists()) await destDir.create(recursive: true);
+      final ext = picked.path.split('.').last.toLowerCase();
+      final copy = await picked.copy(
+        '${destDir.path}/clearrent_doc_proofOfIncome_'
+        '${DateTime.now().millisecondsSinceEpoch}.$ext',
+      );
+      setState(() => _proofOfIncomeFile = copy);
+      await _saveDraft();
+    } catch (e) {
+      AppLogger.e('Error picking statement: $e', error: e, name: 'VerificationCenter');
+      _showError('Failed to select the statement. Please try again.');
+    }
+  }
+
   Future<void> _pickDocument(String type) async {
     final source = await _showImageSourcePicker();
     if (source == null) return;
@@ -434,7 +462,9 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         if (_utilityBillFile == null) return 'Add a utility bill';
         break;
       case 'tenant':
-        if (_proofOfIncomeFile == null) return 'Add your proof of income';
+        if (_proofOfIncomeFile == null) {
+          return 'Add your last 6 months of bank statements';
+        }
         break;
       case 'agent':
         if (_proofOfAddressFile == null) return 'Add your proof of address';
@@ -1336,7 +1366,7 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
           const SizedBox(height: 12),
           _buildDocumentStatus('NIN Slip Photo', true),
           const SizedBox(height: 12),
-          _buildDocumentStatus('Proof of Income', true),
+          _buildDocumentStatus('6-month bank statement', true),
         ];
       case 'agent': return [
           _buildDocumentStatus('NIN Number', true),
@@ -1480,11 +1510,12 @@ class _VerificationCenterScreenState extends State<VerificationCenterScreen> {
         const SizedBox(height: 16),
       ],
       _DocumentUploadCard(
-        title: 'Proof of Income',
-        subtitle: 'Employment letter, Bank statement, or Recent pay slip',
+        title: '6-month bank statement',
+        subtitle: 'Your last 6 months, showing your income coming in. PDF from '
+            'your bank is best',
         whatWeNeed: 'Document should show your name, employer/bank, and indicate stable income.',
         icon: Icons.account_balance_outlined, file: _proofOfIncomeFile,
-        onTap: () => _pickDocument('proofOfIncome'), onRemove: () { setState(() => _proofOfIncomeFile = null); _saveDraft(); },
+        onTap: _pickStatement, onRemove: () { setState(() => _proofOfIncomeFile = null); _saveDraft(); },
       ),
     ];
   }
@@ -1682,7 +1713,9 @@ class _DocumentUploadCard extends StatelessWidget {
                   color: hasFile ? AppColors.success.withAlpha(26) : AppColors.background,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: hasFile
+                child: hasFile && file!.path.toLowerCase().endsWith('.pdf')
+                    ? Icon(Icons.picture_as_pdf_outlined, color: AppColors.success, size: compact ? 20 : 24)
+                    : hasFile
                     ? ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(file!, fit: BoxFit.cover))
                     : Icon(icon, color: AppColors.textSecondary, size: compact ? 20 : 24),
               ),

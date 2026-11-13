@@ -600,7 +600,17 @@ service cloud.firestore {
               && d.minStayMonths <= d.maxStayMonths
               && d.get('inventory', null) is list
               && d.inventory.size() >= 1
-              && d.inventory.size() <= 60);
+              && d.inventory.size() <= 60)
+          // Unfurnished or partly furnished short lease: same months, no
+          // item list (that belongs to a fully furnished stay).
+          || (d.stayType == 'short'
+              && d.get('rentFrequency', '') == 'monthly'
+              && d.get('furnishing', '') in ['unfurnished', 'partly']
+              && d.get('minStayMonths', 0) is int
+              && d.get('maxStayMonths', 0) is int
+              && d.minStayMonths >= 1
+              && d.maxStayMonths <= 11
+              && d.minStayMonths <= d.maxStayMonths);
       }
 
       function docFieldsChanged() {

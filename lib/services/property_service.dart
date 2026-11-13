@@ -438,8 +438,9 @@ class PropertyService {
     // money comes back; the move-out handover is measured against it.
     bool cautionDepositRefundable = true,
     String? furnishing,
-    // 'yearly' or 'furnished' (1-11 months paid up front; rent is then the
-    // monthly rent). The stay fields are written only for a furnished stay.
+    // 'yearly', 'furnished' or 'short' (1-11 months paid up front; rent is
+    // then the monthly rent). The stay fields are written only for a month
+    // stay, and the item list only for a furnished one.
     String stayType = 'yearly',
     int minStayMonths = 0,
     int maxStayMonths = 0,
@@ -571,13 +572,14 @@ class PropertyService {
         'cautionDeposit': cautionDeposit,
         'cautionDepositRefundable': cautionDepositRefundable,
         if (furnishing != null) 'furnishing': furnishing,
-        if (stayType == 'furnished') ...{
-          'stayType': 'furnished',
+        if (stayType == 'furnished' || stayType == 'short') ...{
+          'stayType': stayType,
           'minStayMonths': minStayMonths,
           'maxStayMonths': maxStayMonths,
           if (availableFrom != null)
             'availableFrom': Timestamp.fromDate(availableFrom),
-          'inventory': inventory.map((i) => i.toMap()).toList(),
+          if (stayType == 'furnished')
+            'inventory': inventory.map((i) => i.toMap()).toList(),
         },
         'isAvailable': true,
         // A listing is born unreviewed. This is the ADMIN's badge for THIS
