@@ -452,9 +452,12 @@ class _TenantRentalDashboardState extends State<TenantRentalDashboard> {
             _buildQuickActions(),
             const SizedBox(height: 16),
 
-            // Payment info
-            _buildPaymentCard(),
-            const SizedBox(height: 24),
+            // Payment info. A month stay is paid in full up front, so nothing
+            // falls due; the extend card above covers what comes next.
+            if (!rental.isMonthStay) ...[
+              _buildPaymentCard(),
+              const SizedBox(height: 24),
+            ],
 
             // Browse more
             _buildBrowseMore(),

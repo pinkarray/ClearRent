@@ -241,6 +241,26 @@ class ActiveRentalService {
         );
       }
 
+      // A furnished stay or short lease runs from the tenant's chosen day for
+      // the months they picked. Only the server (onRentalInterestAccepted)
+      // builds that shape; the yearly doc below won the race once and made a
+      // 3-month lease a year long. So wait for the server's doc instead.
+      final stayType = rentalInterest.stayType;
+      if (stayType == 'furnished' || stayType == 'short') {
+        final ref =
+            _firestore.collection('active_rentals').doc(rentalInterest.id);
+        for (var i = 0; i < 20; i++) {
+          final snap = await ref.get(const GetOptions(source: Source.server));
+          if (snap.exists) {
+            return ActiveRental.fromFirestore(snap.data()!, snap.id);
+          }
+          await Future.delayed(const Duration(milliseconds: 750));
+        }
+        developer.log('❌ Server never created the stay rental',
+            name: 'ActiveRentalService');
+        return null;
+      }
+
       // Calculate dates
       final now = DateTime.now();
       final leaseStart = now;

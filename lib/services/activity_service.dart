@@ -318,7 +318,10 @@ class ActivityService {
     'reschedule_abandoned': ActivityType.inspectionDeclined,
     'video_tenant_no_show': ActivityType.inspectionDeclined,
     'new_rating': ActivityType.inspectionRated,
-    'rental_interest': ActivityType.inquiry,
+    // Payment, not inquiry: an inquiry tap needs an actor, which this
+    // notification never has, so the tap did nothing. The payment tap opens
+    // Inspections > History, where the landlord accepts.
+    'rental_interest': ActivityType.payment,
     'agreement_needed': ActivityType.payment,
     'agreement_accepted': ActivityType.payment,
     'agreement_disputed': ActivityType.issueDisputed,

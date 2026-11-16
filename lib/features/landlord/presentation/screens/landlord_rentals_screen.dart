@@ -1023,7 +1023,7 @@ class _RentalCardState extends State<_RentalCard> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '₦${_formatAmount(rental.rentAmount)}${rental.rentPeriod}',
+                        '₦${_formatAmount(rental.displayRent)}${rental.rentPeriod}',
                         style: AppTextStyles.labelMedium
                             .copyWith(color: AppColors.primary),
                       ),
@@ -1130,8 +1130,11 @@ class _RentalCardState extends State<_RentalCard> {
 
                 // Payment info (only for active)
                 if (widget.isActive) ...[
-                  const SizedBox(height: 12),
-                  _buildPaymentInfo(),
+                  // A month stay is paid in full up front: nothing falls due.
+                  if (!rental.isMonthStay) ...[
+                    const SizedBox(height: 12),
+                    _buildPaymentInfo(),
+                  ],
                   // Sits directly under the rent figure on purpose: that is
                   // where the landlord looks to see what has come in, and the
                   // deposit is the part that never will.
