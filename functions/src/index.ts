@@ -3232,6 +3232,27 @@ function generatePaymentReference(type: string): string {
   return `CR_${type.toUpperCase()}_${Date.now()}_${rand}`;
 }
 
+/**
+ * Refuses a payment from an account that has never been verified. An admin's
+ * verificationExempt claim (review accounts) passes.
+ * @param {string} uid The paying user.
+ * @param {Record<string, unknown>} token The caller's ID token claims.
+ * @return {Promise<void>} Resolves when the caller may pay.
+ */
+async function assertVerifiedToTransact(
+  uid: string,
+  token: Record<string, unknown> | undefined,
+): Promise<void> {
+  if (token?.verificationExempt === true) return;
+  const u = (await getFirestore().collection("users").doc(uid).get())
+    .data() ?? {};
+  if (u.verificationStatus === "verified" || u.verifiedAt != null) return;
+  throw new HttpsError(
+    "failed-precondition",
+    "Verify your identity before you pay. Go to Profile, then Verification.",
+  );
+}
+
 export const initializePayment = onCall(
   {
     secrets: [paystackSecret],
@@ -3302,6 +3323,14 @@ export const initializePayment = onCall(
     // A second verification charge is refused while one is in review or still
     // being applied (one tenant paid twice in two minutes).
     if (type === "verification") await assertNoVerificationOwed(uid);
+    // Identity before money: every payment except the verification fee itself
+    // needs an account that has been verified. The app and website already
+    // hide these buttons from unverified users; this is the server's own
+    // check. Lapsed (expired) verification still passes, so a tenant can
+    // always pay rent they owe.
+    if (type !== "verification") {
+      await assertVerifiedToTransact(uid, request.auth.token);
+    }
 
     const serverAmount = await resolveServerAmount(type, uid, callerMetadata);
     if (serverAmount !== null && Math.abs(serverAmount - amount) > 0.5) {
@@ -5013,7 +5042,7 @@ export {
   finalizeWebVerification,
 } from "./verification_ops";
 
-export {onBankDetailsWritten} from "./subaccount_ops";
+export {onBankDetailsWritten, approveBankName} from "./subaccount_ops";
 
 export {createRentalInterest, recordRentPayment} from "./rental_interest_ops";
 export {confirmInspectionPayment} from "./inspection_payment_ops";
@@ -5022,6 +5051,7 @@ export {confirmListingFee} from "./listing_fee_ops";
 export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";
+export {retentionPurgeSweep} from "./record_retention";
 
 export {
   getSignedAgreementUrl,

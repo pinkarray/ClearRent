@@ -310,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This action cannot be undone. All your data will be permanently deleted, including:',
+              'This action cannot be undone. All your data will be removed from ClearRent, including:',
               style: AppTextStyles.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -320,6 +320,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildDeleteItem('Inspection requests'),
             _buildDeleteItem('Message history'),
             _buildDeleteItem('Payment records'),
+            const SizedBox(height: 12),
+            Text(
+              "By law, your identity and payment records are kept in "
+              "restricted storage for five years, then deleted. No one "
+              "using ClearRent can see them.",
+              style: AppTextStyles.bodySmall
+                  .copyWith(color: AppColors.textSecondary),
+            ),
             const SizedBox(height: 16),
             Text(
               'Are you sure you want to permanently delete your account?',

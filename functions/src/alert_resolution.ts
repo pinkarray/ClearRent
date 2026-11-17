@@ -96,6 +96,12 @@ const RESOLVERS: Record<string, Resolver> = {
     collection: "payout_accounts",
     done: (t) => t.status === "active",
   },
+  // Closes once the account in place matches the verified name, or an admin
+  // approved it (syncSubaccount then sets status active).
+  bank_name_mismatch: {
+    collection: "payout_accounts",
+    done: (t) => t.status === "active",
+  },
 
   // The landlord decided (or the interest was cleaned up). Anything other than
   // pending_acceptance means nobody is waiting on them any more.

@@ -35,6 +35,7 @@ import {
   ACTIVE_INSPECTION_STATUSES,
   revertPropertyToSelf,
 } from "./agent_property_ops";
+import {archiveForRetention} from "./record_retention";
 
 // Cloudinary credentials live in Secret Manager (set via
 // `firebase functions:secrets:set`). The cloud name is public.
@@ -188,6 +189,21 @@ export const deleteMyAccount = onCall(callableOptions, async (request) => {
     .get();
   for (const propDoc of assignedProperties.docs) {
     await revertPropertyToSelf(propDoc.ref, propDoc.data(), {cause: "deleted"});
+  }
+
+  // Identity and transaction records are kept for five years (MLPPA 2022)
+  // before anything below deletes them. A failed copy aborts the deletion:
+  // losing the records is worse than asking the user to try again.
+  try {
+    await archiveForRetention(uid);
+  } catch (e) {
+    logger.error("Retention archive failed; deletion aborted", {
+      uid, error: `${e}`,
+    });
+    throw new HttpsError(
+      "internal",
+      "We could not close your account just now. Please try again later.",
+    );
   }
 
   // Every collection the user touches, keyed by the ownership field(s). Mirrors

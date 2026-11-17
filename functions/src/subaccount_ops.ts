@@ -23,6 +23,8 @@ import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {writeAdminAlertOnce} from "./admin_alerts";
+import {onCall, HttpsError} from "firebase-functions/v2/https";
+import {assertAdmin, writeAuditLog} from "./admin_helpers";
 
 /** Same secret index.ts binds; defineSecret is keyed by name, not identity. */
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
@@ -31,7 +33,56 @@ const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 const ELIGIBLE_ROLES = new Set(["landlord", "agent"]);
 
 export type SubaccountResult =
-  "skipped" | "unchanged" | "created" | "updated" | "failed";
+  "skipped" | "unchanged" | "created" | "updated" | "failed" | "held";
+
+/**
+ * The name Paystack holds for an account. The name on private/bank is written
+ * by the owner's own client, so it is never trusted for this.
+ * @param {string} accountNumber The account number.
+ * @param {string} bankCode The Paystack bank code.
+ * @return {Promise<string>} The account holder's name.
+ */
+async function resolveAccountName(
+  accountNumber: string,
+  bankCode: string,
+): Promise<string> {
+  const resp = await fetch(
+    "https://api.paystack.co/bank/resolve" +
+      `?account_number=${encodeURIComponent(accountNumber)}` +
+      `&bank_code=${encodeURIComponent(bankCode)}`,
+    {headers: {Authorization: `Bearer ${paystackSecret.value()}`}},
+  );
+  const json = (await resp.json().catch(() => ({}))) as {
+    status?: boolean;
+    message?: string;
+    data?: {account_name?: string};
+  };
+  if (!resp.ok || json.status !== true || !json.data?.account_name) {
+    throw new Error(json.message ?? `Paystack answered ${resp.status}`);
+  }
+  return json.data.account_name;
+}
+
+/**
+ * Do two names belong to the same person? Order-free, since banks often lead
+ * with the surname: at least two name parts in common, or one when either
+ * name has only one part.
+ * @param {string} a A name.
+ * @param {string} b Another name.
+ * @return {boolean} True when they match.
+ */
+export function namesMatch(a: string, b: string): boolean {
+  const parts = (n: string) => new Set(
+    n.toUpperCase().replace(/[^A-Z\s]/g, " ").split(/\s+/)
+      .filter((t) => t.length >= 2),
+  );
+  const x = parts(a);
+  const y = parts(b);
+  if (x.size === 0 || y.size === 0) return false;
+  let common = 0;
+  for (const t of x) if (y.has(t)) common++;
+  return common >= Math.min(2, x.size, y.size);
+}
 
 /**
  * Fingerprint of an account, so a change can be spotted without storing the
@@ -115,8 +166,39 @@ export async function syncSubaccount(uid: string): Promise<SubaccountResult> {
   }
 
   const last4 = accountNumber.slice(-4);
-  const name = String(bank.accountName ?? user.fullName ?? "ClearRent user");
+  let name = String(user.fullName ?? "ClearRent user");
   try {
+    // The bank account must be the verified person's own. An admin can
+    // approve a genuine mismatch (a business name, a married name), which is
+    // recorded against this exact account and lapses if it changes.
+    const holder = await resolveAccountName(accountNumber, bankCode);
+    name = holder;
+    const approved = existing?.nameApprovedKey === key;
+    if (!approved && !namesMatch(holder, String(user.fullName ?? ""))) {
+      await ref.set({
+        uid,
+        role: user.accountType,
+        status: "name_mismatch",
+        accountKey: key,
+        bankCode,
+        accountLast4: last4,
+        accountName: holder,
+        verifiedName: user.fullName ?? null,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+      await writeAdminAlertOnce(`bank_name_mismatch_${uid}_${last4}`, {
+        type: "bank_name_mismatch",
+        severity: "warning",
+        title: "Bank account name does not match",
+        body: `The account ending ${last4} belongs to "${holder}", but the ` +
+          `verified name is "${user.fullName ?? "unknown"}". No payout can ` +
+          "go there until they fix it or an admin approves it.",
+        targetCollection: "payout_accounts",
+        targetId: uid,
+      });
+      logger.warn("Bank name mismatch, payout account held", {uid, last4});
+      return "held";
+    }
     const subaccountCode = await callPaystack(code, {
       business_name: name,
       settlement_bank: bankCode,
@@ -168,5 +250,40 @@ export const onBankDetailsWritten = onDocumentWritten(
   async (event) => {
     if (!event.data?.after.exists) return;
     await syncSubaccount(event.params.uid);
+  },
+);
+
+/**
+ * Admin: accept a bank account whose holder name does not match the verified
+ * name, after checking it is genuinely the user's. Tied to this one account,
+ * so a later change of account is checked again.
+ */
+export const approveBankName = onCall(
+  {timeoutSeconds: 30, enforceAppCheck: false, secrets: [paystackSecret]},
+  async (request) => {
+    assertAdmin(request.auth);
+    const uid = request.data?.uid;
+    if (typeof uid !== "string" || uid.length === 0) {
+      throw new HttpsError("invalid-argument", "uid is required.");
+    }
+    const ref = getFirestore().collection("payout_accounts").doc(uid);
+    const acct = (await ref.get()).data();
+    if (acct?.status !== "name_mismatch" || !acct.accountKey) {
+      throw new HttpsError(
+        "failed-precondition",
+        "That account is not waiting on a name check.",
+      );
+    }
+    await ref.set({nameApprovedKey: acct.accountKey}, {merge: true});
+    await writeAuditLog({
+      actorId: request.auth!.uid,
+      action: "approve_bank_name",
+      targetCollection: "payout_accounts",
+      targetId: uid,
+      amount: 0,
+      paymentReference: "",
+      paymentNote: `${acct.accountName} vs ${acct.verifiedName}`,
+    });
+    return {result: await syncSubaccount(uid)};
   },
 );
