@@ -25,6 +25,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {writeAdminAlertOnce} from "./admin_alerts";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {assertAdmin, writeAuditLog} from "./admin_helpers";
+import {checkSharedBank} from "./compliance_ops";
 
 /** Same secret index.ts binds; defineSecret is keyed by name, not identity. */
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
@@ -250,6 +251,7 @@ export const onBankDetailsWritten = onDocumentWritten(
   async (event) => {
     if (!event.data?.after.exists) return;
     await syncSubaccount(event.params.uid);
+    await checkSharedBank(event.params.uid);
   },
 );
 

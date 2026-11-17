@@ -98,6 +98,11 @@ const RESOLVERS: Record<string, Resolver> = {
   },
   // Closes once the account in place matches the verified name, or an admin
   // approved it (syncSubaccount then sets status active).
+  // Closed only by an admin's recorded decision (reviewComplianceFlag).
+  suspicious_activity: {
+    collection: "compliance_flags",
+    done: (t) => t.status !== "open",
+  },
   bank_name_mismatch: {
     collection: "payout_accounts",
     done: (t) => t.status === "active",

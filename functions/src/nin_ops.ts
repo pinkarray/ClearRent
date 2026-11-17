@@ -31,6 +31,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {assertSelf} from "./admin_helpers";
 import {encryptNin} from "./nin_crypto";
+import {checkDuplicateNin, ninFingerprint} from "./compliance_ops";
 
 const ninKey = defineSecret("NIN_ENCRYPTION_KEY");
 
@@ -56,12 +57,17 @@ export const submitNin = onCall(callableOptions, async (request) => {
   const nin = raw.nin.trim();
 
   const ciphertext = encryptNin(nin, ninKey.value());
+  // Encryption is randomised, so equal NINs never match; the fingerprint is
+  // what lets one NIN on two accounts be spotted.
+  const fingerprint = ninFingerprint(nin, ninKey.value());
 
   const db = getFirestore();
   await db.collection("users").doc(uid).update({
     nin: ciphertext,
+    ninFingerprint: fingerprint,
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await checkDuplicateNin(uid, fingerprint);
 
   logger.info("NIN stored (encrypted)", {uid});
   return {success: true};

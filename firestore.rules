@@ -338,6 +338,7 @@ service cloud.firestore {
         && !('bvn' in request.resource.data)
         && !('bankDetails' in request.resource.data)
         && !('nin' in request.resource.data)
+        && !('ninFingerprint' in request.resource.data)
         // Identity documents must be the caller's own uploads.
         && ownVerificationDocs();
 
@@ -365,6 +366,9 @@ service cloud.firestore {
                        // `nin` belongs here only as server-written versioned
                        // ciphertext (nin_ops.ts), never from a client.
                        'bvn', 'bankDetails', 'nin',
+                       // Server-written (nin_ops.ts); a client copying
+                       // another's would fake a duplicate-identity flag.
+                       'ninFingerprint',
                        // Consequences are the server's. listingSuspended was
                        // missing here, so a suspended landlord could lift
                        // their own suspension in one write (found 2026-10-25).

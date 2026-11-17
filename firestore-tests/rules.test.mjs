@@ -1696,6 +1696,26 @@ test("agent completes profile over a saved draft - allowed", async () => {
   );
 });
 
+test("owner edits own profile field - allowed (control)", async () => {
+  await seedDraft(LANDLORD);
+  await assertSucceeds(
+    updateDoc(doc(landlordDb(), `users/${LANDLORD}`), {
+      fullName: "Tommy Kane",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test("owner writing their own ninFingerprint - denied", async () => {
+  await seedDraft(LANDLORD);
+  await assertFails(
+    updateDoc(doc(landlordDb(), `users/${LANDLORD}`), {
+      ninFingerprint: "abc",
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
 test("seeding rating alongside the profile - denied", async () => {
   await seedDraft(LANDLORD);
   await assertFails(

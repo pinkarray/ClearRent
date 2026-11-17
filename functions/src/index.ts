@@ -5052,6 +5052,9 @@ export {submitNin} from "./nin_ops";
 
 export {deleteMyAccount} from "./account_ops";
 export {retentionPurgeSweep} from "./record_retention";
+export {
+  onPaymentCompletedCheck, reviewComplianceFlag,
+} from "./compliance_ops";
 
 export {
   getSignedAgreementUrl,
