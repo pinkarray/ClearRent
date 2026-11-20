@@ -1085,7 +1085,7 @@ class _LandlordUpcomingCardState extends State<_LandlordUpcomingCard> {
       warningMessage: r.isPaid
           ? 'Cancelling will end this inspection for '
               '${r.propertyTitle} and refund ₦$backText to the tenant. '
-              'The ₦$keptText service charge is not refunded.'
+              '${r.clearrentFee > 0 ? 'The ₦$keptText service charge is not refunded.' : 'They paid no booking charge on this one, and their free booking comes back.'}'
           : 'Cancelling will end this inspection for ${r.propertyTitle}. '
               'The tenant has not paid yet, so there is nothing to refund.',
       confirmButtonText: r.isPaid ? 'Cancel & Refund' : 'Cancel inspection',

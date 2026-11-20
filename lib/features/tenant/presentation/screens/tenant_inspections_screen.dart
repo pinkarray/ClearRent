@@ -1464,9 +1464,12 @@ class _TenantUpcomingCardState extends State<_TenantUpcomingCard> {
     // (onInspectionRefundTriggered), so say exactly that.
     final naira = NumberFormat('#,###');
     final back = naira.format(r.totalFee - r.clearrentFee);
+    // A free-booking viewing had no charge to keep; its voucher comes back.
+    final kept = r.clearrentFee > 0
+        ? 'The ₦${naira.format(r.clearrentFee)} service charge is not refunded.'
+        : 'Your free booking comes back too.';
     return '$why, message ${r.agentName ?? r.landlordName} and ask them to '
-        'cancel it. You get ₦$back back when they do. The '
-        '₦${naira.format(r.clearrentFee)} service charge is not refunded.';
+        'cancel it. You get ₦$back back when they do. $kept';
   }
 
   Widget _badge(String text, Color color, IconData icon) => Container(
