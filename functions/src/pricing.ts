@@ -19,6 +19,7 @@ import {getFirestore} from "firebase-admin/firestore";
 import {
   extensionAmount, isMonthStay, listingMaxStay,
 } from "./furnished_stay";
+import {reserveVoucher} from "./viewing_release_ops";
 
 /**
  * What a role pays to verify, first time versus every year after.
@@ -336,6 +337,11 @@ export async function resolveServerAmount(
             "shortly. You have not been charged again.",
         );
       }
+    }
+    // A free-booking voucher (viewing_release_ops) waives ClearRent's booking
+    // charge; the handler's share is still charged in full.
+    if (requestId && await reserveVoucher(uid, requestId)) {
+      return pricing.inspection.total - pricing.inspection.platform;
     }
     return pricing.inspection.total;
   }

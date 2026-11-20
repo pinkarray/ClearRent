@@ -29,6 +29,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {defineSecret} from "firebase-functions/params";
 import {getPricing} from "./pricing";
 import {verifyAndConsumeReference} from "./payment_verify";
+import {reservedVoucherFor} from "./viewing_release_ops";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -101,7 +102,10 @@ export const confirmInspectionPayment = onCall(
     // The fee comes from config/pricing - the same document the handler payout
     // is derived from - never from the client.
     const fee = (await getPricing()).inspection;
-    const expectedFee = fee.total;
+    // Paid with a free-booking voucher: ClearRent's charge is waived.
+    const voucher = await reservedVoucherFor(uid, requestId);
+    const platform = voucher ? 0 : fee.platform;
+    const expectedFee = fee.handler + platform;
     await verifyAndConsumeReference({
       reference: paymentReference,
       secret: paystackSecret.value(),
@@ -121,11 +125,12 @@ export const confirmInspectionPayment = onCall(
       // refund trigger pays `totalFee` back: book with an inflated figure, pay
       // the real fee, get declined, and the refund was the inflated one. What
       // was actually charged is stamped here, over anything the client sent.
-      totalFee: fee.total,
+      totalFee: expectedFee,
       agentServiceFee: fee.handler,
       agentEarnings: fee.handler,
       transportFee: 0,
-      clearrentFee: fee.platform,
+      clearrentFee: platform,
+      ...(voucher ? {viewingCreditId: voucher.id} : {}),
       locationRevealedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -186,6 +191,13 @@ export const confirmInspectionPayment = onCall(
     }
 
     await ref.update(update);
+    if (voucher) {
+      await voucher.update({
+        status: "used",
+        usedFor: requestId,
+        usedAt: FieldValue.serverTimestamp(),
+      });
+    }
 
     logger.info("Inspection payment confirmed + address revealed", {
       requestId,

@@ -12,6 +12,9 @@ import '../../../../services/paystack_service.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/conversation_service.dart';
 import '../../../../shared/screens/paystack_checkout_screen.dart';
+import '../../../../services/pricing_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// Pay-after-approve: this screen pays for an inspection request the handler has
 /// ALREADY approved. It no longer creates the request (the request is created
@@ -52,7 +55,41 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
   bool _paymentSuccessful = false;
   String? _paymentReference;
 
-  double get _totalFee => widget.request.totalFee;
+  /// A free-booking voucher waives ClearRent's booking charge, so only the
+  /// handler's share is paid. The server applies it; this shows the price.
+  bool _freeBooking = false;
+
+  double get _totalFee => _freeBooking
+      ? PricingService().current.inspectionHandler
+      : widget.request.totalFee;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFreeBooking();
+  }
+
+  Future<void> _loadFreeBooking() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('viewing_credits')
+          .where('uid', isEqualTo: uid)
+          .get();
+      final now = DateTime.now();
+      final has = snap.docs.any((d) {
+        final x = d.data();
+        final exp = (x['expiresAt'] as Timestamp?)?.toDate();
+        return exp != null &&
+            exp.isAfter(now) &&
+            (x['status'] == 'available' || x['status'] == 'reserved');
+      });
+      if (has && mounted) setState(() => _freeBooking = true);
+    } catch (_) {
+      // No voucher shown; the server still applies one if it exists.
+    }
+  }
 
   String get _formattedDate {
     final months = [
@@ -772,6 +809,14 @@ class _InspectionPaymentScreenState extends State<InspectionPaymentScreen> {
           Text('Payment Breakdown', style: AppTextStyles.labelLarge),
           const SizedBox(height: 16),
           _buildPaymentRow('Inspection fee', _totalFee),
+          if (_freeBooking) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Booking charge: free this time',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.success),
+            ),
+          ],
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(),

@@ -343,6 +343,36 @@ test("tenant writing rentAmount on own rental - denied", async () => {
   );
 });
 
+async function seedVoucher() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "viewing_credits/v1"), {
+      uid: TENANT, status: "available",
+    });
+  });
+}
+
+test("tenant reading their own voucher - allowed", async () => {
+  await seedVoucher();
+  await assertSucceeds(getDoc(doc(tenantDb(), "viewing_credits/v1")));
+  await assertSucceeds(getDocs(query(collection(tenantDb(), "viewing_credits"),
+    where("uid", "==", TENANT))));
+});
+
+test("someone else reading a voucher - denied", async () => {
+  await seedVoucher();
+  await assertFails(getDoc(doc(landlordDb(), "viewing_credits/v1")));
+});
+
+test("tenant creating or editing a voucher - denied", async () => {
+  await seedVoucher();
+  await assertFails(setDoc(doc(tenantDb(), "viewing_credits/v2"), {
+    uid: TENANT, status: "available",
+  }));
+  await assertFails(updateDoc(doc(tenantDb(), "viewing_credits/v1"), {
+    status: "available",
+  }));
+});
+
 test("non-admin writing a payout field - denied", async () => {
   await assertFails(
     updateDoc(doc(landlordDb(), "active_rentals/ar1"), {

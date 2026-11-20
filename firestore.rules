@@ -173,6 +173,14 @@ service cloud.firestore {
              .data.get('verificationStatus', 'none') == 'verified';
     }
 
+    // Free-booking vouchers (viewing_release_ops.ts). The owner may read their
+    // own so the app can show "booking charge: free"; only the server writes.
+    match /viewing_credits/{creditId} {
+      allow read: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
     // Is the caller the accepted caretaker of this property?
     //
     // Declared HERE, at the document root, for the same reason changed() is:

@@ -1,3 +1,4 @@
+import '../../../../shared/widgets/take_down_confirm.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -976,6 +977,12 @@ class _PropertyDetailScreenState extends State<PropertyDetailScreen> {
         ),
       );
       return;
+    }
+
+    if (!newStatus) {
+      final open = await _propertyService.openViewingCount(widget.property.id);
+      if (!mounted) return;
+      if (!await confirmTakeDown(context, open)) return;
     }
 
     try {

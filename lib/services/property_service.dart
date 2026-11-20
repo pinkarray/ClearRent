@@ -1204,6 +1204,29 @@ class PropertyService {
     }
   }
 
+  /// Viewings of this listing that have not happened yet. Marking it occupied
+  /// cancels them (onPropertyTaken), so the landlord is asked first.
+  Future<int> openViewingCount(String propertyId) async {
+    const notHappened = {
+      'pendingPayment', 'pendingVerification', 'pending', 'approved',
+      'declinedByAgent', 'expiredUnapproved', 'rebookOffered',
+    };
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return 0;
+      final snap = await _firestore
+          .collection('inspection_requests')
+          .where('landlordId', isEqualTo: uid)
+          .where('propertyId', isEqualTo: propertyId)
+          .get();
+      return snap.docs
+          .where((d) => notHappened.contains(d.data()['status']))
+          .length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Update property availability.
   /// Returns 'not_approved' if the property hasn't been admin-approved yet,
   /// 'blocked:' plus the reason while a suspension or an urgent issue stops it.

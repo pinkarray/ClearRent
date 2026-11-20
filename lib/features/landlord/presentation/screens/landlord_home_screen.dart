@@ -1,3 +1,4 @@
+import '../../../../shared/widgets/take_down_confirm.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -728,7 +729,8 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
             // Announcements
             AnnouncementsBanner(
               userId: _authService.currentUserId ?? '',
-              accountType: 'landlord',
+              accountType: 'landlord',
+
             ),
             // A landlord can be someone else's caretaker too. This is the only
             // way in to caretaker work, so it is NOT part of the capped stack -
@@ -1911,6 +1913,11 @@ class _LandlordHomeScreenState extends State<LandlordHomeScreen> {
   }
 
   Future<void> _togglePropertyStatus(PropertyModel property) async {
+    if (property.isAvailable) {
+      final open = await _propertyService.openViewingCount(property.id);
+      if (!mounted) return;
+      if (!await confirmTakeDown(context, open)) return;
+    }
     final result = await _propertyService.updateAvailability(
       property.id,
       !property.isAvailable,

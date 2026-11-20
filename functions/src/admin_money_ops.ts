@@ -64,6 +64,7 @@ import {writeNotificationOnce} from "./notification_helpers";
 import {writeAdminAlertOnce} from "./admin_alerts";
 import {getPricing} from "./pricing";
 import {isMonthStay, lagosMidnight, stayEndDay} from "./furnished_stay";
+import {reinstateVoucher} from "./viewing_release_ops";
 
 interface BeneficiaryBank {
   bankName: string | null;
@@ -1127,6 +1128,18 @@ function deriveRefundReason(
     };
   }
 
+  // The house was rented before this viewing happened (onPropertyTaken). The
+  // standard amount: the handler's share back, ClearRent's booking charge
+  // kept and returned as a free-booking voucher instead.
+  if (data.propertyTaken === true) {
+    return {
+      source: "inspection_property_taken",
+      reason:
+        (data.refundReason as string | undefined) ??
+        "The house was rented before your viewing",
+    };
+  }
+
   // System slot-conflict decline: ClearRent double-booked the handler and
   // auto-declined the newer request. Distinct source so the amount logic can
   // issue a FULL refund (our error) instead of keeping the platform charge.
@@ -1203,7 +1216,13 @@ export async function inspectionRefundAmount(
   totalFee: number,
   source = deriveRefundReason(data).source,
 ): Promise<number> {
-  const platformCharge = (await getPricing()).inspection.platform;
+  // What ClearRent actually took on THIS viewing: 0 when it was paid with a
+  // free-booking voucher. Stamped by confirmInspectionPayment; the config
+  // figure is only the fallback for viewings paid before that existed.
+  const stamped = data.clearrentFee;
+  const platformCharge = typeof stamped === "number" && stamped >= 0 ?
+    stamped :
+    (await getPricing()).inspection.platform;
   const fullRefundSource =
     source === "inspection_admin_review" ||
     source === "inspection_slot_conflict";
@@ -1295,6 +1314,11 @@ export const onInspectionRefundTriggered = onDocumentUpdated(
         beneficiaryId: tenantId,
         source,
       });
+
+      // A voucher-paid viewing that falls through gets its voucher back.
+      if (typeof after.viewingCreditId === "string") {
+        await reinstateVoucher(after.viewingCreditId, requestId);
+      }
 
       // Refunds are paid by hand from the Refunds page, and nothing told an
       // admin one was owed, so it sat until someone happened to look. Closed
